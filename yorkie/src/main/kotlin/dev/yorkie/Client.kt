@@ -3,9 +3,9 @@ package dev.yorkie
 import android.content.Context
 import android.util.Log
 import com.google.protobuf.ByteString
-import dev.yorkie.api.v1.yorkie.ActivateClientRequest
-import dev.yorkie.api.v1.yorkie.DeactivateClientRequest
-import dev.yorkie.api.v1.yorkie.YorkieServiceGrpcKt
+import dev.yorkie.api.v1.ActivateClientRequest
+import dev.yorkie.api.v1.DeactivateClientRequest
+import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import io.grpc.CallOptions
 import io.grpc.android.AndroidChannelBuilder
 import java.util.UUID

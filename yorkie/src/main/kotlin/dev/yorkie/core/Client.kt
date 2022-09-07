@@ -1,4 +1,4 @@
-package dev.yorkie
+package dev.yorkie.core
 
 import android.content.Context
 import android.util.Log

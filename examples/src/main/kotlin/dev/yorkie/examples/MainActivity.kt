@@ -19,7 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import dev.yorkie.Client
+import dev.yorkie.core.Client
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {

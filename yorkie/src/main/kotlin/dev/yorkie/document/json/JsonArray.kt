@@ -1,3 +1,3 @@
 package dev.yorkie.document.json
 
-public class JSONArray
+public class JsonArray

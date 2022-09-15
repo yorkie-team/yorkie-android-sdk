@@ -1,15 +1,41 @@
 package dev.yorkie.util
 
-internal class SplayTree<V>(
-    root: V? = null,
-    private val lengthCalculator: (V) -> Int,
-) {
-    var root: Node<V>? = root?.let { Node(it, lengthCalculator) }
+import com.google.common.annotations.VisibleForTesting
+
+/**
+ * SplayTreeSet is weighted binary search tree set based on Splay tree.
+ * original paper on Splay Trees:
+ * @link https://www.cs.cmu.edu/~sleator/papers/self-adjusting.pdf
+ */
+// should SplayTree implement MutableSet?
+internal class SplayTreeSet<V>(private val lengthCalculator: (V) -> Int = { 1 }) {
+    private val valueToNodes = mutableMapOf<V, Node<V>>()
+
+    @VisibleForTesting
+    var root: Node<V>? = null
         private set
 
     val length
         get() = root?.weight ?: 0
 
+    private val maximum: Node<V>?
+        get() {
+            var node = root
+            while (node?.right != null) {
+                node = node.right
+            }
+            return node
+        }
+
+    private fun subtree(node: Node<V>?): SplayTreeSet<V> {
+        return SplayTreeSet(lengthCalculator).also {
+            it.root = node
+        }
+    }
+
+    /**
+     * returns the Value and offset of the given index.
+     */
     @Suppress("UNCHECKED_CAST")
     fun find(pos: Int): ValueToOffset<V> {
         var target = pos
@@ -35,7 +61,11 @@ internal class SplayTree<V>(
         return ValueToOffset(node.value, target)
     }
 
-    fun indexOf(node: Node<V>?): Int {
+    /**
+     * finds the index of the given value in BST
+     */
+    fun indexOf(value: V?): Int {
+        val node = valueToNodes[value]
         if (node == null || !node.hasLinks) {
             return -1
         }
@@ -52,17 +82,26 @@ internal class SplayTree<V>(
         return index - node.length
     }
 
-    fun insert(value: V): Node<V> {
-        return insertAfter(root, value)
+    fun insert(value: V) {
+        insertAfterInternal(root, value)
     }
 
-    fun insertAfter(target: Node<V>?, newValue: V): Node<V> {
-        val newNode = Node(newValue, lengthCalculator)
+    fun insertAfter(target: V?, newValue: V) {
+        insertAfterInternal(target?.let(valueToNodes::get), newValue)
+    }
+
+    private fun insertAfterInternal(target: Node<V>?, newValue: V) {
+        val newNode = valueToNodes[newValue]?.also {
+            it.unlink()
+            it.initWeight()
+        } ?: Node(newValue, lengthCalculator)
+        valueToNodes[newValue] = newNode
+
         if (target == null) {
             root = newNode
-            return newNode
+            return
         }
-        splayNode(target)
+        splayInternal(target)
         root = newNode
         newNode.right = target.right
         target.right?.parent = newNode
@@ -71,11 +110,118 @@ internal class SplayTree<V>(
         target.right = null
         updateWeight(target)
         updateWeight(newNode)
-
-        return newNode;
+        return
     }
 
-    fun splayNode(node: Node<V>?) {
+    fun delete(value: V) {
+        deleteInternal(valueToNodes[value] ?: error("requested value: $value is not in the tree"))
+    }
+
+    private fun deleteInternal(node: Node<V>) {
+        splayInternal(node)
+
+        val leftTree = subtree(node.left)
+        leftTree.root?.parent = null
+
+        val rightTree = subtree(node.right)
+        rightTree.root?.parent = null
+
+        if (leftTree.root != null) {
+            val maxNode = leftTree.maximum
+            leftTree.splayInternal(maxNode)
+            leftTree.root?.right = rightTree.root
+            if (rightTree.root != null) {
+                rightTree.root?.parent = leftTree.root
+            }
+            root = leftTree.root
+        } else {
+            root = rightTree.root
+        }
+
+        node.unlink()
+        root?.let(::updateWeight)
+        valueToNodes.remove(node.value)
+    }
+
+    /**
+     * Separates the range between given 2 boundaries from this Tree.
+     * This function separates the range to delete as a subtree by splaying outer boundary nodes.
+     * [leftBoundary] must exist because of 0-indexed initial dummy node of tree,
+     * but [rightBoundary] can be null, which means range is from [leftBoundary] to the end of tree.
+     * Refer to the design document in https://github.com/yorkie-team/yorkie/blob/main/design/range-deletion-in-splay-tree.md
+     *
+     * Boundary range are exclusive.
+     */
+    fun deleteRange(leftBoundary: V, rightBoundary: V? = null) {
+        deleteRangeInternal(
+            valueToNodes[leftBoundary] ?: error("leftBoundary cannot be null"),
+            valueToNodes[rightBoundary],
+        )
+    }
+
+    private fun deleteRangeInternal(leftBoundary: Node<V>, rightBoundary: Node<V>?) {
+        splayInternal(leftBoundary)
+        if (rightBoundary == null) {
+            cutOffRight(leftBoundary)
+            return
+        }
+        splayInternal(rightBoundary)
+        if (rightBoundary.left != leftBoundary) {
+            rotateRight(leftBoundary)
+        }
+        cutOffRight(leftBoundary)
+    }
+
+    private fun cutOffRight(node: Node<V>) {
+        val nodesToFreeWeight = traversePostorder(node.right)
+        nodesToFreeWeight.forEach {
+            it.unlink()
+            valueToNodes.remove(it.value)
+        }
+        node.right = null
+        updateTreeWeight(node)
+    }
+
+    private fun updateTreeWeight(node: Node<V>?) {
+        var target = node
+        while (target != null) {
+            updateWeight(target)
+            target = target.parent
+        }
+    }
+
+    private fun traversePostorder(node: Node<V>?): List<Node<V>> {
+        return buildList { traversePostorderInternal(node) }
+    }
+
+    private fun MutableList<Node<V>>.traversePostorderInternal(node: Node<V>?) {
+        if (node == null) {
+            return
+        }
+        traversePostorderInternal(node.left)
+        traversePostorderInternal(node.right)
+        add(node)
+    }
+
+    @VisibleForTesting
+    fun traverseInorder(node: Node<V>?): List<Node<V>> {
+        return buildList { traverseInorderInternal(node) }
+    }
+
+    private fun MutableList<Node<V>>.traverseInorderInternal(node: Node<V>?) {
+        if (node == null) {
+            return
+        }
+        traverseInorderInternal(node.left)
+        add(node)
+        traverseInorderInternal(node.right)
+    }
+
+    fun splay(value: V) {
+        splayInternal(valueToNodes[value])
+    }
+
+    private fun splayInternal(node: Node<V>?) {
         if (node == null) {
             return
         }
@@ -109,7 +255,10 @@ internal class SplayTree<V>(
         }
     }
 
-    fun updateWeight(node: Node<V>) {
+    /**
+     * recalculates weight of [node]
+     */
+    private fun updateWeight(node: Node<V>) {
         node.initWeight()
         node.increaseWeight(node.leftWeight)
         node.increaseWeight(node.rightWeight)
@@ -173,12 +322,13 @@ internal class SplayTree<V>(
         }
     }
 
+    @VisibleForTesting
     data class Node<V>(val value: V, val lengthCalculator: (V) -> Int) {
         var left: Node<V>? = null
         var right: Node<V>? = null
         var parent: Node<V>? = null
 
-        var weight = lengthCalculator.invoke(value)
+        var weight = length
             private set
 
         val length
@@ -201,7 +351,7 @@ internal class SplayTree<V>(
         }
 
         fun initWeight() {
-            weight = lengthCalculator.invoke(value)
+            weight = length
         }
 
         fun unlink() {

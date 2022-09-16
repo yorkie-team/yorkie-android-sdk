@@ -9,7 +9,7 @@ class SplayTreeSetTest {
 
     @Before
     fun setUp() {
-        target = SplayTreeSet { it.length }
+        target = SplayTreeSet(String::length)
     }
 
     @Test

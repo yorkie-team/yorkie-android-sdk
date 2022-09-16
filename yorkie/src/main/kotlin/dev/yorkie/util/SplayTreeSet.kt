@@ -1,6 +1,7 @@
 package dev.yorkie.util
 
 import com.google.common.annotations.VisibleForTesting
+import dev.yorkie.util.SplayTreeSet.LengthCalculator
 
 /**
  * SplayTreeSet is weighted binary search tree set based on Splay tree.
@@ -8,7 +9,11 @@ import com.google.common.annotations.VisibleForTesting
  * @link https://www.cs.cmu.edu/~sleator/papers/self-adjusting.pdf
  */
 // should SplayTree implement MutableSet?
-internal class SplayTreeSet<V>(private val lengthCalculator: (V) -> Int = { 1 }) {
+internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
+    @Suppress("UNCHECKED_CAST")
+    private val lengthCalculator: LengthCalculator<V> =
+        lengthCalculator ?: LengthCalculator.DEFAULT as LengthCalculator<V>
+
     private val valueToNodes = mutableMapOf<V, Node<V>>()
 
     @VisibleForTesting
@@ -317,13 +322,14 @@ internal class SplayTreeSet<V>(private val lengthCalculator: (V) -> Int = { 1 })
         get() = this != null && parent?.right === this
 
     data class ValueToOffset<V>(val value: V?, val offset: Int) {
+
         companion object {
-            val Empty = ValueToOffset(null, 0)
+            val Empty by lazy { ValueToOffset(null, 0) }
         }
     }
 
     @VisibleForTesting
-    data class Node<V>(val value: V, val lengthCalculator: (V) -> Int) {
+    data class Node<V>(val value: V, val lengthCalculator: LengthCalculator<V>) {
         var left: Node<V>? = null
         var right: Node<V>? = null
         var parent: Node<V>? = null
@@ -332,7 +338,7 @@ internal class SplayTreeSet<V>(private val lengthCalculator: (V) -> Int = { 1 })
             private set
 
         val length
-            get() = lengthCalculator.invoke(value)
+            get() = lengthCalculator.calculateLength(value)
 
         val leftWeight
             get() = left?.weight ?: 0
@@ -359,6 +365,14 @@ internal class SplayTreeSet<V>(private val lengthCalculator: (V) -> Int = { 1 })
             left = null
             right = null
             // should we initWeight?
+        }
+    }
+
+    fun interface LengthCalculator<V> {
+        fun calculateLength(value: V): Int
+
+        companion object {
+            val DEFAULT by lazy { LengthCalculator<Any> { 1 } }
         }
     }
 }

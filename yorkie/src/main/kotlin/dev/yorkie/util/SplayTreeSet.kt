@@ -8,7 +8,7 @@ import dev.yorkie.util.SplayTreeSet.LengthCalculator
  * original paper on Splay Trees:
  * @link https://www.cs.cmu.edu/~sleator/papers/self-adjusting.pdf
  */
-// should SplayTree implement MutableSet?
+// NOTE(skhugh): should SplayTree implement MutableSet?
 internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
     @Suppress("UNCHECKED_CAST")
     private val lengthCalculator: LengthCalculator<V> =
@@ -23,7 +23,7 @@ internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
     val length
         get() = root?.weight ?: 0
 
-    private val maximum: Node<V>?
+    private val rightMost: Node<V>?
         get() {
             var node = root
             while (node?.right != null) {
@@ -132,7 +132,7 @@ internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
         rightTree.root?.parent = null
 
         if (leftTree.root != null) {
-            val maxNode = leftTree.maximum
+            val maxNode = leftTree.rightMost
             leftTree.splayInternal(maxNode)
             leftTree.root?.right = rightTree.root
             if (rightTree.root != null) {
@@ -364,7 +364,7 @@ internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
             parent = null
             left = null
             right = null
-            // should we initWeight?
+            // NOTE(skhugh): should we initWeight?
         }
     }
 

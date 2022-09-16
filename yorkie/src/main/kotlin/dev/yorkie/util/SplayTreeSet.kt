@@ -61,7 +61,9 @@ internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
             }
         }
         if (target > node.length) {
-            error("out of index range: pos: $target > node.length: ${node.length}")
+            throw IndexOutOfBoundsException(
+                "out of index range: pos: $target > node.length: ${node.length}",
+            )
         }
         return ValueToOffset(node.value, target)
     }
@@ -119,7 +121,10 @@ internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
     }
 
     fun delete(value: V) {
-        deleteInternal(valueToNodes[value] ?: error("requested value: $value is not in the tree"))
+        deleteInternal(
+            valueToNodes[value]
+                ?: throw IllegalArgumentException("requested value: $value is not in the tree"),
+        )
     }
 
     private fun deleteInternal(node: Node<V>) {
@@ -159,7 +164,8 @@ internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
      */
     fun deleteRange(leftBoundary: V, rightBoundary: V? = null) {
         deleteRangeInternal(
-            valueToNodes[leftBoundary] ?: error("leftBoundary cannot be null"),
+            valueToNodes[leftBoundary]
+                ?: throw IllegalArgumentException("leftBoundary cannot be null"),
             valueToNodes[rightBoundary],
         )
     }

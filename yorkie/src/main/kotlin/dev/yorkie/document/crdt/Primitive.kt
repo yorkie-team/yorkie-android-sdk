@@ -20,7 +20,6 @@ internal class Primitive(
             else -> PrimitiveType.Null
         }
     }
-
 }
 
 /**

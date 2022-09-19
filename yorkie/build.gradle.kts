@@ -87,6 +87,7 @@ protobuf {
 }
 
 dependencies {
+    implementation("androidx.test.ext:junit-ktx:1.1.3")
     protobuf(project(":yorkie:proto"))
 
     implementation("io.grpc:grpc-stub:${Versions.grpc}")

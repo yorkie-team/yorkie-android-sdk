@@ -16,7 +16,7 @@ internal class Primitive(
             is Double -> PrimitiveType.Double
             is String -> PrimitiveType.String
             is ByteArray -> PrimitiveType.Bytes
-            // TODO support Date type
+TODO(daeyoungInc): support Date type
             else -> PrimitiveType.Null
         }
     }

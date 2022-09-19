@@ -10,6 +10,7 @@ class PrimitiveTest {
         val primitive = Primitive("hello", TimeTicket.InitialTimeTicket)
         assertTrue("hello" == primitive.value)
     }
+
     @Test
     fun `Verify that the value of Primitive and PrimitiveType are mapped correctly`() {
         var primitive = Primitive(true, TimeTicket.InitialTimeTicket)

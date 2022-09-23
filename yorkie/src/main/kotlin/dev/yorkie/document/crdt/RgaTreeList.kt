@@ -24,8 +24,8 @@ internal class RgaTreeList {
     val length
         get() = nodeMapByIndex.length
 
-    // NOTE(7hong13): original coment from JS SDK is as follows:
-    // `insert` adds the given element after  the last creation time.
+    // NOTE(7hong13): original comment from JS SDK is as follows:
+    // `insert` adds the given element after the last creation time.
     /**
      * Adds a new node with [value] after the last node.
      */
@@ -62,9 +62,7 @@ internal class RgaTreeList {
         executedAt: TimeTicket,
     ): RgaTreeListNode {
         var node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: throw IllegalArgumentException(
-                "can't find the given node: ${createdAt.toIDString()}",
-            )
+            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
 
         var nodeNext = node.next
         while (nodeNext != null && executedAt < nodeNext.positionedAt) {
@@ -83,11 +81,9 @@ internal class RgaTreeList {
         executedAt: TimeTicket,
     ) {
         val prevNode = nodeMapByCreatedAt[prevCreatedAt.toIDString()]
-            ?: throw IllegalArgumentException(
-                "cant find the given node: ${prevCreatedAt.toIDString()}",
-            )
+            ?: error("can't find the given node createdAt: ${prevCreatedAt.toIDString()}")
         val node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: throw IllegalArgumentException("cant find the given node: ${createdAt.toIDString()}")
+            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
 
         if (prevNode != node &&
             (node.value.movedAt == null || checkNotNull(node.value.movedAt) < executedAt)
@@ -105,9 +101,7 @@ internal class RgaTreeList {
      */
     fun purge(element: CrdtElement) {
         val node = nodeMapByCreatedAt[element.createdAt.toIDString()]
-            ?: throw IllegalArgumentException(
-                "fail to find the given createdAt: ${element.createdAt.toIDString()}",
-            )
+            ?: error("can't find the given createdAt: ${element.createdAt.toIDString()}")
         release(node)
     }
 
@@ -160,9 +154,7 @@ internal class RgaTreeList {
      */
     fun getPrevCreatedAt(createdAt: TimeTicket): TimeTicket {
         var node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: throw IllegalArgumentException(
-                "can't find the given node: ${createdAt.toIDString()}",
-            )
+            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
         do {
             node = node.prev ?: break
         } while (dummyHead != node && node.isRemoved)
@@ -174,9 +166,7 @@ internal class RgaTreeList {
      */
     fun delete(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
         val node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: throw IllegalArgumentException(
-                "can't find the given node: ${createdAt.toIDString()}",
-            )
+            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
 
         val alreadyRemoved = node.isRemoved
         if (node.remove(editedAt) && !alreadyRemoved) {

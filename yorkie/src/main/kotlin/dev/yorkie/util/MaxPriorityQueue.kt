@@ -14,3 +14,22 @@ internal class MaxPriorityQueue<E : Comparable<E>>(
         private const val DEFAULT_INITIAL_CAPACITY = 11
     }
 }
+
+/**
+ * `PQNode` is a node of `MaxPriorityQueue`.
+ */
+internal abstract class PQNode<K, V>(internal val key: K, internal val value: V): Comparable<PQNode<K, V>> {
+    /**
+     * `getKey` returns a key of PQNode.
+     */
+    fun getKey(): K {
+        return key
+    }
+
+    /**
+     * `getValue` returns a value of PQNode.
+     */
+    fun getValue(): V {
+        return this.value
+    }
+}

@@ -24,8 +24,6 @@ internal class RgaTreeList {
     val length
         get() = nodeMapByIndex.length
 
-    // NOTE(7hong13): original comment from JS SDK is as follows:
-    // `insert` adds the given element after the last creation time.
     /**
      * Adds a new node with [value] after the last node.
      */
@@ -33,8 +31,6 @@ internal class RgaTreeList {
         insertAfter(last.createdAt, value)
     }
 
-    // NOTE(7hong13): original comment from JS SDK is as follows:
-    // `insertAfter` adds next element of previously created node.
     /**
      * Adds a new node with [value] after the node created at [prevCreatedAt].
      */
@@ -94,8 +90,6 @@ internal class RgaTreeList {
         }
     }
 
-    // NOTE(7hong13): original comment from JS SDK is as follows:
-    // `purge` physically purges child element.
     /**
      * Physically purges element.
      */
@@ -114,10 +108,8 @@ internal class RgaTreeList {
         nodeMapByCreatedAt.remove(node.value.createdAt.toIDString())
     }
 
-    // NOTE(7hong13): original comment from JS SDK is as follows:
-    // `get` returns the element of the given index.
     /**
-     * Returns the element of the given key [createdAt].
+     * Returns the element of the given [createdAt].
      */
     fun get(createdAt: TimeTicket): CrdtElement? {
         return nodeMapByCreatedAt[createdAt.toIDString()]?.value
@@ -218,8 +210,6 @@ internal class RgaTreeList {
         }
 
         companion object {
-            // NOTE(7hong13): original comment from JS SDK is as follows:
-            // `createAfter` creates a new node after the previous node.
             /**
              * Creates a new node with [value] after the node [prev].
              */

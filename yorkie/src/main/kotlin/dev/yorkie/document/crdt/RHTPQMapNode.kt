@@ -33,9 +33,7 @@ internal class RHTPQMapNode(val strKey: String, value: CrdtElement) :
         }
     }
 
-    // TODO("It's need to check this function, whether it is enough to compare two objects.")
     override fun compareTo(other: PQNode<TimeTicket, CrdtElement>): Int {
-        return key.compareTo(other.key).takeUnless { it == 0 }
-            ?: value.createdAt.compareTo(other.value.createdAt)
+        return key.compareTo(other.key)
     }
 }

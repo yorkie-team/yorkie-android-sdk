@@ -16,7 +16,7 @@ internal class RHTPQMap {
 
     private val elementQueueMapByKey: MutableMap<String, MaxPriorityQueue<PQNode<TimeTicket, CrdtElement>>> =
         mutableMapOf()
-    private val nodeMapByCreatedAt: MutableMap<String, RHTPQMapNode> = mutableMapOf()
+    private val nodeMapByCreatedAt: MutableMap<TimeTicket, RHTPQMapNode> = mutableMapOf()
 
     /**
      * Set the [value] using the given [key].
@@ -48,7 +48,7 @@ internal class RHTPQMap {
         val queue = queueMap[key]
             ?: throw IllegalStateException("The MaxPriorityQueue by $key doesn't exist.")
         queue.add(node)
-        nodeMapByCreatedAt[value.createdAt.toIDString()] = node
+        nodeMapByCreatedAt[value.createdAt] = node
     }
 
     /**
@@ -58,14 +58,13 @@ internal class RHTPQMap {
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */
     fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
-        val createdAtId = createdAt.toIDString()
         val nodeMap = nodeMapByCreatedAt
-        if (!nodeMap.contains(createdAtId)) {
-            Log.e(logTag, "fail to find $createdAtId")
+        if (!nodeMap.contains(createdAt)) {
+            Log.e(logTag, "fail to find $createdAt")
         }
 
-        val node = nodeMap[createdAtId]
-            ?: throw IllegalStateException("The RHTPQMapNode by $createdAtId doesn't exist.")
+        val node = nodeMap[createdAt]
+            ?: throw IllegalStateException("The RHTPQMapNode by $createdAt doesn't exist.")
         node.remove(executedAt)
         return node.value
     }
@@ -77,7 +76,7 @@ internal class RHTPQMap {
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */
     fun keyOf(createdAt: TimeTicket): String {
-        return nodeMapByCreatedAt[createdAt.toIDString()]?.strKey
+        return nodeMapByCreatedAt[createdAt]?.strKey
             ?: throw IllegalStateException("RHTPQMapNode's strKey by $createdAt doesn't exist")
     }
 
@@ -86,10 +85,10 @@ internal class RHTPQMap {
      */
     fun purge(element: CrdtElement) {
         val nodeMap = nodeMapByCreatedAt
-        val node = nodeMap[element.createdAt.toIDString()]
+        val node = nodeMap[element.createdAt]
 
         if (node == null) {
-            Log.e(logTag, "fail to find ${element.createdAt.toIDString()}")
+            Log.e(logTag, "fail to find ${element.createdAt}")
             return
         }
 
@@ -100,7 +99,7 @@ internal class RHTPQMap {
         }
 
         queue.remove(node)
-        nodeMap.remove(node.value.createdAt.toIDString())
+        nodeMap.remove(node.value.createdAt)
     }
 
     /**

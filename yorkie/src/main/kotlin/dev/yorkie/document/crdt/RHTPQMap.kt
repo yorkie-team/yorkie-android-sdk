@@ -1,9 +1,9 @@
 package dev.yorkie.document.crdt
 
-import android.util.Log
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.MaxPriorityQueue
 import dev.yorkie.util.PQNode
+import dev.yorkie.util.YorkieLogger
 
 
 /**
@@ -60,7 +60,7 @@ internal class RHTPQMap {
     fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
         val nodeMap = nodeMapByCreatedAt
         if (!nodeMap.contains(createdAt)) {
-            Log.e(logTag, "fail to find $createdAt")
+            YorkieLogger.e(logTag, "fail to find $createdAt")
         }
 
         val node = nodeMap[createdAt]
@@ -88,13 +88,13 @@ internal class RHTPQMap {
         val node = nodeMap[element.createdAt]
 
         if (node == null) {
-            Log.e(logTag, "fail to find ${element.createdAt}")
+            YorkieLogger.e(logTag, "fail to find ${element.createdAt}")
             return
         }
 
         val queue = elementQueueMapByKey[node.strKey]
         if (queue == null) {
-            Log.e(logTag, "fail to find queue of ${node.strKey}")
+            YorkieLogger.e(logTag, "fail to find queue of ${node.strKey}")
             return
         }
 

@@ -19,11 +19,8 @@ internal class RHTPQMap {
     private val nodeMapByCreatedAt: MutableMap<String, RHTPQMapNode> = mutableMapOf()
 
     /**
-     * `set` sets the value of the given key.
-     *
-     * @param key to get queue object from [elementQueueMapByKey]
-     * @param value The CrdtElement object to set [elementQueueMapByKey]
-     * @return CrdtElement if the object exist in [elementQueueMapByKey] by same key, it will return.
+     * Set the [value] using the given [key].
+     * If the object exist in [elementQueueMapByKey] by same [key] then return [CrdtElement], otherwise null.
      */
     fun set(key: String, value: CrdtElement): CrdtElement? {
         var removed: CrdtElement? = null
@@ -39,7 +36,7 @@ internal class RHTPQMap {
     }
 
     /**
-     * `setInternal` sets the value of the given key internally.
+     * Set the [value] using the given [key] internally.
      */
     private fun setInternal(key: String, value: CrdtElement) {
         val queueMap = elementQueueMapByKey
@@ -55,11 +52,9 @@ internal class RHTPQMap {
     }
 
     /**
-     * `delete` deletes deletes the Element of the given key.
+     * Delete the Element using the given key [createdAt], and TimeTicket will be removed by [executedAt].
+     * If the object exist in [elementQueueMapByKey] by same key [createdAt], it will return.
      *
-     * @param createdAt to find node from [nodeMapByCreatedAt]
-     * @param executedAt The TimeTicket object to remove from node.
-     * @return CrdtElement if the object exist in [elementQueueMapByKey] by same key, it will return.
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */
     fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
@@ -76,10 +71,10 @@ internal class RHTPQMap {
     }
 
     /**
-     * `keyOf` returns a key of node based on creation time
+     * Return [RHTPQMapNode.strKey] of `node` based on creation time.
+     * The `node` will be found in [nodeMapByCreatedAt] using [createdAt]
      *
-     * @param createdAt to find node from [nodeMapByCreatedAt]
-     * @return RHTPQMapNode's strKey
+     * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */
     fun keyOf(createdAt: TimeTicket): String {
         return nodeMapByCreatedAt[createdAt.toIDString()]?.strKey
@@ -87,9 +82,7 @@ internal class RHTPQMap {
     }
 
     /**
-     * `purge` physically purge child element.
-     *
-     * @param element to purge child element from [nodeMapByCreatedAt] and [elementQueueMapByKey]
+     * Physically purge child [element] from [nodeMapByCreatedAt] and [elementQueueMapByKey]
      */
     fun purge(element: CrdtElement) {
         val nodeMap = nodeMapByCreatedAt
@@ -111,11 +104,9 @@ internal class RHTPQMap {
     }
 
     /**
-     * `deleteByKey` deletes the Element of the given key and removed time.
+     * Delete the element using the given [key] and [removedAt].
+     * If the element removed successfully, [CrdtElement] will return.
      *
-     * @param key to get queue object from [elementQueueMapByKey]
-     * @param removedAt The TimeTicket object to remove from node
-     * @return CrdtElement the deleted element
      * @throws IllegalStateException if MaxPriorityQueue doesn't exist.
      */
     fun deleteByKey(key: String, removedAt: TimeTicket): CrdtElement {
@@ -127,10 +118,8 @@ internal class RHTPQMap {
     }
 
     /**
-     * `has` returns whether the element exists of the given key or not.
-     *
-     * @param key to get queue object from [elementQueueMapByKey]
-     * @return true if the RHTPQMapNode wasn't removed, otherwise false.
+     * Check the element exists from [elementQueueMapByKey] using [key].
+     * If the RHTPQMapNode is exist, then returns true, otherwise false.
      */
     fun has(key: String): Boolean {
         val queue = elementQueueMapByKey[key] ?: return false
@@ -139,9 +128,8 @@ internal class RHTPQMap {
     }
 
     /**
-     * `get` returns the value of the given key.
+     * Return the [CrdtElement] using given [key].
      *
-     * @param key to get queue object from [elementQueueMapByKey]
      * @throws IllegalStateException if MaxPriorityQueue doesn't exist.
      */
     fun get(key: String): CrdtElement {

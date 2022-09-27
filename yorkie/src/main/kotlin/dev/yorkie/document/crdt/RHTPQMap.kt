@@ -52,8 +52,8 @@ internal class RHTPQMap {
     }
 
     /**
-     * Delete the Element using the given key [createdAt], and TimeTicket will be removed by [executedAt].
-     * If the object exist in [elementQueueMapByKey] by same key [createdAt], it will return.
+     * Delete the Element from [nodeMapByCreatedAt] using the given key [createdAt], and TimeTicket will be removed by [executedAt].
+     * If the object exist in [nodeMapByCreatedAt] by same key [createdAt], it will return.
      *
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */

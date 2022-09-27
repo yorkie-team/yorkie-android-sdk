@@ -13,8 +13,8 @@ import dev.yorkie.util.YorkieLogger
 internal class RHTPQMap {
     private val logTag = "RHTPQMap"
 
-    private val elementQueueMapByKey: MutableMap<String, MaxPriorityQueue<PQNode<TimeTicket, CrdtElement>>> =
-        mutableMapOf()
+    private val elementQueueMapByKey:
+        MutableMap<String, MaxPriorityQueue<PQNode<TimeTicket, CrdtElement>>> = mutableMapOf()
     private val nodeMapByCreatedAt: MutableMap<TimeTicket, RHTPQMapNode> = mutableMapOf()
 
     /**

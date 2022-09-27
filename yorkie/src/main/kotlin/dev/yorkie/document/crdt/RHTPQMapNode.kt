@@ -20,7 +20,7 @@ internal class RHTPQMapNode(val strKey: String, value: CrdtElement) :
      * `remove` removes a value base on removing time.
      */
     fun remove(removedAt: TimeTicket): Boolean {
-        return value.remove(removedAt);
+        return value.remove(removedAt)
     }
 
     companion object {

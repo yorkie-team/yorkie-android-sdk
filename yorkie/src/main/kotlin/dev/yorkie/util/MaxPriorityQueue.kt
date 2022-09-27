@@ -18,7 +18,8 @@ internal class MaxPriorityQueue<E : Comparable<E>>(
 /**
  * `PQNode` is a node of `MaxPriorityQueue`.
  */
-internal abstract class PQNode<K, V>(internal val key: K, internal val value: V): Comparable<PQNode<K, V>> {
+internal abstract class PQNode<K, V>(internal val key: K, internal val value: V) :
+    Comparable<PQNode<K, V>> {
     /**
      * `getKey` returns a key of PQNode.
      */

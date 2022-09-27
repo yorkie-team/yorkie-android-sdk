@@ -43,7 +43,6 @@ internal data class TimeTicket(
         return result
     }
 
-
     companion object {
         const val INITIAL_DELIMITER = 0
         const val MAX_DELIMITER = Int.MAX_VALUE

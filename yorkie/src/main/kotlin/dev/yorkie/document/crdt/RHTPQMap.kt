@@ -5,7 +5,6 @@ import dev.yorkie.util.MaxPriorityQueue
 import dev.yorkie.util.PQNode
 import dev.yorkie.util.YorkieLogger
 
-
 /**
  * RHTPQMap is replicated hash table with priority queue by creation time.
  *
@@ -52,7 +51,8 @@ internal class RHTPQMap {
     }
 
     /**
-     * Delete the Element from [nodeMapByCreatedAt] using the given key [createdAt], and TimeTicket will be removed by [executedAt].
+     * Delete the Element from [nodeMapByCreatedAt] using the given key [createdAt],
+     * and TimeTicket will be removed by [executedAt].
      * If the object exist in [nodeMapByCreatedAt] by same key [createdAt], it will return.
      *
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.

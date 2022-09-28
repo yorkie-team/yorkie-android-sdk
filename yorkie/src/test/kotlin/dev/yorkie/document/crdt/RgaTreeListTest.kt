@@ -57,11 +57,11 @@ class RgaTreeListTest {
         target.delete(timeTickets[2], timeTickets[3])
         assertEquals("A1B0C0D1E1F1G1", target.getStructureAsString())
         target.delete(timeTickets[3], timeTickets[4])
-        assertEquals("A0B0C0D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
         target.delete(timeTickets[6], timeTickets[5])
-        assertEquals("A0B0C0D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
 
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size - 3 + 1, target.length)
     }
 
     @Test

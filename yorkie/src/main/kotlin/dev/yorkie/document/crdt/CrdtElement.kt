@@ -29,4 +29,14 @@ internal abstract class CrdtElement(
                 field = value
             }
         }
+
+    fun remove(removedAt: TimeTicket?): Boolean {
+        if (removedAt != null && createdAt < removedAt &&
+            (this.removedAt == null || checkNotNull(this.removedAt) < removedAt)
+        ) {
+            this.removedAt = removedAt
+            return true
+        }
+        return false
+    }
 }

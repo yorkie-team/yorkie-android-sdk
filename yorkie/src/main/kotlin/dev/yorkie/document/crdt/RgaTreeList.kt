@@ -117,9 +117,9 @@ internal class RgaTreeList {
     }
 
     /**
-     * Returns the key based on [createdAt] value of the node.
+     * Returns the sub path of the given element.
      */
-    fun keyOf(createdAt: TimeTicket): String? {
+    fun subPathOf(createdAt: TimeTicket): String? {
         val node = nodeMapByCreatedAt[createdAt.toIDString()]
             ?: return null
         return nodeMapByIndex.indexOf(node.value).toString()

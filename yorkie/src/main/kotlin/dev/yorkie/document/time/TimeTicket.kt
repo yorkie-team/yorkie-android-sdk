@@ -15,6 +15,8 @@ internal data class TimeTicket(
             ?: delimiter.compareTo(delimiter)
     }
 
+    fun toIDString() = "$lamport:$actorID$delimiter"
+
     companion object {
         const val INITIAL_DELIMITER = 0
         const val MAX_DELIMITER = Int.MAX_VALUE

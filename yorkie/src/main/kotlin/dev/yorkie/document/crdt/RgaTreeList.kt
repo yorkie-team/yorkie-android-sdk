@@ -6,7 +6,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.SplayTreeSet
 
 /**
- * RgaTreeList is replicated growable array.
+ * [RgaTreeList] is replicated growable array.
  */
 internal class RgaTreeList {
     val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
@@ -18,8 +18,8 @@ internal class RgaTreeList {
     private val nodeMapByIndex = SplayTreeSet<CrdtElement> { if (it.isRemoved) 0 else 1 }.apply {
         insert(dummyHead.value)
     }
-    private val nodeMapByCreatedAt = mutableMapOf<String, RgaTreeListNode>().apply {
-        set(dummyHead.createdAt.toIDString(), dummyHead)
+    private val nodeMapByCreatedAt = mutableMapOf<TimeTicket, RgaTreeListNode>().apply {
+        set(dummyHead.createdAt, dummyHead)
     }
 
     val length
@@ -46,7 +46,7 @@ internal class RgaTreeList {
             last = newNode
         }
         nodeMapByIndex.insertAfter(prevNode.value, newNode.value)
-        nodeMapByCreatedAt[newNode.createdAt.toIDString()] = newNode
+        nodeMapByCreatedAt[newNode.createdAt] = newNode
     }
 
     /**
@@ -58,8 +58,8 @@ internal class RgaTreeList {
         createdAt: TimeTicket,
         executedAt: TimeTicket,
     ): RgaTreeListNode {
-        var node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
+        var node = nodeMapByCreatedAt[createdAt]
+            ?: error("can't find the given node createdAt: $createdAt")
 
         var nodeNext = node.next
         while (nodeNext != null && executedAt < nodeNext.positionedAt) {
@@ -77,10 +77,10 @@ internal class RgaTreeList {
         createdAt: TimeTicket,
         executedAt: TimeTicket,
     ) {
-        val prevNode = nodeMapByCreatedAt[prevCreatedAt.toIDString()]
-            ?: error("can't find the given node createdAt: ${prevCreatedAt.toIDString()}")
-        val node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
+        val prevNode = nodeMapByCreatedAt[prevCreatedAt]
+            ?: error("can't find the given node createdAt: $prevCreatedAt")
+        val node = nodeMapByCreatedAt[createdAt]
+            ?: error("can't find the given node createdAt: $createdAt")
 
         if (prevNode != node &&
             (node.value.movedAt == null || checkNotNull(node.value.movedAt) < executedAt)
@@ -95,8 +95,8 @@ internal class RgaTreeList {
      * Physically purges element.
      */
     fun purge(element: CrdtElement) {
-        val node = nodeMapByCreatedAt[element.createdAt.toIDString()]
-            ?: error("can't find the given createdAt: ${element.createdAt.toIDString()}")
+        val node = nodeMapByCreatedAt[element.createdAt]
+            ?: error("can't find the given createdAt: ${element.createdAt}")
         release(node)
     }
 
@@ -106,21 +106,21 @@ internal class RgaTreeList {
         }
         node.release()
         nodeMapByIndex.delete(node.value)
-        nodeMapByCreatedAt.remove(node.value.createdAt.toIDString())
+        nodeMapByCreatedAt.remove(node.value.createdAt)
     }
 
     /**
      * Returns the element of the given [createdAt].
      */
     fun get(createdAt: TimeTicket): CrdtElement? {
-        return nodeMapByCreatedAt[createdAt.toIDString()]?.value
+        return nodeMapByCreatedAt[createdAt]?.value
     }
 
     /**
      * Returns the sub path of the given element.
      */
     fun subPathOf(createdAt: TimeTicket): String? {
-        val node = nodeMapByCreatedAt[createdAt.toIDString()]
+        val node = nodeMapByCreatedAt[createdAt]
             ?: return null
         return nodeMapByIndex.indexOf(node.value).toString()
     }
@@ -146,8 +146,8 @@ internal class RgaTreeList {
      * Returns a creation time of the previous node.
      */
     fun getPrevCreatedAt(createdAt: TimeTicket): TimeTicket {
-        var node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
+        var node = nodeMapByCreatedAt[createdAt]
+            ?: error("can't find the given node createdAt: $createdAt")
         do {
             node = node.prev ?: break
         } while (dummyHead != node && node.isRemoved)
@@ -158,8 +158,8 @@ internal class RgaTreeList {
      * Deletes the node of the given creation time.
      */
     fun delete(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
-        val node = nodeMapByCreatedAt[createdAt.toIDString()]
-            ?: error("can't find the given node createdAt: ${createdAt.toIDString()}")
+        val node = nodeMapByCreatedAt[createdAt]
+            ?: error("can't find the given node createdAt: $createdAt")
 
         val alreadyRemoved = node.isRemoved
         if (node.remove(editedAt) && !alreadyRemoved) {

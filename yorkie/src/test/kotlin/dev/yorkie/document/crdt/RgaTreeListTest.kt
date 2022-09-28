@@ -127,6 +127,7 @@ class RgaTreeListTest {
         sampleTarget1.moveAfter(timeTickets[3], timeTickets[2], timeTickets[2])
         sampleTarget2.moveAfter(timeTickets[3], timeTickets[2], timeTickets[2])
         sampleTarget2.moveAfter(timeTickets[3], timeTickets[1], timeTickets[1])
+        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
     }
 
     @Test

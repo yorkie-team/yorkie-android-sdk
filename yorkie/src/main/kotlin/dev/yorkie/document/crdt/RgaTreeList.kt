@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.SplayTreeSet
@@ -178,12 +179,24 @@ internal class RgaTreeList {
         return node.value
     }
 
+    @VisibleForTesting
+    fun getNodesInListExceptHead(): List<RgaTreeListNode> {
+        return buildList {
+            var curr = dummyHead.next
+            while (curr != null) {
+                add(curr)
+                curr = curr.next
+            }
+        }
+    }
+
     companion object {
         fun create(): RgaTreeList {
             return RgaTreeList()
         }
     }
 
+    @VisibleForTesting
     data class RgaTreeListNode(val value: CrdtElement) {
         var prev: RgaTreeListNode? = null
         var next: RgaTreeListNode? = null
@@ -217,6 +230,7 @@ internal class RgaTreeList {
                 val newNode = RgaTreeListNode(value)
                 val prevNext = prev.next
                 prev.next = newNode
+                newNode.prev = prev
                 newNode.next = prevNext
                 if (prevNext != null) {
                     prevNext.prev = newNode

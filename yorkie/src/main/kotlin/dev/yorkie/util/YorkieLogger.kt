@@ -5,11 +5,11 @@ internal object YorkieLogger {
 
     var logger: Logger? = null
 
-    fun d(tag: String, message: String, t: Throwable? = null) {
+    fun d(tag: String, message: String) {
         logger?.d("$TAG_PREFIX$tag", message)
     }
 
-    fun e(tag: String, message: String, t: Throwable? = null) {
+    fun e(tag: String, message: String) {
         logger?.e("$TAG_PREFIX$tag", message)
     }
 }

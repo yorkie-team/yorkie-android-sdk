@@ -21,6 +21,15 @@ internal class Primitive(
             else -> PrimitiveType.Null
         }
     }
+
+    companion object {
+        /**
+         * Creates a new instance of Primitive.
+         */
+        fun of(value: Any?, createdAt: TimeTicket): Primitive {
+            return Primitive(value, createdAt)
+        }
+    }
 }
 
 /**

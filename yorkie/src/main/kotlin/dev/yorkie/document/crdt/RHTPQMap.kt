@@ -136,6 +136,15 @@ internal class RHTPQMap {
             ?: throw IllegalStateException("MaxPriorityQueue by $key doesn't exist")
     }
 
+    /**
+     * Returns the sequence of [elementQueueMapByKey]'s values
+     */
+    fun getKeyOfQueue(): Sequence<RHTPQMapNode> {
+        return elementQueueMapByKey.values
+            .asSequence()
+            .map { it.element() as RHTPQMapNode }
+    }
+
     companion object {
         /**
          * `create` creates a instance of RHTPQMap.

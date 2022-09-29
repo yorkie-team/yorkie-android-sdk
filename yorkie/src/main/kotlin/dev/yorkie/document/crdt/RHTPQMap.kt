@@ -15,11 +15,12 @@ internal class RHTPQMap {
 
     private val elementQueueMapByKey:
         MutableMap<String, MaxPriorityQueue<PQNode<TimeTicket, CrdtElement>>> = mutableMapOf()
+
     private val nodeMapByCreatedAt: MutableMap<TimeTicket, RHTPQMapNode> = mutableMapOf()
 
     /**
-     * Set the [value] using the given [key].
-     * If the object exist in [elementQueueMapByKey] by same [key] then return [CrdtElement], otherwise null.
+     * Sets the [value] using the given [key].
+     * If the object exists in [elementQueueMapByKey] by same [key] then return [CrdtElement], otherwise null.
      */
     fun set(key: String, value: CrdtElement): CrdtElement? {
         var removed: CrdtElement? = null
@@ -35,7 +36,7 @@ internal class RHTPQMap {
     }
 
     /**
-     * Set the [value] using the given [key] internally.
+     * Sets the [value] using the given [key] internally.
      */
     private fun setInternal(key: String, value: CrdtElement) {
         val queueMap = elementQueueMapByKey
@@ -51,9 +52,9 @@ internal class RHTPQMap {
     }
 
     /**
-     * Delete the Element from [nodeMapByCreatedAt] using the given key [createdAt],
+     * Deletes the Element in [nodeMapByCreatedAt] using the given key [createdAt],
      * and TimeTicket will be removed by [executedAt].
-     * If the object exist in [nodeMapByCreatedAt] by same key [createdAt], it will return.
+     * If the object exists in [nodeMapByCreatedAt] by same key [createdAt], it will return.
      *
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */
@@ -70,7 +71,7 @@ internal class RHTPQMap {
     }
 
     /**
-     * Return [RHTPQMapNode.strKey] of `node` based on creation time.
+     * Returns [RHTPQMapNode.strKey] of `node` based on creation time.
      * The `node` will be found in [nodeMapByCreatedAt] using [createdAt]
      *
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
@@ -81,7 +82,7 @@ internal class RHTPQMap {
     }
 
     /**
-     * Physically purge child [element] from [nodeMapByCreatedAt] and [elementQueueMapByKey]
+     * Physically purges child [element] from [nodeMapByCreatedAt] and [elementQueueMapByKey]
      */
     fun purge(element: CrdtElement) {
         val nodeMap = nodeMapByCreatedAt
@@ -103,8 +104,8 @@ internal class RHTPQMap {
     }
 
     /**
-     * Delete the element using the given [key] and [removedAt].
-     * If the element removed successfully, [CrdtElement] will return.
+     * Deletes the element in [elementQueueMapByKey] using the given [key] and [removedAt].
+     * If the element removed successfully, removed [CrdtElement] will return.
      *
      * @throws IllegalStateException if MaxPriorityQueue doesn't exist.
      */
@@ -117,7 +118,7 @@ internal class RHTPQMap {
     }
 
     /**
-     * Check the element exists from [elementQueueMapByKey] using [key].
+     * Checks the element exists in [elementQueueMapByKey] using [key].
      * If the RHTPQMapNode is exist, then returns true, otherwise false.
      */
     fun has(key: String): Boolean {
@@ -127,7 +128,7 @@ internal class RHTPQMap {
     }
 
     /**
-     * Return the [CrdtElement] using given [key].
+     * Returns the [CrdtElement] using given [key].
      *
      * @throws IllegalStateException if MaxPriorityQueue doesn't exist.
      */
@@ -147,7 +148,7 @@ internal class RHTPQMap {
 
     companion object {
         /**
-         * `create` creates a instance of RHTPQMap.
+         * Creates a instance of [RHTPQMap]
          */
         @JvmStatic
         fun create(): RHTPQMap {

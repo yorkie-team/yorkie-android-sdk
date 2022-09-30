@@ -2,6 +2,12 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -12,10 +18,11 @@ import org.junit.Test
 import kotlin.math.abs
 import kotlin.random.Random
 
-class RHTPQMapTest {
+class RhtPQMapTest {
+
     @Test
     fun `Verify the set function`() {
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
         rhtpqMap.set("test1", Primitive("value1", TimeTicket.InitialTimeTicket))
         rhtpqMap.set("test2", Primitive("value2", TimeTicket.InitialTimeTicket))
         rhtpqMap.set("test3", Primitive("value3", TimeTicket.InitialTimeTicket))
@@ -44,9 +51,52 @@ class RHTPQMapTest {
         assertTrue((rhtpqMap.get("test5") as? Primitive)?.value == "value6")
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `Verify the set function on concurrent situations`() = runTest {
+        val rhtpqMap = RhtPQMap()
+        rhtpqMap.set(
+            "test1",
+            Primitive(1, generateTimeTicket(1, 1, "1")),
+        )
+
+        withContext(Dispatchers.IO) {
+            val deferreds = listOf(
+                async {
+                    (2..10).forEach { index ->
+                        println("2(${Thread.currentThread()} :: $index")
+                        rhtpqMap.set(
+                            "test1",
+                            Primitive(
+                                index,
+                                generateTimeTicket(index.toLong(), index, "2"),
+                            ),
+                        )
+                    }
+                },
+                async {
+                    (2..10).forEach { index ->
+                        println("3(${Thread.currentThread()} :: $index")
+                        rhtpqMap.set(
+                            "test1",
+                            Primitive(
+                                index,
+                                generateTimeTicket(index.toLong(), index, "3"),
+                            ),
+                        )
+                    }
+                },
+            )
+
+            deferreds.awaitAll()
+            val primitive = rhtpqMap.get("test1") as Primitive
+            assertEquals(primitive.value, 10)
+        }
+    }
+
     @Test
     fun `Verify the get function`() {
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
         rhtpqMap.set("test1", Primitive("value1", TimeTicket.InitialTimeTicket))
         rhtpqMap.set("test2", Primitive("value2", TimeTicket.InitialTimeTicket))
         rhtpqMap.set("test3", Primitive("value3", TimeTicket.InitialTimeTicket))
@@ -64,7 +114,7 @@ class RHTPQMapTest {
 
     @Test
     fun `Verify the delete function`() {
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
         val primitive1 = Primitive("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap.set("test1", primitive1)
         val removedPrimitive =
@@ -79,7 +129,7 @@ class RHTPQMapTest {
 
     @Test
     fun `Verify the deleteByKey function`() {
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
         val primitive = Primitive("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap.set("test1", primitive)
 
@@ -101,20 +151,20 @@ class RHTPQMapTest {
     @Test
     fun `Verify the keyOf function`() {
         val timeTicket = generateTimeTicket(0, 0)
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
         val primitive = Primitive("value1", timeTicket)
         rhtpqMap.set("test1", primitive)
-        val primitiveByKeyOf = rhtpqMap.keyOf(timeTicket)
+        val primitiveByKeyOf = rhtpqMap.subPathOf(timeTicket)
         assertEquals(primitive, rhtpqMap.get(primitiveByKeyOf))
 
         assertThrows(IllegalStateException::class.java) {
-            rhtpqMap.keyOf(generateTimeTicket())
+            rhtpqMap.subPathOf(generateTimeTicket())
         }
     }
 
     @Test
     fun `Verify the purge function`() {
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
 
         val ticket1 = generateTimeTicket(0, 0)
         val primitive1 = Primitive("value1", ticket1)
@@ -139,7 +189,7 @@ class RHTPQMapTest {
 
     @Test
     fun `Verify the has function`() {
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
         assertFalse(rhtpqMap.has("test1"))
 
         val ticket1 = TimeTicket.InitialTimeTicket
@@ -153,7 +203,7 @@ class RHTPQMapTest {
 
     @Test
     fun `Verity the getKeyOfQueue() using sequence`() {
-        val rhtpqMap = RHTPQMap()
+        val rhtpqMap = RhtPQMap()
         val list = mutableListOf<String>()
         for (i in 0..100000) {
             val key = "test$i"
@@ -173,11 +223,8 @@ class RHTPQMapTest {
     private fun generateTimeTicket(
         lamport: Long = abs(Random.nextLong()),
         delimiter: Int = abs(Random.nextInt()),
+        actorID: String = Random.nextInt().toString(),
     ): TimeTicket {
-        return TimeTicket(
-            lamport,
-            delimiter,
-            ActorID(Random.nextInt().toString()),
-        )
+        return TimeTicket(lamport, delimiter, ActorID(actorID))
     }
 }

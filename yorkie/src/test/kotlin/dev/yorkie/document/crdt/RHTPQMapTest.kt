@@ -9,6 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 import kotlin.random.Random
 
 class RHTPQMapTest {
@@ -71,8 +72,8 @@ class RHTPQMapTest {
         assertEquals(primitive1, removedPrimitive)
 
         assertThrows(IllegalStateException::class.java) {
-            rhtpqMap.delete(generateRandomTimeTicket(), generateRandomTimeTicket())
-            rhtpqMap.delete(generateRandomTimeTicket(), TimeTicket.InitialTimeTicket)
+            rhtpqMap.delete(generateTimeTicket(), generateTimeTicket())
+            rhtpqMap.delete(generateTimeTicket(), TimeTicket.InitialTimeTicket)
         }
     }
 
@@ -86,7 +87,7 @@ class RHTPQMapTest {
             rhtpqMap.deleteByKey("", TimeTicket.InitialTimeTicket)
         }
 
-        val timeTicketForDeletion = generateRandomTimeTicket()
+        val timeTicketForDeletion = generateTimeTicket(1, 1)
         val removedPrimitive = rhtpqMap.deleteByKey("test1", timeTicketForDeletion)
         assertEquals(primitive, removedPrimitive)
 
@@ -99,7 +100,7 @@ class RHTPQMapTest {
 
     @Test
     fun `Verify the keyOf function`() {
-        val timeTicket = generateRandomTimeTicket()
+        val timeTicket = generateTimeTicket(0, 0)
         val rhtpqMap = RHTPQMap()
         val primitive = Primitive("value1", timeTicket)
         rhtpqMap.set("test1", primitive)
@@ -107,7 +108,7 @@ class RHTPQMapTest {
         assertEquals(primitive, rhtpqMap.get(primitiveByKeyOf))
 
         assertThrows(IllegalStateException::class.java) {
-            rhtpqMap.keyOf(generateRandomTimeTicket())
+            rhtpqMap.keyOf(generateTimeTicket())
         }
     }
 
@@ -115,15 +116,15 @@ class RHTPQMapTest {
     fun `Verify the purge function`() {
         val rhtpqMap = RHTPQMap()
 
-        val ticket1 = generateRandomTimeTicket()
+        val ticket1 = generateTimeTicket(0, 0)
         val primitive1 = Primitive("value1", ticket1)
         rhtpqMap.set("test1", primitive1)
 
-        val ticket2 = generateRandomTimeTicket()
+        val ticket2 = generateTimeTicket(1, 1)
         val primitive2 = Primitive("value2", ticket2)
         rhtpqMap.set("test2", primitive2)
 
-        val ticket3 = generateRandomTimeTicket()
+        val ticket3 = generateTimeTicket(2, 2)
         val primitive3 = Primitive("value3", ticket3)
         rhtpqMap.set("test3", primitive3)
 
@@ -146,15 +147,7 @@ class RHTPQMapTest {
         rhtpqMap.set("test1", primitive1)
         assertTrue(rhtpqMap.has("test1"))
 
-        val ticket2 = generateRandomTimeTicket()
-        val primitive2 = Primitive("value2", ticket2)
-        rhtpqMap.set("test2", primitive2)
-
-        val ticket3 = generateRandomTimeTicket()
-        val primitive3 = Primitive("value3", ticket3)
-        rhtpqMap.set("test3", primitive3)
-
-        rhtpqMap.delete(ticket1, generateRandomTimeTicket())
+        rhtpqMap.delete(ticket1, generateTimeTicket(1, 2))
         assertFalse(rhtpqMap.has("test1"))
     }
 
@@ -164,7 +157,7 @@ class RHTPQMapTest {
         val list = mutableListOf<String>()
         for (i in 0..100000) {
             val key = "test$i"
-            rhtpqMap.set(key, Primitive("value$i", generateRandomTimeTicket()))
+            rhtpqMap.set(key, Primitive("value$i", generateTimeTicket(i.toLong(), i)))
             list.add(key)
         }
 
@@ -177,10 +170,13 @@ class RHTPQMapTest {
         assertTrue(list.isEmpty())
     }
 
-    private fun generateRandomTimeTicket(): TimeTicket {
+    private fun generateTimeTicket(
+        lamport: Long = abs(Random.nextLong()),
+        delimiter: Int = abs(Random.nextInt()),
+    ): TimeTicket {
         return TimeTicket(
-            Random.nextLong(),
-            Random.nextInt(),
+            lamport,
+            delimiter,
             ActorID(Random.nextInt().toString()),
         )
     }

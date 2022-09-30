@@ -2,12 +2,8 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -51,47 +47,43 @@ class RhtPQMapTest {
         assertTrue((rhtpqMap.get("test5") as? Primitive)?.value == "value6")
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `Verify the set function on concurrent situations`() = runTest {
-        val rhtpqMap = RhtPQMap()
-        rhtpqMap.set(
+    fun `Verify the set function on concurrent situations`() {
+        val rhtPQMap1 = RhtPQMap()
+        rhtPQMap1.set(
             "test1",
             Primitive(1, generateTimeTicket(1, 1, "1")),
         )
 
-        withContext(Dispatchers.IO) {
-            val deferreds = listOf(
-                async {
-                    (2..10).forEach { index ->
-                        println("2(${Thread.currentThread()} :: $index")
-                        rhtpqMap.set(
-                            "test1",
-                            Primitive(
-                                index,
-                                generateTimeTicket(index.toLong(), index, "2"),
-                            ),
-                        )
-                    }
-                },
-                async {
-                    (2..10).forEach { index ->
-                        println("3(${Thread.currentThread()} :: $index")
-                        rhtpqMap.set(
-                            "test1",
-                            Primitive(
-                                index,
-                                generateTimeTicket(index.toLong(), index, "3"),
-                            ),
-                        )
-                    }
-                },
+        (2..3).forEach { index ->
+            rhtPQMap1.set(
+                "test1",
+                Primitive(
+                    index,
+                    generateTimeTicket(index.toLong(), index, "2"),
+                ),
             )
-
-            deferreds.awaitAll()
-            val primitive = rhtpqMap.get("test1") as Primitive
-            assertEquals(primitive.value, 10)
         }
+
+        val rhtPQMap2 = RhtPQMap()
+        rhtPQMap2.set(
+            "test1",
+            Primitive(1, generateTimeTicket(1, 1, "1")),
+        )
+        (3 downTo 2).forEach { index ->
+            rhtPQMap2.set(
+                "test1",
+                Primitive(
+                    index,
+                    generateTimeTicket(index.toLong(), index, "3"),
+                ),
+            )
+        }
+
+        val value1 = (rhtPQMap1.get("test1") as? Primitive)?.value as Int
+        val value2 = (rhtPQMap2.get("test1") as? Primitive)?.value as Int
+
+        assertEquals(value1, value2)
     }
 
     @Test

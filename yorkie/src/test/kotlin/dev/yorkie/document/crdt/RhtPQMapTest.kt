@@ -2,8 +2,6 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -11,8 +9,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.abs
-import kotlin.random.Random
 
 class RhtPQMapTest {
 
@@ -114,8 +110,14 @@ class RhtPQMapTest {
         assertEquals(primitive1, removedPrimitive)
 
         assertThrows(IllegalStateException::class.java) {
-            rhtpqMap.delete(generateTimeTicket(), generateTimeTicket())
-            rhtpqMap.delete(generateTimeTicket(), TimeTicket.InitialTimeTicket)
+            rhtpqMap.delete(
+                generateTimeTicket(99, 99, "3"),
+                generateTimeTicket(100, 100, "3"),
+            )
+            rhtpqMap.delete(
+                generateTimeTicket(101, 101, "4"),
+                TimeTicket.InitialTimeTicket,
+            )
         }
     }
 
@@ -129,7 +131,7 @@ class RhtPQMapTest {
             rhtpqMap.deleteByKey("", TimeTicket.InitialTimeTicket)
         }
 
-        val timeTicketForDeletion = generateTimeTicket(1, 1)
+        val timeTicketForDeletion = generateTimeTicket(1, 1, "0")
         val removedPrimitive = rhtpqMap.deleteByKey("test1", timeTicketForDeletion)
         assertEquals(primitive, removedPrimitive)
 
@@ -142,7 +144,7 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the keyOf function`() {
-        val timeTicket = generateTimeTicket(0, 0)
+        val timeTicket = generateTimeTicket(0, 0, "0")
         val rhtpqMap = RhtPQMap()
         val primitive = Primitive("value1", timeTicket)
         rhtpqMap.set("test1", primitive)
@@ -150,7 +152,7 @@ class RhtPQMapTest {
         assertEquals(primitive, rhtpqMap.get(primitiveByKeyOf))
 
         assertThrows(IllegalStateException::class.java) {
-            rhtpqMap.subPathOf(generateTimeTicket())
+            rhtpqMap.subPathOf(generateTimeTicket(1, 1, "11"))
         }
     }
 
@@ -158,15 +160,15 @@ class RhtPQMapTest {
     fun `Verify the purge function`() {
         val rhtpqMap = RhtPQMap()
 
-        val ticket1 = generateTimeTicket(0, 0)
+        val ticket1 = generateTimeTicket(0, 0, "11")
         val primitive1 = Primitive("value1", ticket1)
         rhtpqMap.set("test1", primitive1)
 
-        val ticket2 = generateTimeTicket(1, 1)
+        val ticket2 = generateTimeTicket(1, 1, "11")
         val primitive2 = Primitive("value2", ticket2)
         rhtpqMap.set("test2", primitive2)
 
-        val ticket3 = generateTimeTicket(2, 2)
+        val ticket3 = generateTimeTicket(2, 2, "11")
         val primitive3 = Primitive("value3", ticket3)
         rhtpqMap.set("test3", primitive3)
 
@@ -189,7 +191,7 @@ class RhtPQMapTest {
         rhtpqMap.set("test1", primitive1)
         assertTrue(rhtpqMap.has("test1"))
 
-        rhtpqMap.delete(ticket1, generateTimeTicket(1, 2))
+        rhtpqMap.delete(ticket1, generateTimeTicket(1, 2, "11"))
         assertFalse(rhtpqMap.has("test1"))
     }
 
@@ -199,7 +201,7 @@ class RhtPQMapTest {
         val list = mutableListOf<String>()
         for (i in 0..100000) {
             val key = "test$i"
-            rhtpqMap.set(key, Primitive("value$i", generateTimeTicket(i.toLong(), i)))
+            rhtpqMap.set(key, Primitive("value$i", generateTimeTicket(i.toLong(), i, "11")))
             list.add(key)
         }
 
@@ -213,9 +215,9 @@ class RhtPQMapTest {
     }
 
     private fun generateTimeTicket(
-        lamport: Long = abs(Random.nextLong()),
-        delimiter: Int = abs(Random.nextInt()),
-        actorID: String = Random.nextInt().toString(),
+        lamport: Long,
+        delimiter: Int,
+        actorID: String,
     ): TimeTicket {
         return TimeTicket(lamport, delimiter, ActorID(actorID))
     }

@@ -9,7 +9,7 @@ import dev.yorkie.util.YorkieLogger
  * [RhtPQMap] is replicated hash table with a priority queue by creation time.
  */
 internal class RhtPQMap {
-    private val logTag = "RHTPQMap"
+    private val logTag = "RhtPQMap"
 
     private val elementQueueMapByKey:
         MutableMap<String, MaxPriorityQueue<PQNode<TimeTicket, CrdtElement>>> = mutableMapOf()

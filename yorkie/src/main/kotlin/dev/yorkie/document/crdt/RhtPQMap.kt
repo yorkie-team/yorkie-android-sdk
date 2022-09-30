@@ -6,17 +6,15 @@ import dev.yorkie.util.PQNode
 import dev.yorkie.util.YorkieLogger
 
 /**
- * RHTPQMap is replicated hash table with priority queue by creation time.
- *
- * @internal
+ * [RhtPQMap] is replicated hash table with a priority queue by creation time.
  */
-internal class RHTPQMap {
+internal class RhtPQMap {
     private val logTag = "RHTPQMap"
 
     private val elementQueueMapByKey:
         MutableMap<String, MaxPriorityQueue<PQNode<TimeTicket, CrdtElement>>> = mutableMapOf()
 
-    private val nodeMapByCreatedAt: MutableMap<TimeTicket, RHTPQMapNode> = mutableMapOf()
+    private val nodeMapByCreatedAt: MutableMap<TimeTicket, RhtPQMapNode> = mutableMapOf()
 
     /**
      * Sets the [value] using the given [key].
@@ -26,7 +24,7 @@ internal class RHTPQMap {
         var removed: CrdtElement? = null
         val queue = elementQueueMapByKey[key]
         if (queue != null && queue.size > 0) {
-            val node = queue.peek() as RHTPQMapNode
+            val node = queue.peek() as RhtPQMapNode
             if (!node.isRemoved() && node.remove(value.createdAt)) {
                 removed = node.value
             }
@@ -44,7 +42,7 @@ internal class RHTPQMap {
             queueMap[key] = MaxPriorityQueue()
         }
 
-        val node = RHTPQMapNode.of(key, value)
+        val node = RhtPQMapNode.of(key, value)
         val queue = queueMap[key]
             ?: throw IllegalStateException("The MaxPriorityQueue by $key doesn't exist.")
         queue.add(node)
@@ -71,12 +69,12 @@ internal class RHTPQMap {
     }
 
     /**
-     * Returns [RHTPQMapNode.strKey] of `node` based on creation time.
+     * Returns [RhtPQMapNode.strKey] of `node` based on creation time.
      * The `node` will be found in [nodeMapByCreatedAt] using [createdAt]
      *
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */
-    fun keyOf(createdAt: TimeTicket): String {
+    fun subPathOf(createdAt: TimeTicket): String {
         return nodeMapByCreatedAt[createdAt]?.strKey
             ?: throw IllegalStateException("RHTPQMapNode's strKey by $createdAt doesn't exist")
     }
@@ -112,7 +110,7 @@ internal class RHTPQMap {
     fun deleteByKey(key: String, removedAt: TimeTicket): CrdtElement {
         val queue = elementQueueMapByKey[key]
             ?: throw IllegalStateException("MaxPriorityQueue by $key doesn't exist")
-        val node = queue.peek() as RHTPQMapNode
+        val node = queue.peek() as RhtPQMapNode
         node.remove(removedAt)
         return node.value
     }
@@ -123,7 +121,7 @@ internal class RHTPQMap {
      */
     fun has(key: String): Boolean {
         val queue = elementQueueMapByKey[key] ?: return false
-        val node = queue.peek() as RHTPQMapNode
+        val node = queue.peek() as RhtPQMapNode
         return !node.isRemoved()
     }
 
@@ -140,19 +138,19 @@ internal class RHTPQMap {
     /**
      * Returns the sequence of [elementQueueMapByKey]'s values
      */
-    fun getKeyOfQueue(): Sequence<RHTPQMapNode> {
+    fun getKeyOfQueue(): Sequence<RhtPQMapNode> {
         return elementQueueMapByKey.values
             .asSequence()
-            .map { it.element() as RHTPQMapNode }
+            .map { it.element() as RhtPQMapNode }
     }
 
     companion object {
         /**
-         * Creates a instance of [RHTPQMap]
+         * Creates a instance of [RhtPQMap]
          */
         @JvmStatic
-        fun create(): RHTPQMap {
-            return RHTPQMap()
+        fun create(): RhtPQMap {
+            return RhtPQMap()
         }
     }
 }

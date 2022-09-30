@@ -4,20 +4,20 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.PQNode
 
 /**
- * `RHTPQMapNode` is a node of RHTPQMap.
+ * [RhtPQMapNode] is a node of RHTPQMap.
  */
-internal class RHTPQMapNode(val strKey: String, value: CrdtElement) :
+internal class RhtPQMapNode(val strKey: String, value: CrdtElement) :
     PQNode<TimeTicket, CrdtElement>(value.createdAt, value) {
 
     /**
-     * `isRemoved` checks whether this value was removed.
+     * Checks whether this value was removed.
      */
     fun isRemoved(): Boolean {
         return value.isRemoved
     }
 
     /**
-     * `remove` removes a value base on removing time.
+     * Removes a value base on removing time.
      */
     fun remove(removedAt: TimeTicket): Boolean {
         return value.remove(removedAt)
@@ -25,11 +25,11 @@ internal class RHTPQMapNode(val strKey: String, value: CrdtElement) :
 
     companion object {
         /**
-         * `of` creates a instance of RHTPQMapNode.
+         * Creates an instance of [RhtPQMapNode].
          */
         @JvmStatic
-        fun of(strKey: String, value: CrdtElement): RHTPQMapNode {
-            return RHTPQMapNode(strKey, value)
+        fun of(strKey: String, value: CrdtElement): RhtPQMapNode {
+            return RhtPQMapNode(strKey, value)
         }
     }
 

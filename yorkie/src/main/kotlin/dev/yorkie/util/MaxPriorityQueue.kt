@@ -16,19 +16,19 @@ internal class MaxPriorityQueue<E : Comparable<E>>(
 }
 
 /**
- * `PQNode` is a node of `MaxPriorityQueue`.
+ * [PQNode] is a node of [MaxPriorityQueue].
  */
 internal abstract class PQNode<K, V>(internal val key: K, internal val value: V) :
     Comparable<PQNode<K, V>> {
     /**
-     * `getKey` returns a key of PQNode.
+     * Returns the key of this [PQNode].
      */
     fun getKey(): K {
         return key
     }
 
     /**
-     * `getValue` returns a value of PQNode.
+     * Returns the value of [PQNode].
      */
     fun getValue(): V {
         return this.value

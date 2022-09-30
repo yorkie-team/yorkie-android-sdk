@@ -69,8 +69,8 @@ internal class RhtPQMap {
     }
 
     /**
-     * Returns [RhtPQMapNode.strKey] of `node` based on creation time.
-     * The `node` will be found in [nodeMapByCreatedAt] using [createdAt]
+     * Returns [RhtPQMapNode.strKey] of node based on creation time.
+     * The node will be found in [nodeMapByCreatedAt] using [createdAt]
      *
      * @throws IllegalStateException if RHTPQMapNode doesn't exist.
      */

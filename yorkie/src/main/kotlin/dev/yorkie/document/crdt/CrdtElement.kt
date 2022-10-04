@@ -10,6 +10,12 @@ internal abstract class CrdtElement(
     movedAt: TimeTicket? = null,
     removedAt: TimeTicket? = null,
 ) {
+    abstract fun toJson(): String
+
+    abstract fun toSortedJson(): String
+
+    abstract fun deepCopy(): CrdtElement
+
     val id: TimeTicket
         get() = createdAt
 

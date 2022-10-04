@@ -29,6 +29,19 @@ internal class Primitive(
             return Primitive(value, createdAt)
         }
     }
+
+    // TODO(7hong13): implement toJson, toSortedJson, deepCopy
+    override fun toJson(): String {
+        return ""
+    }
+
+    override fun toSortedJson(): String {
+        return ""
+    }
+
+    override fun deepCopy(): CrdtElement {
+        return Primitive(1, TimeTicket.InitialTimeTicket)
+    }
 }
 
 /**

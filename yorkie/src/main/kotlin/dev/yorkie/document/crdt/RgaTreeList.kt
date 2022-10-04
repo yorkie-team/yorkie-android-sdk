@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.SplayTreeSet
@@ -8,7 +7,7 @@ import dev.yorkie.util.SplayTreeSet
 /**
  * [RgaTreeList] is replicated growable array.
  */
-internal class RgaTreeList {
+internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
         value.removedAt = InitialTimeTicket
     }
@@ -92,7 +91,7 @@ internal class RgaTreeList {
     }
 
     /**
-     * Physically purges element.
+     * Physically purges [element].
      */
     fun purge(element: CrdtElement) {
         val node = nodeMapByCreatedAt[element.createdAt]
@@ -179,13 +178,21 @@ internal class RgaTreeList {
         return node.value
     }
 
-    @VisibleForTesting
-    fun getNodesInListExceptHead(): List<RgaTreeListNode> {
-        return buildList {
-            var curr = dummyHead.next
-            while (curr != null) {
-                add(curr)
-                curr = curr.next
+    // NOTE(7hong13): Original comment from JS SDK is as follows:
+    // `getLastCreatedAt` returns the creation time of last elements.
+    /**
+     * Returns the creation time of last element.
+     */
+    fun getLastCreatedAt(): TimeTicket = last.createdAt
+
+    override fun iterator(): Iterator<RgaTreeListNode> {
+        return object : Iterator<RgaTreeListNode> {
+            var node = dummyHead
+
+            override fun hasNext() = node.next != null
+
+            override fun next(): RgaTreeListNode {
+                return requireNotNull(node.next).also { node = it }
             }
         }
     }
@@ -196,7 +203,6 @@ internal class RgaTreeList {
         }
     }
 
-    @VisibleForTesting
     data class RgaTreeListNode(val value: CrdtElement) {
         var prev: RgaTreeListNode? = null
         var next: RgaTreeListNode? = null

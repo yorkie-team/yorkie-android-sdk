@@ -144,9 +144,10 @@ class RgaTreeListTest {
     }
 
     private fun RgaTreeList.getStructureAsString(): String {
-        val nodes = getNodesInListExceptHead()
-        return nodes.joinToString("") {
-            it.createdAt.actorID.id + if (it.isRemoved) 0 else 1
+        return buildString {
+            target.forEach {
+                append(it.createdAt.actorID.id + if (it.isRemoved) 0 else 1)
+            }
         }
     }
 }

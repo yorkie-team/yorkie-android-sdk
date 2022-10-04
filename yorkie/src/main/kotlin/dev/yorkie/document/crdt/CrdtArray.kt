@@ -120,7 +120,9 @@ internal class CrdtArray(
      * Returns the JavaScript object of this array.
      */
     fun toJS(): Any {
-        return TODO("To be implemented when it's actually needed: ref to https://github.com/google/gson")
+        return TODO(
+            "To be implemented when it's actually needed: ref to https://github.com/google/gson",
+        )
     }
 
     /**

@@ -53,7 +53,7 @@ internal class CrdtArray(
     /**
      * Returns the element of the given [createdAt].
      */
-    fun get(createdAt: TimeTicket): CrdtElement? {
+    operator fun get(createdAt: TimeTicket): CrdtElement? {
         val node = elements.get(createdAt)
         if (node?.isRemoved == true) return null
         return node
@@ -62,7 +62,7 @@ internal class CrdtArray(
     /**
      * Returns the element of the given [index].
      */
-    fun getByIndex(index: Int): CrdtElement? {
+    operator fun get(index: Int): CrdtElement? {
         val node = elements.getByIndex(index)
         return node?.value
     }
@@ -116,24 +116,22 @@ internal class CrdtArray(
         }
     }
 
-    // TODO(7hong13): implement toJS method (json parser)
     /**
      * Returns the JavaScript object of this array.
      */
     fun toJS(): Any {
-        return ""
+        return TODO("To be implemented when it's actually needed: ref to https://github.com/google/gson")
     }
 
     /**
      * Returns the sorted JSON encoding of this array.
      */
     override fun toSortedJson(): String {
-        return this.toJson()
+        return toJson()
     }
 
-    // TODO(7hong13): implement deepCopy method
     override fun deepCopy(): CrdtElement {
-        return Primitive(1, TimeTicket.InitialTimeTicket)
+        return TODO("To be implemented when it's actually needed")
     }
 
     override fun iterator(): Iterator<CrdtElement> {

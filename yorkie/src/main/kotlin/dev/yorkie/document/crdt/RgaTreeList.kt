@@ -91,7 +91,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     }
 
     /**
-     * Physically purges [element].
+     * Physically purges the given [element].
      */
     fun purge(element: CrdtElement) {
         val node = nodeMapByCreatedAt[element.createdAt]
@@ -181,7 +181,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     // NOTE(7hong13): Original comment from JS SDK is as follows:
     // `getLastCreatedAt` returns the creation time of last elements.
     /**
-     * Returns the creation time of last element.
+     * Returns the creation time of the last element.
      */
     fun getLastCreatedAt(): TimeTicket = last.createdAt
 

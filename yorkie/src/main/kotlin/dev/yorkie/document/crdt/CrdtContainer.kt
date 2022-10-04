@@ -3,7 +3,7 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 
 /**
- * [CrdtContainer] represents CRDTArray or CRDtObject.
+ * [CrdtContainer] represents CrdtArray or CrdtObject.
  */
 internal abstract class CrdtContainer(createdAt: TimeTicket) : CrdtElement(createdAt) {
     abstract fun subPathOf(createdAt: TimeTicket): String?

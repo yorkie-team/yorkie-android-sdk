@@ -28,7 +28,7 @@ internal class CrdtArray(
     // NOTE(7hong13): Original comment from JS SDK is as follows:
     // `purge` physically purge child element.
     /**
-     * Physically purges [elements].
+     * Physically purges the given [element].
      */
     override fun purge(element: CrdtElement) {
         elements.purge(element)
@@ -93,7 +93,7 @@ internal class CrdtArray(
     }
 
     /**
-     * Traverse the descendants of this array.
+     * Traverses the descendants of this array.
      */
     override fun getDescendants(callback: (CrdtElement, CrdtContainer) -> Boolean) {
         for (node in elements) {
@@ -118,7 +118,7 @@ internal class CrdtArray(
 
     // TODO(7hong13): implement toJS method (json parser)
     /**
-     * Returns the javascript object of this array.
+     * Returns the JavaScript object of this array.
      */
     fun toJS(): Any {
         return ""

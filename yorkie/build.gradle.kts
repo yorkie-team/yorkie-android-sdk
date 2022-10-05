@@ -16,6 +16,11 @@ plugins {
     id("com.android.library")
     kotlin("android")
     id("com.google.protobuf")
+    id("com.dicedmelon.gradle.jacoco-android")
+}
+
+jacoco {
+    toolVersion = "0.8.8"
 }
 
 android {
@@ -31,6 +36,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            isTestCoverageEnabled = true
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -46,6 +54,12 @@ android {
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
         freeCompilerArgs = listOf("-opt-in=kotlin.RequiresOptIn")
+    }
+    jacocoAndroidUnitTestReport {
+        excludes = excludes + "**/dev/yorkie/api/v1/**"
+        csv.enabled(false)
+        xml.enabled(true)
+        html.enabled(false)
     }
 }
 

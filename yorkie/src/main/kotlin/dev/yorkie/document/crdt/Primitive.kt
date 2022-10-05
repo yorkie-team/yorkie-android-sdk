@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import java.util.Date
 
 internal class Primitive(
     val value: Any?,
@@ -16,7 +17,7 @@ internal class Primitive(
             is Double -> PrimitiveType.Double
             is String -> PrimitiveType.String
             is ByteArray -> PrimitiveType.Bytes
-            // TODO(daeyounglnc): support Date type
+            is Date -> PrimitiveType.Date
             else -> PrimitiveType.Null
         }
     }

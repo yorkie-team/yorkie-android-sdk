@@ -47,37 +47,37 @@ class RgaTreeListTest {
     }
 
     @Test
-    fun `should handle delete operations`() {
+    fun `should handle remove operations`() {
         assertEquals(1, target.length)
 
         crdtElements.forEach(target::insert)
 
-        target.delete(timeTickets[1], timeTickets[2])
+        target.remove(timeTickets[1], timeTickets[2])
         assertEquals("A1B0C1D1E1F1G1", target.getStructureAsString())
-        target.delete(timeTickets[2], timeTickets[3])
+        target.remove(timeTickets[2], timeTickets[3])
         assertEquals("A1B0C0D1E1F1G1", target.getStructureAsString())
-        target.delete(timeTickets[3], timeTickets[4])
+        target.remove(timeTickets[3], timeTickets[4])
         assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
-        target.delete(timeTickets[6], timeTickets[5])
+        target.remove(timeTickets[6], timeTickets[5])
         assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
 
         assertEquals(crdtElements.size - 3 + 1, target.length)
     }
 
     @Test
-    fun `should handle purge operations`() {
+    fun `should handle delete operations`() {
         assertEquals(1, target.length)
 
         crdtElements.forEach(target::insert)
         assertEquals(crdtElements.size + 1, target.length)
 
-        target.purge(crdtElements[0])
+        target.delete(crdtElements[0])
         assertEquals(crdtElements.size - 1 + 1, target.length)
         assertEquals("B1C1D1E1F1G1", target.getStructureAsString())
-        target.purge(crdtElements[1])
+        target.delete(crdtElements[1])
         assertEquals(crdtElements.size - 2 + 1, target.length)
         assertEquals("C1D1E1F1G1", target.getStructureAsString())
-        target.purge(crdtElements[2])
+        target.delete(crdtElements[2])
         assertEquals(crdtElements.size - 3 + 1, target.length)
         assertEquals("D1E1F1G1", target.getStructureAsString())
     }

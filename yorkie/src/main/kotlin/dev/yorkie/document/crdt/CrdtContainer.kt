@@ -8,9 +8,9 @@ import dev.yorkie.document.time.TimeTicket
 internal abstract class CrdtContainer(createdAt: TimeTicket) : CrdtElement(createdAt) {
     abstract fun subPathOf(createdAt: TimeTicket): String?
 
-    abstract fun purge(element: CrdtElement)
+    abstract fun delete(element: CrdtElement)
 
-    abstract fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement
+    abstract fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement
 
     abstract fun getDescendants(callback: (CrdtElement, CrdtContainer) -> Boolean)
 }

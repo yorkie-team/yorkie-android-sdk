@@ -84,26 +84,26 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         if (prevNode != node &&
             (node.value.movedAt == null || checkNotNull(node.value.movedAt) < executedAt)
         ) {
-            release(node)
+            delete(node)
             insertAfter(prevNode.createdAt, node.value, executedAt)
             node.value.movedAt = executedAt
         }
     }
 
     /**
-     * Physically purges the given [element].
+     * Physically deletes the given [element].
      */
-    fun purge(element: CrdtElement) {
+    fun delete(element: CrdtElement) {
         val node = nodeMapByCreatedAt[element.createdAt]
             ?: error("can't find the given createdAt: ${element.createdAt}")
-        release(node)
+        delete(node)
     }
 
-    private fun release(node: RgaTreeListNode) {
+    private fun delete(node: RgaTreeListNode) {
         if (last == node) {
             last = requireNotNull(node.prev)
         }
-        node.release()
+        node.delete()
         nodeMapByIndex.delete(node.value)
         nodeMapByCreatedAt.remove(node.value.createdAt)
     }
@@ -154,9 +154,9 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     }
 
     /**
-     * Deletes the node of the given creation time.
+     * Removes the node of the given creation time.
      */
-    fun delete(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
+    fun remove(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
         val node = nodeMapByCreatedAt[createdAt]
             ?: error("can't find the given node createdAt: $createdAt")
 
@@ -168,9 +168,9 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     }
 
     /**
-     * Deletes the node at the given [index]
+     * Removes the node at the given [index]
      */
-    fun deleteByIndex(index: Int, editedAt: TimeTicket): CrdtElement? {
+    fun removeByIndex(index: Int, editedAt: TimeTicket): CrdtElement? {
         val node = getByIndex(index) ?: return null
         if (node.remove(editedAt)) {
             nodeMapByIndex.splay(node.value)
@@ -220,10 +220,8 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
             return value.remove(removedAt)
         }
 
-        /**
-         * Releases previous and next node.
-         */
-        fun release() {
+        // NOTE(7hong13): removed comment since this function literally do 'delete' the node.
+        fun delete() {
             prev?.next = next
             next?.prev = prev
         }

@@ -28,10 +28,10 @@ internal class CrdtArray(
     // NOTE(7hong13): Original comment from JS SDK is as follows:
     // `purge` physically purge child element.
     /**
-     * Physically purges the given [element].
+     * Physically deletes the given [element].
      */
-    override fun purge(element: CrdtElement) {
-        elements.purge(element)
+    override fun delete(element: CrdtElement) {
+        elements.delete(element)
     }
 
     // NOTE(7hong13): Original comment from JS SDK is as follows:
@@ -79,17 +79,17 @@ internal class CrdtArray(
     // NOTE(7hong13): Original comment from JS SDK is as follows:
     // `delete` deletes the element of the given index.
     /**
-     * Deletes the node of the given creation time.
+     * Removes the node of the given creation time.
      */
-    override fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
-        return elements.delete(createdAt, executedAt)
+    override fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
+        return elements.remove(createdAt, executedAt)
     }
 
     /**
-     * Deletes the element of given [index] and [editedAt].
+     * Removes the element of given [index] and [editedAt].
      */
-    fun deleteByIndex(index: Int, editedAt: TimeTicket): CrdtElement? {
-        return elements.deleteByIndex(index, editedAt)
+    fun removeByIndex(index: Int, editedAt: TimeTicket): CrdtElement? {
+        return elements.removeByIndex(index, editedAt)
     }
 
     /**

@@ -8,7 +8,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -27,23 +26,11 @@ jobs:
     - name: Check with Gradle
       run: ./gradlew check
 
-    - name: Run Jacoco
-      run: ./gradlew jacocoTestDebugUnitTestReport
+    - name: Run JaCoCo
+      run: ./gradlew jacocoTestReport
 
-    - name: Generate report
-      uses: actions/upload-artifact@v2
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
       with:
-        name: report
-        path: yorkie/build/jacoco
-
-    - name: Download Test Reports Folder
-      uses: actions/download-artifact@v2
-      with:
-        name: report
-        path: yorkie/build/jacoco
-
-    - name: Upload Test Report
-      uses: codecov/codecov-action@v2
-      with:
-        files: "yorkie/build/jacoco/jacoco.xml"
-
+        fail_ci_if_error: true
+        verbose: true

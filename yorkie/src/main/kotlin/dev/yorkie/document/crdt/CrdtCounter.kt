@@ -12,13 +12,13 @@ internal class CrdtCounter private constructor(
     value: CounterValue,
     createdAt: TimeTicket,
 ) : CrdtElement(createdAt) {
-    var value = value
+    var value = value.sanitized()
         private set(value) {
-            field = value
-            type = getCounterType(value)
+            field = value.sanitized()
         }
 
-    var type = getCounterType(value)
+    val type
+        get() = value.counterType()
 
     fun toBytes(): ByteArray {
         return when (type) {
@@ -50,23 +50,29 @@ internal class CrdtCounter private constructor(
     }
 
     companion object {
+
         fun of(value: CounterValue, createdAt: TimeTicket) = CrdtCounter(value, createdAt)
 
-        fun getCounterType(value: CounterValue) = when (value) {
+        fun CounterValue.sanitized(): Number = when (counterType()) {
+            CounterType.IntegerCnt -> toInt()
+            CounterType.LongCnt -> toLong()
+            CounterType.DoubleCnt -> toDouble()
+        }
+
+        fun CounterValue.counterType() = when (this) {
             is Byte, is Short, is Int -> CounterType.IntegerCnt
             is Long -> CounterType.LongCnt
             else -> CounterType.DoubleCnt
         }
 
-        fun valueFromBytes(counterType: CounterType, bytes: ByteArray): Number {
-            return with(ByteBuffer.wrap(bytes)) {
+        fun ByteArray.asCounterValue(counterType: CounterType): Number =
+            with(ByteBuffer.wrap(this)) {
                 when (counterType) {
                     CounterType.IntegerCnt -> int
                     CounterType.LongCnt -> long
                     CounterType.DoubleCnt -> double
                 }
             }
-        }
     }
 
     enum class CounterType {

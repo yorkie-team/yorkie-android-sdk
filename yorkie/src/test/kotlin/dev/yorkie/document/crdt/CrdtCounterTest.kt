@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -87,10 +88,30 @@ class CrdtCounterTest {
 
     @Test
     fun `verify converting bytes to counter and vice-versa works properly`() {
-        val bytes = ByteBuffer.allocate(Double.SIZE_BYTES).putDouble(1.234).array()
-        val doubleValue = CrdtCounter.valueFromBytes(CrdtCounter.CounterType.DoubleCnt, bytes)
-        assertEquals(1.234, doubleValue)
+        val intInBytes = ByteBuffer.allocate(Int.SIZE_BYTES).putInt(39).array()
+        val intValue = intInBytes.asCounterValue(CrdtCounter.CounterType.IntegerCnt)
+        assertEquals(39, intValue)
+        assertArrayEquals(intInBytes, CrdtCounter.of(39, InitialTimeTicket).toBytes())
 
-        assertArrayEquals(bytes, CrdtCounter.of(1.234, InitialTimeTicket).toBytes())
+        val longInBytes = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(333L).array()
+        val longValue = longInBytes.asCounterValue(CrdtCounter.CounterType.LongCnt)
+        assertEquals(333L, longValue)
+        assertArrayEquals(longInBytes, CrdtCounter.of(333L, InitialTimeTicket).toBytes())
+
+        val doubleInBytes = ByteBuffer.allocate(Double.SIZE_BYTES).putDouble(1.234).array()
+        val doubleValue = doubleInBytes.asCounterValue(CrdtCounter.CounterType.DoubleCnt)
+        assertEquals(1.234, doubleValue)
+        assertArrayEquals(doubleInBytes, CrdtCounter.of(1.234, InitialTimeTicket).toBytes())
+    }
+
+    @Test
+    fun `verify increase handles Int overflow gracefully`() {
+        val maxInt = CrdtCounter.of(Int.MAX_VALUE, InitialTimeTicket)
+        maxInt.increase(Primitive.of(1, InitialTimeTicket))
+        assertEquals(Int.MAX_VALUE + 1L, maxInt.value)
+
+        val minInt = CrdtCounter.of(Int.MIN_VALUE, InitialTimeTicket)
+        minInt.increase(Primitive.of(-1, InitialTimeTicket))
+        assertEquals(Int.MIN_VALUE - 1L, minInt.value)
     }
 }

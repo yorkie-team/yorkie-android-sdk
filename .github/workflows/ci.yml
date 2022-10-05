@@ -13,6 +13,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+
     - name: set up JDK 11
       uses: actions/setup-java@v3
       with:
@@ -22,5 +23,27 @@ jobs:
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+
     - name: Check with Gradle
       run: ./gradlew check
+
+    - name: Run Jacoco
+      run: ./gradlew jacocoTestDebugUnitTestReport
+
+    - name: Generate report
+      uses: actions/upload-artifact@v2
+      with:
+        name: report
+        path: yorkie/build/jacoco
+
+    - name: Download Test Reports Folder
+      uses: actions/download-artifact@v2
+      with:
+        name: report
+        path: yorkie/build/jacoco
+
+    - name: Upload Test Report
+      uses: codecov/codecov-action@v2
+      with:
+        files: "yorkie/build/jacoco/jacoco.xml"
+

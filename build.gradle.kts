@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "1.7.10" apply true
     id("com.google.protobuf") version "0.8.18" apply false
     id("org.jmailen.kotlinter") version "3.11.1" apply true
+    id("com.dicedmelon.gradle.jacoco-android") version "0.1.5" apply false
 }
 
 allprojects {

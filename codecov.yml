@@ -1,8 +1,0 @@
-{
-    "fixes": [
-        "/home/runner/work/yorkie-android-sdk/yorkie-android-sdk>/::"
-    ],
-    "codecov": {
-        "disable_default_path_fixes": true
-    }
-}

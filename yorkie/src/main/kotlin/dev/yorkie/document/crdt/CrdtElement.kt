@@ -37,10 +37,11 @@ internal abstract class CrdtElement(
         }
 
     fun remove(removedAt: TimeTicket?): Boolean {
-        if (removedAt != null && createdAt < removedAt &&
-            (this.removedAt == null || checkNotNull(this.removedAt) < removedAt)
+        val removedAtTicket = removedAt ?: return false
+        if (createdAt < removedAtTicket &&
+            (this.removedAt == null || checkNotNull(this.removedAt) < removedAtTicket)
         ) {
-            this.removedAt = removedAt
+            this.removedAt = removedAtTicket
             return true
         }
         return false

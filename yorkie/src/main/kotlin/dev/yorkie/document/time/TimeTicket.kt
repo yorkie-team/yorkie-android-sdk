@@ -9,6 +9,14 @@ internal data class TimeTicket(
     val actorID: ActorID,
 ) : Comparable<TimeTicket> {
 
+    fun toIDString(): String {
+        return "$lamport:$actorID:$delimiter"
+    }
+
+    override fun toString(): String {
+        return toIDString()
+    }
+
     override fun compareTo(other: TimeTicket): Int {
         return lamport.compareTo(other.lamport).takeUnless { it == 0 }
             ?: actorID.compareTo(other.actorID).takeUnless { it == 0 }

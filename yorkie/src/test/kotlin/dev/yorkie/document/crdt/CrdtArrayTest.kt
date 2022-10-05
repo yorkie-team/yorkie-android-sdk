@@ -2,7 +2,7 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import junit.framework.TestCase.assertEquals
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 

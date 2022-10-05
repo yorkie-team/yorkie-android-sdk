@@ -2,8 +2,8 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import junit.framework.Assert.assertEquals
-import junit.framework.Assert.assertNotSame
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Before
 import org.junit.Test
 

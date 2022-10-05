@@ -86,10 +86,10 @@ internal class CrdtArray(
     }
 
     /**
-     * Removes the element of given [index] and [editedAt].
+     * Removes the element of given [index] and [executedAt].
      */
-    fun removeByIndex(index: Int, editedAt: TimeTicket): CrdtElement? {
-        return elements.removeByIndex(index, editedAt)
+    fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {
+        return elements.removeByIndex(index, executedAt)
     }
 
     /**

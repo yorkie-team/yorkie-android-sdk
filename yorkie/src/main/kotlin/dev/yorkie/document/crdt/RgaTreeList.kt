@@ -156,12 +156,12 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     /**
      * Removes the node of the given creation time.
      */
-    fun remove(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
+    fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
         val node = nodeMapByCreatedAt[createdAt]
             ?: error("can't find the given node createdAt: $createdAt")
 
         val alreadyRemoved = node.isRemoved
-        if (node.remove(editedAt) && !alreadyRemoved) {
+        if (node.remove(executedAt) && !alreadyRemoved) {
             nodeMapByIndex.splay(node.value)
         }
         return node.value
@@ -170,9 +170,9 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     /**
      * Removes the node at the given [index]
      */
-    fun removeByIndex(index: Int, editedAt: TimeTicket): CrdtElement? {
+    fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {
         val node = getByIndex(index) ?: return null
-        if (node.remove(editedAt)) {
+        if (node.remove(executedAt)) {
             nodeMapByIndex.splay(node.value)
         }
         return node.value

@@ -201,6 +201,7 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
             }
         }
     }
+
     companion object {
         fun create(): RgaTreeList {
             return RgaTreeList()

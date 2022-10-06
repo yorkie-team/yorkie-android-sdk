@@ -3,7 +3,7 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 import java.util.Date
 
-internal class Primitive(
+internal class Primitive private constructor(
     val value: Any?,
     createdAtTime: TimeTicket,
 ) : CrdtElement(createdAtTime) {

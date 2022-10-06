@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 
 /**
  * [CrdtElement] represents element type containing logical clock.
@@ -18,24 +19,21 @@ internal abstract class CrdtElement(
 
     var movedAt: TimeTicket? = movedAt
         set(value) {
-            if (field?.let { value != null && value > it } != false) {
+            if (value > field) {
                 field = value
             }
         }
 
     var removedAt: TimeTicket? = removedAt
         set(value) {
-            if (field.let { value != null && value > createdAt && (it == null || value > it) }) {
+            if (value > createdAt && value > field) {
                 field = value
             }
         }
 
-    fun remove(removedAt: TimeTicket?): Boolean {
-        val removedAtTicket = removedAt ?: return false
-        if (createdAt < removedAtTicket &&
-            (this.removedAt == null || checkNotNull(this.removedAt) < removedAtTicket)
-        ) {
-            this.removedAt = removedAtTicket
+    fun remove(removedAt: TimeTicket): Boolean {
+        if (createdAt < removedAt && this.removedAt < removedAt) {
+            this.removedAt = removedAt
             return true
         }
         return false

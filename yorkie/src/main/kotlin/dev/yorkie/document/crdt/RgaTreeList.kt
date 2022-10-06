@@ -3,13 +3,14 @@ package dev.yorkie.document.crdt
 import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
 
 /**
  * [RgaTreeList] is replicated growable array.
  */
-internal class RgaTreeList {
-    val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
+internal class RgaTreeList private constructor() {
+    private val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
         value.removedAt = InitialTimeTicket
     }
     var last: RgaTreeListNode = dummyHead
@@ -82,9 +83,7 @@ internal class RgaTreeList {
         val node = nodeMapByCreatedAt[createdAt]
             ?: error("can't find the given node createdAt: $createdAt")
 
-        if (prevNode != node &&
-            (node.value.movedAt == null || checkNotNull(node.value.movedAt) < executedAt)
-        ) {
+        if (prevNode != node && node.value.movedAt < executedAt) {
             release(node)
             insertAfter(prevNode.createdAt, node.value, executedAt)
             node.value.movedAt = executedAt

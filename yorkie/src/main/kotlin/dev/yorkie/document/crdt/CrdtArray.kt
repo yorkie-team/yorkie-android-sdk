@@ -25,8 +25,6 @@ internal class CrdtArray(
         return elements.subPathOf(createdAt)
     }
 
-    // NOTE(7hong13): Original comment from JS SDK is as follows:
-    // `purge` physically purge child element.
     /**
      * Physically deletes the given [element].
      */
@@ -34,8 +32,6 @@ internal class CrdtArray(
         elements.delete(element)
     }
 
-    // NOTE(7hong13): Original comment from JS SDK is as follows:
-    // `insertAfter` adds a new node with the value after the given node.
     /**
      * Adds a new node with [value] after the node created at [prevCreatedAt].
      */
@@ -67,8 +63,6 @@ internal class CrdtArray(
         return node?.value
     }
 
-    // NOTE(7hong13): Original comment from JS SDK is as follows:
-    // `getPrevCreatedAt` returns the creation time of the previous element of the given element.
     /**
      * Returns a creation time of the previous node.
      */
@@ -76,8 +70,6 @@ internal class CrdtArray(
         return elements.getPrevCreatedAt(createdAt)
     }
 
-    // NOTE(7hong13): Original comment from JS SDK is as follows:
-    // `delete` deletes the element of the given index.
     /**
      * Removes the node of the given creation time.
      */

@@ -178,8 +178,6 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         return node.value
     }
 
-    // NOTE(7hong13): Original comment from JS SDK is as follows:
-    // `getLastCreatedAt` returns the creation time of last elements.
     /**
      * Returns the creation time of the last element.
      */

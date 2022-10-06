@@ -132,12 +132,16 @@ internal class CrdtArray(
         return object : Iterator<CrdtElement> {
             var node = elements.firstOrNull()
 
-            override fun hasNext() = node?.isRemoved == false
+            override fun hasNext(): Boolean {
+                while (node?.isRemoved == true) {
+                    node = node?.next
+                }
+                return node != null
+            }
 
             override fun next(): CrdtElement {
                 return requireNotNull(node).value.also {
-                    elements.drop(1)
-                    node = elements.firstOrNull()
+                    node = node?.next
                 }
             }
         }

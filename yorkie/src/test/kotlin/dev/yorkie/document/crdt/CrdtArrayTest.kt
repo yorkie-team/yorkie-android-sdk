@@ -2,6 +2,7 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -31,13 +32,13 @@ class CrdtArrayTest {
         assertEquals(crdtElements.size + 1, target.length)
 
         target.remove(timeTickets[1], timeTickets[2])
-        assertEquals("A1B0C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("ACDEFG", target.getStructureAsString())
         target.remove(timeTickets[2], timeTickets[3])
-        assertEquals("A1B0C0D1E1F1G1", target.getStructureAsString())
+        assertEquals("ADEFG", target.getStructureAsString())
         target.remove(timeTickets[3], timeTickets[4])
-        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
+        assertEquals("AEFG", target.getStructureAsString())
         target.remove(timeTickets[6], timeTickets[5])
-        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
+        assertEquals("AEFG", target.getStructureAsString())
 
         assertEquals(crdtElements.size - 3 + 1, target.length)
     }
@@ -51,13 +52,34 @@ class CrdtArrayTest {
 
         target.delete(crdtElements[0])
         assertEquals(crdtElements.size - 1 + 1, target.length)
-        assertEquals("B1C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("BCDEFG", target.getStructureAsString())
         target.delete(crdtElements[1])
         assertEquals(crdtElements.size - 2 + 1, target.length)
-        assertEquals("C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("CDEFG", target.getStructureAsString())
         target.delete(crdtElements[2])
         assertEquals(crdtElements.size - 3 + 1, target.length)
-        assertEquals("D1E1F1G1", target.getStructureAsString())
+        assertEquals("DEFG", target.getStructureAsString())
+    }
+
+    @Test
+    fun `should handle removeByIndex operations`() {
+        assertEquals(1, target.length)
+
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+        assertEquals(crdtElements.size + 1, target.length)
+
+        target.removeByIndex(1, timeTickets[2])
+        assertEquals("BCDEFG", target.getStructureAsString())
+        target.removeByIndex(1, timeTickets[3])
+        assertEquals("CDEFG", target.getStructureAsString())
+        target.removeByIndex(1, timeTickets[4])
+        assertEquals("DEFG", target.getStructureAsString())
+        target.removeByIndex(1, timeTickets[5])
+        assertEquals("EFG", target.getStructureAsString())
+        target.removeByIndex(crdtElements.size, timeTickets[6])
+        assertEquals("EFG", target.getStructureAsString())
+
+        assertEquals(crdtElements.size - 4 + 1, target.length)
     }
 
     @Test
@@ -68,15 +90,18 @@ class CrdtArrayTest {
         assertEquals(crdtElements.size + 1, target.length)
 
         target.insertAfter(timeTickets[0], Primitive.of(1, createTimeTicket()))
-        assertEquals("A1H1B1C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("AHBCDEFG", target.getStructureAsString())
     }
 
     @Test
     fun `should handle moving an element after the given element`() {
+        assertEquals(1, target.length)
+
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+        assertEquals(crdtElements.size + 1, target.length)
 
         target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())
-        assertEquals("A1B1C1D1F1E1G1", target.getStructureAsString())
+        assertEquals("ABCDFEG", target.getStructureAsString())
         assertEquals(crdtElements.size + 1, target.length)
     }
 
@@ -116,17 +141,51 @@ class CrdtArrayTest {
         assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
     }
 
+    @Test
+    fun `should handle get operations with index`() {
+        assertEquals(1, target.length)
+
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+        assertEquals(crdtElements.size + 1, target.length)
+
+        assertEquals(crdtElements[0], target[1])
+        assertEquals(null, target[10])
+    }
+
+    @Test
+    fun `should handle get operations with value`() {
+        assertEquals(1, target.length)
+
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+        assertEquals(crdtElements.size + 1, target.length)
+
+        assertEquals(crdtElements[0], target[timeTickets[0]])
+        assertEquals(null, target[createTimeTicket()])
+    }
+
+    @Test
+    fun `should handle getPrevCreatedAt operations`() {
+        assertEquals(1, target.length)
+
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+        assertEquals(crdtElements.size + 1, target.length)
+
+        assertEquals(timeTickets[0], target.getPrevCreatedAt(timeTickets[1]))
+        assertEquals(timeTickets[1], target.getPrevCreatedAt(timeTickets[2]))
+        Assert.assertThrows(IllegalStateException::class.java) {
+            target.getPrevCreatedAt(createTimeTicket())
+        }
+    }
+
     private fun createTimeTicket(): TimeTicket {
         return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, ActorID("H"))
     }
 
     private fun createSampleCrdtArray(): CrdtArray {
-        return CrdtArray(RgaTreeList.create(), TimeTicket.InitialTimeTicket)
+        return CrdtArray.create(TimeTicket.InitialTimeTicket)
     }
 
     private fun CrdtArray.getStructureAsString() = buildString {
-        target.elements.forEach {
-            append(it.createdAt.actorID.id + if (it.isRemoved) 0 else 1)
-        }
+        target.forEach { append(it.createdAt.actorID.id) }
     }
 }

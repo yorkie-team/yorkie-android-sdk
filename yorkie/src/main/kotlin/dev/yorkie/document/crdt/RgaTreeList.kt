@@ -179,11 +179,6 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         return node.value
     }
 
-    /**
-     * Returns the creation time of the last element.
-     */
-    fun getLastCreatedAt(): TimeTicket = last.createdAt
-
     override fun iterator(): Iterator<RgaTreeListNode> {
         return object : Iterator<RgaTreeListNode> {
             var node = dummyHead

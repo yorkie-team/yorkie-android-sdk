@@ -2,14 +2,13 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
 
 /**
  * [RgaTreeList] is replicated growable array.
  */
-internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
-    val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
+internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeListNode> {
+    private val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
         value.removedAt = InitialTimeTicket
     }
     var last: RgaTreeListNode = dummyHead
@@ -30,6 +29,13 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
      */
     fun insert(value: CrdtElement) {
         insertAfter(last.createdAt, value)
+    }
+
+    /**
+     * Returns the value of head elements.
+     */
+    fun getHead(): CrdtElement {
+        return dummyHead.value
     }
 
     /**
@@ -179,6 +185,11 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         return node.value
     }
 
+    /**
+     * Returns the creation time of the last element.
+     */
+    fun getLastCreatedAt(): TimeTicket = last.createdAt
+
     override fun iterator(): Iterator<RgaTreeListNode> {
         return object : Iterator<RgaTreeListNode> {
             var node = dummyHead
@@ -190,7 +201,6 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
             }
         }
     }
-
     companion object {
         fun create(): RgaTreeList {
             return RgaTreeList()

@@ -10,13 +10,20 @@ internal class CrdtArray(
     createdAt: TimeTicket,
 ) : CrdtContainer(createdAt), Iterable<CrdtElement> {
     val head
-        get() = elements.dummyHead.value
+        get() = elements.getHead()
 
     val last
         get() = elements.last.value
 
     val length
         get() = elements.length
+
+    /**
+     * Returns the creation time of the last element.
+     */
+    fun getLastCreatedAt(): TimeTicket {
+        return elements.getLastCreatedAt()
+    }
 
     /**
      * Returns the sub path of the given [createdAt] element.

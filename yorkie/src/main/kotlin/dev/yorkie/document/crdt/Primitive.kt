@@ -36,7 +36,7 @@ internal class Primitive private constructor(
     }
 
     override fun toJson(): String {
-        return TODO("To be implemented when it's actually needed")
+        TODO("To be implemented when it's actually needed")
     }
 
     override fun toSortedJson(): String {

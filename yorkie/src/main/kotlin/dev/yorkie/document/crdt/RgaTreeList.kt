@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
@@ -9,8 +8,8 @@ import dev.yorkie.util.SplayTreeSet
 /**
  * [RgaTreeList] is replicated growable array.
  */
-internal class RgaTreeList private constructor() {
-    private val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
+internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
+    val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
         value.removedAt = InitialTimeTicket
     }
     var last: RgaTreeListNode = dummyHead
@@ -83,27 +82,29 @@ internal class RgaTreeList private constructor() {
         val node = nodeMapByCreatedAt[createdAt]
             ?: error("can't find the given node createdAt: $createdAt")
 
-        if (prevNode != node && node.value.movedAt < executedAt) {
-            release(node)
+        if (prevNode != node &&
+            (node.value.movedAt == null || checkNotNull(node.value.movedAt) < executedAt)
+        ) {
+            delete(node)
             insertAfter(prevNode.createdAt, node.value, executedAt)
             node.value.movedAt = executedAt
         }
     }
 
     /**
-     * Physically purges element.
+     * Physically deletes the given [element].
      */
-    fun purge(element: CrdtElement) {
+    fun delete(element: CrdtElement) {
         val node = nodeMapByCreatedAt[element.createdAt]
             ?: error("can't find the given createdAt: ${element.createdAt}")
-        release(node)
+        delete(node)
     }
 
-    private fun release(node: RgaTreeListNode) {
+    private fun delete(node: RgaTreeListNode) {
         if (last == node) {
             last = requireNotNull(node.prev)
         }
-        node.release()
+        node.delete()
         nodeMapByIndex.delete(node.value)
         nodeMapByCreatedAt.remove(node.value.createdAt)
     }
@@ -154,37 +155,43 @@ internal class RgaTreeList private constructor() {
     }
 
     /**
-     * Deletes the node of the given creation time.
+     * Removes the node of the given creation time.
      */
-    fun delete(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
+    fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
         val node = nodeMapByCreatedAt[createdAt]
             ?: error("can't find the given node createdAt: $createdAt")
 
         val alreadyRemoved = node.isRemoved
-        if (node.remove(editedAt) && !alreadyRemoved) {
+        if (node.remove(executedAt) && !alreadyRemoved) {
             nodeMapByIndex.splay(node.value)
         }
         return node.value
     }
 
     /**
-     * Deletes the node at the given [index]
+     * Removes the node at the given [index]
      */
-    fun deleteByIndex(index: Int, editedAt: TimeTicket): CrdtElement? {
+    fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {
         val node = getByIndex(index) ?: return null
-        if (node.remove(editedAt)) {
+        if (node.remove(executedAt)) {
             nodeMapByIndex.splay(node.value)
         }
         return node.value
     }
 
-    @VisibleForTesting
-    fun getNodesInListExceptHead(): List<RgaTreeListNode> {
-        return buildList {
-            var curr = dummyHead.next
-            while (curr != null) {
-                add(curr)
-                curr = curr.next
+    /**
+     * Returns the creation time of the last element.
+     */
+    fun getLastCreatedAt(): TimeTicket = last.createdAt
+
+    override fun iterator(): Iterator<RgaTreeListNode> {
+        return object : Iterator<RgaTreeListNode> {
+            var node = dummyHead
+
+            override fun hasNext() = node.next != null
+
+            override fun next(): RgaTreeListNode {
+                return requireNotNull(node.next).also { node = it }
             }
         }
     }
@@ -195,7 +202,6 @@ internal class RgaTreeList private constructor() {
         }
     }
 
-    @VisibleForTesting
     data class RgaTreeListNode(val value: CrdtElement) {
         var prev: RgaTreeListNode? = null
         var next: RgaTreeListNode? = null
@@ -213,10 +219,8 @@ internal class RgaTreeList private constructor() {
             return value.remove(removedAt)
         }
 
-        /**
-         * Releases previous and next node.
-         */
-        fun release() {
+        // NOTE(7hong13): removed comment since this function literally do 'delete' the node.
+        fun delete() {
             prev?.next = next
             next?.prev = prev
         }

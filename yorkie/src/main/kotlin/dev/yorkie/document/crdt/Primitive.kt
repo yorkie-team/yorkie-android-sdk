@@ -34,6 +34,20 @@ internal class Primitive private constructor(
             return Primitive(value, createdAt)
         }
     }
+
+    override fun toJson(): String {
+        TODO("To be implemented when it's actually needed")
+    }
+
+    override fun toSortedJson(): String {
+        return toJson()
+    }
+
+    override fun deepCopy(): CrdtElement {
+        return of(value, createdAt).apply {
+            movedAt = this.movedAt
+        }
+    }
 }
 
 /**

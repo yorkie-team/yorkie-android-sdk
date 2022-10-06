@@ -3,16 +3,15 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotSame
 import org.junit.Before
 import org.junit.Test
 
-class RgaTreeListTest {
-    private lateinit var target: RgaTreeList
+class CrdtArrayTest {
+    private lateinit var target: CrdtArray
     private val actorIDs = listOf("A", "B", "C", "D", "E", "F", "G")
     private val timeTickets = actorIDs.map {
         TimeTicket(
-            actorIDs.indexOf(it).toLong(),
+            actorIDs.indexOf(it).toLong() + 1,
             TimeTicket.INITIAL_DELIMITER,
             ActorID(it),
         )
@@ -21,36 +20,15 @@ class RgaTreeListTest {
 
     @Before
     fun setUp() {
-        target = RgaTreeList.create()
-    }
-
-    @Test
-    fun `should handle insert operations`() {
-        assertEquals(1, target.length)
-
-        target.insert(crdtElements[0])
-        assertEquals("A1", target.getStructureAsString())
-        target.insert(crdtElements[1])
-        assertEquals("A1B1", target.getStructureAsString())
-        target.insert(crdtElements[2])
-        assertEquals("A1B1C1", target.getStructureAsString())
-        target.insert(crdtElements[3])
-        assertEquals("A1B1C1D1", target.getStructureAsString())
-        target.insert(crdtElements[4])
-        assertEquals("A1B1C1D1E1", target.getStructureAsString())
-        target.insert(crdtElements[5])
-        assertEquals("A1B1C1D1E1F1", target.getStructureAsString())
-        target.insert(crdtElements[6])
-        assertEquals("A1B1C1D1E1F1G1", target.getStructureAsString())
-
-        assertEquals(crdtElements.size + 1, target.length)
+        target = createSampleCrdtArray()
     }
 
     @Test
     fun `should handle remove operations`() {
         assertEquals(1, target.length)
 
-        crdtElements.forEach(target::insert)
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+        assertEquals(crdtElements.size + 1, target.length)
 
         target.remove(timeTickets[1], timeTickets[2])
         assertEquals("A1B0C1D1E1F1G1", target.getStructureAsString())
@@ -68,7 +46,7 @@ class RgaTreeListTest {
     fun `should handle delete operations`() {
         assertEquals(1, target.length)
 
-        crdtElements.forEach(target::insert)
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
         assertEquals(crdtElements.size + 1, target.length)
 
         target.delete(crdtElements[0])
@@ -86,7 +64,7 @@ class RgaTreeListTest {
     fun `should handle insertion after the given element`() {
         assertEquals(1, target.length)
 
-        crdtElements.forEach(target::insert)
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
         assertEquals(crdtElements.size + 1, target.length)
 
         target.insertAfter(timeTickets[0], Primitive.of(1, createTimeTicket()))
@@ -95,7 +73,7 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle moving an element after the given element`() {
-        crdtElements.forEach(target::insert)
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
 
         target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())
         assertEquals("A1B1C1D1F1E1G1", target.getStructureAsString())
@@ -104,8 +82,12 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle concurrent insertAfter operations`() {
-        val sampleTarget1 = RgaTreeList.create().apply { insert(crdtElements[0]) }
-        val sampleTarget2 = RgaTreeList.create().apply { insert(crdtElements[0]) }
+        val sampleTarget1 = createSampleCrdtArray().apply {
+            insertAfter(last.createdAt, crdtElements[0])
+        }
+        val sampleTarget2 = createSampleCrdtArray().apply {
+            insertAfter(last.createdAt, crdtElements[0])
+        }
         assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
 
         sampleTarget1.insertAfter(timeTickets[0], crdtElements[1])
@@ -117,9 +99,13 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle concurrent moveAfter operations`() {
-        val sampleTarget1 = RgaTreeList.create().apply { crdtElements.forEach(this::insert) }
-        val sampleTarget2 = RgaTreeList.create().apply {
-            timeTickets.map { Primitive.of(1, it) }.forEach(this::insert)
+        val sampleTarget1 = createSampleCrdtArray().apply {
+            crdtElements.forEach { insertAfter(last.createdAt, it) }
+        }
+        val sampleTarget2 = createSampleCrdtArray().apply {
+            timeTickets
+                .map { Primitive.of(1, it) }
+                .forEach { insertAfter(last.createdAt, it) }
         }
         assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
 
@@ -130,21 +116,16 @@ class RgaTreeListTest {
         assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
     }
 
-    @Test
-    fun `should return null when key element does not exist`() {
-        crdtElements.forEach(target::insert)
-
-        val newTimeTicket = createTimeTicket()
-        assertEquals(null, target.get(newTimeTicket))
-        assertNotSame(null, target.get(timeTickets[0]))
-    }
-
     private fun createTimeTicket(): TimeTicket {
         return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, ActorID("H"))
     }
 
-    private fun RgaTreeList.getStructureAsString() = buildString {
-        target.forEach {
+    private fun createSampleCrdtArray(): CrdtArray {
+        return CrdtArray(RgaTreeList.create(), TimeTicket.InitialTimeTicket)
+    }
+
+    private fun CrdtArray.getStructureAsString() = buildString {
+        target.elements.forEach {
             append(it.createdAt.actorID.id + if (it.isRemoved) 0 else 1)
         }
     }

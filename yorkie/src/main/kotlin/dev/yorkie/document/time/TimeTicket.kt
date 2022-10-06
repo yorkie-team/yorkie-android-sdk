@@ -12,6 +12,11 @@ internal data class TimeTicket(
     val actorID: ActorID,
 ) : Comparable<TimeTicket> {
 
+    /**
+     * Creates a new instance of [TimeTicket] with the given [ActorID].
+     */
+    fun setActor(actorID: ActorID) = copy(actorID = actorID)
+
     override fun compareTo(other: TimeTicket): Int {
         return lamport.compareTo(other.lamport).takeUnless { it == 0 }
             ?: actorID.compareTo(other.actorID).takeUnless { it == 0 }

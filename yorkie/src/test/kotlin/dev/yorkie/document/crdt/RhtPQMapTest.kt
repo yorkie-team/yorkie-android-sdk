@@ -128,13 +128,13 @@ class RhtPQMapTest {
     }
 
     @Test
-    fun `Verify the keyOf function`() {
+    fun `Verify the subPathOf function`() {
         val timeTicket = generateTimeTicket(0, 0, "0")
         val rhtpqMap = RhtPQMap.create<Primitive>()
         val primitive = Primitive.of("value1", timeTicket)
         rhtpqMap["test1"] = primitive
-        val primitiveByKeyOf = rhtpqMap.subPathOf(timeTicket)
-        assertEquals(primitive, rhtpqMap[primitiveByKeyOf])
+        val primitiveBySubPathOf = rhtpqMap.subPathOf(timeTicket)
+        assertEquals(primitive, rhtpqMap[primitiveBySubPathOf])
 
         assertThrows(NoSuchElementException::class.java) {
             rhtpqMap.subPathOf(generateTimeTicket(1, 1, "11"))

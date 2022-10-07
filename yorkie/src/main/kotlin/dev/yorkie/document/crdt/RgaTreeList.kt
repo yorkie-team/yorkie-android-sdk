@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
@@ -8,8 +9,8 @@ import dev.yorkie.util.SplayTreeSet
 /**
  * [RgaTreeList] is replicated growable array.
  */
-internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
-    val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
+internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeListNode> {
+    private val dummyHead = RgaTreeListNode(Primitive.of(1, InitialTimeTicket)).apply {
         value.removedAt = InitialTimeTicket
     }
     var last: RgaTreeListNode = dummyHead
@@ -24,6 +25,9 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
 
     val length
         get() = nodeMapByIndex.length
+
+    val head
+        get() = dummyHead.value
 
     /**
      * Adds a new node with [value] after the last node.
@@ -82,9 +86,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         val node = nodeMapByCreatedAt[createdAt]
             ?: error("can't find the given node createdAt: $createdAt")
 
-        if (prevNode != node &&
-            (node.value.movedAt == null || checkNotNull(node.value.movedAt) < executedAt)
-        ) {
+        if (prevNode != node && node.value.movedAt < executedAt) {
             delete(node)
             insertAfter(prevNode.createdAt, node.value, executedAt)
             node.value.movedAt = executedAt
@@ -202,6 +204,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         }
     }
 
+    @VisibleForTesting
     data class RgaTreeListNode(val value: CrdtElement) {
         var prev: RgaTreeListNode? = null
         var next: RgaTreeListNode? = null

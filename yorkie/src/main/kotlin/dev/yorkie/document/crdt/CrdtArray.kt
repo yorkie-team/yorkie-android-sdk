@@ -10,13 +10,16 @@ internal class CrdtArray(
     createdAt: TimeTicket,
 ) : CrdtContainer(createdAt), Iterable<CrdtElement> {
     val head
-        get() = elements.dummyHead.value
+        get() = elements.head
 
     val last
         get() = elements.last.value
 
     val length
         get() = elements.length
+
+    val lastCreated
+        get() = elements.getLastCreatedAt()
 
     /**
      * Returns the sub path of the given [createdAt] element.
@@ -132,12 +135,16 @@ internal class CrdtArray(
         return object : Iterator<CrdtElement> {
             var node = elements.firstOrNull()
 
-            override fun hasNext() = node?.isRemoved == false
+            override fun hasNext(): Boolean {
+                while (node?.isRemoved == true) {
+                    node = node?.next
+                }
+                return node != null
+            }
 
             override fun next(): CrdtElement {
                 return requireNotNull(node).value.also {
-                    elements.drop(1)
-                    node = elements.firstOrNull()
+                    node = node?.next
                 }
             }
         }

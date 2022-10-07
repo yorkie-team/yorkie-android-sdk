@@ -4,6 +4,7 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 
@@ -48,6 +49,10 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle remove operations`() {
+        assertThrows(IllegalStateException::class.java) {
+            target.remove(timeTickets[0], timeTickets[1])
+        }
+
         assertEquals(1, target.length)
 
         crdtElements.forEach(target::insert)
@@ -65,7 +70,31 @@ class RgaTreeListTest {
     }
 
     @Test
+    fun `should handle removeByIndex operations`() {
+        assertEquals(1, target.length)
+
+        crdtElements.forEach(target::insert)
+
+        target.removeByIndex(1, timeTickets[2])
+        assertEquals("A0B1C1D1E1F1G1", target.getStructureAsString())
+        target.removeByIndex(1, timeTickets[3])
+        assertEquals("A0B0C1D1E1F1G1", target.getStructureAsString())
+        target.removeByIndex(1, timeTickets[4])
+        assertEquals("A0B0C0D1E1F1G1", target.getStructureAsString())
+        target.removeByIndex(1, timeTickets[5])
+        assertEquals("A0B0C0D0E1F1G1", target.getStructureAsString())
+        target.removeByIndex(crdtElements.size, timeTickets[6])
+        assertEquals("A0B0C0D0E1F1G1", target.getStructureAsString())
+
+        assertEquals(crdtElements.size - 4 + 1, target.length)
+    }
+
+    @Test
     fun `should handle delete operations`() {
+        assertThrows(IllegalStateException::class.java) {
+            target.delete(crdtElements[0])
+        }
+
         assertEquals(1, target.length)
 
         crdtElements.forEach(target::insert)
@@ -95,6 +124,10 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle moving an element after the given element`() {
+        assertThrows(IllegalStateException::class.java) {
+            target.moveAfter(timeTickets[0], timeTickets[1], timeTickets[1])
+        }
+
         crdtElements.forEach(target::insert)
 
         target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())

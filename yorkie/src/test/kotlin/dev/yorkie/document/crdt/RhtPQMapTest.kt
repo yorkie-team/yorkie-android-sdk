@@ -94,17 +94,17 @@ class RhtPQMapTest {
         val primitive1 = Primitive.of("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap["test1"] = primitive1
         val removedPrimitive =
-            rhtpqMap.delete(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
+            rhtpqMap.remove(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
         assertEquals(primitive1, removedPrimitive)
 
         assertThrows(NoSuchElementException::class.java) {
-            rhtpqMap.delete(
+            rhtpqMap.remove(
                 generateTimeTicket(99, 99, "3"),
                 generateTimeTicket(100, 100, "3"),
             )
         }
         assertThrows(NoSuchElementException::class.java) {
-            rhtpqMap.delete(
+            rhtpqMap.remove(
                 generateTimeTicket(101, 101, "4"),
                 TimeTicket.InitialTimeTicket,
             )
@@ -118,11 +118,11 @@ class RhtPQMapTest {
         rhtpqMap["test1"] = primitive
 
         assertThrows(IllegalStateException::class.java) {
-            rhtpqMap.deleteByKey("", TimeTicket.InitialTimeTicket)
+            rhtpqMap.removeByKey("", TimeTicket.InitialTimeTicket)
         }
 
         val timeTicketForDeletion = generateTimeTicket(1, 1, "0")
-        val removedPrimitive = rhtpqMap.deleteByKey("test1", timeTicketForDeletion)
+        val removedPrimitive = rhtpqMap.removeByKey("test1", timeTicketForDeletion)
         assertEquals(primitive, removedPrimitive)
         assertEquals(timeTicketForDeletion, rhtpqMap["test1"].removedAt)
     }
@@ -157,7 +157,7 @@ class RhtPQMapTest {
         val primitive3 = Primitive.of("value3", ticket3)
         rhtpqMap["test3"] = primitive3
 
-        rhtpqMap.purge(primitive2)
+        rhtpqMap.delete(primitive2)
         assertThrows(IllegalStateException::class.java) {
             rhtpqMap["test2"]
         }
@@ -176,7 +176,7 @@ class RhtPQMapTest {
         rhtpqMap["test1"] = primitive1
         assertTrue(rhtpqMap.has("test1"))
 
-        rhtpqMap.delete(ticket1, generateTimeTicket(1, 2, "11"))
+        rhtpqMap.remove(ticket1, generateTimeTicket(1, 2, "11"))
         assertFalse(rhtpqMap.has("test1"))
     }
 

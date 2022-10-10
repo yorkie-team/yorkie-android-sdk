@@ -23,7 +23,7 @@ internal class RhtPQMap<T : CrdtElement> private constructor() :
     operator fun set(key: String, value: T): T? {
         var removed: T? = null
         val queue = elementQueueMapByKey[key]
-        if (queue != null && queue.size > 0) {
+        if (queue?.isNotEmpty() == true) {
             val node = queue.peek() as RhtPQMapNode
             if (!node.isRemoved() && node.remove(value.createdAt)) {
                 removed = node.value
@@ -63,7 +63,7 @@ internal class RhtPQMap<T : CrdtElement> private constructor() :
      *
      * @throws NoSuchElementException if RHTPQMapNode doesn't exist.
      */
-    fun subPathOf(createdAt: TimeTicket): String? {
+    fun subPathOf(createdAt: TimeTicket): String {
         return nodeMapByCreatedAt[createdAt]?.strKey
             ?: throw NoSuchElementException("RhtPQMapNode's strKey by $createdAt doesn't exist")
     }
@@ -139,7 +139,13 @@ internal class RhtPQMap<T : CrdtElement> private constructor() :
     override fun iterator(): Iterator<RhtPQMapNode<T>> {
         return object : Iterator<RhtPQMapNode<T>> {
             val pqIterators = elementQueueMapByKey.values.map { it.iterator() }
-            var nodes = pqIterators.map { it.next() }
+            var nodes = buildList {
+                pqIterators.forEach {
+                    while (it.hasNext()) {
+                        add(it.next())
+                    }
+                }
+            }
             var index = 0
 
             override fun hasNext() = index < nodes.size

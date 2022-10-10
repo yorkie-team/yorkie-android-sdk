@@ -186,6 +186,6 @@ class CrdtArrayTest {
     }
 
     private fun CrdtArray.getStructureAsString() = buildString {
-        target.forEach { append(it.createdAt.actorID.id) }
+        this@getStructureAsString.forEach { append(it.createdAt.actorID.id) }
     }
 }

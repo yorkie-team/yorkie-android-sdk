@@ -16,6 +16,7 @@ class RhtPQMapTest {
     fun `Verify the set function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
         rhtpqMap["test1"] = Primitive.of("value1", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test1"] = Primitive.of("value11", TimeTicket.InitialTimeTicket)
         rhtpqMap["test2"] = Primitive.of("value2", TimeTicket.InitialTimeTicket)
         rhtpqMap["test3"] = Primitive.of("value3", TimeTicket.InitialTimeTicket)
         rhtpqMap["test4"] = Primitive.of("value4", TimeTicket.InitialTimeTicket)
@@ -25,6 +26,10 @@ class RhtPQMapTest {
         assertTrue(rhtpqMap["test3"].value == "value3")
         assertTrue(rhtpqMap["test4"].value == "value4")
         assertTrue(rhtpqMap["test5"].value == "value5")
+        assertEquals(
+            "test1: value1\ntest1: value11\ntest2: value2\ntest3: value3\ntest4: value4\ntest5: value5\n",
+            rhtpqMap.getStructureAsString(),
+        )
 
         val nullObject = rhtpqMap.set(
             "test5",
@@ -205,5 +210,11 @@ class RhtPQMapTest {
         actorID: String,
     ): TimeTicket {
         return TimeTicket(lamport, delimiter, ActorID(actorID))
+    }
+
+    private fun RhtPQMap<Primitive>.getStructureAsString() = buildString {
+        this@getStructureAsString.forEach {
+            append("${it.strKey}: ${it.value.value}").appendLine()
+        }
     }
 }

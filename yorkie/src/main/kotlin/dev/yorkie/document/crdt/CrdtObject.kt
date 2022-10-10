@@ -10,8 +10,8 @@ internal class CrdtObject private constructor(
     createdAt: TimeTicket,
     private val memberNodes: RhtPQMap<CrdtElement>,
 ) : CrdtContainer(createdAt) {
-    val Rht
-        get() = memberNodes
+    val rht
+        get() = memberNodes.toList()
 
     /**
      * Returns the sub path of the given element.
@@ -32,7 +32,7 @@ internal class CrdtObject private constructor(
     /**
      * Sets the given element of the given key.
      */
-    fun set(key: String, value: CrdtElement): CrdtElement? {
+    operator fun set(key: String, value: CrdtElement): CrdtElement? {
         return memberNodes.set(key, value)
     }
 
@@ -53,7 +53,7 @@ internal class CrdtObject private constructor(
     /**
      * Returns the value of the given key.
      */
-    fun get(key: String): CrdtElement {
+    operator fun get(key: String): CrdtElement {
         return memberNodes[key]
     }
 

@@ -177,7 +177,7 @@ class RgaTreeListTest {
     }
 
     private fun RgaTreeList.getStructureAsString() = buildString {
-        target.forEach {
+        this@getStructureAsString.forEach {
             append(it.createdAt.actorID.id + if (it.isRemoved) 0 else 1)
         }
     }

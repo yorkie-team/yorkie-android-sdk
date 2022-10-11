@@ -28,8 +28,6 @@ internal class CrdtObject private constructor(
         return memberNodes.subPathOf(createdAt)
     }
 
-    // NOTE(7hong13): the original comment from js-sdk is as follows:
-    // `purge` physically purges child element.
     /**
      * Physically deletes the given [element].
      */
@@ -82,8 +80,6 @@ internal class CrdtObject private constructor(
         return json.joinToString(",")
     }
 
-    // NOTE(7hong13): the original comment from js-sdk is as follows:
-    // `toJS` return the javascript object of this object.
     /**
      * Returns the JavaScript object of this [CrdtObject].
      */
@@ -154,8 +150,6 @@ internal class CrdtObject private constructor(
     }
 
     companion object {
-        // NOTE(7hong13): the original comment from js-sdk is as follows:
-        // `create` creates a new instance of Object.
         /**
          * Creates a new instance of [CrdtObject].
          */

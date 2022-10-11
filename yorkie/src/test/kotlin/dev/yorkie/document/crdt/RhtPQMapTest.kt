@@ -27,7 +27,8 @@ class RhtPQMapTest {
         assertTrue(rhtpqMap["test4"].value == "value4")
         assertTrue(rhtpqMap["test5"].value == "value5")
         assertEquals(
-            "test1: value1\ntest1: value11\ntest2: value2\ntest3: value3\ntest4: value4\ntest5: value5\n",
+            "test1: value1\ntest1: value11\ntest2: value2\ntest3: value3\ntest4: value4\n" +
+                "test5: value5\n",
             rhtpqMap.getStructureAsString(),
         )
 

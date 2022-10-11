@@ -63,7 +63,7 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
         executedAt: TimeTicket,
     ): RgaTreeListNode {
         var node = nodeMapByCreatedAt[createdAt]
-            ?: error("can't find the given node createdAt: $createdAt")
+            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
 
         var nodeNext = node.next
         while (nodeNext != null && executedAt < nodeNext.positionedAt) {
@@ -82,9 +82,9 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
         executedAt: TimeTicket,
     ) {
         val prevNode = nodeMapByCreatedAt[prevCreatedAt]
-            ?: error("can't find the given node createdAt: $prevCreatedAt")
+            ?: throw NoSuchElementException("can't find the given node createdAt: $prevCreatedAt")
         val node = nodeMapByCreatedAt[createdAt]
-            ?: error("can't find the given node createdAt: $createdAt")
+            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
 
         if (prevNode != node && node.value.movedAt < executedAt) {
             delete(node)
@@ -98,7 +98,7 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
      */
     fun delete(element: CrdtElement) {
         val node = nodeMapByCreatedAt[element.createdAt]
-            ?: error("can't find the given createdAt: ${element.createdAt}")
+            ?: throw NoSuchElementException("can't find the given createdAt: ${element.createdAt}")
         delete(node)
     }
 
@@ -149,7 +149,7 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
      */
     fun getPrevCreatedAt(createdAt: TimeTicket): TimeTicket {
         var node = nodeMapByCreatedAt[createdAt]
-            ?: error("can't find the given node createdAt: $createdAt")
+            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
         do {
             node = node.prev ?: break
         } while (dummyHead != node && node.isRemoved)
@@ -161,7 +161,7 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
      */
     fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
         val node = nodeMapByCreatedAt[createdAt]
-            ?: error("can't find the given node createdAt: $createdAt")
+            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
 
         val alreadyRemoved = node.isRemoved
         if (node.remove(executedAt) && !alreadyRemoved) {

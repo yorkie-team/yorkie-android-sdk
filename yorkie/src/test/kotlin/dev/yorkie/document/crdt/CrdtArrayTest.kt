@@ -172,7 +172,7 @@ class CrdtArrayTest {
 
         assertEquals(timeTickets[0], target.getPrevCreatedAt(timeTickets[1]))
         assertEquals(timeTickets[1], target.getPrevCreatedAt(timeTickets[2]))
-        Assert.assertThrows(IllegalStateException::class.java) {
+        Assert.assertThrows(NoSuchElementException::class.java) {
             target.getPrevCreatedAt(createTimeTicket())
         }
     }

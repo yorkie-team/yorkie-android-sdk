@@ -76,7 +76,10 @@ internal class CrdtObject private constructor(
      * Returns the JSON encoding of this object.
      */
     override fun toJson(): String {
-        TODO("Not yet implemented")
+        val json = map {
+            "${it.first}:${it.second.toJson()}"
+        }
+        return json.joinToString(",")
     }
 
     // NOTE(7hong13): the original comment from js-sdk is as follows:
@@ -103,7 +106,12 @@ internal class CrdtObject private constructor(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {
-        TODO("To be implemented when it's actually needed")
+        val clone = create(createdAt)
+        memberNodes.forEach {
+            clone.memberNodes[it.strKey] = it.value.deepCopy()
+        }
+        clone.remove(removedAt)
+        return clone
     }
 
     /**

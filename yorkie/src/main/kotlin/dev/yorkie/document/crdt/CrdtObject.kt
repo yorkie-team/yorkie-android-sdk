@@ -13,8 +13,6 @@ internal class CrdtObject private constructor(
     val rht
         get() = memberNodes.toList()
 
-    // NOTE(7hong13): the original comment from js-sdk is as follows:
-    // `getKeys` returns array of this object.
     /**
      * Returns the array of keys in this object.
      */

@@ -9,14 +9,20 @@ import dev.yorkie.document.time.TimeTicket
 internal class CrdtObject private constructor(
     createdAt: TimeTicket,
     private val memberNodes: RhtPQMap<CrdtElement>,
-) : CrdtContainer(createdAt) {
+) : CrdtContainer(createdAt), Iterable<Pair<String, CrdtElement>> {
     val rht
         get() = memberNodes.toList()
 
     /**
+     * Returns array of this object.
+     */
+    val keys
+        get() = map { it.first }
+
+    /**
      * Returns the sub path of the given element.
      */
-    override fun subPathOf(createdAt: TimeTicket): String? {
+    override fun subPathOf(createdAt: TimeTicket): String {
         return memberNodes.subPathOf(createdAt)
     }
 
@@ -81,17 +87,14 @@ internal class CrdtObject private constructor(
     }
 
     /**
-     * Returns array of this object.
-     */
-    fun getKeys(): List<String> {
-        TODO("To be implemented when it's actually needed")
-    }
-
-    /**
      * Returns the sorted JSON encoding of this object
      */
     override fun toSortedJson(): String {
-        TODO("To be implemented when it's actually needed")
+        val json = keys.sorted().map {
+            val node = memberNodes[it]
+            "$it:${node.toSortedJson()}"
+        }
+        return json.joinToString(",")
     }
 
     /**
@@ -111,6 +114,31 @@ internal class CrdtObject private constructor(
 
             if (element is CrdtContainer) {
                 element.getDescendants(callback)
+            }
+        }
+    }
+
+    override fun iterator(): Iterator<Pair<String, CrdtElement>> {
+        val keySet = mutableSetOf<String>()
+        val nodes = memberNodes.map { it }
+        var index = 0
+
+        return object : Iterator<Pair<String, CrdtElement>> {
+            override fun hasNext(): Boolean {
+                while (index < nodes.size) {
+                    val node = nodes[index]
+                    if (!keySet.contains(node.strKey)) {
+                        keySet.add(node.strKey)
+                        if (!node.isRemoved()) return true
+                    }
+                    index++
+                }
+                return false
+            }
+
+            override fun next(): Pair<String, CrdtElement> {
+                val node = nodes[index++]
+                return Pair(node.strKey, node.value)
             }
         }
     }

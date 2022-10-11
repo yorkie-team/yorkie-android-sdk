@@ -95,7 +95,7 @@ class RhtPQMapTest {
     }
 
     @Test
-    fun `Verify the delete function`() {
+    fun `Verify the remove function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
         val primitive1 = Primitive.of("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap["test1"] = primitive1
@@ -118,7 +118,7 @@ class RhtPQMapTest {
     }
 
     @Test
-    fun `Verify the deleteByKey function`() {
+    fun `Verify the removeByKey function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
         val primitive = Primitive.of("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap["test1"] = primitive
@@ -148,7 +148,7 @@ class RhtPQMapTest {
     }
 
     @Test
-    fun `Verify the purge function`() {
+    fun `Verify the delete function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
 
         val ticket1 = generateTimeTicket(0, 0, "11")

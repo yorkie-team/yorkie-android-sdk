@@ -76,10 +76,9 @@ internal class CrdtObject private constructor(
      * Returns the JSON encoding of this object.
      */
     override fun toJson(): String {
-        val json = map {
+        return joinToString(",") {
             "${it.first}:${it.second.toJson()}"
         }
-        return json.joinToString(",")
     }
 
     // NOTE(7hong13): the original comment from js-sdk is as follows:
@@ -95,11 +94,10 @@ internal class CrdtObject private constructor(
      * Returns the sorted JSON encoding of this object
      */
     override fun toSortedJson(): String {
-        val json = keys.sorted().map {
+        return keys.sorted().joinToString(",") {
             val node = memberNodes[it]
             "$it:${node.toSortedJson()}"
         }
-        return json.joinToString(",")
     }
 
     /**

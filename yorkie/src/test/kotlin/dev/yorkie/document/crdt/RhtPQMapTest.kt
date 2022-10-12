@@ -16,6 +16,7 @@ class RhtPQMapTest {
     fun `Verify the set function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
         rhtpqMap["test1"] = Primitive.of("value1", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test1"] = Primitive.of("value11", TimeTicket.InitialTimeTicket)
         rhtpqMap["test2"] = Primitive.of("value2", TimeTicket.InitialTimeTicket)
         rhtpqMap["test3"] = Primitive.of("value3", TimeTicket.InitialTimeTicket)
         rhtpqMap["test4"] = Primitive.of("value4", TimeTicket.InitialTimeTicket)
@@ -25,6 +26,11 @@ class RhtPQMapTest {
         assertTrue(rhtpqMap["test3"].value == "value3")
         assertTrue(rhtpqMap["test4"].value == "value4")
         assertTrue(rhtpqMap["test5"].value == "value5")
+        assertEquals(
+            "test1: value1\ntest1: value11\ntest2: value2\ntest3: value3\ntest4: value4\n" +
+                "test5: value5\n",
+            rhtpqMap.getStructureAsString(),
+        )
 
         val nullObject = rhtpqMap.set(
             "test5",
@@ -89,22 +95,22 @@ class RhtPQMapTest {
     }
 
     @Test
-    fun `Verify the delete function`() {
+    fun `Verify the remove function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
         val primitive1 = Primitive.of("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap["test1"] = primitive1
         val removedPrimitive =
-            rhtpqMap.delete(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
+            rhtpqMap.remove(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
         assertEquals(primitive1, removedPrimitive)
 
         assertThrows(NoSuchElementException::class.java) {
-            rhtpqMap.delete(
+            rhtpqMap.remove(
                 generateTimeTicket(99, 99, "3"),
                 generateTimeTicket(100, 100, "3"),
             )
         }
         assertThrows(NoSuchElementException::class.java) {
-            rhtpqMap.delete(
+            rhtpqMap.remove(
                 generateTimeTicket(101, 101, "4"),
                 TimeTicket.InitialTimeTicket,
             )
@@ -112,29 +118,29 @@ class RhtPQMapTest {
     }
 
     @Test
-    fun `Verify the deleteByKey function`() {
+    fun `Verify the removeByKey function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
         val primitive = Primitive.of("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap["test1"] = primitive
 
         assertThrows(IllegalStateException::class.java) {
-            rhtpqMap.deleteByKey("", TimeTicket.InitialTimeTicket)
+            rhtpqMap.removeByKey("", TimeTicket.InitialTimeTicket)
         }
 
         val timeTicketForDeletion = generateTimeTicket(1, 1, "0")
-        val removedPrimitive = rhtpqMap.deleteByKey("test1", timeTicketForDeletion)
+        val removedPrimitive = rhtpqMap.removeByKey("test1", timeTicketForDeletion)
         assertEquals(primitive, removedPrimitive)
         assertEquals(timeTicketForDeletion, rhtpqMap["test1"].removedAt)
     }
 
     @Test
-    fun `Verify the keyOf function`() {
+    fun `Verify the subPathOf function`() {
         val timeTicket = generateTimeTicket(0, 0, "0")
         val rhtpqMap = RhtPQMap.create<Primitive>()
         val primitive = Primitive.of("value1", timeTicket)
         rhtpqMap["test1"] = primitive
-        val primitiveByKeyOf = rhtpqMap.subPathOf(timeTicket)
-        assertEquals(primitive, rhtpqMap[primitiveByKeyOf])
+        val primitiveBySubPathOf = rhtpqMap.subPathOf(timeTicket)
+        assertEquals(primitive, rhtpqMap[primitiveBySubPathOf])
 
         assertThrows(NoSuchElementException::class.java) {
             rhtpqMap.subPathOf(generateTimeTicket(1, 1, "11"))
@@ -142,7 +148,7 @@ class RhtPQMapTest {
     }
 
     @Test
-    fun `Verify the purge function`() {
+    fun `Verify the delete function`() {
         val rhtpqMap = RhtPQMap.create<Primitive>()
 
         val ticket1 = generateTimeTicket(0, 0, "11")
@@ -157,7 +163,7 @@ class RhtPQMapTest {
         val primitive3 = Primitive.of("value3", ticket3)
         rhtpqMap["test3"] = primitive3
 
-        rhtpqMap.purge(primitive2)
+        rhtpqMap.delete(primitive2)
         assertThrows(IllegalStateException::class.java) {
             rhtpqMap["test2"]
         }
@@ -176,7 +182,7 @@ class RhtPQMapTest {
         rhtpqMap["test1"] = primitive1
         assertTrue(rhtpqMap.has("test1"))
 
-        rhtpqMap.delete(ticket1, generateTimeTicket(1, 2, "11"))
+        rhtpqMap.remove(ticket1, generateTimeTicket(1, 2, "11"))
         assertFalse(rhtpqMap.has("test1"))
     }
 
@@ -205,5 +211,11 @@ class RhtPQMapTest {
         actorID: String,
     ): TimeTicket {
         return TimeTicket(lamport, delimiter, ActorID(actorID))
+    }
+
+    private fun RhtPQMap<Primitive>.getStructureAsString() = buildString {
+        this@getStructureAsString.forEach {
+            append("${it.strKey}: ${it.value.value}").appendLine()
+        }
     }
 }

@@ -37,7 +37,7 @@ internal abstract class CrdtElement(
             }
         }
 
-    fun remove(removedAt: TimeTicket): Boolean {
+    fun remove(removedAt: TimeTicket?): Boolean {
         if (createdAt < removedAt && this.removedAt < removedAt) {
             this.removedAt = removedAt
             return true

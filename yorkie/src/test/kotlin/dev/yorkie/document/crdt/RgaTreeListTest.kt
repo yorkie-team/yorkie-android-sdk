@@ -49,7 +49,7 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle remove operations`() {
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(NoSuchElementException::class.java) {
             target.remove(timeTickets[0], timeTickets[1])
         }
 
@@ -91,7 +91,7 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle delete operations`() {
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(NoSuchElementException::class.java) {
             target.delete(crdtElements[0])
         }
 
@@ -124,7 +124,7 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle moving an element after the given element`() {
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(NoSuchElementException::class.java) {
             target.moveAfter(timeTickets[0], timeTickets[1], timeTickets[1])
         }
 
@@ -177,7 +177,7 @@ class RgaTreeListTest {
     }
 
     private fun RgaTreeList.getStructureAsString() = buildString {
-        target.forEach {
+        this@getStructureAsString.forEach {
             append(it.createdAt.actorID.id + if (it.isRemoved) 0 else 1)
         }
     }

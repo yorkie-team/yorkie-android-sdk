@@ -42,7 +42,7 @@ internal data class ChangeContext(
     }
 
     /**
-     * register removed element for garbage collection.
+     * Registers removed element for garbage collection.
      */
     fun registerRemovedElement(element: CrdtElement) {
         TODO("implement this after CrdtRoot")

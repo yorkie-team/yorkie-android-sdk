@@ -157,7 +157,7 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
     }
 
     /**
-     * Removes the node of the given creation time.
+     * Removes the node of the given [createdAt].
      */
     fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
         val node = nodeMapByCreatedAt[createdAt]

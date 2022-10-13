@@ -58,7 +58,7 @@ internal class RhtPQMap<T : CrdtElement> private constructor() :
     }
 
     /**
-     * Returns [RhtPQMapNode.strKey] of node based on creation time.
+     * Returns [RhtPQMapNode.strKey] of node based on [createdAt].
      * The node will be found in [nodeMapByCreatedAt] using [createdAt]
      *
      * @throws NoSuchElementException if RHTPQMapNode doesn't exist.

@@ -97,7 +97,7 @@ internal class CrdtObject private constructor(
     /**
      * Copies itself deeply.
      */
-    override fun deepCopy(): CrdtElement {
+    override fun deepCopy(): CrdtObject {
         val clone = create(createdAt)
         memberNodes.forEach {
             clone.memberNodes[it.strKey] = it.value.deepCopy()

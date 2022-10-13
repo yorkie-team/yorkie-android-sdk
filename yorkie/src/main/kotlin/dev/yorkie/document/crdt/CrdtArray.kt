@@ -74,7 +74,7 @@ internal class CrdtArray(
     }
 
     /**
-     * Removes the node of the given creation time.
+     * Removes the node of the given [createdAt].
      */
     override fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
         return elements.remove(createdAt, executedAt)
@@ -133,19 +133,19 @@ internal class CrdtArray(
 
     override fun iterator(): Iterator<CrdtElement> {
         return object : Iterator<CrdtElement> {
-            var node = elements.firstOrNull()
+            val values = elements.map { it.value }
+            var index = 0
 
             override fun hasNext(): Boolean {
-                while (node?.isRemoved == true) {
-                    node = node?.next
+                while (index < values.size) {
+                    if (!values[index].isRemoved) return true
+                    index++
                 }
-                return node != null
+                return false
             }
 
             override fun next(): CrdtElement {
-                return requireNotNull(node).value.also {
-                    node = node?.next
-                }
+                return values[index++]
             }
         }
     }

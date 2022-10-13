@@ -66,8 +66,6 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         elementPairMapByCreatedAt[element.createdAt] = CrdtElementPair(element, parent)
     }
 
-    // NOTE(7hong13): the original comment from JS-SDK is as follows:
-    // `registerRemovedElement` registers the given element to hash table.
     /**
      * Registers the given [element] to the hash set.
      */
@@ -82,8 +80,6 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         textWithGarbageSetByCreatedAt.add(text.createdAt)
     }
 
-    // NOTE(7hong13): the original comment from JS-SDK is as follows:
-    // `getGarbageLen` returns length of nodes which should garbage collection task
     /**
      * Returns length of nodes which can be garbage collected.
      */
@@ -116,7 +112,6 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         return CrdtRoot(rootObject.deepCopy())
     }
 
-    // NOTE(7hong13): parameter name is "ticket" in JS-SDK, but replaced it with "executedAt".
     /**
      * Deletes elements that were removed before [executedAt].
      */

@@ -25,7 +25,7 @@ internal class AddOperation(
         get() = value.createdAt
 
     /**
-     * Executes [AddOperation] on the given [Document.root].
+     * Executes this [AddOperation] on the given [Document.root].
      */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)

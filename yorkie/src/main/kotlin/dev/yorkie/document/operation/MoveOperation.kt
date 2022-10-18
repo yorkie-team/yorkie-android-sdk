@@ -32,7 +32,7 @@ internal class MoveOperation(
             parentObject.moveAfter(
                 prevCreatedAt,
                 createdAt,
-                executedAt
+                executedAt,
             )
         } else {
             if (parentObject == null) {

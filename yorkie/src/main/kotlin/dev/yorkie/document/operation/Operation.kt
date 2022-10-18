@@ -11,8 +11,6 @@ import dev.yorkie.document.time.TimeTicket
  */
 internal abstract class Operation(val parentCreatedAt: TimeTicket, var executedAt: TimeTicket) {
 
-    // Note(7hong13): original comment from JS-SDK:
-    // `getEffectedCreatedAt` returns the time of the effected element.
     /**
      * Returns the created time of the effected element.
      */

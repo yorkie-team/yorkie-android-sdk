@@ -11,20 +11,22 @@ import dev.yorkie.document.time.TimeTicket
  */
 internal abstract class Operation(val parentCreatedAt: TimeTicket, var executedAt: TimeTicket) {
 
+    // Note(7hong13): original comment from JS-SDK:
+    // `getEffectedCreatedAt` returns the time of the effected element.
+    /**
+     * Returns the created time of the effected element.
+     */
+    abstract val effectedCreatedAt: TimeTicket
+
+    /**
+     * Executes this [Operation] on the given [Document.root].
+     */
+    abstract fun execute(root: CrdtRoot)
+
     /**
      * Sets the given [ActorID] to this [Operation].
      */
     fun setActor(actorID: ActorID) {
         executedAt = executedAt.setActor(actorID)
     }
-
-    /**
-     * Returns the time of the effected element.
-     */
-    abstract fun getEffectedCreatedAt(): TimeTicket
-
-    /**
-     * Executes this operation on the given document(`root`)
-     */
-    abstract fun execute(root: CrdtRoot)
 }

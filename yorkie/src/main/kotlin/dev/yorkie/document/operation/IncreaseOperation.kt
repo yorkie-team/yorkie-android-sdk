@@ -1,16 +1,17 @@
 package dev.yorkie.document.operation
 
-import dev.yorkie.document.crdt.CrdtArray
+import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.Primitive
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
 /**
- * [AddOperation] is an operation representing adding an element to an [CrdtArray].
+ * [IncreaseOperation] represents an operation that increments a numeric value to [CrdtCounter].
+ * Among [Primitive] elements, numeric types Integer, Long, and Double are used as values.
  */
-internal class AddOperation(
-    val prevCreatedAt: TimeTicket,
+internal class IncreaseOperation(
     val value: CrdtElement,
     parentCreatedAt: TimeTicket,
     executedAt: TimeTicket,
@@ -22,22 +23,21 @@ internal class AddOperation(
      * Returns the created time of the effected element.
      */
     override val effectedCreatedAt: TimeTicket
-        get() = value.createdAt
+        get() = parentCreatedAt
 
     /**
-     * Executes [AddOperation] on the given [Document.root].
+     * Executes this [IncreaseOperation] on the given [Document.root].
      */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
-        if (parentObject is CrdtArray) {
-            val copiedValue = value.deepCopy()
-            parentObject.insertAfter(prevCreatedAt, copiedValue)
-            root.registerElement(copiedValue, parentObject)
+        if (parentObject is CrdtCounter) {
+            val copiedValue = value.deepCopy() as Primitive
+            parentObject.increase(copiedValue)
         } else {
             if (parentObject == null) {
                 YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             }
-            YorkieLogger.e(TAG, "fail to execute, only array can execute add")
+            YorkieLogger.e(TAG, "fail to execute, only Counter can execute increase")
         }
     }
 
@@ -45,10 +45,10 @@ internal class AddOperation(
      * Returns a string containing the meta data.
      */
     override fun toString(): String {
-        return "$parentCreatedAt.ADD"
+        return "$parentCreatedAt.INCREASE"
     }
 
     companion object {
-        private const val TAG = "AddOperation"
+        private const val TAG = "IncreaseOperation"
     }
 }

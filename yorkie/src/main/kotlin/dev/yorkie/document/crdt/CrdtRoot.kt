@@ -3,6 +3,14 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
+/**
+ * [CrdtRoot] is a structure represents the root. It has a hash table of
+ * all elements to find a specific element when applying remote changes
+ * received from server.
+ *
+ * Every element has a unique time ticket at creation, which allows us to find
+ * a particular element.
+ */
 internal class CrdtRoot(val rootObject: CrdtObject) {
     private val elementPairMapByCreatedAt =
         hashMapOf(rootObject.createdAt to CrdtElementPair(rootObject))

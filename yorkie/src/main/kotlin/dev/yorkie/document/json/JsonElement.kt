@@ -1,6 +1,7 @@
 package dev.yorkie.document.json
 
 import dev.yorkie.document.change.ChangeContext
+import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 
@@ -11,8 +12,13 @@ public interface JsonElement {
 
     companion object {
 
-        internal fun CrdtElement.toJsonElement(context: ChangeContext): JsonElement {
-            return JsonObject(context, this as CrdtObject)
+        @Suppress("UNCHECKED_CAST")
+        internal fun <T : JsonElement> CrdtElement.toJsonElement(context: ChangeContext): T {
+            return when (this) {
+                is CrdtObject -> JsonObject(context, this)
+                is CrdtArray -> JsonArray(context, this)
+                else -> error("unknown CrdtElement type: $this")
+            } as T
         }
     }
 }

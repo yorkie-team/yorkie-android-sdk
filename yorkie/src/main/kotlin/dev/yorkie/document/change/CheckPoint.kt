@@ -22,9 +22,6 @@ internal data class CheckPoint(
         }
     }
 
-    // NOTE(7hong13): original comment from JS-SDK:
-    // `forward` updates the given checkpoint with those values when it is greater
-    // than the values of internal properties.
     /**
      * Creates a new instance with the given [CheckPoint] if it is greater
      * than the values of internal properties.

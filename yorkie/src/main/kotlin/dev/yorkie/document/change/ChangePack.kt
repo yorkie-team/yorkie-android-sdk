@@ -1,5 +1,6 @@
 package dev.yorkie.document.change
 
+import com.google.protobuf.ByteString
 import dev.yorkie.document.time.TimeTicket
 
 /**
@@ -15,7 +16,7 @@ internal class ChangePack(
     val documentKey: String,
     val checkPoint: CheckPoint,
     val changes: List<Change>,
-    val snapshot: List<UByte>?,
+    val snapshot: ByteString?,
     val minSyncedTicket: TimeTicket?,
 ) {
 
@@ -29,5 +30,5 @@ internal class ChangePack(
      * Returns the whether this [ChangePack] has a snapshot or not.
      */
     val hasSnapshot
-        get() = snapshot?.isNotEmpty() == true
+        get() = snapshot?.isEmpty == false
 }

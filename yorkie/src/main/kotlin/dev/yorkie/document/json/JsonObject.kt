@@ -1,10 +1,13 @@
 package dev.yorkie.document.json
 
 import dev.yorkie.document.change.ChangeContext
+import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.Primitive
 import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
+import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.SetOperation
 import java.util.Date
 
 public class JsonObject internal constructor(
@@ -46,8 +49,8 @@ public class JsonObject internal constructor(
     }
 
     private fun setPrimitive(key: String, value: Any) {
-        val ticket = context.issueTimeTicket()
-        val primitive = Primitive.of(value, ticket)
+        val executedAt = context.issueTimeTicket()
+        val primitive = Primitive.of(value, executedAt)
         setAndRegister(key, primitive)
     }
 
@@ -55,33 +58,47 @@ public class JsonObject internal constructor(
      * TODO(skhugh): we need to find a better way to handle this
      */
     public fun setNewObject(key: String): JsonObject {
-        val ticket = context.issueTimeTicket()
-        val obj = JsonObject(context, CrdtObject.create(ticket))
-        setAndRegister(key, obj.target)
-        return obj
+        val crdtObject = CrdtObject.create(context.issueTimeTicket())
+        setAndRegister(key, crdtObject)
+        return crdtObject.toJsonElement(context)
     }
 
     public fun setNewArray(key: String): JsonArray {
-        TODO("set and register array")
+        val crdtArray = CrdtArray.create(context.issueTimeTicket())
+        setAndRegister(key, crdtArray)
+        return crdtArray.toJsonElement(context)
     }
 
     private fun setAndRegister(key: String, element: CrdtElement) {
         val removed = target.set(key, element)
         context.registerElement(element, target)
         removed?.let(context::registerRemovedElement)
-        TODO("push SetOperation")
+        context.push(
+            SetOperation(
+                key = key,
+                value = element.deepCopy(),
+                parentCreatedAt = target.createdAt,
+                executedAt = element.createdAt,
+            ),
+        )
     }
 
-    public operator fun get(key: String) = target[key].toJsonElement(context)
+    public operator fun <T : JsonElement> get(key: String) = target[key].toJsonElement<T>(context)
 
     public fun remove(key: String) {
-        val ticket = context.issueTimeTicket()
+        val executedAt = context.issueTimeTicket()
         val removed = try {
-            target.removeByKey(key, ticket)
+            target.removeByKey(key, executedAt)
         } catch (e: NoSuchElementException) {
             return
         }
-        TODO("push RemoveOperation")
+        context.push(
+            RemoveOperation(
+                createdAt = removed.createdAt,
+                parentCreatedAt = target.createdAt,
+                executedAt = executedAt,
+            ),
+        )
         context.registerRemovedElement(removed)
     }
 

@@ -18,7 +18,7 @@ class RgaTreeListTest {
             ActorID(it),
         )
     }
-    private val crdtElements = timeTickets.map { Primitive.of(1, it) }
+    private val crdtElements = timeTickets.map { CrdtPrimitive.of(1, it) }
 
     @Before
     fun setUp() {
@@ -118,7 +118,7 @@ class RgaTreeListTest {
         crdtElements.forEach(target::insert)
         assertEquals(crdtElements.size + 1, target.length)
 
-        target.insertAfter(timeTickets[0], Primitive.of(1, createTimeTicket()))
+        target.insertAfter(timeTickets[0], CrdtPrimitive.of(1, createTimeTicket()))
         assertEquals("A1H1B1C1D1E1F1G1", target.getStructureAsString())
     }
 
@@ -152,7 +152,7 @@ class RgaTreeListTest {
     fun `should handle concurrent moveAfter operations`() {
         val sampleTarget1 = RgaTreeList.create().apply { crdtElements.forEach(this::insert) }
         val sampleTarget2 = RgaTreeList.create().apply {
-            timeTickets.map { Primitive.of(1, it) }.forEach(this::insert)
+            timeTickets.map { CrdtPrimitive.of(1, it) }.forEach(this::insert)
         }
         assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
 

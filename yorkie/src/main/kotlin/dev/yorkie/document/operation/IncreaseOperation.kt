@@ -2,14 +2,14 @@ package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
+import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtRoot
-import dev.yorkie.document.crdt.Primitive
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
 /**
  * [IncreaseOperation] represents an operation that increments a numeric value to [CrdtCounter].
- * Among [Primitive] elements, numeric types Integer, Long, and Double are used as values.
+ * Among [CrdtPrimitive] elements, numeric types Integer, Long, and Double are used as values.
  */
 internal class IncreaseOperation(
     val value: CrdtElement,
@@ -29,7 +29,7 @@ internal class IncreaseOperation(
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         if (parentObject is CrdtCounter) {
-            val copiedValue = value.deepCopy() as Primitive
+            val copiedValue = value.deepCopy() as CrdtPrimitive
             parentObject.increase(copiedValue)
         } else {
             if (parentObject == null) {

@@ -17,9 +17,9 @@ class CrdtCounterTest {
         val double = CrdtCounter.of(10.0, InitialTimeTicket)
         val long = CrdtCounter.of(100L, InitialTimeTicket)
 
-        val intOperand = Primitive.of(1, InitialTimeTicket)
-        val doubleOperand = Primitive.of(10.0, InitialTimeTicket)
-        val longOperand = Primitive.of(100L, InitialTimeTicket)
+        val intOperand = CrdtPrimitive.of(1, InitialTimeTicket)
+        val doubleOperand = CrdtPrimitive.of(10.0, InitialTimeTicket)
+        val longOperand = CrdtPrimitive.of(100L, InitialTimeTicket)
 
         int.increase(intOperand)
         int.increase(doubleOperand)
@@ -40,10 +40,10 @@ class CrdtCounterTest {
     @Test
     fun `verify increasing with non numeric data type throws error`() {
         val double = CrdtCounter.of(10.0, InitialTimeTicket)
-        val str = Primitive.of("hello", InitialTimeTicket)
-        val bool = Primitive.of(true, InitialTimeTicket)
-        val bytes = Primitive.of(ByteArray(1), InitialTimeTicket)
-        val date = Primitive.of(Date(), InitialTimeTicket)
+        val str = CrdtPrimitive.of("hello", InitialTimeTicket)
+        val bool = CrdtPrimitive.of(true, InitialTimeTicket)
+        val bytes = CrdtPrimitive.of(ByteArray(1), InitialTimeTicket)
+        val date = CrdtPrimitive.of(Date(), InitialTimeTicket)
 
         assertThrows(IllegalArgumentException::class.java) {
             double.increase(str)
@@ -66,9 +66,9 @@ class CrdtCounterTest {
         val double = CrdtCounter.of(10.0, InitialTimeTicket)
         val long = CrdtCounter.of(100L, InitialTimeTicket)
 
-        val intOperand = Primitive.of(-1, InitialTimeTicket)
-        val doubleOperand = Primitive.of(-10.0, InitialTimeTicket)
-        val longOperand = Primitive.of(-100L, InitialTimeTicket)
+        val intOperand = CrdtPrimitive.of(-1, InitialTimeTicket)
+        val doubleOperand = CrdtPrimitive.of(-10.0, InitialTimeTicket)
+        val longOperand = CrdtPrimitive.of(-100L, InitialTimeTicket)
 
         int.increase(intOperand)
         int.increase(doubleOperand)
@@ -107,11 +107,11 @@ class CrdtCounterTest {
     @Test
     fun `verify increase handles Int overflow gracefully`() {
         val maxInt = CrdtCounter.of(Int.MAX_VALUE, InitialTimeTicket)
-        maxInt.increase(Primitive.of(1, InitialTimeTicket))
+        maxInt.increase(CrdtPrimitive.of(1, InitialTimeTicket))
         assertEquals(Int.MAX_VALUE + 1L, maxInt.value)
 
         val minInt = CrdtCounter.of(Int.MIN_VALUE, InitialTimeTicket)
-        minInt.increase(Primitive.of(-1, InitialTimeTicket))
+        minInt.increase(CrdtPrimitive.of(-1, InitialTimeTicket))
         assertEquals(Int.MIN_VALUE - 1L, minInt.value)
     }
 }

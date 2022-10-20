@@ -30,7 +30,7 @@ internal class CrdtCounter private constructor(
         }.array()
     }
 
-    fun increase(primitive: Primitive) {
+    fun increase(primitive: CrdtPrimitive) {
         val primitiveValue = primitive.value
         require(primitive.isNumericType && primitiveValue is Number) {
             "Unsupported type of value: ${primitive.type}"

@@ -19,7 +19,7 @@ class CrdtObjectTest {
             ActorID(it),
         )
     }
-    private val crdtElements = (0..4).map { Primitive.of(it, timeTickets[it]) }
+    private val crdtElements = (0..4).map { CrdtPrimitive.of(it, timeTickets[it]) }
 
     @Before
     fun setUp() {
@@ -30,15 +30,15 @@ class CrdtObjectTest {
     fun `should handle set operations`() {
         assertEquals(0, target.keys.size)
 
-        target["A"] = Primitive.of(0, timeTickets[0])
+        target["A"] = CrdtPrimitive.of(0, timeTickets[0])
         assertEquals("A0", getStructureAsString())
-        target["B"] = Primitive.of(1, timeTickets[1])
+        target["B"] = CrdtPrimitive.of(1, timeTickets[1])
         assertEquals("A0B1", getStructureAsString())
-        target["C"] = Primitive.of(2, timeTickets[2])
+        target["C"] = CrdtPrimitive.of(2, timeTickets[2])
         assertEquals("A0B1C2", getStructureAsString())
-        target["D"] = Primitive.of(3, timeTickets[3])
+        target["D"] = CrdtPrimitive.of(3, timeTickets[3])
         assertEquals("A0B1C2D3", getStructureAsString())
-        target["E"] = Primitive.of(4, timeTickets[4])
+        target["E"] = CrdtPrimitive.of(4, timeTickets[4])
         assertEquals("A0B1C2D3E4", getStructureAsString())
     }
 
@@ -62,7 +62,7 @@ class CrdtObjectTest {
         assertEquals("B1C2D3E4", getStructureAsString())
         target.delete(crdtElements[3])
         assertEquals("B1C2E4", getStructureAsString())
-        target.delete(Primitive.of(100, TimeTicket.InitialTimeTicket))
+        target.delete(CrdtPrimitive.of(100, TimeTicket.InitialTimeTicket))
     }
 
     @Test
@@ -126,6 +126,6 @@ class CrdtObjectTest {
     }
 
     private fun getStructureAsString() = buildString {
-        target.forEach { append(it.first + (it.second as Primitive).value) }
+        target.forEach { append(it.first + (it.second as CrdtPrimitive).value) }
     }
 }

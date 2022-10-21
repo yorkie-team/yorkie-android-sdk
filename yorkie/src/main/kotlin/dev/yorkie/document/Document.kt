@@ -24,6 +24,8 @@ import kotlinx.coroutines.launch
  * A CRDT-based data type.
  * We can represen the model of the application.
  * And we can edit it even while offline.
+ *
+ * TODO(skhugh): we need to check for thread-safety.
  */
 public class Document private constructor(
     public val key: String,

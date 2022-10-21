@@ -4,7 +4,7 @@ import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
-import dev.yorkie.document.crdt.Primitive
+import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
@@ -48,9 +48,17 @@ public class JsonObject internal constructor(
         setPrimitive(key, value)
     }
 
+    public operator fun set(key: String, value: JsonPrimitive) {
+        setPrimitive(key, value)
+    }
+
     private fun setPrimitive(key: String, value: Any) {
         val executedAt = context.issueTimeTicket()
-        val primitive = Primitive.of(value, executedAt)
+        val primitive = if (value is JsonPrimitive) {
+            value.target
+        } else {
+            CrdtPrimitive.of(value, executedAt)
+        }
         setAndRegister(key, primitive)
     }
 

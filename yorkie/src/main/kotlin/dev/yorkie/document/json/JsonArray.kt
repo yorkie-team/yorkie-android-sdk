@@ -4,7 +4,7 @@ import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
-import dev.yorkie.document.crdt.Primitive
+import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.RemoveOperation
@@ -43,8 +43,15 @@ public class JsonArray internal constructor(
 
     public fun put(value: Date) = putPrimitive(value)
 
+    public fun put(value: JsonPrimitive) = putPrimitive(value)
+
     private fun putPrimitive(value: Any) {
-        putCrdtElement(Primitive.of(value, context.issueTimeTicket()))
+        val primitive = if (value is JsonPrimitive) {
+            value.target
+        } else {
+            CrdtPrimitive.of(value, context.issueTimeTicket())
+        }
+        putCrdtElement(primitive)
     }
 
     public fun putNewObject(): JsonObject {
@@ -111,16 +118,13 @@ public class JsonArray internal constructor(
         target: CrdtArray,
     ) : Iterator<JsonElement> {
         private val targetIterator = target.iterator()
-        private var lastElement: JsonElement? = null
 
         override fun hasNext(): Boolean {
             return targetIterator.hasNext()
         }
 
         override fun next(): JsonElement {
-            return targetIterator.next().toJsonElement<JsonElement>(context).also {
-                lastElement = it
-            }
+            return targetIterator.next().toJsonElement(context)
         }
     }
 }

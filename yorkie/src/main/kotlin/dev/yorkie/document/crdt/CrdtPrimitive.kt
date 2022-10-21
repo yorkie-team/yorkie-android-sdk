@@ -3,7 +3,7 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 import java.util.Date
 
-internal class Primitive private constructor(
+internal class CrdtPrimitive private constructor(
     val value: Any?,
     createdAtTime: TimeTicket,
 ) : CrdtElement(createdAtTime) {
@@ -20,21 +20,6 @@ internal class Primitive private constructor(
 
     val isNumericType = type in NUMERIC_TYPES
 
-    companion object {
-        private val NUMERIC_TYPES = setOf(
-            PrimitiveType.Integer,
-            PrimitiveType.Long,
-            PrimitiveType.Double,
-        )
-
-        /**
-         * Creates a new instance of Primitive.
-         */
-        fun of(value: Any?, createdAt: TimeTicket): Primitive {
-            return Primitive(value, createdAt)
-        }
-    }
-
     override fun toJson(): String {
         TODO("To be implemented when it's actually needed")
     }
@@ -46,6 +31,21 @@ internal class Primitive private constructor(
     override fun deepCopy(): CrdtElement {
         return of(value, createdAt).apply {
             movedAt = this.movedAt
+        }
+    }
+
+    companion object {
+        private val NUMERIC_TYPES = setOf(
+            PrimitiveType.Integer,
+            PrimitiveType.Long,
+            PrimitiveType.Double,
+        )
+
+        /**
+         * Creates a new instance of Primitive.
+         */
+        fun of(value: Any?, createdAt: TimeTicket): CrdtPrimitive {
+            return CrdtPrimitive(value, createdAt)
         }
     }
 }

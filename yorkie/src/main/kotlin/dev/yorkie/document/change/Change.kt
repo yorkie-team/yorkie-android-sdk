@@ -7,20 +7,20 @@ import dev.yorkie.document.time.ActorID
 /**
  * Represents a unit of modification in the document.
  */
-internal data class Change(
-    var id: ChangeID,
-    val operations: List<Operation>,
-    val message: String?,
+public data class Change internal constructor(
+    internal var id: ChangeID,
+    internal val operations: List<Operation>,
+    internal val message: String?,
 ) {
 
-    fun setActor(actorID: ActorID) {
+    internal fun setActor(actorID: ActorID) {
         operations.forEach {
             it.setActor(actorID)
         }
         id = id.setActor(actorID)
     }
 
-    fun execute(root: CrdtRoot) {
+    internal fun execute(root: CrdtRoot) {
         operations.forEach {
             it.execute(root)
         }

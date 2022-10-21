@@ -154,8 +154,8 @@ internal class CrdtArray(
         /**
          * Creates a new instance of [CrdtArray].
          * */
-        fun create(createdAt: TimeTicket): CrdtArray {
-            return CrdtArray(RgaTreeList.create(), createdAt)
+        fun create(createdAt: TimeTicket, rgaTreeList: RgaTreeList = RgaTreeList.create()): CrdtArray {
+            return CrdtArray(rgaTreeList, createdAt)
         }
     }
 }

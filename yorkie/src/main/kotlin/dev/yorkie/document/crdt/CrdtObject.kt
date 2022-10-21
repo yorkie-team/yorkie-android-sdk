@@ -149,8 +149,11 @@ internal class CrdtObject private constructor(
         /**
          * Creates a new instance of [CrdtObject].
          */
-        fun create(createdAt: TimeTicket): CrdtObject {
-            return CrdtObject(createdAt, RhtPQMap.create())
+        fun create(
+            createdAt: TimeTicket,
+            memberNodes: RhtPQMap<CrdtElement> = RhtPQMap.create(),
+        ): CrdtObject {
+            return CrdtObject(createdAt, memberNodes)
         }
     }
 }

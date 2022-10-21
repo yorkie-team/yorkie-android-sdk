@@ -175,7 +175,7 @@ public class Document private constructor(
 
     private fun Change.toChangeInfo() = DocEvent.ChangeInfo(this, createPaths())
 
-    public sealed class DocEvent<T>(val value: T) {
+    public sealed class DocEvent<T>(public val value: T) {
 
         public class Snapshot internal constructor(value: ByteString) : DocEvent<ByteString>(value)
 
@@ -187,6 +187,6 @@ public class Document private constructor(
             value: List<ChangeInfo>,
         ) : DocEvent<List<ChangeInfo>>(value)
 
-        public class ChangeInfo(val change: Change, val paths: List<String>)
+        public class ChangeInfo(public val change: Change, public val paths: List<String>)
     }
 }

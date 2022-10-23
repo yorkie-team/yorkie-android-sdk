@@ -67,7 +67,7 @@ public class JsonArray internal constructor(
     }
 
     private fun putCrdtElement(value: CrdtElement) {
-        val prevCreated = target.lastCreated
+        val prevCreated = target.lastCreatedAt
         target.insertAfter(prevCreated, value)
         context.registerElement(value, target)
         context.push(

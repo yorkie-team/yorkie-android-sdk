@@ -50,15 +50,15 @@ internal class CrdtCounter private constructor(
     }
 
     override fun toJson(): String {
-        TODO("To be implemented when it's actually needed")
+        return "$value"
     }
 
     override fun toSortedJson(): String {
-        TODO("To be implemented when it's actually needed")
+        return toJson()
     }
 
     override fun deepCopy(): CrdtElement {
-        TODO("To be implemented when it's actually needed")
+        return of(value, createdAt).apply { movedAt = this.movedAt }
     }
 
     companion object {
@@ -76,6 +76,7 @@ internal class CrdtCounter private constructor(
             is Long -> CounterType.LongCnt
             else -> CounterType.DoubleCnt
         }
+
         fun ByteArray.asCounterValue(counterType: CounterType): Number =
             with(ByteBuffer.wrap(this)) {
                 when (counterType) {

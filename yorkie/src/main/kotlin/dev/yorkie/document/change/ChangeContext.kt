@@ -38,21 +38,21 @@ internal data class ChangeContext(
      * Registers the given element to the root.
      */
     fun registerElement(element: CrdtElement, parent: CrdtContainer) {
-        TODO("implement this after CrdtRoot")
+        root.registerElement(element, parent)
     }
 
     /**
      * Registers removed element for garbage collection.
      */
     fun registerRemovedElement(element: CrdtElement) {
-        TODO("implement this after CrdtRoot")
+        root.registerRemovedElement(element)
     }
 
     /**
      * Creates a new instance of [Change] in this context.
      */
     fun getChange(): Change {
-        TODO("implement this after Change")
+        return Change(id, operations, message)
     }
 
     /**

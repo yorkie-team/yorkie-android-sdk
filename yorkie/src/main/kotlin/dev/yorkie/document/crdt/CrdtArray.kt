@@ -18,13 +18,13 @@ internal class CrdtArray(
     val length
         get() = elements.length
 
-    val lastCreated
-        get() = elements.getLastCreatedAt()
+    val lastCreatedAt
+        get() = elements.lastCreatedAt
 
     /**
      * Returns the sub path of the given [createdAt] element.
      */
-    override fun subPathOf(createdAt: TimeTicket): String? {
+    override fun subPathOf(createdAt: TimeTicket): String {
         return elements.subPathOf(createdAt)
     }
 
@@ -107,7 +107,7 @@ internal class CrdtArray(
     override fun toJson(): String {
         val json = mutableListOf<String>()
         return forEach { json.add(it.toJson()) }.run {
-            json.joinToString(",")
+            json.joinToString(",", "[", "]")
         }
     }
 
@@ -128,7 +128,11 @@ internal class CrdtArray(
     }
 
     override fun deepCopy(): CrdtElement {
-        TODO("To be implemented when it's actually needed")
+        val clone = create(createdAt).apply { remove(removedAt) }
+        elements.forEach { node ->
+            clone.elements.insertAfter(clone.lastCreatedAt, node.value.deepCopy())
+        }
+        return clone
     }
 
     override fun iterator(): Iterator<CrdtElement> {

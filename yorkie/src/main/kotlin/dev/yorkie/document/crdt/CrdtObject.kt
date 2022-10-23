@@ -72,7 +72,7 @@ internal class CrdtObject private constructor(
      * Returns the JSON encoding of this object.
      */
     override fun toJson(): String {
-        return joinToString(",") {
+        return joinToString(",", "{", "}") {
             "${it.first}:${it.second.toJson()}"
         }
     }
@@ -88,7 +88,7 @@ internal class CrdtObject private constructor(
      * Returns the sorted JSON encoding of this object
      */
     override fun toSortedJson(): String {
-        return keys.sorted().joinToString(",") {
+        return keys.sorted().joinToString(",", "{", "}") {
             val node = memberNodes[it]
             "$it:${node.toSortedJson()}"
         }
@@ -98,11 +98,10 @@ internal class CrdtObject private constructor(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {
-        val clone = create(createdAt)
+        val clone = create(createdAt).apply { remove(removedAt) }
         memberNodes.forEach {
             clone.memberNodes[it.strKey] = it.value.deepCopy()
         }
-        clone.remove(removedAt)
         return clone
     }
 

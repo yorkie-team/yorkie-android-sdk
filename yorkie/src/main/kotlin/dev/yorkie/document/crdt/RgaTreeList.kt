@@ -29,6 +29,9 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
     val head
         get() = dummyHead.value
 
+    val lastCreatedAt
+        get() = last.createdAt
+
     /**
      * Adds a new node with [value] after the last node.
      */
@@ -121,9 +124,9 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
     /**
      * Returns the sub path of the given element.
      */
-    fun subPathOf(createdAt: TimeTicket): String? {
+    fun subPathOf(createdAt: TimeTicket): String {
         val node = nodeMapByCreatedAt[createdAt]
-            ?: return null
+            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
         return nodeMapByIndex.indexOf(node.value).toString()
     }
 
@@ -180,11 +183,6 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
         }
         return node.value
     }
-
-    /**
-     * Returns the creation time of the last element.
-     */
-    fun getLastCreatedAt(): TimeTicket = last.createdAt
 
     override fun iterator(): Iterator<RgaTreeListNode> {
         return object : Iterator<RgaTreeListNode> {

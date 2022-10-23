@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
@@ -46,7 +47,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         val subPaths = mutableListOf<String>()
         while (pair.parent != null) {
             val currentCreatedAt = pair.element.createdAt
-            var subPath = pair.parent?.subPathOf(currentCreatedAt)
+            var subPath = pair.parent!!.subPathOf(currentCreatedAt)
             if (subPath == null) {
                 YorkieLogger.e(TAG, "fail to find the given element: $currentCreatedAt")
             } else {
@@ -161,7 +162,8 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         return count
     }
 
-    private fun deregisterElement(element: CrdtElement) {
+    @VisibleForTesting
+    fun deregisterElement(element: CrdtElement) {
         elementPairMapByCreatedAt.remove(element.createdAt)
         removedElementSetByCreatedAt.remove(element.createdAt)
     }

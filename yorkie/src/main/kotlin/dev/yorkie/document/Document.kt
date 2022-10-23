@@ -9,6 +9,7 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
@@ -34,7 +35,7 @@ public class Document private constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val localChanges = mutableListOf<Change>()
 
-    private var root: CrdtRoot = CrdtRoot(CrdtObject.create(TimeTicket.InitialTimeTicket))
+    private var root: CrdtRoot = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
     private var clone: CrdtRoot? = null
     private var changeID = ChangeID.InitialChangeID
     private var checkPoint = CheckPoint.InitialCheckPoint

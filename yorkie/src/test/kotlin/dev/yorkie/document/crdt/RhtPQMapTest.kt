@@ -14,13 +14,13 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the set function`() {
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
-        rhtpqMap["test1"] = CrdtPrimitive.of("value1", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test1"] = CrdtPrimitive.of("value11", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test2"] = CrdtPrimitive.of("value2", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test3"] = CrdtPrimitive.of("value3", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test4"] = CrdtPrimitive.of("value4", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test5"] = CrdtPrimitive.of("value5", TimeTicket.InitialTimeTicket)
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
+        rhtpqMap["test1"] = CrdtPrimitive("value1", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test1"] = CrdtPrimitive("value11", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test2"] = CrdtPrimitive("value2", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test3"] = CrdtPrimitive("value3", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test4"] = CrdtPrimitive("value4", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test5"] = CrdtPrimitive("value5", TimeTicket.InitialTimeTicket)
         assertTrue(rhtpqMap["test1"].value == "value1")
         assertTrue(rhtpqMap["test2"].value == "value2")
         assertTrue(rhtpqMap["test3"].value == "value3")
@@ -34,13 +34,13 @@ class RhtPQMapTest {
 
         val nullObject = rhtpqMap.set(
             "test5",
-            CrdtPrimitive.of("value6", TimeTicket.InitialTimeTicket),
+            CrdtPrimitive("value6", TimeTicket.InitialTimeTicket),
         )
         assertNull(nullObject)
 
         val removedPrimitive = rhtpqMap.set(
             "test5",
-            CrdtPrimitive.of(
+            CrdtPrimitive(
                 "value6",
                 TimeTicket(1, TimeTicket.MAX_DELIMITER, ActorID.MAX_ACTOR_ID),
             ),
@@ -51,20 +51,20 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the set function on concurrent situations`() {
-        val rhtPQMap1 = RhtPQMap.create<CrdtPrimitive>()
-        rhtPQMap1["test1"] = CrdtPrimitive.of(1, generateTimeTicket(1, 1, "1"))
+        val rhtPQMap1 = RhtPQMap<CrdtPrimitive>()
+        rhtPQMap1["test1"] = CrdtPrimitive(1, generateTimeTicket(1, 1, "1"))
 
         (2..3).forEach { index ->
-            rhtPQMap1["test1"] = CrdtPrimitive.of(
+            rhtPQMap1["test1"] = CrdtPrimitive(
                 index,
                 generateTimeTicket(index.toLong(), index, "2"),
             )
         }
 
-        val rhtPQMap2 = RhtPQMap.create<CrdtPrimitive>()
-        rhtPQMap2["test1"] = CrdtPrimitive.of(1, generateTimeTicket(1, 1, "1"))
+        val rhtPQMap2 = RhtPQMap<CrdtPrimitive>()
+        rhtPQMap2["test1"] = CrdtPrimitive(1, generateTimeTicket(1, 1, "1"))
         (3 downTo 2).forEach { index ->
-            rhtPQMap2["test1"] = CrdtPrimitive.of(
+            rhtPQMap2["test1"] = CrdtPrimitive(
                 index,
                 generateTimeTicket(index.toLong(), index, "3"),
             )
@@ -78,12 +78,12 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the get function`() {
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
-        rhtpqMap["test1"] = CrdtPrimitive.of("value1", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test2"] = CrdtPrimitive.of("value2", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test3"] = CrdtPrimitive.of("value3", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test4"] = CrdtPrimitive.of("value4", TimeTicket.InitialTimeTicket)
-        rhtpqMap["test5"] = CrdtPrimitive.of("value5", TimeTicket.InitialTimeTicket)
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
+        rhtpqMap["test1"] = CrdtPrimitive("value1", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test2"] = CrdtPrimitive("value2", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test3"] = CrdtPrimitive("value3", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test4"] = CrdtPrimitive("value4", TimeTicket.InitialTimeTicket)
+        rhtpqMap["test5"] = CrdtPrimitive("value5", TimeTicket.InitialTimeTicket)
 
         assertFalse(rhtpqMap["test1"].value == "value2")
         assertTrue(rhtpqMap["test2"].value == "value2")
@@ -96,8 +96,8 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the remove function`() {
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
-        val primitive1 = CrdtPrimitive.of("value1", TimeTicket.InitialTimeTicket)
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
+        val primitive1 = CrdtPrimitive("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap["test1"] = primitive1
         val removedPrimitive =
             rhtpqMap.remove(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
@@ -119,8 +119,8 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the removeByKey function`() {
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
-        val primitive = CrdtPrimitive.of("value1", TimeTicket.InitialTimeTicket)
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
+        val primitive = CrdtPrimitive("value1", TimeTicket.InitialTimeTicket)
         rhtpqMap["test1"] = primitive
 
         assertThrows(IllegalStateException::class.java) {
@@ -136,8 +136,8 @@ class RhtPQMapTest {
     @Test
     fun `Verify the subPathOf function`() {
         val timeTicket = generateTimeTicket(0, 0, "0")
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
-        val primitive = CrdtPrimitive.of("value1", timeTicket)
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
+        val primitive = CrdtPrimitive("value1", timeTicket)
         rhtpqMap["test1"] = primitive
         val primitiveBySubPathOf = rhtpqMap.subPathOf(timeTicket)
         assertEquals(primitive, rhtpqMap[primitiveBySubPathOf])
@@ -149,18 +149,18 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the delete function`() {
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
 
         val ticket1 = generateTimeTicket(0, 0, "11")
-        val primitive1 = CrdtPrimitive.of("value1", ticket1)
+        val primitive1 = CrdtPrimitive("value1", ticket1)
         rhtpqMap["test1"] = primitive1
 
         val ticket2 = generateTimeTicket(1, 1, "11")
-        val primitive2 = CrdtPrimitive.of("value2", ticket2)
+        val primitive2 = CrdtPrimitive("value2", ticket2)
         rhtpqMap["test2"] = primitive2
 
         val ticket3 = generateTimeTicket(2, 2, "11")
-        val primitive3 = CrdtPrimitive.of("value3", ticket3)
+        val primitive3 = CrdtPrimitive("value3", ticket3)
         rhtpqMap["test3"] = primitive3
 
         rhtpqMap.delete(primitive2)
@@ -174,11 +174,11 @@ class RhtPQMapTest {
 
     @Test
     fun `Verify the has function`() {
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
         assertFalse(rhtpqMap.has("test1"))
 
         val ticket1 = TimeTicket.InitialTimeTicket
-        val primitive1 = CrdtPrimitive.of("value1", ticket1)
+        val primitive1 = CrdtPrimitive("value1", ticket1)
         rhtpqMap["test1"] = primitive1
         assertTrue(rhtpqMap.has("test1"))
 
@@ -188,11 +188,11 @@ class RhtPQMapTest {
 
     @Test
     fun `Verity the getKeyOfQueue() using sequence`() {
-        val rhtpqMap = RhtPQMap.create<CrdtPrimitive>()
+        val rhtpqMap = RhtPQMap<CrdtPrimitive>()
         val list = mutableListOf<String>()
         for (i in 0..100000) {
             val key = "test$i"
-            rhtpqMap[key] = CrdtPrimitive.of("value$i", generateTimeTicket(i.toLong(), i, "11"))
+            rhtpqMap[key] = CrdtPrimitive("value$i", generateTimeTicket(i.toLong(), i, "11"))
             list.add(key)
         }
 

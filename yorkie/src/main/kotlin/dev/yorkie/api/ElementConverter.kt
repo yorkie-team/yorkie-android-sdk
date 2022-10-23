@@ -39,29 +39,29 @@ internal fun JSONElement.toCrdtElement(): CrdtElement {
 }
 
 internal fun JSONObject.toCrdtObject(): CrdtObject {
-    val rht = RhtPQMap.create<CrdtElement>()
+    val rht = RhtPQMap<CrdtElement>()
     nodesList.forEach { node ->
         rht[node.key] = node.element.toCrdtElement()
     }
-    return CrdtObject.create(createdAt.toTimeTicket(), rht).also {
+    return CrdtObject(createdAt.toTimeTicket(), rht).also {
         it.movedAt = movedAtOrNull?.toTimeTicket()
         it.removedAt = removedAtOrNull?.toTimeTicket()
     }
 }
 
 internal fun JSONArray.toCrdtArray(): CrdtArray {
-    val rgaTreeList = RgaTreeList.create()
+    val rgaTreeList = RgaTreeList()
     nodesList.forEach { node ->
         rgaTreeList.insert(node.element.toCrdtElement())
     }
-    return CrdtArray.create(createdAt.toTimeTicket(), rgaTreeList).also {
+    return CrdtArray(createdAt.toTimeTicket(), rgaTreeList).also {
         it.movedAt = movedAtOrNull?.toTimeTicket()
         it.removedAt = removedAtOrNull?.toTimeTicket()
     }
 }
 
 internal fun Primitive.toCrdtPrimitive(): CrdtPrimitive {
-    return CrdtPrimitive.of(
+    return CrdtPrimitive(
         CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
         createdAt.toTimeTicket(),
     ).also {

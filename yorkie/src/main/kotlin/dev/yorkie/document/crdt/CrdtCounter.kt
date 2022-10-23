@@ -8,10 +8,7 @@ typealias CounterValue = Number
 /**
  * [CrdtCounter] represents changeable number data type.
  */
-internal class CrdtCounter private constructor(
-    value: CounterValue,
-    createdAt: TimeTicket,
-) : CrdtElement(createdAt) {
+internal class CrdtCounter(value: CounterValue, createdAt: TimeTicket) : CrdtElement(createdAt) {
     var value = value.sanitized()
         private set(value) {
             field = value.sanitized()
@@ -63,8 +60,6 @@ internal class CrdtCounter private constructor(
 
     companion object {
 
-        fun of(value: CounterValue, createdAt: TimeTicket) = CrdtCounter(value, createdAt)
-
         fun CounterValue.sanitized(): Number = when (counterType()) {
             CounterType.IntegerCnt -> toInt()
             CounterType.LongCnt -> toLong()
@@ -76,6 +71,7 @@ internal class CrdtCounter private constructor(
             is Long -> CounterType.LongCnt
             else -> CounterType.DoubleCnt
         }
+
         fun ByteArray.asCounterValue(counterType: CounterType): Number =
             with(ByteBuffer.wrap(this)) {
                 when (counterType) {

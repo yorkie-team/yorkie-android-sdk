@@ -6,8 +6,8 @@ import dev.yorkie.document.time.TimeTicket
  * [CrdtArray] represents Array data type containing logical clocks.
  */
 internal class CrdtArray(
-    val elements: RgaTreeList,
     createdAt: TimeTicket,
+    val elements: RgaTreeList = RgaTreeList(),
 ) : CrdtContainer(createdAt), Iterable<CrdtElement> {
     val head
         get() = elements.head
@@ -147,15 +147,6 @@ internal class CrdtArray(
             override fun next(): CrdtElement {
                 return values[index++]
             }
-        }
-    }
-
-    companion object {
-        /**
-         * Creates a new instance of [CrdtArray].
-         * */
-        fun create(createdAt: TimeTicket, rgaTreeList: RgaTreeList = RgaTreeList.create()): CrdtArray {
-            return CrdtArray(rgaTreeList, createdAt)
         }
     }
 }

@@ -5,7 +5,7 @@ import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
 import java.util.Date
 
-internal class CrdtPrimitive private constructor(
+internal class CrdtPrimitive(
     val value: Any?,
     createdAtTime: TimeTicket,
 ) : CrdtElement(createdAtTime) {
@@ -31,7 +31,7 @@ internal class CrdtPrimitive private constructor(
     }
 
     override fun deepCopy(): CrdtElement {
-        return of(value, createdAt).apply {
+        return CrdtPrimitive(value, createdAt).apply {
             movedAt = this.movedAt
         }
     }
@@ -42,13 +42,6 @@ internal class CrdtPrimitive private constructor(
             PrimitiveType.Long,
             PrimitiveType.Double,
         )
-
-        /**
-         * Creates a new instance of Primitive.
-         */
-        fun of(value: Any?, createdAt: TimeTicket): CrdtPrimitive {
-            return CrdtPrimitive(value, createdAt)
-        }
 
         fun fromBytes(type: PrimitiveType, bytes: ByteString): Any? {
             fun ByteString.asByteBuffer() = ByteBuffer.wrap(toByteArray())

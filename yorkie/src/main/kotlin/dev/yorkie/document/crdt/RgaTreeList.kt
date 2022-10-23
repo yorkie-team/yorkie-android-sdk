@@ -9,8 +9,8 @@ import dev.yorkie.util.SplayTreeSet
 /**
  * [RgaTreeList] is replicated growable array.
  */
-internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeListNode> {
-    private val dummyHead = RgaTreeListNode(CrdtPrimitive.of(1, InitialTimeTicket)).apply {
+internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
+    private val dummyHead = RgaTreeListNode(CrdtPrimitive(1, InitialTimeTicket)).apply {
         value.removedAt = InitialTimeTicket
     }
     var last: RgaTreeListNode = dummyHead
@@ -195,12 +195,6 @@ internal class RgaTreeList private constructor() : Iterable<RgaTreeList.RgaTreeL
             override fun next(): RgaTreeListNode {
                 return requireNotNull(node.next).also { node = it }
             }
-        }
-    }
-
-    companion object {
-        fun create(): RgaTreeList {
-            return RgaTreeList()
         }
     }
 

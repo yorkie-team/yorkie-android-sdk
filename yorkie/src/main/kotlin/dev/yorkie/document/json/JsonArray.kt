@@ -5,6 +5,7 @@ import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.RemoveOperation
@@ -49,19 +50,19 @@ public class JsonArray internal constructor(
         val primitive = if (value is JsonPrimitive) {
             value.target
         } else {
-            CrdtPrimitive.of(value, context.issueTimeTicket())
+            CrdtPrimitive(value, context.issueTimeTicket())
         }
         putCrdtElement(primitive)
     }
 
     public fun putNewObject(): JsonObject {
-        val obj = CrdtObject.create(context.issueTimeTicket())
+        val obj = CrdtObject(context.issueTimeTicket(), RhtPQMap())
         putCrdtElement(obj)
         return obj.toJsonElement(context)
     }
 
     public fun putNewArray(): JsonArray {
-        val array = CrdtArray.create(context.issueTimeTicket())
+        val array = CrdtArray(context.issueTimeTicket())
         putCrdtElement(array)
         return array.toJsonElement(context)
     }

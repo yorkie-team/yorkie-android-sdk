@@ -7,8 +7,7 @@ import dev.yorkie.util.YorkieLogger
 /**
  * [RhtPQMap] is replicated hash table with a priority queue by creation time.
  */
-internal class RhtPQMap<T : CrdtElement> private constructor() :
-    Iterable<RhtPQMap.RhtPQMapNode<T>> {
+internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
     private val logTag = "RhtPQMap"
 
     private val elementQueueMapByKey:
@@ -153,15 +152,6 @@ internal class RhtPQMap<T : CrdtElement> private constructor() :
             override fun next(): RhtPQMapNode<T> {
                 return nodes[index++]
             }
-        }
-    }
-
-    companion object {
-        /**
-         * Creates a instance of [RhtPQMap]
-         */
-        fun <T : CrdtElement> create(): RhtPQMap<T> {
-            return RhtPQMap()
         }
     }
 

@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.TimeTicket
 import java.util.Date
 
@@ -20,14 +21,27 @@ internal class CrdtPrimitive private constructor(
 
     val isNumericType = type in NUMERIC_TYPES
 
+    /**
+     * Returns the JSON encoding of this object.
+     */
     override fun toJson(): String {
-        TODO("To be implemented when it's actually needed")
+        return if (type == PrimitiveType.String) {
+            escapeString(value as String)
+        } else {
+            "$value"
+        }
     }
 
+    /**
+     * Returns the sorted JSON encoding of this object
+     */
     override fun toSortedJson(): String {
         return toJson()
     }
 
+    /**
+     * Copies itself deeply.
+     */
     override fun deepCopy(): CrdtElement {
         return of(value, createdAt).apply {
             movedAt = this.movedAt

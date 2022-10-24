@@ -12,7 +12,7 @@ class CrdtArrayTest {
     private val actorIDs = listOf("A", "B", "C", "D", "E", "F", "G")
     private val timeTickets = actorIDs.map {
         TimeTicket(
-            actorIDs.indexOf(it).toLong() + 1,
+            actorIDs.indexOf(it).toLong(),
             TimeTicket.INITIAL_DELIMITER,
             ActorID(it),
         )
@@ -26,10 +26,10 @@ class CrdtArrayTest {
 
     @Test
     fun `should handle remove operations`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         target.remove(timeTickets[1], timeTickets[2])
         assertEquals("ACDEFG", target.getStructureAsString())
@@ -40,54 +40,54 @@ class CrdtArrayTest {
         target.remove(timeTickets[6], timeTickets[5])
         assertEquals("AEFG", target.getStructureAsString())
 
-        assertEquals(crdtElements.size - 3 + 1, target.length)
+        assertEquals(crdtElements.size - 3, target.length)
     }
 
     @Test
     fun `should handle delete operations`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         target.delete(crdtElements[0])
-        assertEquals(crdtElements.size - 1 + 1, target.length)
+        assertEquals(crdtElements.size - 1, target.length)
         assertEquals("BCDEFG", target.getStructureAsString())
         target.delete(crdtElements[1])
-        assertEquals(crdtElements.size - 2 + 1, target.length)
+        assertEquals(crdtElements.size - 2, target.length)
         assertEquals("CDEFG", target.getStructureAsString())
         target.delete(crdtElements[2])
-        assertEquals(crdtElements.size - 3 + 1, target.length)
+        assertEquals(crdtElements.size - 3, target.length)
         assertEquals("DEFG", target.getStructureAsString())
     }
 
     @Test
     fun `should handle removeByIndex operations`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
-        target.removeByIndex(1, timeTickets[2])
+        target.removeByIndex(0, timeTickets[2])
         assertEquals("BCDEFG", target.getStructureAsString())
-        target.removeByIndex(1, timeTickets[3])
+        target.removeByIndex(0, timeTickets[3])
         assertEquals("CDEFG", target.getStructureAsString())
-        target.removeByIndex(1, timeTickets[4])
+        target.removeByIndex(0, timeTickets[4])
         assertEquals("DEFG", target.getStructureAsString())
-        target.removeByIndex(1, timeTickets[5])
+        target.removeByIndex(0, timeTickets[5])
         assertEquals("EFG", target.getStructureAsString())
         target.removeByIndex(crdtElements.size, timeTickets[6])
         assertEquals("EFG", target.getStructureAsString())
 
-        assertEquals(crdtElements.size - 4 + 1, target.length)
+        assertEquals(crdtElements.size - 4, target.length)
     }
 
     @Test
     fun `should handle insertion after the given element`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         target.insertAfter(timeTickets[0], CrdtPrimitive.of(1, createTimeTicket()))
         assertEquals("AHBCDEFG", target.getStructureAsString())
@@ -95,14 +95,14 @@ class CrdtArrayTest {
 
     @Test
     fun `should handle moving an element after the given element`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())
         assertEquals("ABCDFEG", target.getStructureAsString())
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
     }
 
     @Test
@@ -143,21 +143,21 @@ class CrdtArrayTest {
 
     @Test
     fun `should handle get operations with index`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
-        assertEquals(crdtElements[0], target[1])
+        assertEquals(crdtElements[0], target[0])
         assertEquals(null, target[10])
     }
 
     @Test
     fun `should handle get operations with value`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         assertEquals(crdtElements[0], target[timeTickets[0]])
         assertEquals(null, target[createTimeTicket()])
@@ -165,10 +165,10 @@ class CrdtArrayTest {
 
     @Test
     fun `should handle getPrevCreatedAt operations`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         assertEquals(timeTickets[0], target.getPrevCreatedAt(timeTickets[1]))
         assertEquals(timeTickets[1], target.getPrevCreatedAt(timeTickets[2]))

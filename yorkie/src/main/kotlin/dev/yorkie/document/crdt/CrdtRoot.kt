@@ -3,6 +3,7 @@ package dev.yorkie.document.crdt
 import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
+import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 
 /**
  * [CrdtRoot] is a structure represents the root. It has a hash table of
@@ -45,16 +46,17 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         var pair: CrdtElementPair = elementPairMapByCreatedAt[createdAt] ?: return emptyList()
 
         val subPaths = mutableListOf<String>()
-        while (pair.parent != null) {
+        while (true) {
+            val parent = pair.parent ?: break
             val currentCreatedAt = pair.element.createdAt
-            var subPath = pair.parent!!.subPathOf(currentCreatedAt)
+            var subPath = parent.subPathOf(currentCreatedAt)
             if (subPath == null) {
                 YorkieLogger.e(TAG, "fail to find the given element: $currentCreatedAt")
             } else {
                 subPath = subPath.replace(Regex("/[\$.]/g"), "\\$&")
                 subPaths.add(0, subPath)
             }
-            pair = elementPairMapByCreatedAt[pair.parent!!.createdAt] ?: break
+            pair = elementPairMapByCreatedAt[parent.createdAt] ?: break
         }
 
         subPaths.add(0, "$")
@@ -128,7 +130,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         var count = 0
         removedElementSetByCreatedAt.forEach { createdAt ->
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
-            if (pair.element.isRemoved && pair.element.removedAt!! <= executedAt) {
+            if (pair.element.isRemoved && pair.element.removedAt <= executedAt) {
                 pair.parent?.delete(pair.element)
                 count += garbageCollectInternal(pair.element)
             }

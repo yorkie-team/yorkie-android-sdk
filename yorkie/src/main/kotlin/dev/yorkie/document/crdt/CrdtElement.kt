@@ -9,7 +9,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 internal abstract class CrdtElement(
     val createdAt: TimeTicket,
     movedAt: TimeTicket? = null,
-    var removedAt: TimeTicket? = null,
+    removedAt: TimeTicket? = null,
 ) {
     abstract fun toJson(): String
 
@@ -26,6 +26,13 @@ internal abstract class CrdtElement(
     var movedAt: TimeTicket? = movedAt
         set(value) {
             if (value > field) {
+                field = value
+            }
+        }
+
+    var removedAt: TimeTicket? = removedAt
+        set(value) {
+            if (value >= createdAt && value > field) {
                 field = value
             }
         }

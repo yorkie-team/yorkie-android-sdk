@@ -17,7 +17,7 @@ class CrdtArrayTest {
             ActorID(it),
         )
     }
-    private val crdtElements = timeTickets.map { CrdtPrimitive.of(1, it) }
+    private val crdtElements = timeTickets.map { CrdtPrimitive(1, it) }
 
     @Before
     fun setUp() {
@@ -89,7 +89,7 @@ class CrdtArrayTest {
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
         assertEquals(crdtElements.size + 1, target.length)
 
-        target.insertAfter(timeTickets[0], CrdtPrimitive.of(1, createTimeTicket()))
+        target.insertAfter(timeTickets[0], CrdtPrimitive(1, createTimeTicket()))
         assertEquals("AHBCDEFG", target.getStructureAsString())
     }
 
@@ -129,7 +129,7 @@ class CrdtArrayTest {
         }
         val sampleTarget2 = createSampleCrdtArray().apply {
             timeTickets
-                .map { CrdtPrimitive.of(1, it) }
+                .map { CrdtPrimitive(1, it) }
                 .forEach { insertAfter(last.createdAt, it) }
         }
         assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
@@ -182,7 +182,7 @@ class CrdtArrayTest {
     }
 
     private fun createSampleCrdtArray(): CrdtArray {
-        return CrdtArray.create(TimeTicket.InitialTimeTicket)
+        return CrdtArray(TimeTicket.InitialTimeTicket)
     }
 
     private fun CrdtArray.getStructureAsString() = buildString {

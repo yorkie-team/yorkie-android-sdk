@@ -55,7 +55,7 @@ class CrdtRootTest {
         root.registerElement(k2_1_0, k2_1)
         assertEquals(4, root.elementMapSize)
         assertEquals(k2_1_0, root.findByCreatedAt(k2_1_0.createdAt))
-        // assertEquals("$.k2.1.0", root.createPath(k2_1_0.createdAt))
+        assertEquals("$.k2.1.0", root.createPath(k2_1_0.createdAt))
 
         // set '$.k2.1.1'
         val k2_1_1 = CrdtPrimitive.of("1", cc.issueTimeTicket())
@@ -63,6 +63,6 @@ class CrdtRootTest {
         root.registerElement(k2_1_1, k2_1)
         assertEquals(5, root.elementMapSize)
         assertEquals(k2_1_1, root.findByCreatedAt(k2_1_1.createdAt))
-        // assertEquals("$.k2.1.1", root.createPath(k2_1_1.createdAt))
+        assertEquals("$.k2.1.1", root.createPath(k2_1_1.createdAt))
     }
 }

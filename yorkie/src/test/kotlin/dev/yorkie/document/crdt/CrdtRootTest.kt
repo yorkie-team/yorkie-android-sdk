@@ -12,13 +12,13 @@ class CrdtRootTest {
     // TODO(7hong13): maybe need to separate it into multiple unit test functions.
     @Test
     fun `basic test`() {
-        val root = CrdtRoot(CrdtObject.create(TimeTicket.InitialTimeTicket))
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
         val cc = ChangeContext(ChangeID.InitialChangeID, root, null)
         assertNull(root.findByCreatedAt(TimeTicket.MaxTimeTicket))
         assertEquals("", root.createPath(TimeTicket.MaxTimeTicket))
 
         // set '$.k1'
-        val k1 = CrdtPrimitive.of("k1", cc.issueTimeTicket())
+        val k1 = CrdtPrimitive("k1", cc.issueTimeTicket())
         root.rootObject["k1"] = k1
         root.registerElement(k1, root.rootObject)
         assertEquals(2, root.elementMapSize)
@@ -33,7 +33,7 @@ class CrdtRootTest {
         assertNull(root.findByCreatedAt(k1.createdAt))
 
         // set '$.k2'
-        val k2 = CrdtObject.create(cc.issueTimeTicket())
+        val k2 = CrdtObject(cc.issueTimeTicket(), RhtPQMap())
         root.rootObject["k2"] = k2
         root.registerElement(k2, root.rootObject)
         assertEquals(2, root.elementMapSize)
@@ -42,7 +42,7 @@ class CrdtRootTest {
         assertEquals("{}", k2.toJson())
 
         // set '$.k2.1'
-        val k2_1 = CrdtArray.create(cc.issueTimeTicket())
+        val k2_1 = CrdtArray(cc.issueTimeTicket())
         k2["1"] = k2_1
         root.registerElement(k2_1, k2)
         assertEquals(3, root.elementMapSize)
@@ -50,7 +50,7 @@ class CrdtRootTest {
         assertEquals("$.k2.1", root.createPath(k2_1.createdAt))
 
         // set '$.k2.1.0'
-        val k2_1_0 = CrdtPrimitive.of("0", cc.issueTimeTicket())
+        val k2_1_0 = CrdtPrimitive("0", cc.issueTimeTicket())
         k2_1.insertAfter(k2_1.lastCreatedAt, k2_1_0)
         root.registerElement(k2_1_0, k2_1)
         assertEquals(4, root.elementMapSize)
@@ -58,7 +58,7 @@ class CrdtRootTest {
         assertEquals("$.k2.1.0", root.createPath(k2_1_0.createdAt))
 
         // set '$.k2.1.1'
-        val k2_1_1 = CrdtPrimitive.of("1", cc.issueTimeTicket())
+        val k2_1_1 = CrdtPrimitive("1", cc.issueTimeTicket())
         k2_1.insertAfter(k2_1_0.createdAt, k2_1_1)
         root.registerElement(k2_1_1, k2_1)
         assertEquals(5, root.elementMapSize)

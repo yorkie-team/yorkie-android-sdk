@@ -27,7 +27,7 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle insert operations`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         target.insert(crdtElements[0])
         assertEquals("A1", target.getStructureAsString())
@@ -44,7 +44,7 @@ class RgaTreeListTest {
         target.insert(crdtElements[6])
         assertEquals("A1B1C1D1E1F1G1", target.getStructureAsString())
 
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
     }
 
     @Test
@@ -53,7 +53,7 @@ class RgaTreeListTest {
             target.remove(timeTickets[0], timeTickets[1])
         }
 
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach(target::insert)
 
@@ -66,27 +66,27 @@ class RgaTreeListTest {
         target.remove(timeTickets[6], timeTickets[5])
         assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
 
-        assertEquals(crdtElements.size - 3 + 1, target.length)
+        assertEquals(crdtElements.size - 3, target.length)
     }
 
     @Test
     fun `should handle removeByIndex operations`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach(target::insert)
 
         target.removeByIndex(1, timeTickets[2])
-        assertEquals("A0B1C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C1D1E1F1G1", target.getStructureAsString())
         target.removeByIndex(1, timeTickets[3])
-        assertEquals("A0B0C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D1E1F1G1", target.getStructureAsString())
         target.removeByIndex(1, timeTickets[4])
-        assertEquals("A0B0C0D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
         target.removeByIndex(1, timeTickets[5])
-        assertEquals("A0B0C0D0E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E0F1G1", target.getStructureAsString())
         target.removeByIndex(crdtElements.size, timeTickets[6])
-        assertEquals("A0B0C0D0E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E0F1G1", target.getStructureAsString())
 
-        assertEquals(crdtElements.size - 4 + 1, target.length)
+        assertEquals(crdtElements.size - 4, target.length)
     }
 
     @Test
@@ -95,28 +95,28 @@ class RgaTreeListTest {
             target.delete(crdtElements[0])
         }
 
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach(target::insert)
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         target.delete(crdtElements[0])
-        assertEquals(crdtElements.size - 1 + 1, target.length)
+        assertEquals(crdtElements.size - 1, target.length)
         assertEquals("B1C1D1E1F1G1", target.getStructureAsString())
         target.delete(crdtElements[1])
-        assertEquals(crdtElements.size - 2 + 1, target.length)
+        assertEquals(crdtElements.size - 2, target.length)
         assertEquals("C1D1E1F1G1", target.getStructureAsString())
         target.delete(crdtElements[2])
-        assertEquals(crdtElements.size - 3 + 1, target.length)
+        assertEquals(crdtElements.size - 3, target.length)
         assertEquals("D1E1F1G1", target.getStructureAsString())
     }
 
     @Test
     fun `should handle insertion after the given element`() {
-        assertEquals(1, target.length)
+        assertEquals(0, target.length)
 
         crdtElements.forEach(target::insert)
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
 
         target.insertAfter(timeTickets[0], CrdtPrimitive(1, createTimeTicket()))
         assertEquals("A1H1B1C1D1E1F1G1", target.getStructureAsString())
@@ -132,7 +132,7 @@ class RgaTreeListTest {
 
         target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())
         assertEquals("A1B1C1D1F1E1G1", target.getStructureAsString())
-        assertEquals(crdtElements.size + 1, target.length)
+        assertEquals(crdtElements.size, target.length)
     }
 
     @Test

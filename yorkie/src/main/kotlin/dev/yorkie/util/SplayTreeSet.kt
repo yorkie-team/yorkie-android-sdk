@@ -50,7 +50,7 @@ internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
         }
         var node: Node<V> = root
         while (true) {
-            if (target <= node.leftWeight) {
+            if (node.left != null && target <= node.leftWeight) {
                 node = requireNotNull(node.left)
             } else if (node.right != null && node.leftWeight + node.length < target) {
                 target -= node.leftWeight + node.length

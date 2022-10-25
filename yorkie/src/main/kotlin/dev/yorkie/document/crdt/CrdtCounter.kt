@@ -47,15 +47,11 @@ internal class CrdtCounter(value: CounterValue, createdAt: TimeTicket) : CrdtEle
     }
 
     override fun toJson(): String {
-        TODO("To be implemented when it's actually needed")
-    }
-
-    override fun toSortedJson(): String {
-        TODO("To be implemented when it's actually needed")
+        return "$value"
     }
 
     override fun deepCopy(): CrdtElement {
-        TODO("To be implemented when it's actually needed")
+        return CrdtCounter(value, createdAt).apply { movedAt = this.movedAt }
     }
 
     companion object {

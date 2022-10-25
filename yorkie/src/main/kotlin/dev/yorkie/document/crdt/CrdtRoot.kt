@@ -2,8 +2,8 @@ package dev.yorkie.document.crdt
 
 import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
+import dev.yorkie.util.YorkieLogger
 
 /**
  * [CrdtRoot] is a structure represents the root. It has a hash table of

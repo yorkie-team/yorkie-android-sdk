@@ -3,14 +3,6 @@ import com.google.protobuf.gradle.id
 import com.google.protobuf.gradle.plugins
 import com.google.protobuf.gradle.protobuf
 import com.google.protobuf.gradle.protoc
-import org.gradle.kotlin.dsl.android
-import org.gradle.kotlin.dsl.androidTestImplementation
-import org.gradle.kotlin.dsl.dependencies
-import org.gradle.kotlin.dsl.implementation
-import org.gradle.kotlin.dsl.invoke
-import org.gradle.kotlin.dsl.kotlin
-import org.gradle.kotlin.dsl.kotlinOptions
-import org.gradle.kotlin.dsl.testImplementation
 
 plugins {
     id("com.android.library")
@@ -112,6 +104,8 @@ dependencies {
     implementation("io.grpc:grpc-okhttp:${Versions.grpc}")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:${Versions.coroutines}")
+
+    implementation("org.apache.commons:commons-collections4:${Versions.apacheCommonCollection}")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${Versions.coroutines}")

@@ -6,7 +6,7 @@ import dev.yorkie.document.time.TimeTicket
  * [CrdtObject] represents object datatype, but unlike regular JSON, it has time
  * tickets which is created by logical clock.
  */
-internal class CrdtObject private constructor(
+internal class CrdtObject(
     createdAt: TimeTicket,
     private val memberNodes: RhtPQMap<CrdtElement>,
 ) : CrdtContainer(createdAt), Iterable<Pair<String, CrdtElement>> {
@@ -81,7 +81,7 @@ internal class CrdtObject private constructor(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {
-        val clone = create(createdAt).apply { remove(removedAt) }
+        val clone = CrdtObject(createdAt, RhtPQMap()).apply { remove(removedAt) }
         memberNodes.forEach {
             clone.memberNodes[it.strKey] = it.value.deepCopy()
         }
@@ -124,15 +124,6 @@ internal class CrdtObject private constructor(
                 val node = nodes[index++]
                 return Pair(node.strKey, node.value)
             }
-        }
-    }
-
-    companion object {
-        /**
-         * Creates a new instance of [CrdtObject].
-         */
-        fun create(createdAt: TimeTicket): CrdtObject {
-            return CrdtObject(createdAt, RhtPQMap.create())
         }
     }
 }

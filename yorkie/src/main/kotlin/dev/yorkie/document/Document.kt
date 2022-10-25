@@ -9,16 +9,19 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.findPrefixes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import org.apache.commons.collections4.trie.PatriciaTrie
 
 /**
  * A CRDT-based data type.
@@ -34,7 +37,7 @@ public class Document private constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val localChanges = mutableListOf<Change>()
 
-    private var root: CrdtRoot = CrdtRoot(CrdtObject.create(TimeTicket.InitialTimeTicket))
+    private var root: CrdtRoot = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
     private var clone: CrdtRoot? = null
     private var changeID = ChangeID.InitialChangeID
     private var checkPoint = CheckPoint.InitialCheckPoint
@@ -168,7 +171,13 @@ public class Document private constructor(
     }
 
     private fun Change.createPaths(): List<String> {
-        TODO("need trie")
+        val pathTrie = PatriciaTrie<String>()
+        operations.forEach { operation ->
+            val createdAt = operation.effectedCreatedAt
+            val subPaths = root.createSubPaths(createdAt).drop(1)
+            subPaths.forEach { subPath -> pathTrie[subPath] = subPath }
+        }
+        return pathTrie.findPrefixes().map { "." + it.joinToString(".") }
     }
 
     private fun Change.asLocal() = DocEvent.LocalChange(listOf(toChangeInfo()))

@@ -33,13 +33,6 @@ internal class CrdtPrimitive private constructor(
     }
 
     /**
-     * Returns the sorted JSON encoding of this object
-     */
-    override fun toSortedJson(): String {
-        return toJson()
-    }
-
-    /**
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {

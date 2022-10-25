@@ -78,23 +78,6 @@ internal class CrdtObject private constructor(
     }
 
     /**
-     * Returns the JavaScript object of this [CrdtObject].
-     */
-    fun toJS(): Any {
-        TODO("To be implemented when it's actually needed")
-    }
-
-    /**
-     * Returns the sorted JSON encoding of this object
-     */
-    override fun toSortedJson(): String {
-        return keys.sorted().joinToString(",", "{", "}") {
-            val node = memberNodes[it]
-            "$it:${node.toSortedJson()}"
-        }
-    }
-
-    /**
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {

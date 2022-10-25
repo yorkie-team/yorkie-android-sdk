@@ -53,10 +53,6 @@ internal class CrdtCounter private constructor(
         return "$value"
     }
 
-    override fun toSortedJson(): String {
-        return toJson()
-    }
-
     override fun deepCopy(): CrdtElement {
         return of(value, createdAt).apply { movedAt = this.movedAt }
     }

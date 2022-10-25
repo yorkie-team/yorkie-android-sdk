@@ -111,22 +111,6 @@ internal class CrdtArray(
         }
     }
 
-    /**
-     * Returns the JavaScript object of this array.
-     */
-    fun toJS(): Any {
-        TODO(
-            "To be implemented when it's actually needed: ref to https://github.com/google/gson",
-        )
-    }
-
-    /**
-     * Returns the sorted JSON encoding of this array.
-     */
-    override fun toSortedJson(): String {
-        return toJson()
-    }
-
     override fun deepCopy(): CrdtElement {
         val clone = create(createdAt).apply { remove(removedAt) }
         elements.forEach { node ->

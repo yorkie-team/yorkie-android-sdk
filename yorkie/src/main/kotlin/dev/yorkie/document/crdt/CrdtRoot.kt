@@ -177,13 +177,6 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         return rootObject.toJson()
     }
 
-    /**
-     * Returns the sorted JSON encoding of [rootObject].
-     */
-    fun toSortedJson(): String {
-        return rootObject.toSortedJson()
-    }
-
     companion object {
         private const val TAG = "CrdtRoot"
     }

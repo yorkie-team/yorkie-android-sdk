@@ -13,8 +13,6 @@ internal abstract class CrdtElement(
 ) {
     abstract fun toJson(): String
 
-    abstract fun toSortedJson(): String
-
     abstract fun deepCopy(): CrdtElement
 
     val id: TimeTicket

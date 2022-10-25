@@ -112,7 +112,7 @@ internal class CrdtArray(
     }
 
     override fun deepCopy(): CrdtElement {
-        val clone = create(createdAt).apply { remove(removedAt) }
+        val clone = CrdtArray(createdAt).apply { remove(removedAt) }
         elements.forEach { node ->
             clone.elements.insertAfter(clone.lastCreatedAt, node.value.deepCopy())
         }

@@ -1,7 +1,7 @@
 package dev.yorkie.document.crdt
 
-import dev.yorkie.document.json.escapeString
 import com.google.protobuf.ByteString
+import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
 import java.util.Date

@@ -51,7 +51,7 @@ internal class CrdtCounter(value: CounterValue, createdAt: TimeTicket) : CrdtEle
     }
 
     override fun deepCopy(): CrdtElement {
-        return of(value, createdAt).apply { movedAt = this.movedAt }
+        return CrdtCounter(value, createdAt).apply { movedAt = this.movedAt }
     }
 
     companion object {

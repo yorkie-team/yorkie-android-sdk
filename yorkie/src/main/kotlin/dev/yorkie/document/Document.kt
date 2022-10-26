@@ -32,8 +32,8 @@ import org.apache.commons.collections4.trie.PatriciaTrie
  */
 public class Document private constructor(
     public val key: String,
-    private val eventStream: MutableSharedFlow<DocEvent<*>>,
-) : Flow<Document.DocEvent<*>> by eventStream {
+    private val eventStream: MutableSharedFlow<Event<*>>,
+) : Flow<Document.Event<*>> by eventStream {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val localChanges = mutableListOf<Change>()
 
@@ -41,6 +41,9 @@ public class Document private constructor(
     private var clone: CrdtRoot? = null
     private var changeID = ChangeID.InitialChangeID
     private var checkPoint = CheckPoint.InitialCheckPoint
+
+    internal val hasLocalChanges: Boolean
+        get() = localChanges.isNotEmpty()
 
     public constructor(key: String) : this(key, MutableSharedFlow())
 
@@ -114,7 +117,7 @@ public class Document private constructor(
         changeID = changeID.syncLamport(serverSeq)
         clone = null
         scope.launch {
-            eventStream.emit(DocEvent.Snapshot(snapshot))
+            eventStream.emit(Event.Snapshot(snapshot))
         }
     }
 
@@ -133,7 +136,7 @@ public class Document private constructor(
             return
         }
         scope.launch {
-            eventStream.emit(DocEvent.RemoteChange(changesInfo))
+            eventStream.emit(Event.RemoteChange(changesInfo))
         }
     }
 
@@ -180,21 +183,21 @@ public class Document private constructor(
         return pathTrie.findPrefixes().map { "." + it.joinToString(".") }
     }
 
-    private fun Change.asLocal() = DocEvent.LocalChange(listOf(toChangeInfo()))
+    private fun Change.asLocal() = Event.LocalChange(listOf(toChangeInfo()))
 
-    private fun Change.toChangeInfo() = DocEvent.ChangeInfo(this, createPaths())
+    private fun Change.toChangeInfo() = Event.ChangeInfo(this, createPaths())
 
-    public sealed class DocEvent<T>(public val value: T) {
+    public sealed class Event<T>(public val value: T) {
 
-        public class Snapshot internal constructor(value: ByteString) : DocEvent<ByteString>(value)
+        public class Snapshot internal constructor(value: ByteString) : Event<ByteString>(value)
 
         public class LocalChange internal constructor(
             value: List<ChangeInfo>,
-        ) : DocEvent<List<ChangeInfo>>(value)
+        ) : Event<List<ChangeInfo>>(value)
 
         public class RemoteChange internal constructor(
             value: List<ChangeInfo>,
-        ) : DocEvent<List<ChangeInfo>>(value)
+        ) : Event<List<ChangeInfo>>(value)
 
         public class ChangeInfo(public val change: Change, public val paths: List<String>)
     }

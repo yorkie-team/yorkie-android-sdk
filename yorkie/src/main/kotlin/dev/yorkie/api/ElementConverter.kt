@@ -5,13 +5,13 @@ import dev.yorkie.api.v1.movedAtOrNull
 import dev.yorkie.api.v1.removedAtOrNull
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
+import dev.yorkie.document.crdt.CrdtCounter.CounterType
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.PrimitiveType
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RhtPQMap
-import dev.yorkie.document.crdt.CrdtCounter.CounterType
 
 typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
 typealias PBJsonElementSimple = dev.yorkie.api.v1.JSONElementSimple
@@ -124,7 +124,8 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
         )
         PBValueType.VALUE_TYPE_INTEGER_CNT,
         PBValueType.VALUE_TYPE_DOUBLE_CNT,
-        PBValueType.VALUE_TYPE_LONG_CNT -> TODO("implement after valueFromBytes function")
+        PBValueType.VALUE_TYPE_LONG_CNT,
+        -> TODO("implement after valueFromBytes function")
         else -> error("unimplemented type $this")
     }
 }

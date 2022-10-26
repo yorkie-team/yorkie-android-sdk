@@ -1,0 +1,50 @@
+package dev.yorkie.api
+
+import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.IncreaseOperation
+import dev.yorkie.document.operation.MoveOperation
+import dev.yorkie.document.operation.Operation
+import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.SetOperation
+
+typealias PBOperation = dev.yorkie.api.v1.Operation
+
+internal fun List<PBOperation>.toOperation(): List<Operation> {
+    return map {
+        when {
+            it.hasSet() -> SetOperation(
+                key = it.set.key,
+                value = it.set.value.toCrdtElement(),
+                parentCreatedAt = it.set.parentCreatedAt.toTimeTicket(),
+                executedAt = it.set.executedAt.toTimeTicket(),
+            )
+            it.hasAdd() -> AddOperation(
+                parentCreatedAt = it.add.parentCreatedAt.toTimeTicket(),
+                prevCreatedAt = it.add.prevCreatedAt.toTimeTicket(),
+                value = it.add.value.toCrdtElement(),
+                executedAt = it.add.executedAt.toTimeTicket(),
+            )
+            it.hasMove() -> MoveOperation(
+                parentCreatedAt = it.move.parentCreatedAt.toTimeTicket(),
+                prevCreatedAt = it.move.prevCreatedAt.toTimeTicket(),
+                createdAt = it.move.createdAt.toTimeTicket(),
+                executedAt = it.move.executedAt.toTimeTicket(),
+            )
+            it.hasRemove() -> RemoveOperation(
+                parentCreatedAt = it.remove.parentCreatedAt.toTimeTicket(),
+                createdAt = it.remove.createdAt.toTimeTicket(),
+                executedAt = it.remove.executedAt.toTimeTicket(),
+            )
+            it.hasIncrease() -> IncreaseOperation(
+                parentCreatedAt = it.increase.parentCreatedAt.toTimeTicket(),
+                executedAt = it.increase.executedAt.toTimeTicket(),
+                value = it.increase.value.toCrdtElement(),
+            )
+            it.hasEdit() -> TODO("not yet implemented")
+            it.hasSelect() -> TODO("not yet implemented")
+            it.hasRichEdit() -> TODO("not yet implemented")
+            it.hasStyle() -> TODO("not yet implemented")
+            else -> error("unimplemented operation")
+        }
+    }
+}

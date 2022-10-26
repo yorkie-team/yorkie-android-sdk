@@ -10,6 +10,6 @@ internal fun PBTimeTicket.toTimeTicket(): TimeTicket {
     return TimeTicket(
         lamport = lamport,
         delimiter = delimiter,
-        actorID = ActorID(BaseEncoding.base16().lowerCase().encode(toByteArray())),
+        actorID = ActorID(BaseEncoding.base16().lowerCase().encode(actorId.toByteArray())),
     )
 }

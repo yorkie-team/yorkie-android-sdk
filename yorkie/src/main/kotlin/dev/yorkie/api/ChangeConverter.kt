@@ -5,6 +5,7 @@ import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changeID
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.checkpoint
+import dev.yorkie.api.v1.minSyncedTicketOrNull
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
@@ -73,8 +74,8 @@ internal fun PBChangePack.toChangePack(): ChangePack {
         documentKey = documentKey,
         checkPoint = checkpoint.toCheckPoint(),
         changes = changesList.toChanges(),
-        snapshot = if (snapshot.isEmpty) null else snapshot,
-        minSyncedTicket = if (hasMinSyncedTicket()) minSyncedTicket.toTimeTicket() else null,
+        snapshot = snapshot.takeUnless { it.isEmpty },
+        minSyncedTicket = minSyncedTicketOrNull?.toTimeTicket(),
     )
 }
 

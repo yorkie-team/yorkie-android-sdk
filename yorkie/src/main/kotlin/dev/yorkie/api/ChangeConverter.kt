@@ -1,7 +1,6 @@
 package dev.yorkie.api
 
 import com.google.protobuf.ByteString
-import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changeID
 import dev.yorkie.api.v1.changePack
@@ -47,7 +46,7 @@ internal fun ChangeID.toPBChangeID(): PBChangeID {
     return changeID {
         clientSeq = this@toPBChangeID.clientSeq
         lamport = this@toPBChangeID.lamport
-        actorId = this@toPBChangeID.actor.id.toByteStringUtf8()
+        actorId = this@toPBChangeID.actor.id.toDecodedByteString()
     }
 }
 

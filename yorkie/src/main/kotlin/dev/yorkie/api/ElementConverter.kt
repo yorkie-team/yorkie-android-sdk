@@ -1,6 +1,7 @@
 package dev.yorkie.api
 
 import com.google.protobuf.ByteString
+import com.google.protobuf.kotlin.toByteString
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.movedAtOrNull
@@ -38,8 +39,15 @@ internal fun ByteString.toCrdtObject(): CrdtObject {
     return PBJsonObject.parseFrom(this).toCrdtObject()
 }
 
+// // TODO(7hong13): should check CrdtText, CrdtRichText
 internal fun CrdtElement.toByteString(): ByteString {
-    return toPBJsonObject().toByteString()
+    return when (this) {
+        is CrdtObject -> toPBJsonObject().toByteString()
+        is CrdtArray -> toPBJsonArray().toByteString()
+        is CrdtPrimitive -> toPBPrimitive().toByteString()
+        is CrdtCounter -> toPBCounter().toByteString()
+        else -> error("unimplemented element $this")
+    }
 }
 
 internal fun PBJsonElement.toCrdtElement(): CrdtElement {
@@ -157,7 +165,7 @@ internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
     return jSONElement {
         PBPrimitive.newBuilder().apply {
             type = crdtPrimitive.type.toPBValueType()
-            value = crdtPrimitive.toByteString()
+            value = crdtPrimitive.toBytes().toByteString()
             createdAt = crdtPrimitive.createdAt.toPBTimeTicket()
             movedAt = crdtPrimitive.movedAt?.toPBTimeTicket()
             removedAt = crdtPrimitive.removedAt?.toPBTimeTicket()
@@ -185,7 +193,7 @@ internal fun CrdtCounter.toPBCounter(): PBJsonElement {
     return jSONElement {
         PBCounter.newBuilder().apply {
             type = crdtCounter.type.toPBCounterType()
-            value = crdtCounter.toByteString()
+            value = crdtCounter.toBytes().toByteString()
             createdAt = crdtCounter.createdAt.toPBTimeTicket()
             movedAt = crdtCounter.movedAt?.toPBTimeTicket()
             removedAt = crdtCounter.removedAt?.toPBTimeTicket()
@@ -239,11 +247,11 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
             is CrdtArray -> type = PBValueType.VALUE_TYPE_JSON_ARRAY
             is CrdtPrimitive -> {
                 type = element.type.toPBValueType()
-                value = element.toByteString()
+                value = element.toBytes().toByteString()
             }
             is CrdtCounter -> {
                 type = element.type.toPBCounterType()
-                value = element.toByteString()
+                value = element.toBytes().toByteString()
             }
             else -> error("unimplemented element: $element")
         }

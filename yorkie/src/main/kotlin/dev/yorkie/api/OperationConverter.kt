@@ -1,10 +1,10 @@
 package dev.yorkie.api
 
-import dev.yorkie.api.v1.Operation.Add
-import dev.yorkie.api.v1.Operation.Increase
-import dev.yorkie.api.v1.Operation.Move
-import dev.yorkie.api.v1.Operation.Remove
-import dev.yorkie.api.v1.Operation.Set
+import dev.yorkie.api.v1.OperationKt.add
+import dev.yorkie.api.v1.OperationKt.increase
+import dev.yorkie.api.v1.OperationKt.move
+import dev.yorkie.api.v1.OperationKt.remove
+import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.operation
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.IncreaseOperation
@@ -59,47 +59,52 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
 internal fun Operation.toPBOperation(): PBOperation {
     return when (val operation = this@toPBOperation) {
         is SetOperation -> {
-            val setOperation = Set.newBuilder().apply {
-                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
-                key = operation.key
-                value = operation.value.toPBJsonElementSimple()
-                executedAt = operation.executedAt.toPBTimeTicket()
-            }.build()
-            operation { set = setOperation }
+            operation {
+                set = set {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    key = operation.key
+                    value = operation.value.toPBJsonElementSimple()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                }
+            }
         }
         is AddOperation -> {
-            val addOperation = Add.newBuilder().apply {
-                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
-                prevCreatedAt = operation.prevCreatedAt.toPBTimeTicket()
-                value = operation.value.toPBJsonElementSimple()
-                executedAt = operation.executedAt.toPBTimeTicket()
-            }.build()
-            operation { add = addOperation }
+            operation {
+                add = add {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    prevCreatedAt = operation.prevCreatedAt.toPBTimeTicket()
+                    value = operation.value.toPBJsonElementSimple()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                }
+            }
         }
         is MoveOperation -> {
-            val moveOperation = Move.newBuilder().apply {
-                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
-                prevCreatedAt = operation.prevCreatedAt.toPBTimeTicket()
-                createdAt = operation.createdAt.toPBTimeTicket()
-                executedAt = operation.executedAt.toPBTimeTicket()
-            }.build()
-            operation { move = moveOperation }
+            operation {
+                move = move {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    prevCreatedAt = operation.prevCreatedAt.toPBTimeTicket()
+                    createdAt = operation.createdAt.toPBTimeTicket()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                }
+            }
         }
         is RemoveOperation -> {
-            val removeOperation = Remove.newBuilder().apply {
-                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
-                createdAt = operation.createdAt.toPBTimeTicket()
-                executedAt = operation.executedAt.toPBTimeTicket()
-            }.build()
-            operation { remove = removeOperation }
+            operation {
+                remove = remove {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    createdAt = operation.createdAt.toPBTimeTicket()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                }
+            }
         }
         is IncreaseOperation -> {
-            val increaseOperation = Increase.newBuilder().apply {
-                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
-                value = operation.value.toPBJsonElementSimple()
-                executedAt = operation.executedAt.toPBTimeTicket()
-            }.build()
-            operation { increase = increaseOperation }
+            operation {
+                increase = increase {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    value = operation.value.toPBJsonElementSimple()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                }
+            }
         }
         else -> error("unimplemented operation $operation")
     }

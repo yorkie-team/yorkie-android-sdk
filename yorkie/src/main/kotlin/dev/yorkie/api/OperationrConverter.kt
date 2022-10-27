@@ -1,5 +1,10 @@
 package dev.yorkie.api
 
+import dev.yorkie.api.v1.Operation.Add
+import dev.yorkie.api.v1.Operation.Increase
+import dev.yorkie.api.v1.Operation.Move
+import dev.yorkie.api.v1.Operation.Remove
+import dev.yorkie.api.v1.Operation.Set
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
@@ -47,4 +52,58 @@ internal fun List<PBOperation>.toOperation(): List<Operation> {
             else -> error("unimplemented operation")
         }
     }
+}
+
+// TODO(7hong13): should check Edit, Select, RichEdit, Style Operations
+internal fun Operation.toPBOperation(): PBOperation {
+    return when (val operation = this@toPBOperation) {
+        is SetOperation -> {
+            val setOperation = Set.newBuilder().apply {
+                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                key = operation.key
+                value = operation.value.toPBJsonElementSimple()
+                executedAt = operation.executedAt.toPBTimeTicket()
+            }.build()
+            PBOperation.newBuilder().apply { set = setOperation }.build()
+        }
+        is AddOperation -> {
+            val addOperation = Add.newBuilder().apply {
+                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                prevCreatedAt = operation.prevCreatedAt.toPBTimeTicket()
+                value = operation.value.toPBJsonElementSimple()
+                executedAt = operation.executedAt.toPBTimeTicket()
+            }.build()
+            PBOperation.newBuilder().apply { add = addOperation }.build()
+        }
+        is MoveOperation -> {
+            val moveOperation = Move.newBuilder().apply {
+                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                prevCreatedAt = operation.prevCreatedAt.toPBTimeTicket()
+                createdAt = operation.createdAt.toPBTimeTicket()
+                executedAt = operation.executedAt.toPBTimeTicket()
+            }.build()
+            PBOperation.newBuilder().apply { move = moveOperation }.build()
+        }
+        is RemoveOperation -> {
+            val removeOperation = Remove.newBuilder().apply {
+                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                createdAt = operation.createdAt.toPBTimeTicket()
+                executedAt = operation.executedAt.toPBTimeTicket()
+            }.build()
+            PBOperation.newBuilder().apply { remove = removeOperation }.build()
+        }
+        is IncreaseOperation -> {
+            val increaseOperation = Increase.newBuilder().apply {
+                parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                value = operation.value.toPBJsonElementSimple()
+                executedAt = operation.executedAt.toPBTimeTicket()
+            }.build()
+            PBOperation.newBuilder().apply { increase = increaseOperation }.build()
+        }
+        else -> error("unimplemented operation $operation")
+    }
+}
+
+internal fun List<Operation>.toPBOperations(): List<PBOperation> {
+    return map { it.toPBOperation() }
 }

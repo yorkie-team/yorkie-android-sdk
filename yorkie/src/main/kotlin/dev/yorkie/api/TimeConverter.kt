@@ -1,6 +1,6 @@
 package dev.yorkie.api
 
-import com.google.common.io.BaseEncoding
+import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 
@@ -10,6 +10,14 @@ internal fun PBTimeTicket.toTimeTicket(): TimeTicket {
     return TimeTicket(
         lamport = lamport,
         delimiter = delimiter,
-        actorID = ActorID(BaseEncoding.base16().lowerCase().encode(actorId.toByteArray())),
+        actorID = ActorID(actorId.toHexString()),
     )
+}
+
+internal fun TimeTicket.toPBTimeTicket(): PBTimeTicket {
+    return PBTimeTicket.newBuilder().apply {
+        lamport = this@toPBTimeTicket.lamport
+        delimiter = this@toPBTimeTicket.delimiter
+        actorId = this@toPBTimeTicket.actorID.id.toByteStringUtf8()
+    }.build()
 }

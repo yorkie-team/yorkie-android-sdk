@@ -23,10 +23,11 @@ internal fun List<PBChange>.toChanges(): List<Change> {
 }
 
 internal fun Change.toPBChange(): PBChange {
+    val change = this
     return change {
-        id = this@toPBChange.id.toPBChangeID()
-        message = this@toPBChange.message ?: ""
-        operations.addAll(this@toPBChange.operations.toPBOperations())
+        id = change.id.toPBChangeID()
+        message = change.message ?: ""
+        operations.addAll(change.operations.toPBOperations())
     }
 }
 
@@ -43,10 +44,11 @@ internal fun PBChangeID.toChangeID(): ChangeID {
 }
 
 internal fun ChangeID.toPBChangeID(): PBChangeID {
+    val changeID = this
     return changeID {
-        clientSeq = this@toPBChangeID.clientSeq
-        lamport = this@toPBChangeID.lamport
-        actorId = this@toPBChangeID.actor.id.toDecodedByteString()
+        clientSeq = changeID.clientSeq
+        lamport = changeID.lamport
+        actorId = changeID.actor.id.toDecodedByteString()
     }
 }
 
@@ -55,9 +57,10 @@ internal fun PBCheckPoint.toCheckPoint(): CheckPoint {
 }
 
 internal fun CheckPoint.toPBCheckPoint(): PBCheckPoint {
+    val checkPoint = this
     return checkpoint {
-        serverSeq = this@toPBCheckPoint.serverSeq
-        clientSeq = this@toPBCheckPoint.clientSeq
+        serverSeq = checkPoint.serverSeq
+        clientSeq = checkPoint.clientSeq
     }
 }
 

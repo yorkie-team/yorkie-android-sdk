@@ -231,9 +231,10 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
 
 // TODO("check CrdtText and CrdtRichText")
 internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
+    val element = this@toPBJsonElementSimple
     return jSONElementSimple {
-        createdAt = this@toPBJsonElementSimple.createdAt.toPBTimeTicket()
-        when (val element = this@toPBJsonElementSimple) {
+        createdAt = element.createdAt.toPBTimeTicket()
+        when (element) {
             is CrdtObject -> type = PBValueType.VALUE_TYPE_JSON_OBJECT
             is CrdtArray -> type = PBValueType.VALUE_TYPE_JSON_ARRAY
             is CrdtPrimitive -> {

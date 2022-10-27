@@ -15,9 +15,10 @@ internal fun PBTimeTicket.toTimeTicket(): TimeTicket {
 }
 
 internal fun TimeTicket.toPBTimeTicket(): PBTimeTicket {
+    val timeTicket = this
     return timeTicket {
-        lamport = this@toPBTimeTicket.lamport
-        delimiter = this@toPBTimeTicket.delimiter
-        actorId = this@toPBTimeTicket.actorID.id.toDecodedByteString()
+        lamport = timeTicket.lamport
+        delimiter = timeTicket.delimiter
+        actorId = timeTicket.actorID.id.toDecodedByteString()
     }
 }

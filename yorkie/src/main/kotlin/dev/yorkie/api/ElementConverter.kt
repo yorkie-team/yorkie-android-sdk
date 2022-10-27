@@ -18,19 +18,19 @@ import dev.yorkie.document.crdt.PrimitiveType
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RhtPQMap
 
-typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
-typealias PBJsonElementSimple = dev.yorkie.api.v1.JSONElementSimple
-typealias PBCounter = dev.yorkie.api.v1.JSONElement.Counter
-typealias PBJsonArray = dev.yorkie.api.v1.JSONElement.JSONArray
-typealias PBJsonObject = dev.yorkie.api.v1.JSONElement.JSONObject
-typealias PBPrimitive = dev.yorkie.api.v1.JSONElement.Primitive
-typealias PBText = dev.yorkie.api.v1.JSONElement.Text
-typealias PBValueType = dev.yorkie.api.v1.ValueType
-typealias PBRhtNode = dev.yorkie.api.v1.RHTNode
-typealias PBRgaNode = dev.yorkie.api.v1.RGANode
-typealias PBTextNodeID = dev.yorkie.api.v1.TextNodeID
-typealias PBTextNodePos = dev.yorkie.api.v1.TextNodePos
-typealias PBTextNode = dev.yorkie.api.v1.TextNode
+internal typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
+internal typealias PBJsonElementSimple = dev.yorkie.api.v1.JSONElementSimple
+internal typealias PBCounter = dev.yorkie.api.v1.JSONElement.Counter
+internal typealias PBJsonArray = dev.yorkie.api.v1.JSONElement.JSONArray
+internal typealias PBJsonObject = dev.yorkie.api.v1.JSONElement.JSONObject
+internal typealias PBPrimitive = dev.yorkie.api.v1.JSONElement.Primitive
+internal typealias PBText = dev.yorkie.api.v1.JSONElement.Text
+internal typealias PBValueType = dev.yorkie.api.v1.ValueType
+internal typealias PBRhtNode = dev.yorkie.api.v1.RHTNode
+internal typealias PBRgaNode = dev.yorkie.api.v1.RGANode
+internal typealias PBTextNodeID = dev.yorkie.api.v1.TextNodeID
+internal typealias PBTextNodePos = dev.yorkie.api.v1.TextNodePos
+internal typealias PBTextNode = dev.yorkie.api.v1.TextNode
 
 // TODO(7hong13): should implement toPBTextNodeID, toPBTextNodePos, toPBTextNodes, toPBText,
 //  and RgaTreeSplit related functions later.
@@ -137,11 +137,20 @@ internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
     return jSONElement {
         PBJsonObject.newBuilder().apply {
             createdAt = crdtObject.createdAt.toPBTimeTicket()
-            movedAt = crdtObject.movedAt?.toPBTimeTicket()
-            removedAt = crdtObject.removedAt?.toPBTimeTicket()
-            nodesList.addAll(rht.toPBRhtNodes())
+            crdtObject.movedAt?.let { movedAt = it.toPBTimeTicket() }
+            crdtObject.removedAt?.let { removedAt = it.toPBTimeTicket() }
+            addAllNodes(rht.toPBRhtNodes())
         }.build().also {
             jsonObject = it
+        }
+    }
+}
+
+internal fun List<RhtPQMap.RhtPQMapNode<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
+    return map {
+        rHTNode {
+            key = it.strKey
+            element = it.value.toPBJsonObject()
         }
     }
 }
@@ -151,12 +160,18 @@ internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
     return jSONElement {
         PBJsonArray.newBuilder().apply {
             createdAt = crdtArray.createdAt.toPBTimeTicket()
-            movedAt = crdtArray.movedAt?.toPBTimeTicket()
-            removedAt = crdtArray.removedAt?.toPBTimeTicket()
-            nodesList.addAll(elements.toPBRgaNodes())
+            crdtArray.movedAt?.let { movedAt = it.toPBTimeTicket() }
+            crdtArray.removedAt?.let { removedAt = it.toPBTimeTicket() }
+            addAllNodes(elements.toPBRgaNodes())
         }.build().also {
             jsonArray = it
         }
+    }
+}
+
+internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
+    return map {
+        rGANode { element = it.value.toPBJsonObject() }
     }
 }
 
@@ -167,8 +182,8 @@ internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
             type = crdtPrimitive.type.toPBValueType()
             value = crdtPrimitive.toBytes().toByteString()
             createdAt = crdtPrimitive.createdAt.toPBTimeTicket()
-            movedAt = crdtPrimitive.movedAt?.toPBTimeTicket()
-            removedAt = crdtPrimitive.removedAt?.toPBTimeTicket()
+            crdtPrimitive.movedAt?.let { movedAt = it.toPBTimeTicket() }
+            crdtPrimitive.removedAt?.let { removedAt = it.toPBTimeTicket() }
         }.build().also {
             primitive = it
         }
@@ -195,8 +210,8 @@ internal fun CrdtCounter.toPBCounter(): PBJsonElement {
             type = crdtCounter.type.toPBCounterType()
             value = crdtCounter.toBytes().toByteString()
             createdAt = crdtCounter.createdAt.toPBTimeTicket()
-            movedAt = crdtCounter.movedAt?.toPBTimeTicket()
-            removedAt = crdtCounter.removedAt?.toPBTimeTicket()
+            crdtCounter.movedAt?.let { movedAt = it.toPBTimeTicket() }
+            crdtCounter.removedAt?.let { removedAt = it.toPBTimeTicket() }
         }.build().also {
             counter = it
         }
@@ -255,20 +270,5 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
             }
             else -> error("unimplemented element: $element")
         }
-    }
-}
-
-internal fun List<RhtPQMap.RhtPQMapNode<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
-    return map {
-        rHTNode {
-            key = it.strKey
-            element = it.value.toPBJsonObject()
-        }
-    }
-}
-
-internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
-    return map {
-        rGANode { element = it.value.toPBJsonObject() }
     }
 }

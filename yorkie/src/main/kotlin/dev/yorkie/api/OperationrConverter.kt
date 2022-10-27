@@ -13,7 +13,7 @@ import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 
-typealias PBOperation = dev.yorkie.api.v1.Operation
+internal typealias PBOperation = dev.yorkie.api.v1.Operation
 
 internal fun List<PBOperation>.toOperations(): List<Operation> {
     return map {

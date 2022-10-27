@@ -27,10 +27,10 @@ internal class CrdtPrimitive(
      * Returns the JSON encoding of this object.
      */
     override fun toJson(): String {
-        return if (type == PrimitiveType.String) {
-            escapeString(value as String)
-        } else {
-            "$value"
+        return when (type) {
+            PrimitiveType.String -> escapeString(value as String)
+            PrimitiveType.Bytes -> (value as ByteArray).decodeToString()
+            else -> "$value"
         }
     }
 
@@ -46,13 +46,11 @@ internal class CrdtPrimitive(
     fun toBytes(): ByteArray {
         return when (type) {
             PrimitiveType.Null -> byteArrayOf()
-            PrimitiveType.Boolean -> {
-                ByteBuffer.allocate(Int.SIZE_BYTES).putInt(if (value == true) 1 else 0).array()
-            }
+            PrimitiveType.Boolean -> byteArrayOf(if (value == true) 1 else 0)
             PrimitiveType.Integer -> {
                 ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value as Int).array()
             }
-            PrimitiveType.Long, PrimitiveType.Date -> {
+            PrimitiveType.Long -> {
                 ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value as Long).array()
             }
             PrimitiveType.Double -> {
@@ -60,6 +58,9 @@ internal class CrdtPrimitive(
             }
             PrimitiveType.String -> (value as String).toByteArray()
             PrimitiveType.Bytes -> value as ByteArray
+            PrimitiveType.Date -> {
+                ByteBuffer.allocate(Long.SIZE_BYTES).putLong((value as Date).time).array()
+            }
         }
     }
 

@@ -28,7 +28,6 @@ internal fun Change.toPBChange(): PBChange {
     }.build()
 }
 
-
 internal fun List<Change>.toPBChanges(): List<PBChange> {
     return map { it.toPBChange() }
 }

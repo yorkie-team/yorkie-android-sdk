@@ -43,6 +43,26 @@ internal class CrdtPrimitive(
         }
     }
 
+    fun toBytes(): ByteArray {
+        return when (type) {
+            PrimitiveType.Null -> byteArrayOf()
+            PrimitiveType.Boolean -> {
+                ByteBuffer.allocate(Int.SIZE_BYTES).putInt(if (value == true) 1 else 0).array()
+            }
+            PrimitiveType.Integer -> {
+                ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value as Int).array()
+            }
+            PrimitiveType.Long, PrimitiveType.Date -> {
+                ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value as Long).array()
+            }
+            PrimitiveType.Double -> {
+                ByteBuffer.allocate(Double.SIZE_BYTES).putDouble(value as Double).array()
+            }
+            PrimitiveType.String -> (value as String).toByteArray()
+            PrimitiveType.Bytes -> value as ByteArray
+        }
+    }
+
     companion object {
         private val NUMERIC_TYPES = setOf(
             PrimitiveType.Integer,

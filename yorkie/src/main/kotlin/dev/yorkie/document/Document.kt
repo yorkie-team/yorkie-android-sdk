@@ -25,7 +25,7 @@ import org.apache.commons.collections4.trie.PatriciaTrie
 
 /**
  * A CRDT-based data type.
- * We can represen the model of the application.
+ * We can represent the model of the application.
  * And we can edit it even while offline.
  *
  * TODO(skhugh): we need to check for thread-safety.
@@ -48,7 +48,7 @@ public class Document private constructor(
     public constructor(key: String) : this(key, MutableSharedFlow())
 
     /**
-     * executes the given [updater] to update this document.
+     * Executes the given [updater] to update this document.
      */
     public fun update(
         message: String? = null,
@@ -83,7 +83,7 @@ public class Document private constructor(
     }
 
     /**
-     * applies the given [pack] into this document.
+     * Applies the given [pack] into this document.
      * 1. Remove local changes applied to server.
      * 2. Update the checkpoint.
      * 3. Do Garbage collection.
@@ -110,7 +110,7 @@ public class Document private constructor(
     }
 
     /**
-     * applies the given [snapshot] into this document.
+     * Applies the given [snapshot] into this document.
      */
     private fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
         root = CrdtRoot(snapshot.toCrdtObject())
@@ -122,7 +122,7 @@ public class Document private constructor(
     }
 
     /**
-     * applies the given [changes] into this document.
+     * Applies the given [changes] into this document.
      */
     private fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
@@ -145,7 +145,7 @@ public class Document private constructor(
     }
 
     /**
-     * create [ChangePack] of [localChanges] to send to the remote server.
+     * Create [ChangePack] of [localChanges] to send to the remote server.
      */
     internal fun createChangePack(): ChangePack {
         val checkPoint = this.checkPoint.increaseClientSeq(localChanges.size)
@@ -153,7 +153,7 @@ public class Document private constructor(
     }
 
     /**
-     * sets [actorID] into this document.
+     * Sets [actorID] into this document.
      * This is also applied in the [localChanges] the document has.
      */
     internal fun setActor(actorID: ActorID) {
@@ -165,8 +165,10 @@ public class Document private constructor(
         // TODO: also apply to root
     }
 
+    // NOTE(7hong13): original comment from JS-SDK:
+    // `garbageCollect` purges elements that were removed before the given time.
     /**
-     * purges elements that were removed before the given time.
+     * Deletes elements that were removed before the given time.
      */
     private fun garbageCollect(ticket: TimeTicket): Int {
         clone?.garbageCollect(ticket)

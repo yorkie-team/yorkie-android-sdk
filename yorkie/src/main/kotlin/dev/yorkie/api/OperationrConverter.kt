@@ -15,7 +15,7 @@ import dev.yorkie.document.operation.SetOperation
 
 typealias PBOperation = dev.yorkie.api.v1.Operation
 
-internal fun List<PBOperation>.toOperation(): List<Operation> {
+internal fun List<PBOperation>.toOperations(): List<Operation> {
     return map {
         when {
             it.hasSet() -> SetOperation(

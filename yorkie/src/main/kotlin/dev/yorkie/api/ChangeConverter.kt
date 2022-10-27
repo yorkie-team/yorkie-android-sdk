@@ -18,7 +18,7 @@ typealias PBChangePack = dev.yorkie.api.v1.ChangePack
 
 internal fun List<PBChange>.toChanges(): List<Change> {
     return map {
-        Change(it.id.toChangeID(), it.operationsList.toOperation(), it.message)
+        Change(it.id.toChangeID(), it.operationsList.toOperations(), it.message)
     }
 }
 

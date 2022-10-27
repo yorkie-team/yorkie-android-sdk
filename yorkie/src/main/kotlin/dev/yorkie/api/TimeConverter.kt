@@ -1,6 +1,7 @@
 package dev.yorkie.api
 
 import com.google.protobuf.kotlin.toByteStringUtf8
+import dev.yorkie.api.v1.timeTicket
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 
@@ -15,9 +16,9 @@ internal fun PBTimeTicket.toTimeTicket(): TimeTicket {
 }
 
 internal fun TimeTicket.toPBTimeTicket(): PBTimeTicket {
-    return PBTimeTicket.newBuilder().apply {
+    return timeTicket {
         lamport = this@toPBTimeTicket.lamport
         delimiter = this@toPBTimeTicket.delimiter
         actorId = this@toPBTimeTicket.actorID.id.toByteStringUtf8()
-    }.build()
+    }
 }

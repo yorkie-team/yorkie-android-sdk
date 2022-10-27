@@ -1,6 +1,11 @@
 package dev.yorkie.api
 
+import com.google.protobuf.ByteString
 import com.google.protobuf.kotlin.toByteStringUtf8
+import dev.yorkie.api.v1.change
+import dev.yorkie.api.v1.changeID
+import dev.yorkie.api.v1.changePack
+import dev.yorkie.api.v1.checkpoint
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
@@ -19,13 +24,11 @@ internal fun List<PBChange>.toChanges(): List<Change> {
 }
 
 internal fun Change.toPBChange(): PBChange {
-    return PBChange.newBuilder().apply {
+    return change {
         id = this@toPBChange.id.toPBChangeID()
-        message = this@toPBChange.message
-        this@toPBChange.operations.toPBOperations().forEachIndexed { index, operation ->
-            setOperations(index, operation)
-        }
-    }.build()
+        message = this@toPBChange.message ?: ""
+        operations.addAll(this@toPBChange.operations.toPBOperations())
+    }
 }
 
 internal fun List<Change>.toPBChanges(): List<PBChange> {
@@ -41,11 +44,11 @@ internal fun PBChangeID.toChangeID(): ChangeID {
 }
 
 internal fun ChangeID.toPBChangeID(): PBChangeID {
-    return PBChangeID.newBuilder().apply {
+    return changeID {
         clientSeq = this@toPBChangeID.clientSeq
         lamport = this@toPBChangeID.lamport
         actorId = this@toPBChangeID.actor.id.toByteStringUtf8()
-    }.build()
+    }
 }
 
 internal fun PBCheckPoint.toCheckPoint(): CheckPoint {
@@ -53,10 +56,10 @@ internal fun PBCheckPoint.toCheckPoint(): CheckPoint {
 }
 
 internal fun CheckPoint.toPBCheckPoint(): PBCheckPoint {
-    return PBCheckPoint.newBuilder().apply {
+    return checkpoint {
         serverSeq = this@toPBCheckPoint.serverSeq
         clientSeq = this@toPBCheckPoint.clientSeq
-    }.build()
+    }
 }
 
 internal fun PBChangePack.toChangePack(): ChangePack {
@@ -70,13 +73,16 @@ internal fun PBChangePack.toChangePack(): ChangePack {
 }
 
 internal fun ChangePack.toPBChangePack(): PBChangePack {
-    return PBChangePack.newBuilder().apply {
-        documentKey = this@toPBChangePack.documentKey
-        checkpoint = this@toPBChangePack.checkPoint.toPBCheckPoint()
-        snapshot = this@toPBChangePack.snapshot
-        minSyncedTicket = this@toPBChangePack.minSyncedTicket?.toPBTimeTicket()
-        this@toPBChangePack.changes.toPBChanges().forEachIndexed { index, change ->
-            setChanges(index, change)
+    val changePack = this
+    return changePack {
+        documentKey = changePack.documentKey
+        checkpoint = changePack.checkPoint.toPBCheckPoint()
+        snapshot = changePack.snapshot ?: ByteString.EMPTY
+        changes.addAll(changePack.changes.toPBChanges())
+        if (changePack.minSyncedTicket != null) {
+            minSyncedTicket = changePack.minSyncedTicket.toPBTimeTicket()
+        } else {
+            clearMinSyncedTicket()
         }
-    }.build()
+    }
 }

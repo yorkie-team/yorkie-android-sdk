@@ -5,6 +5,7 @@ import dev.yorkie.api.v1.Operation.Increase
 import dev.yorkie.api.v1.Operation.Move
 import dev.yorkie.api.v1.Operation.Remove
 import dev.yorkie.api.v1.Operation.Set
+import dev.yorkie.api.v1.operation
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
@@ -64,7 +65,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 value = operation.value.toPBJsonElementSimple()
                 executedAt = operation.executedAt.toPBTimeTicket()
             }.build()
-            PBOperation.newBuilder().apply { set = setOperation }.build()
+            operation { set = setOperation }
         }
         is AddOperation -> {
             val addOperation = Add.newBuilder().apply {
@@ -73,7 +74,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 value = operation.value.toPBJsonElementSimple()
                 executedAt = operation.executedAt.toPBTimeTicket()
             }.build()
-            PBOperation.newBuilder().apply { add = addOperation }.build()
+            operation { add = addOperation }
         }
         is MoveOperation -> {
             val moveOperation = Move.newBuilder().apply {
@@ -82,7 +83,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 createdAt = operation.createdAt.toPBTimeTicket()
                 executedAt = operation.executedAt.toPBTimeTicket()
             }.build()
-            PBOperation.newBuilder().apply { move = moveOperation }.build()
+            operation { move = moveOperation }
         }
         is RemoveOperation -> {
             val removeOperation = Remove.newBuilder().apply {
@@ -90,7 +91,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 createdAt = operation.createdAt.toPBTimeTicket()
                 executedAt = operation.executedAt.toPBTimeTicket()
             }.build()
-            PBOperation.newBuilder().apply { remove = removeOperation }.build()
+            operation { remove = removeOperation }
         }
         is IncreaseOperation -> {
             val increaseOperation = Increase.newBuilder().apply {
@@ -98,7 +99,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 value = operation.value.toPBJsonElementSimple()
                 executedAt = operation.executedAt.toPBTimeTicket()
             }.build()
-            PBOperation.newBuilder().apply { increase = increaseOperation }.build()
+            operation { increase = increaseOperation }
         }
         else -> error("unimplemented operation $operation")
     }

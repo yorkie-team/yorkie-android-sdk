@@ -1,7 +1,11 @@
 package dev.yorkie.api
 
 import com.google.protobuf.ByteString
+import dev.yorkie.api.v1.jSONElement
+import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.movedAtOrNull
+import dev.yorkie.api.v1.rGANode
+import dev.yorkie.api.v1.rHTNode
 import dev.yorkie.api.v1.removedAtOrNull
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
@@ -121,38 +125,46 @@ internal fun CrdtElement.toPBJsonObject(): PBJsonElement {
 }
 
 internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
-    val pbObject = PBJsonObject.newBuilder().apply {
-        createdAt = this@toPBJsonObject.createdAt.toPBTimeTicket()
-        movedAt = this@toPBJsonObject.movedAt?.toPBTimeTicket()
-        removedAt = this@toPBJsonObject.removedAt?.toPBTimeTicket()
-        rht.toPBRhtNodes().forEachIndexed { index, rhtNode ->
-            setNodes(index, rhtNode)
+    val crdtObject = this
+    return jSONElement {
+        PBJsonObject.newBuilder().apply {
+            createdAt = crdtObject.createdAt.toPBTimeTicket()
+            movedAt = crdtObject.movedAt?.toPBTimeTicket()
+            removedAt = crdtObject.removedAt?.toPBTimeTicket()
+            nodesList.addAll(rht.toPBRhtNodes())
+        }.build().also {
+            jsonObject = it
         }
-    }.build()
-    return PBJsonElement.newBuilder().apply { jsonObject = pbObject }.build()
+    }
 }
 
 internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
-    val pbArray = PBJsonArray.newBuilder().apply {
-        createdAt = this@toPBJsonArray.createdAt.toPBTimeTicket()
-        movedAt = this@toPBJsonArray.movedAt?.toPBTimeTicket()
-        removedAt = this@toPBJsonArray.removedAt?.toPBTimeTicket()
-        elements.toPBRgaNodes().forEachIndexed { index, rgaNode ->
-            setNodes(index, rgaNode)
+    val crdtArray = this
+    return jSONElement {
+        PBJsonArray.newBuilder().apply {
+            createdAt = crdtArray.createdAt.toPBTimeTicket()
+            movedAt = crdtArray.movedAt?.toPBTimeTicket()
+            removedAt = crdtArray.removedAt?.toPBTimeTicket()
+            nodesList.addAll(elements.toPBRgaNodes())
+        }.build().also {
+            jsonArray = it
         }
-    }.build()
-    return PBJsonElement.newBuilder().apply { jsonArray = pbArray }.build()
+    }
 }
 
 internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
-    val pbPrimitive = PBPrimitive.newBuilder().apply {
-        type = this@toPBPrimitive.type.toPBValueType()
-        value = this@toPBPrimitive.toByteString()
-        createdAt = this@toPBPrimitive.createdAt.toPBTimeTicket()
-        movedAt = this@toPBPrimitive.movedAt?.toPBTimeTicket()
-        removedAt = this@toPBPrimitive.removedAt?.toPBTimeTicket()
-    }.build()
-    return PBJsonElement.newBuilder().apply { primitive = pbPrimitive }.build()
+    val crdtPrimitive = this
+    return jSONElement {
+        PBPrimitive.newBuilder().apply {
+            type = crdtPrimitive.type.toPBValueType()
+            value = crdtPrimitive.toByteString()
+            createdAt = crdtPrimitive.createdAt.toPBTimeTicket()
+            movedAt = crdtPrimitive.movedAt?.toPBTimeTicket()
+            removedAt = crdtPrimitive.removedAt?.toPBTimeTicket()
+        }.build().also {
+            primitive = it
+        }
+    }
 }
 
 internal fun PrimitiveType.toPBValueType(): PBValueType {
@@ -169,14 +181,18 @@ internal fun PrimitiveType.toPBValueType(): PBValueType {
 }
 
 internal fun CrdtCounter.toPBCounter(): PBJsonElement {
-    val pbCounter = PBCounter.newBuilder().apply {
-        type = this@toPBCounter.type.toPBCounterType()
-        value = this@toPBCounter.toByteString()
-        createdAt = this@toPBCounter.createdAt.toPBTimeTicket()
-        movedAt = this@toPBCounter.movedAt?.toPBTimeTicket()
-        removedAt = this@toPBCounter.removedAt?.toPBTimeTicket()
-    }.build()
-    return PBJsonElement.newBuilder().apply { counter = pbCounter }.build()
+    val crdtCounter = this
+    return jSONElement {
+        PBCounter.newBuilder().apply {
+            type = crdtCounter.type.toPBCounterType()
+            value = crdtCounter.toByteString()
+            createdAt = crdtCounter.createdAt.toPBTimeTicket()
+            movedAt = crdtCounter.movedAt?.toPBTimeTicket()
+            removedAt = crdtCounter.removedAt?.toPBTimeTicket()
+        }.build().also {
+            counter = it
+        }
+    }
 }
 
 internal fun CounterType.toPBCounterType(): PBValueType {
@@ -215,7 +231,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
 
 // TODO("check CrdtText and CrdtRichText")
 internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
-    return PBJsonElementSimple.newBuilder().apply {
+    return jSONElementSimple {
         createdAt = this@toPBJsonElementSimple.createdAt.toPBTimeTicket()
         when (val element = this@toPBJsonElementSimple) {
             is CrdtObject -> type = PBValueType.VALUE_TYPE_JSON_OBJECT
@@ -230,22 +246,20 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
             }
             else -> error("unimplemented element: $element")
         }
-    }.build()
+    }
 }
 
 internal fun List<RhtPQMap.RhtPQMapNode<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
     return map {
-        PBRhtNode.newBuilder().apply {
+        rHTNode {
             key = it.strKey
             element = it.value.toPBJsonObject()
-        }.build()
+        }
     }
 }
 
 internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
     return map {
-        PBRgaNode.newBuilder().apply {
-            element = it.value.toPBJsonObject()
-        }.build()
+        rGANode { element = it.value.toPBJsonObject() }
     }
 }

@@ -27,4 +27,15 @@ internal abstract class Operation(val parentCreatedAt: TimeTicket, var executedA
     fun setActor(actorID: ActorID) {
         executedAt = executedAt.setActor(actorID)
     }
+
+    override fun equals(other: Any?): Boolean {
+        return this.toString() == other.toString()
+    }
+
+    override fun hashCode(): Int {
+        var result = parentCreatedAt.hashCode()
+        result = 31 * result + executedAt.hashCode()
+        result = 31 * result + effectedCreatedAt.hashCode()
+        return result
+    }
 }

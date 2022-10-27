@@ -5,20 +5,25 @@ import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changeID
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.checkpoint
+import dev.yorkie.api.v1.minSyncedTicketOrNull
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.time.ActorID
 
-typealias PBChange = dev.yorkie.api.v1.Change
-typealias PBChangeID = dev.yorkie.api.v1.ChangeID
-typealias PBCheckPoint = dev.yorkie.api.v1.Checkpoint
-typealias PBChangePack = dev.yorkie.api.v1.ChangePack
+internal typealias PBChange = dev.yorkie.api.v1.Change
+internal typealias PBChangeID = dev.yorkie.api.v1.ChangeID
+internal typealias PBCheckPoint = dev.yorkie.api.v1.Checkpoint
+internal typealias PBChangePack = dev.yorkie.api.v1.ChangePack
 
 internal fun List<PBChange>.toChanges(): List<Change> {
     return map {
-        Change(it.id.toChangeID(), it.operationsList.toOperations(), it.message)
+        Change(
+            it.id.toChangeID(),
+            it.operationsList.toOperations(),
+            it.message.ifEmpty { null },
+        )
     }
 }
 
@@ -69,8 +74,8 @@ internal fun PBChangePack.toChangePack(): ChangePack {
         documentKey = documentKey,
         checkPoint = checkpoint.toCheckPoint(),
         changes = changesList.toChanges(),
-        snapshot = snapshot,
-        minSyncedTicket = minSyncedTicket.toTimeTicket(),
+        snapshot = snapshot.takeUnless { it.isEmpty },
+        minSyncedTicket = minSyncedTicketOrNull?.toTimeTicket(),
     )
 }
 

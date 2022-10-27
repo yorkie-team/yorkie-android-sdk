@@ -5,9 +5,9 @@ import com.google.protobuf.ByteString
 import com.google.protobuf.kotlin.toByteString
 
 internal fun ByteString.toHexString(): String {
-    return BaseEncoding.base16().lowerCase().encode(toByteArray())
+    return BaseEncoding.base16().encode(toByteArray())
 }
 
 internal fun String.toDecodedByteString(): ByteString {
-    return BaseEncoding.base16().lowerCase().decode(this).toByteString()
+    return BaseEncoding.base16().decode(this).toByteString()
 }

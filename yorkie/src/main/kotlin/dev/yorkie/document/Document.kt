@@ -182,6 +182,10 @@ public class Document private constructor(
 
     private fun Change.toChangeInfo() = Event.ChangeInfo(this, createPaths())
 
+    public fun toJson(): String {
+        return root.toJson()
+    }
+
     public sealed class Event<T>(public val value: T) {
 
         public class Snapshot internal constructor(value: ByteString) : Event<ByteString>(value)

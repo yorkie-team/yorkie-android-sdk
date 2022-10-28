@@ -14,7 +14,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.util.Date
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DocumentTest {
@@ -31,6 +34,7 @@ class DocumentTest {
             var result = target.updateAsync {
                 it["k1"] = "1"
                 it["k2"] = "2"
+                it["k2"] = "3"
                 with(it.setNewArray("k3")) {
                     put(1)
                     put(2)
@@ -113,6 +117,8 @@ class DocumentTest {
                 target.collect(events::add)
             }
 
+            assertFalse(target.hasLocalChanges)
+
             target.updateAsync {
                 it["k1"] = 1
                 it["k2"] = true
@@ -151,7 +157,25 @@ class DocumentTest {
             val secondRemove = change.operations.last() as RemoveOperation
             assertEquals(firstSet.effectedCreatedAt, secondRemove.createdAt)
 
+            assertTrue(target.hasLocalChanges)
+
             collectJob.cancel()
+        }
+    }
+
+    @Test
+    fun `should clear clone when error occurs on update`() {
+        runTest {
+            target.updateAsync {
+                it["k1"] = 1
+            }.await()
+            assertNotNull(target.clone)
+
+            target.updateAsync {
+                it["k2"] = 2
+                error("error test")
+            }.await()
+            assertNull(target.clone)
         }
     }
 }

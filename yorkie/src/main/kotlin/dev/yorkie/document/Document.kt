@@ -1,5 +1,6 @@
 package dev.yorkie.document
 
+import com.google.common.annotations.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toCrdtObject
 import dev.yorkie.document.change.Change
@@ -34,7 +35,11 @@ public class Document private constructor(
     private val localChanges = mutableListOf<Change>()
 
     private var root: CrdtRoot = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
-    private var clone: CrdtRoot? = null
+
+    @get:VisibleForTesting
+    internal var clone: CrdtRoot? = null
+        private set
+
     private var changeID = ChangeID.InitialChangeID
     private var checkPoint = CheckPoint.InitialCheckPoint
 

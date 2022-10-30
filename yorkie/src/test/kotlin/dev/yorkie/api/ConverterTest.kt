@@ -24,13 +24,13 @@ class ConverterTest {
 
     @Test
     fun `should convert ByteString`() {
-        val actorIDValue = ActorID.INITIAL_ACTOR_ID.id
-        val converted = actorIDValue.toDecodedByteString().toHexString()
-        val maxActorIDValue = ActorID.MAX_ACTOR_ID.id
-        val maxConverted = maxActorIDValue.toDecodedByteString().toHexString()
+        val actorID = ActorID.INITIAL_ACTOR_ID
+        val converted = actorID.toByteString().toActorID()
+        val maxActorID = ActorID.MAX_ACTOR_ID
+        val maxConverted = maxActorID.toByteString().toActorID()
 
-        assertEquals(actorIDValue, converted)
-        assertEquals(maxActorIDValue, maxConverted)
+        assertEquals(actorID, converted)
+        assertEquals(maxActorID, maxConverted)
     }
 
     @Test

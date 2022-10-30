@@ -106,7 +106,9 @@ dependencies {
     implementation("org.apache.commons:commons-collections4:${Versions.apacheCommonCollection}")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${Versions.coroutines}")
+    testImplementation("com.google.code.gson:gson:2.10")
     androidTestImplementation("androidx.test.ext:junit:1.1.3")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.4.0")
 }

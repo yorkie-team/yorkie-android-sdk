@@ -2,6 +2,10 @@ package dev.yorkie.api
 
 import com.google.protobuf.ByteString
 import com.google.protobuf.kotlin.toByteString
+import dev.yorkie.api.v1.JSONElementKt.counter
+import dev.yorkie.api.v1.JSONElementKt.jSONArray
+import dev.yorkie.api.v1.JSONElementKt.jSONObject
+import dev.yorkie.api.v1.JSONElementKt.primitive
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.movedAtOrNull
@@ -135,13 +139,11 @@ internal fun CrdtElement.toPBJsonObject(): PBJsonElement {
 internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
     val crdtObject = this
     return jSONElement {
-        PBJsonObject.newBuilder().apply {
+        jsonObject = jSONObject {
             createdAt = crdtObject.createdAt.toPBTimeTicket()
             crdtObject.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtObject.removedAt?.let { removedAt = it.toPBTimeTicket() }
-            addAllNodes(rht.toPBRhtNodes())
-        }.build().also {
-            jsonObject = it
+            nodes.addAll(rht.toPBRhtNodes())
         }
     }
 }
@@ -158,13 +160,11 @@ internal fun List<RhtPQMap.RhtPQMapNode<CrdtElement>>.toPBRhtNodes(): List<PBRht
 internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
     val crdtArray = this
     return jSONElement {
-        PBJsonArray.newBuilder().apply {
+        jsonArray = jSONArray {
             createdAt = crdtArray.createdAt.toPBTimeTicket()
             crdtArray.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtArray.removedAt?.let { removedAt = it.toPBTimeTicket() }
-            addAllNodes(elements.toPBRgaNodes())
-        }.build().also {
-            jsonArray = it
+            nodes.addAll(elements.toPBRgaNodes())
         }
     }
 }
@@ -178,14 +178,12 @@ internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
 internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
     val crdtPrimitive = this
     return jSONElement {
-        PBPrimitive.newBuilder().apply {
+        primitive = primitive {
             type = crdtPrimitive.type.toPBValueType()
             value = crdtPrimitive.toBytes().toByteString()
             createdAt = crdtPrimitive.createdAt.toPBTimeTicket()
             crdtPrimitive.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtPrimitive.removedAt?.let { removedAt = it.toPBTimeTicket() }
-        }.build().also {
-            primitive = it
         }
     }
 }
@@ -206,14 +204,12 @@ internal fun PrimitiveType.toPBValueType(): PBValueType {
 internal fun CrdtCounter.toPBCounter(): PBJsonElement {
     val crdtCounter = this
     return jSONElement {
-        PBCounter.newBuilder().apply {
+        counter = counter {
             type = crdtCounter.type.toPBCounterType()
             value = crdtCounter.toBytes().toByteString()
             createdAt = crdtCounter.createdAt.toPBTimeTicket()
             crdtCounter.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtCounter.removedAt?.let { removedAt = it.toPBTimeTicket() }
-        }.build().also {
-            counter = it
         }
     }
 }

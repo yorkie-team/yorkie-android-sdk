@@ -1,5 +1,6 @@
 package dev.yorkie.document
 
+import com.google.common.annotations.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toCrdtObject
 import dev.yorkie.document.change.Change
@@ -14,31 +15,31 @@ import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.YorkieScope
 import dev.yorkie.util.findPrefixes
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.launch
 import org.apache.commons.collections4.trie.PatriciaTrie
 
 /**
  * A CRDT-based data type.
  * We can represent the model of the application.
  * And we can edit it even while offline.
- *
- * TODO(skhugh): we need to check for thread-safety.
  */
 public class Document private constructor(
     public val key: String,
     private val eventStream: MutableSharedFlow<Event<*>>,
 ) : Flow<Document.Event<*>> by eventStream {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val localChanges = mutableListOf<Change>()
 
     private var root: CrdtRoot = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
-    private var clone: CrdtRoot? = null
+
+    @get:VisibleForTesting
+    internal var clone: CrdtRoot? = null
+        private set
+
     private var changeID = ChangeID.InitialChangeID
     private var checkPoint = CheckPoint.InitialCheckPoint
 
@@ -50,35 +51,36 @@ public class Document private constructor(
     /**
      * Executes the given [updater] to update this document.
      */
-    public fun update(
+    public fun updateAsync(
         message: String? = null,
         updater: (root: JsonObject) -> Unit,
-    ) {
-        val clone = ensureClone()
-        val context = ChangeContext(
-            id = changeID.next(),
-            root = clone,
-            message = message,
-        )
+    ): Deferred<Boolean> {
+        return YorkieScope.async {
+            val clone = ensureClone()
+            val context = ChangeContext(
+                id = changeID.next(),
+                root = clone,
+                message = message,
+            )
 
-        runCatching {
-            val proxy = JsonObject(context, clone.rootObject)
-            updater.invoke(proxy)
-        }.onFailure {
-            this.clone = null
-            YorkieLogger.e("Document.update", it.message.orEmpty())
-        }
+            runCatching {
+                val proxy = JsonObject(context, clone.rootObject)
+                updater.invoke(proxy)
+            }.onFailure {
+                this@Document.clone = null
+                YorkieLogger.e("Document.update", it.message.orEmpty())
+                return@async false
+            }
 
-        if (!context.hasOperations) {
-            return
-        }
-        val change = context.getChange()
-        change.execute(root)
-        localChanges += change
-        changeID = change.id
-
-        scope.launch {
+            if (!context.hasOperations) {
+                return@async true
+            }
+            val change = context.getChange()
+            change.execute(root)
+            localChanges += change
+            changeID = change.id
             eventStream.emit(change.asLocal())
+            true
         }
     }
 
@@ -88,7 +90,7 @@ public class Document private constructor(
      * 2. Update the checkpoint.
      * 3. Do Garbage collection.
      */
-    internal fun applyChangePack(pack: ChangePack) {
+    internal suspend fun applyChangePack(pack: ChangePack) {
         if (pack.hasSnapshot) {
             applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
         } else if (pack.hasChanges) {
@@ -112,19 +114,17 @@ public class Document private constructor(
     /**
      * Applies the given [snapshot] into this document.
      */
-    private fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
+    private suspend fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
         root = CrdtRoot(snapshot.toCrdtObject())
         changeID = changeID.syncLamport(serverSeq)
         clone = null
-        scope.launch {
-            eventStream.emit(Event.Snapshot(snapshot))
-        }
+        eventStream.emit(Event.Snapshot(snapshot))
     }
 
     /**
      * Applies the given [changes] into this document.
      */
-    private fun applyChanges(changes: List<Change>) {
+    private suspend fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
         val changesInfo = changes.map {
             it.execute(clone)
@@ -135,9 +135,7 @@ public class Document private constructor(
         if (changesInfo.isEmpty()) {
             return
         }
-        scope.launch {
-            eventStream.emit(Event.RemoteChange(changesInfo))
-        }
+        eventStream.emit(Event.RemoteChange(changesInfo))
     }
 
     private fun ensureClone(): CrdtRoot {
@@ -188,6 +186,10 @@ public class Document private constructor(
     private fun Change.asLocal() = Event.LocalChange(listOf(toChangeInfo()))
 
     private fun Change.toChangeInfo() = Event.ChangeInfo(this, createPaths())
+
+    public fun toJson(): String {
+        return root.toJson()
+    }
 
     public sealed class Event<T>(public val value: T) {
 

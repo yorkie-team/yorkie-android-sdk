@@ -10,7 +10,6 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
-import dev.yorkie.document.time.ActorID
 
 internal typealias PBChange = dev.yorkie.api.v1.Change
 internal typealias PBChangeID = dev.yorkie.api.v1.ChangeID
@@ -44,7 +43,7 @@ internal fun PBChangeID.toChangeID(): ChangeID {
     return ChangeID(
         clientSeq,
         lamport,
-        ActorID(actorId.toHexString()),
+        actorId.toActorID(),
     )
 }
 
@@ -53,7 +52,7 @@ internal fun ChangeID.toPBChangeID(): PBChangeID {
     return changeID {
         clientSeq = changeID.clientSeq
         lamport = changeID.lamport
-        actorId = changeID.actor.id.toDecodedByteString()
+        actorId = changeID.actor.toByteString()
     }
 }
 

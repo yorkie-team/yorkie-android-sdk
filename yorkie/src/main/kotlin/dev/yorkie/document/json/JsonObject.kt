@@ -49,11 +49,11 @@ public class JsonObject internal constructor(
         setPrimitive(key, value)
     }
 
-    public operator fun set(key: String, value: JsonPrimitive) {
+    public operator fun set(key: String, value: JsonPrimitive?) {
         setPrimitive(key, value)
     }
 
-    private fun setPrimitive(key: String, value: Any) {
+    private fun setPrimitive(key: String, value: Any?) {
         val executedAt = context.issueTimeTicket()
         val primitive = if (value is JsonPrimitive) {
             value.target

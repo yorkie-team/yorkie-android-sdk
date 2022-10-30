@@ -73,7 +73,7 @@ internal class CrdtObject(
      */
     override fun toJson(): String {
         return joinToString(",", "{", "}") {
-            "${it.first}:${it.second.toJson()}"
+            "\"${it.first}\":${it.second.toJson()}"
         }
     }
 

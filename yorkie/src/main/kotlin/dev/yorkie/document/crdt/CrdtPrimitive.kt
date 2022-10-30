@@ -28,8 +28,9 @@ internal class CrdtPrimitive(
      */
     override fun toJson(): String {
         return when (type) {
-            PrimitiveType.String -> escapeString(value as String)
-            PrimitiveType.Bytes -> (value as ByteArray).decodeToString()
+            PrimitiveType.String -> """"${escapeString(value as String)}""""
+            PrimitiveType.Bytes -> """"${(value as ByteArray).decodeToString()}""""
+            PrimitiveType.Date -> (value as Date).time.toString()
             else -> "$value"
         }
     }

@@ -15,12 +15,15 @@ import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
-import dev.yorkie.util.YorkieScope
+import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.findPrefixes
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.withContext
 import org.apache.commons.collections4.trie.PatriciaTrie
 
 /**
@@ -32,6 +35,8 @@ public class Document private constructor(
     public val key: String,
     private val eventStream: MutableSharedFlow<Event<*>>,
 ) : Flow<Document.Event<*>> by eventStream {
+    private val dispatcher = createSingleThreadDispatcher("Document($key)")
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
 
     private var root: CrdtRoot = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
@@ -55,7 +60,7 @@ public class Document private constructor(
         message: String? = null,
         updater: (root: JsonObject) -> Unit,
     ): Deferred<Boolean> {
-        return YorkieScope.async {
+        return scope.async {
             val clone = ensureClone()
             val context = ChangeContext(
                 id = changeID.next(),
@@ -90,7 +95,7 @@ public class Document private constructor(
      * 2. Update the checkpoint.
      * 3. Do Garbage collection.
      */
-    internal suspend fun applyChangePack(pack: ChangePack) {
+    internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
         if (pack.hasSnapshot) {
             applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
         } else if (pack.hasChanges) {
@@ -145,16 +150,16 @@ public class Document private constructor(
     /**
      * Create [ChangePack] of [localChanges] to send to the remote server.
      */
-    internal fun createChangePack(): ChangePack {
-        val checkPoint = this.checkPoint.increaseClientSeq(localChanges.size)
-        return ChangePack(key, checkPoint, localChanges, null, null)
+    internal suspend fun createChangePack() = withContext(dispatcher) {
+        val checkPoint = checkPoint.increaseClientSeq(localChanges.size)
+        ChangePack(key, checkPoint, localChanges, null, null)
     }
 
     /**
      * Sets [actorID] into this document.
      * This is also applied in the [localChanges] the document has.
      */
-    internal fun setActor(actorID: ActorID) {
+    internal suspend fun setActor(actorID: ActorID) = withContext(dispatcher) {
         localChanges.forEach {
             it.setActor(actorID)
         }

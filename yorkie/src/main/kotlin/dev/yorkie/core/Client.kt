@@ -22,13 +22,15 @@ import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.document.Document
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieLogger
-import dev.yorkie.util.YorkieScope
+import dev.yorkie.util.createSingleThreadDispatcher
 import io.grpc.CallOptions
 import io.grpc.Channel
 import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -53,6 +55,10 @@ public class Client @VisibleForTesting internal constructor(
     private val options: Options = Options.Default,
     private val eventStream: MutableSharedFlow<Event<*>> = MutableSharedFlow(),
 ) : Flow<Client.Event<*>> by eventStream {
+    private val scope = CoroutineScope(
+        SupervisorJob() +
+            createSingleThreadDispatcher("Client(${options.key})"),
+    )
     private val attachments = mutableMapOf<String, Attachment>()
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
@@ -93,7 +99,7 @@ public class Client @VisibleForTesting internal constructor(
      * distinguish different clients.
      */
     public fun activateAsync(): Deferred<Boolean> {
-        return YorkieScope.async {
+        return scope.async {
             if (isActive) {
                 return@async true
             }
@@ -121,7 +127,7 @@ public class Client @VisibleForTesting internal constructor(
 
     private fun runSyncLoop() {
         syncLoop?.cancel()
-        syncLoop = YorkieScope.launch {
+        syncLoop = scope.launch {
             launch {
                 while (true) {
                     attachments.filterValues { attachment ->
@@ -150,7 +156,7 @@ public class Client @VisibleForTesting internal constructor(
      * receives changes of the remote replica from the server then apply them to local documents.
      */
     public fun syncAsync(): Deferred<Boolean> {
-        return YorkieScope.async {
+        return scope.async {
             var isAllSuccess = true
             attachments.map { (_, attachment) ->
                 attachment.doc
@@ -188,7 +194,7 @@ public class Client @VisibleForTesting internal constructor(
 
     private fun runWatchLoop() {
         watchLoop?.cancel()
-        watchLoop = YorkieScope.launch {
+        watchLoop = scope.launch {
             val realTimeSyncDocKeys = attachments.filterValues { attachment ->
                 attachment.isRealTimeSync
             }.map { (_, attachment) ->
@@ -254,7 +260,7 @@ public class Client @VisibleForTesting internal constructor(
         doc: Document,
         isManualSync: Boolean = false,
     ): Deferred<Boolean> {
-        return YorkieScope.async {
+        return scope.async {
             require(isActive) {
                 "client is not active"
             }
@@ -287,7 +293,7 @@ public class Client @VisibleForTesting internal constructor(
      * if the [doc] is no longer used by this [Client], it should be detached.
      */
     public fun detachAsync(doc: Document): Deferred<Boolean> {
-        return YorkieScope.async {
+        return scope.async {
             require(isActive) {
                 "client is not active"
             }
@@ -313,7 +319,7 @@ public class Client @VisibleForTesting internal constructor(
      * deactivates this client.
      */
     public fun deactivateAsync(): Deferred<Boolean> {
-        return YorkieScope.async {
+        return scope.async {
             if (!isActive) {
                 return@async false
             }

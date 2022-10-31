@@ -108,7 +108,7 @@ public class Document private constructor(
 
         checkPoint = checkPoint.forward(pack.checkPoint)
 
-        garbageCollect(checkNotNull(pack.minSyncedTicket))
+        pack.minSyncedTicket?.let(::garbageCollect)
     }
 
     /**

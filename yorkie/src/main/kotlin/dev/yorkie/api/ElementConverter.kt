@@ -40,7 +40,7 @@ internal typealias PBTextNode = dev.yorkie.api.v1.TextNode
 //  and RgaTreeSplit related functions later.
 
 internal fun ByteString.toCrdtObject(): CrdtObject {
-    return PBJsonObject.parseFrom(this).toCrdtObject()
+    return PBJsonElement.parseFrom(this).jsonObject.toCrdtObject()
 }
 
 // // TODO(7hong13): should check CrdtText, CrdtRichText
@@ -126,7 +126,7 @@ internal fun PBValueType.toCounterType(): CounterType {
 }
 
 // TODO(7hong13): should check CrdtText
-internal fun CrdtElement.toPBJsonObject(): PBJsonElement {
+internal fun CrdtElement.toPBJsonElement(): PBJsonElement {
     return when (this) {
         is CrdtObject -> toPBJsonObject()
         is CrdtArray -> toPBJsonArray()
@@ -152,7 +152,7 @@ internal fun List<RhtPQMap.RhtPQMapNode<CrdtElement>>.toPBRhtNodes(): List<PBRht
     return map {
         rHTNode {
             key = it.strKey
-            element = it.value.toPBJsonObject()
+            element = it.value.toPBJsonElement()
         }
     }
 }
@@ -171,7 +171,7 @@ internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
 
 internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
     return map {
-        rGANode { element = it.value.toPBJsonObject() }
+        rGANode { element = it.value.toPBJsonElement() }
     }
 }
 

@@ -2,7 +2,6 @@ package dev.yorkie.examples
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.compose.runtime.toMutableStateMap
 import androidx.recyclerview.widget.RecyclerView
 import dev.yorkie.examples.databinding.KanbanCardBinding
 
@@ -11,7 +10,7 @@ class KanbanCardAdapter(
     private val itemAddListener: (ViewGroup, String, String) -> Unit,
     private val cardDeleteListener: (String) -> Unit,
 ) : RecyclerView.Adapter<KanbanCardAdapter.KanbanCardViewHolder>() {
-    private var kanbanList = mutableMapOf<String, MutableList<String>>()
+    private var kanbanList = mapOf<String, List<String>>()
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): KanbanCardViewHolder {
         return KanbanCardViewHolder(
@@ -44,7 +43,7 @@ class KanbanCardAdapter(
     }
 
     fun setKanbans(kanbanList: Map<String, List<String>>) {
-        this.kanbanList = kanbanList.map { it.key to it.value.toMutableList() }.toMutableStateMap()
+        this.kanbanList = kanbanList
     }
 
     class KanbanCardViewHolder(

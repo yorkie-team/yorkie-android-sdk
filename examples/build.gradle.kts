@@ -37,6 +37,8 @@ android {
     }
     buildFeatures {
         compose = true
+        dataBinding = true
+        viewBinding = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.3.2"
@@ -59,6 +61,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:${Versions.composeUi}")
     implementation("androidx.compose.material:material:${Versions.composeUi}")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:${Versions.coroutines}")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:${Versions.viewModel}")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.3")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.4.0")

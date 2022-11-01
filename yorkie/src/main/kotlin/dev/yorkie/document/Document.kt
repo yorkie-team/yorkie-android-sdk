@@ -196,6 +196,13 @@ public class Document private constructor(
         return root.toJson()
     }
 
+    public fun getRoot(): JsonObject {
+        ensureClone()
+        val clone = requireNotNull(clone)
+        val context = ChangeContext(changeID.next(), clone, null)
+        return JsonObject(context, clone.rootObject)
+    }
+
     public sealed class Event<T>(public val value: T) {
 
         public class Snapshot internal constructor(value: ByteString) : Event<ByteString>(value)

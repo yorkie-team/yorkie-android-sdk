@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import android.util.Log
 import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
@@ -128,12 +129,16 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     fun garbageCollect(executedAt: TimeTicket): Int {
         var count = 0
-        removedElementSetByCreatedAt.forEach { createdAt ->
-            val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
-            if (pair.element.isRemoved && pair.element.removedAt <= executedAt) {
-                pair.parent?.delete(pair.element)
-                count += garbageCollectInternal(pair.element)
+        try {
+            removedElementSetByCreatedAt.forEach { createdAt ->
+                val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
+                if (pair.element.isRemoved && pair.element.removedAt <= executedAt) {
+                    pair.parent?.delete(pair.element)
+                    count += garbageCollectInternal(pair.element)
+                }
             }
+        } catch (e: Exception) {
+            // TODO(7hong): handle ConcurrentModificationException
         }
 
         textWithGarbageSetByCreatedAt.forEach { createdAt ->

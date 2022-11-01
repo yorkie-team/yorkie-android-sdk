@@ -1,13 +1,11 @@
 package dev.yorkie.examples
 
 import android.os.Bundle
-import android.util.Log
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import dev.yorkie.core.Client
-import dev.yorkie.document.json.JsonObject
 import dev.yorkie.examples.databinding.ActivityKanbanBinding
 import dev.yorkie.examples.databinding.KanbanItemBinding
 import kotlinx.coroutines.launch

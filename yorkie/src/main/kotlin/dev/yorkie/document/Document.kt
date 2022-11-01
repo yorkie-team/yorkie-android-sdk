@@ -32,7 +32,7 @@ import org.apache.commons.collections4.trie.PatriciaTrie
  * And we can edit it even while offline.
  */
 public class Document private constructor(
-    public val key: String,
+    public val key: Key,
     private val eventStream: MutableSharedFlow<Event<*>>,
 ) : Flow<Document.Event<*>> by eventStream {
     private val dispatcher = createSingleThreadDispatcher("Document($key)")
@@ -51,7 +51,7 @@ public class Document private constructor(
     internal val hasLocalChanges: Boolean
         get() = localChanges.isNotEmpty()
 
-    public constructor(key: String) : this(key, MutableSharedFlow())
+    public constructor(key: Key) : this(key, MutableSharedFlow())
 
     /**
      * Executes the given [updater] to update this document.
@@ -152,7 +152,7 @@ public class Document private constructor(
      */
     internal suspend fun createChangePack() = withContext(dispatcher) {
         val checkPoint = checkPoint.increaseClientSeq(localChanges.size)
-        ChangePack(key, checkPoint, localChanges, null, null)
+        ChangePack(key.value, checkPoint, localChanges, null, null)
     }
 
     /**
@@ -208,6 +208,12 @@ public class Document private constructor(
             value: List<ChangeInfo>,
         ) : Event<List<ChangeInfo>>(value)
 
-        public class ChangeInfo(public val change: Change, public val paths: List<String>)
+        public class ChangeInfo(
+            public val change: Change,
+            @Suppress("unused") public val paths: List<String>,
+        )
     }
+
+    @JvmInline
+    public value class Key(public val value: String)
 }

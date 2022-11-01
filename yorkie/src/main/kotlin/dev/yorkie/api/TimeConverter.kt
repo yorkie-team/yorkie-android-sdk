@@ -31,5 +31,5 @@ internal fun ByteString.toActorID(): ActorID {
 }
 
 internal fun ActorID.toByteString(): ByteString {
-    return BaseEncoding.base16().decode(id).toByteString()
+    return BaseEncoding.base16().decode(value).toByteString()
 }

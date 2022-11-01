@@ -17,19 +17,25 @@ import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.PushPullRequest
 import dev.yorkie.api.v1.PushPullResponse
+import dev.yorkie.api.v1.UpdatePresenceRequest
+import dev.yorkie.api.v1.UpdatePresenceResponse
 import dev.yorkie.api.v1.ValueType
 import dev.yorkie.api.v1.WatchDocumentsRequest
 import dev.yorkie.api.v1.WatchDocumentsResponse
+import dev.yorkie.api.v1.WatchDocumentsResponseKt.initialization
 import dev.yorkie.api.v1.YorkieServiceGrpc
 import dev.yorkie.api.v1.activateClientResponse
 import dev.yorkie.api.v1.attachDocumentResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
+import dev.yorkie.api.v1.client
+import dev.yorkie.api.v1.clients
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachDocumentResponse
 import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
+import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.pushPullResponse
 import dev.yorkie.api.v1.watchDocumentsResponse
 import dev.yorkie.document.crdt.CrdtElement
@@ -172,13 +178,41 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
         }
         responseObserver.onNext(
             watchDocumentsResponse {
-                event = docEvent {
-                    type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
-                    publisher = request.client
-                    documentKeys.addAll(request.documentKeysList)
+                if (request.documentKeysList.contains(INITIALIZATION_DOCUMENT_KEY)) {
+                    initialization = initialization {
+                        peersMapByDoc[INITIALIZATION_DOCUMENT_KEY] = clients {
+                            clients.add(
+                                client {
+                                    id = request.client.id
+                                    presence = presence {
+                                        clock = 1
+                                        data["k1"] = "v1"
+                                    }
+                                },
+                            )
+                        }
+                    }
+                } else {
+                    event = docEvent {
+                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
+                        publisher = request.client
+                        documentKeys.addAll(request.documentKeysList)
+                    }
                 }
             },
         )
+        responseObserver.onCompleted()
+    }
+
+    override fun updatePresence(
+        request: UpdatePresenceRequest,
+        responseObserver: StreamObserver<UpdatePresenceResponse>,
+    ) {
+        if (request.documentKeysList.contains(UPDATE_PRESENCE_ERROR_DOCUMENT_KEY)) {
+            responseObserver.onError(StatusException(Status.UNAVAILABLE))
+            return
+        }
+        responseObserver.onNext(UpdatePresenceResponse.getDefaultInstance())
         responseObserver.onCompleted()
     }
 
@@ -188,6 +222,8 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
         internal const val WATCH_SYNC_ERROR_DOCUMENT_KEY = "WATCH_SYNC_ERROR_DOCUMENT_KEY"
         internal const val ATTACH_ERROR_DOCUMENT_KEY = "ATTACH_ERROR_DOCUMENT_KEY"
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
+        internal const val UPDATE_PRESENCE_ERROR_DOCUMENT_KEY = "UPDATE_PRESENCE_ERROR_DOCUMENT_KEY"
+        internal const val INITIALIZATION_DOCUMENT_KEY = "INITIALIZATION_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000FFFF0000000000")
     }
 }

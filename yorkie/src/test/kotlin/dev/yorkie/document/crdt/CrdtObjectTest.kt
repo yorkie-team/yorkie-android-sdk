@@ -46,11 +46,11 @@ class CrdtObjectTest {
     fun `should handle get operations`() {
         setTargetSampleValues()
 
-        assertEquals("A", target["A"].createdAt.actorID.id)
-        assertEquals("B", target["B"].createdAt.actorID.id)
-        assertEquals("C", target["C"].createdAt.actorID.id)
-        assertEquals("D", target["D"].createdAt.actorID.id)
-        assertEquals("E", target["E"].createdAt.actorID.id)
+        assertEquals("A", target["A"].createdAt.actorID.value)
+        assertEquals("B", target["B"].createdAt.actorID.value)
+        assertEquals("C", target["C"].createdAt.actorID.value)
+        assertEquals("D", target["D"].createdAt.actorID.value)
+        assertEquals("E", target["E"].createdAt.actorID.value)
     }
 
     @Test

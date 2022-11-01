@@ -12,7 +12,7 @@ import dev.yorkie.document.time.TimeTicket
  * @property minSyncedTicket the minimum logical time taken by clients who attach to the document.
  * It is used to collect garbage on the replica on the client.
  */
-internal class ChangePack(
+internal data class ChangePack(
     val documentKey: String,
     val checkPoint: CheckPoint,
     val changes: List<Change>,

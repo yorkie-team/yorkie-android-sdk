@@ -6,15 +6,17 @@ import dev.yorkie.api.toActorID
 import dev.yorkie.api.toByteString
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
+import dev.yorkie.api.toPBClient
+import dev.yorkie.api.toPresence
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchDocumentsResponse
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
-import dev.yorkie.api.v1.client
 import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullRequest
+import dev.yorkie.api.v1.updatePresenceRequest
 import dev.yorkie.api.v1.watchDocumentsRequest
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
@@ -59,7 +61,7 @@ public class Client @VisibleForTesting internal constructor(
         SupervisorJob() +
             createSingleThreadDispatcher("Client(${options.key})"),
     )
-    private val attachments = mutableMapOf<String, Attachment>()
+    private val attachments = mutableMapOf<Document.Key, Attachment>()
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()
@@ -69,6 +71,12 @@ public class Client @VisibleForTesting internal constructor(
 
     private val _streamConnectionStatus = MutableStateFlow(StreamConnectionStatus.Disconnected)
     public val streamConnectionStatus = _streamConnectionStatus.asStateFlow()
+
+    private val _peerStatus = MutableStateFlow(emptyList<PeerStatus>())
+    public val peerStatus = _peerStatus.asStateFlow()
+
+    public var presenceInfo = options.presence ?: PresenceInfo(0, emptyMap())
+        private set
 
     private val service by lazy {
         YorkieServiceGrpcKt.YorkieServiceCoroutineStub(channel, CallOptions.DEFAULT).run {
@@ -130,13 +138,7 @@ public class Client @VisibleForTesting internal constructor(
         syncLoop = scope.launch {
             launch {
                 while (true) {
-                    attachments.filterValues { attachment ->
-                        attachment.isRealTimeSync &&
-                            (attachment.doc.hasLocalChanges || attachment.remoteChangeEventReceived)
-                    }.map { (_, attachment) ->
-                        attachment.remoteChangeEventReceived = false
-                        attachment.doc
-                    }.asSyncFlow().collect { (document, result) ->
+                    filterRealTimeSyncNeeded().asSyncFlow().collect { (document, result) ->
                         eventStream.emit(
                             if (result.isSuccess) {
                                 DocumentSynced(Synced(document))
@@ -151,6 +153,14 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    private fun filterRealTimeSyncNeeded() = attachments.filterValues { attachment ->
+        attachment.isRealTimeSync &&
+            (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
+    }.map { (_, attachment) ->
+        attachment.remoteChangeEventReceived = false
+        attachment.document
+    }
+
     /**
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
@@ -159,7 +169,7 @@ public class Client @VisibleForTesting internal constructor(
         return scope.async {
             var isAllSuccess = true
             attachments.map { (_, attachment) ->
-                attachment.doc
+                attachment.document
             }.asSyncFlow().collect { (document, result) ->
                 eventStream.emit(
                     if (result.isSuccess) {
@@ -198,13 +208,11 @@ public class Client @VisibleForTesting internal constructor(
             val realTimeSyncDocKeys = attachments.filterValues { attachment ->
                 attachment.isRealTimeSync
             }.map { (_, attachment) ->
-                attachment.doc.key
+                attachment.document.key.value
             }.takeIf { it.isNotEmpty() } ?: return@launch
 
             val request = watchDocumentsRequest {
-                client = client {
-                    id = requireClientId().toByteString()
-                }
+                client = toPBClient()
                 documentKeys.addAll(realTimeSyncDocKeys)
             }
 
@@ -216,44 +224,116 @@ public class Client @VisibleForTesting internal constructor(
                 }
                 .collect {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                    handleWatchDocumentsResponse(realTimeSyncDocKeys, it)
+                    handleWatchDocumentsResponse(it)
                 }
         }
     }
 
-    private suspend fun handleWatchDocumentsResponse(
-        keys: List<String>,
-        response: WatchDocumentsResponse,
-    ) {
+    private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
         if (response.hasInitialization()) {
-            // TODO(skhugh): handle peers
+            response.initialization.peersMapByDocMap.forEach { (documentKey, peers) ->
+                val attachment = attachments[Document.Key(documentKey)] ?: return@forEach
+                peers.clientsList.forEach { peer ->
+                    attachment.peerPresences[peer.id.toActorID()] = peer.presence.toPresence()
+                }
+            }
+            emitPeerStatus()
+            return
         }
         val watchEvent = response.event
         val responseKeys = watchEvent.documentKeysList
         val publisher = watchEvent.publisher.id.toActorID()
-        // TODO(skhugh): handle peers and presence
-
+        val presence = watchEvent.publisher.presence.toPresence()
         responseKeys.forEach { key ->
-            val attachment = attachments[key] ?: return@forEach
+            val attachment = attachments[Document.Key(key)] ?: return@forEach
+            val presences = attachment.peerPresences
             when (watchEvent.type ?: return@forEach) {
+                DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
+                    presences[publisher] = presence
+                }
+                DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
+                    presences.remove(publisher)
+                }
                 DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
                     attachment.remoteChangeEventReceived = true
                 }
-                DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> TODO()
-                DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> TODO()
-                DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> TODO()
-                DocEventType.UNRECOGNIZED -> TODO()
+                DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {
+                    if ((presences[publisher]?.clock ?: -1) < presence.clock) {
+                        presences[publisher] = presence
+                    }
+                }
+                DocEventType.UNRECOGNIZED -> {
+                    // nothing to do
+                }
             }
         }
 
-        if (watchEvent.type == DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED) {
-            eventStream.emit(Event.DocumentChanged(responseKeys))
+        when (watchEvent.type ?: return) {
+            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
+                eventStream.emit(Event.DocumentChanged(responseKeys.map(Document::Key)))
+            }
+            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED,
+            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED,
+            DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED,
+            -> {
+                emitPeerStatus()
+            }
+            DocEventType.UNRECOGNIZED -> TODO()
         }
-        // TODO(skhugh): handle peers changed
+    }
+
+    private suspend fun emitPeerStatus() {
+        _peerStatus.emit(
+            attachments.flatMap { (documentKey, attachment) ->
+                attachment.peerPresences.map { (actorID, presenceInfo) ->
+                    PeerStatus(documentKey, actorID, presenceInfo)
+                }
+            },
+        )
     }
 
     /**
-     * Attaches the given document to this client.
+     * Updates the [PresenceInfo] of this [Client].
+     */
+    public fun updatePresenceAsync(key: String, value: String): Deferred<Boolean> {
+        return scope.async {
+            if (!isActive) {
+                return@async false
+            }
+
+            presenceInfo = presenceInfo.copy(
+                clock = presenceInfo.clock + 1,
+                data = presenceInfo.data + (key to value),
+            )
+
+            val documentKeys = attachments.filter {
+                it.value.isRealTimeSync
+            }.map { (key, attachment) ->
+                attachment.peerPresences[requireClientId()] = presenceInfo
+                key.value
+            }.takeIf {
+                it.isNotEmpty()
+            } ?: return@async true
+
+            emitPeerStatus()
+
+            try {
+                service.updatePresence(
+                    updatePresenceRequest {
+                        client = toPBClient()
+                        this.documentKeys.addAll(documentKeys)
+                    },
+                )
+                true
+            } catch (e: StatusException) {
+                YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
+                false
+            }
+        }
+    }
+
+    /**
+     * Attaches the given [Document] to this [Client].
      * It tells the server that this [Client] will synchronize the given [Document].
      */
     public fun attachAsync(
@@ -327,7 +407,7 @@ public class Client @VisibleForTesting internal constructor(
             watchLoop?.cancel()
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 
-            val deactivateResponse = try {
+            try {
                 service.deactivateClient(
                     deactivateClientRequest {
                         clientId = requireClientId().toByteString()
@@ -342,7 +422,7 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private fun requireClientId() = (status.value as Status.Activated).clientId
+    internal fun requireClientId() = (status.value as Status.Activated).clientId
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
 
@@ -359,12 +439,12 @@ public class Client @VisibleForTesting internal constructor(
         Connected, Disconnected
     }
 
-    public sealed class DocumentSyncResult(val document: Document) {
+    public sealed class DocumentSyncResult(public val document: Document) {
         public class Synced(document: Document) : DocumentSyncResult(document)
 
         public class SyncFailed(
             document: Document,
-            public val cause: Throwable?,
+            @Suppress("unused") public val cause: Throwable?,
         ) : DocumentSyncResult(document)
     }
 
@@ -376,28 +456,33 @@ public class Client @VisibleForTesting internal constructor(
          * Client key used to identify the client.
          * If not set, a random key is generated.
          */
-        val key: String = UUID.randomUUID().toString(),
-//        val presence: Any
+        public val key: String = UUID.randomUUID().toString(),
+        /**
+         * The presence information of this [Client].
+         * If the [Client] attaches a [Document], the [PresenceInfo] is sent to the other peers
+         * attached to the [Document].
+         */
+        public val presence: PresenceInfo? = null,
         /**
          * API key of the project used to identify the project.
          */
-        val apiKey: String? = null,
+        public val apiKey: String? = null,
         /**
          * Authentication token of this client used to identify the user of the client.
          */
-        val token: String? = null,
+        public val token: String? = null,
         /**
          * Duration of the sync loop.
          * After each sync loop, the client waits for the duration to next sync.
          * The default value is `50`(ms).
          */
-        val syncLoopDuration: Duration = 50.milliseconds,
+        public val syncLoopDuration: Duration = 50.milliseconds,
         /**
          * Delay of the reconnect stream.
          * If the stream is disconnected, the client waits for the delay to reconnect the stream.
          * The default value is `1000`(ms).
          */
-        val reconnectStreamDelay: Duration = 1_000.milliseconds,
+        public val reconnectStreamDelay: Duration = 1_000.milliseconds,
     ) {
 
         companion object {
@@ -407,10 +492,7 @@ public class Client @VisibleForTesting internal constructor(
 
     public sealed class Event<T>(public val value: T) {
 
-        public class DocumentChanged(value: List<String>) : Event<List<String>>(value)
-
-        // TODO(skhugh): implement after presence
-        public class PeersChanged(value: Any) : Event<Any>(value)
+        public class DocumentChanged(value: List<Document.Key>) : Event<List<Document.Key>>(value)
 
         public class DocumentSynced(value: DocumentSyncResult) : Event<DocumentSyncResult>(value)
     }

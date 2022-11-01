@@ -25,7 +25,7 @@ class DocumentTest {
 
     @Before
     fun setUp() {
-        target = Document("")
+        target = Document(Document.Key(""))
     }
 
     @Test

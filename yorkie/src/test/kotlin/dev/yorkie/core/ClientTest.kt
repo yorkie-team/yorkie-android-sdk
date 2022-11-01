@@ -10,6 +10,7 @@ import dev.yorkie.api.v1.AttachDocumentRequest
 import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.PushPullRequest
+import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.WatchDocumentsRequest
 import dev.yorkie.api.v1.YorkieServiceGrpc
 import dev.yorkie.assertJsonContentEquals
@@ -17,11 +18,14 @@ import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.INITIALIZATION_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
+import dev.yorkie.core.MockYorkieService.Companion.UPDATE_PRESENCE_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Key
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import io.grpc.Channel
@@ -30,6 +34,7 @@ import io.grpc.inprocess.InProcessServerBuilder
 import io.grpc.testing.GrpcCleanupRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
@@ -43,6 +48,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -108,7 +114,7 @@ class ClientTest {
     @Test
     fun `should sync when document is attached and on manual sync requests`() {
         runTest {
-            val document = Document(NORMAL_DOCUMENT_KEY)
+            val document = Document(Key(NORMAL_DOCUMENT_KEY))
             target.activateAsync().await()
 
             val attachRequestCaptor = ArgumentCaptor.forClass(AttachDocumentRequest::class.java)
@@ -137,7 +143,7 @@ class ClientTest {
     @Test
     fun `should run watch and sync when document is attached`() {
         runTest {
-            val document = Document(NORMAL_DOCUMENT_KEY)
+            val document = Document(Key(NORMAL_DOCUMENT_KEY))
             target.activateAsync().await()
 
             val eventAsync = async(UnconfinedTestDispatcher()) {
@@ -150,7 +156,7 @@ class ClientTest {
             verify(service).watchDocuments(watchRequestCaptor.capture(), any())
             assertIsTestActorID(watchRequestCaptor.value.client.id)
             assertEquals(1, changeEvent.value.size)
-            assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.value.first())
+            assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.value.first().value)
 
             val syncRequestCaptor = ArgumentCaptor.forClass(PushPullRequest::class.java)
             val syncEvent = assertIs<DocumentSynced>(events.last())
@@ -178,7 +184,7 @@ class ClientTest {
     @Test
     fun `should emit according event when watch stream fails`() {
         runTest {
-            val document = Document(WATCH_SYNC_ERROR_DOCUMENT_KEY)
+            val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
             target.activateAsync().await()
             target.attachAsync(document).await()
 
@@ -202,14 +208,14 @@ class ClientTest {
     @Test
     fun `should return sync result according to server response`() {
         runTest {
-            val success = Document(NORMAL_DOCUMENT_KEY)
+            val success = Document(Key(NORMAL_DOCUMENT_KEY))
             target.activateAsync().await()
             target.attachAsync(success).await()
 
             assertTrue(target.syncAsync().await())
             target.detachAsync(success).await()
 
-            val failing = Document(WATCH_SYNC_ERROR_DOCUMENT_KEY)
+            val failing = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
             target.attachAsync(failing).await()
             assertFalse(target.syncAsync().await())
 
@@ -221,7 +227,7 @@ class ClientTest {
     @Test
     fun `should return false on attach failure without exceptions`() {
         runTest {
-            val document = Document(ATTACH_ERROR_DOCUMENT_KEY)
+            val document = Document(Key(ATTACH_ERROR_DOCUMENT_KEY))
             target.activateAsync().await()
 
             assertFalse(target.attachAsync(document).await())
@@ -233,12 +239,88 @@ class ClientTest {
     @Test
     fun `should return false on detach failure without exceptions`() {
         runTest {
-            val document = Document(DETACH_ERROR_DOCUMENT_KEY)
+            val document = Document(Key(DETACH_ERROR_DOCUMENT_KEY))
             target.activateAsync().await()
             target.attachAsync(document).await()
 
             assertFalse(target.detachAsync(document).await())
 
+            target.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun `should update presence`() {
+        runTest {
+            val document = Document(Key(NORMAL_DOCUMENT_KEY))
+            target.activateAsync().await()
+            target.attachAsync(document).await()
+
+            val updatePresenceRequestCaptor = ArgumentCaptor.forClass(
+                UpdatePresenceRequest::class.java,
+            )
+            assertTrue(target.updatePresenceAsync("k1", "v2").await())
+            verify(service).updatePresence(updatePresenceRequestCaptor.capture(), any())
+            assertIsTestActorID(updatePresenceRequestCaptor.value.client.id)
+            assertEquals(1, updatePresenceRequestCaptor.value.client.presence.clock)
+            assertContentEquals(
+                listOf("k1" to "v2"),
+                updatePresenceRequestCaptor.value.client.presence.dataMap.map {
+                    it.key to it.value
+                },
+            )
+            assertEquals(1, target.presenceInfo.clock)
+            assertContentEquals(
+                listOf("k1" to "v2"),
+                target.presenceInfo.data.map { it.key to it.value },
+            )
+
+            assertEquals(
+                PeerStatus(
+                    Key(NORMAL_DOCUMENT_KEY),
+                    target.requireClientId(),
+                    PresenceInfo(1, mapOf("k1" to "v2")),
+                ),
+                target.peerStatus.value.first(),
+            )
+
+            target.detachAsync(document).await()
+            target.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun `should return false on update presence error without exceptions`() {
+        runTest {
+            val document = Document(Key(UPDATE_PRESENCE_ERROR_DOCUMENT_KEY))
+            target.activateAsync().await()
+            target.attachAsync(document).await()
+
+            assertFalse(target.updatePresenceAsync("k1", "v3").await())
+
+            target.detachAsync(document).await()
+            target.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun `should update presence on document watch if it has initialization`() {
+        runTest {
+            val initialStatus = target.peerStatus.value
+            val document = Document(Key(INITIALIZATION_DOCUMENT_KEY))
+            target.activateAsync().await()
+            target.attachAsync(document).await()
+
+            assertEquals(
+                PeerStatus(
+                    Key(INITIALIZATION_DOCUMENT_KEY),
+                    target.requireClientId(),
+                    PresenceInfo(1, mapOf("k1" to "v1")),
+                ),
+                target.peerStatus.filter { it != initialStatus }.first().first(),
+            )
+
+            target.detachAsync(document).await()
             target.deactivateAsync().await()
         }
     }

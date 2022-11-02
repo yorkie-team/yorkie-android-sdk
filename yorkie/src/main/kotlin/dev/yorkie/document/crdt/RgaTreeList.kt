@@ -1,33 +1,31 @@
 package dev.yorkie.document.crdt
 
-import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.NullTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
-import java.util.Objects
 
 /**
  * [RgaTreeList] is replicated growable array.
  */
-internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
-    private val dummyHead = RgaTreeListNode(
+internal class RgaTreeList : Iterable<RgaTreeList.Node> {
+    private val dummyHead = Node(
         CrdtPrimitive(
             value = 1,
             createdAt = NullTimeTicket,
             _removedAt = NullTimeTicket,
         ),
     )
-    var last: RgaTreeListNode = dummyHead
+    var last: Node = dummyHead
         private set
 
-    private val nodeMapByIndex = SplayTreeSet<RgaTreeListNode> {
+    private val nodeMapByIndex = SplayTreeSet<Node> {
         if (it.value.isRemoved) 0 else 1
     }.apply {
         insert(dummyHead)
     }
 
-    private val nodeMapByCreatedAt = mutableMapOf<TimeTicket, RgaTreeListNode>().apply {
+    private val nodeMapByCreatedAt = mutableMapOf<TimeTicket, Node>().apply {
         set(dummyHead.createdAt, dummyHead)
     }
 
@@ -56,7 +54,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         executedAt: TimeTicket = value.createdAt,
     ) {
         val prevNode = findNextBeforeExecutedAt(prevCreatedAt, executedAt)
-        val newNode = RgaTreeListNode.createAfter(prevNode, value)
+        val newNode = Node.createAfter(prevNode, value)
         if (prevNode == last) {
             last = newNode
         }
@@ -72,7 +70,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     private fun findNextBeforeExecutedAt(
         createdAt: TimeTicket,
         executedAt: TimeTicket,
-    ): RgaTreeListNode {
+    ): Node {
         var node = nodeMapByCreatedAt[createdAt]
             ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
 
@@ -113,7 +111,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         delete(node)
     }
 
-    private fun delete(node: RgaTreeListNode) {
+    private fun delete(node: Node) {
         if (last == node) {
             last = requireNotNull(node.prev)
         }
@@ -141,7 +139,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     /**
      * Returns node of the given index.
      */
-    fun getByIndex(index: Int): RgaTreeListNode? {
+    fun getByIndex(index: Int): Node? {
         if (length <= index) return null
 
         val (value, offset) = nodeMapByIndex.find(index)
@@ -192,13 +190,13 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         return node.value
     }
 
-    override fun iterator(): Iterator<RgaTreeListNode> {
-        return object : Iterator<RgaTreeListNode> {
+    override fun iterator(): Iterator<Node> {
+        return object : Iterator<Node> {
             var node = dummyHead
 
             override fun hasNext() = node.next != null
 
-            override fun next(): RgaTreeListNode {
+            override fun next(): Node {
                 return requireNotNull(node.next).also { node = it }
             }
         }
@@ -215,10 +213,9 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         return nodeMapByCreatedAt.hashCode()
     }
 
-    @VisibleForTesting
-    data class RgaTreeListNode(val value: CrdtElement) {
-        var prev: RgaTreeListNode? = null
-        var next: RgaTreeListNode? = null
+    class Node(val value: CrdtElement) {
+        var prev: Node? = null
+        var next: Node? = null
 
         val createdAt: TimeTicket
             get() = value.createdAt
@@ -239,20 +236,12 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
             next?.prev = prev
         }
 
-        override fun equals(other: Any?): Boolean {
-            return this === other
-        }
-
-        override fun hashCode(): Int {
-            return Objects.hash(value::class.java, createdAt.hashCode())
-        }
-
         companion object {
             /**
              * Creates a new node with [value] after the node [prev].
              */
-            fun createAfter(prev: RgaTreeListNode, value: CrdtElement): RgaTreeListNode {
-                val newNode = RgaTreeListNode(value)
+            fun createAfter(prev: Node, value: CrdtElement): Node {
+                val newNode = Node(value)
                 val prevNext = prev.next
                 prev.next = newNode
                 newNode.prev = prev

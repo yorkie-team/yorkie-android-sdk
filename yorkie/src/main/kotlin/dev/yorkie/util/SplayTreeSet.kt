@@ -8,7 +8,6 @@ import dev.yorkie.util.SplayTreeSet.LengthCalculator
  * original paper on Splay Trees:
  * @link https://www.cs.cmu.edu/~sleator/papers/self-adjusting.pdf
  */
-// NOTE(skhugh): should SplayTree implement MutableSet?
 internal class SplayTreeSet<V>(
     @Suppress("UNCHECKED_CAST")
     private val lengthCalculator: LengthCalculator<V> =
@@ -334,8 +333,7 @@ internal class SplayTreeSet<V>(
         }
     }
 
-    @VisibleForTesting
-    data class Node<V>(val value: V, val lengthCalculator: LengthCalculator<V>) {
+    class Node<V>(val value: V, private val lengthCalculator: LengthCalculator<V>) {
         var left: Node<V>? = null
         var right: Node<V>? = null
         var parent: Node<V>? = null

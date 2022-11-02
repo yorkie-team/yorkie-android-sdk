@@ -69,15 +69,6 @@ internal class CrdtObject(
     }
 
     /**
-     * Returns the JSON encoding of this object.
-     */
-    override fun toJson(): String {
-        return joinToString(",", "{", "}") {
-            "\"${it.first}\":${it.second.toJson()}"
-        }
-    }
-
-    /**
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {

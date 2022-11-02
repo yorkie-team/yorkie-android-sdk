@@ -5,10 +5,9 @@ import dev.yorkie.document.crdt.PrimitiveType
 import java.util.Date
 import kotlin.reflect.KProperty
 
-@JvmInline
-public value class JsonPrimitive internal constructor(
-    internal val target: CrdtPrimitive,
-) : JsonElement {
+public class JsonPrimitive internal constructor(
+    override val target: CrdtPrimitive,
+) : JsonElement() {
     public val value: Any?
         get() = target.value
 

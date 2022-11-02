@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.document.json.JsonStringifier.toJsonString
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 
@@ -11,10 +12,6 @@ internal abstract class CrdtElement(
     movedAt: TimeTicket? = null,
     var removedAt: TimeTicket? = null,
 ) {
-    abstract fun toJson(): String
-
-    abstract fun deepCopy(): CrdtElement
-
     val id: TimeTicket
         get() = createdAt
 
@@ -35,4 +32,10 @@ internal abstract class CrdtElement(
         }
         return false
     }
+
+    public fun toJson(): String {
+        return toJsonString()
+    }
+
+    abstract fun deepCopy(): CrdtElement
 }

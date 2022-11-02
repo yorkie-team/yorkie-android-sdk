@@ -1,7 +1,6 @@
 package dev.yorkie.document.crdt
 
 import com.google.protobuf.ByteString
-import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
 import java.util.Date
@@ -22,18 +21,6 @@ internal class CrdtPrimitive(
     }
 
     val isNumericType = type in NUMERIC_TYPES
-
-    /**
-     * Returns the JSON encoding of this object.
-     */
-    override fun toJson(): String {
-        return when (type) {
-            PrimitiveType.String -> """"${escapeString(value as String)}""""
-            PrimitiveType.Bytes -> """"${(value as ByteArray).decodeToString()}""""
-            PrimitiveType.Date -> (value as Date).time.toString()
-            else -> "$value"
-        }
-    }
 
     /**
      * Copies itself deeply.

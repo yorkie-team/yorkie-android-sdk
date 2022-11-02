@@ -46,10 +46,6 @@ internal class CrdtCounter(value: CounterValue, createdAt: TimeTicket) : CrdtEle
         }
     }
 
-    override fun toJson(): String {
-        return "$value"
-    }
-
     override fun deepCopy(): CrdtElement {
         return CrdtCounter(value, createdAt).apply { movedAt = this.movedAt }
     }

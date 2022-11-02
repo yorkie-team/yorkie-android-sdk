@@ -101,16 +101,6 @@ internal class CrdtArray(
         }
     }
 
-    /**
-     * Returns the JSON encoding of this array.
-     */
-    override fun toJson(): String {
-        val json = mutableListOf<String>()
-        return forEach { json.add(it.toJson()) }.run {
-            json.joinToString(",", "[", "]")
-        }
-    }
-
     override fun deepCopy(): CrdtElement {
         val clone = CrdtArray(createdAt).apply { remove(removedAt) }
         elements.forEach { node ->

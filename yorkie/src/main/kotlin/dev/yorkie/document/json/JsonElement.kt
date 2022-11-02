@@ -6,7 +6,12 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 
-public interface JsonElement {
+public abstract class JsonElement {
+    internal abstract val target: CrdtElement
+
+    public fun toJson() = target.toJson()
+
+    override fun toString() = toJson()
 
     companion object {
 

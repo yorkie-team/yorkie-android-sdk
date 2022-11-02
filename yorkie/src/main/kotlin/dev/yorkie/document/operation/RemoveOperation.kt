@@ -8,11 +8,11 @@ import dev.yorkie.util.YorkieLogger
 /**
  * [RemoveOperation] is an operation representing removes an element from [CrdtContainer].
  */
-internal class RemoveOperation(
+internal data class RemoveOperation(
     val createdAt: TimeTicket,
-    parentCreatedAt: TimeTicket,
-    executedAt: TimeTicket,
-) : Operation(parentCreatedAt, executedAt) {
+    override val parentCreatedAt: TimeTicket,
+    override var executedAt: TimeTicket,
+) : Operation() {
 
     /**
      * Returns the created time of the effected element.

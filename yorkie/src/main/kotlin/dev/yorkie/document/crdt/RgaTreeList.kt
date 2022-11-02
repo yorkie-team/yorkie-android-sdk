@@ -2,23 +2,31 @@ package dev.yorkie.document.crdt
 
 import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.NullTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
+import java.util.Objects
 
 /**
  * [RgaTreeList] is replicated growable array.
  */
 internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
-    private val dummyHead = RgaTreeListNode(CrdtPrimitive(1, InitialTimeTicket)).apply {
-        value.removedAt = InitialTimeTicket
-    }
+    private val dummyHead = RgaTreeListNode(
+        CrdtPrimitive(
+            value = 1,
+            createdAt = NullTimeTicket,
+            _removedAt = NullTimeTicket,
+        ),
+    )
     var last: RgaTreeListNode = dummyHead
         private set
 
-    private val nodeMapByIndex = SplayTreeSet<CrdtElement> { if (it.isRemoved) 0 else 1 }.apply {
-        insert(dummyHead.value)
+    private val nodeMapByIndex = SplayTreeSet<RgaTreeListNode> {
+        if (it.value.isRemoved) 0 else 1
+    }.apply {
+        insert(dummyHead)
     }
+
     private val nodeMapByCreatedAt = mutableMapOf<TimeTicket, RgaTreeListNode>().apply {
         set(dummyHead.createdAt, dummyHead)
     }
@@ -52,7 +60,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         if (prevNode == last) {
             last = newNode
         }
-        nodeMapByIndex.insertAfter(prevNode.value, newNode.value)
+        nodeMapByIndex.insertAfter(prevNode, newNode)
         nodeMapByCreatedAt[newNode.createdAt] = newNode
     }
 
@@ -92,7 +100,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         if (prevNode != node && node.value.movedAt < executedAt) {
             delete(node)
             insertAfter(prevNode.createdAt, node.value, executedAt)
-            node.value.movedAt = executedAt
+            node.value.move(executedAt)
         }
     }
 
@@ -110,7 +118,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
             last = requireNotNull(node.prev)
         }
         node.delete()
-        nodeMapByIndex.delete(node.value)
+        nodeMapByIndex.delete(node)
         nodeMapByCreatedAt.remove(node.value.createdAt)
     }
 
@@ -127,7 +135,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     fun subPathOf(createdAt: TimeTicket): String {
         val node = nodeMapByCreatedAt[createdAt]
             ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
-        return nodeMapByIndex.indexOf(node.value).toString()
+        return nodeMapByIndex.indexOf(node).toString()
     }
 
     /**
@@ -137,7 +145,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         if (length <= index) return null
 
         val (value, offset) = nodeMapByIndex.find(index)
-        var rgaNode = nodeMapByCreatedAt[value?.createdAt ?: ""]
+        var rgaNode = nodeMapByCreatedAt[value?.value?.createdAt ?: ""]
 
         if ((index == 0 && rgaNode == dummyHead) || offset > 0) {
             do {
@@ -168,7 +176,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
 
         val alreadyRemoved = node.isRemoved
         if (node.remove(executedAt) && !alreadyRemoved) {
-            nodeMapByIndex.splay(node.value)
+            nodeMapByIndex.splay(node)
         }
         return node.value
     }
@@ -179,7 +187,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
     fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {
         val node = getByIndex(index) ?: return null
         if (node.remove(executedAt)) {
-            nodeMapByIndex.splay(node.value)
+            nodeMapByIndex.splay(node)
         }
         return node.value
     }
@@ -194,6 +202,17 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
                 return requireNotNull(node.next).also { node = it }
             }
         }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other !is RgaTreeList) {
+            return false
+        }
+        return nodeMapByCreatedAt == other.nodeMapByCreatedAt
+    }
+
+    override fun hashCode(): Int {
+        return nodeMapByCreatedAt.hashCode()
     }
 
     @VisibleForTesting
@@ -218,6 +237,14 @@ internal class RgaTreeList : Iterable<RgaTreeList.RgaTreeListNode> {
         fun delete() {
             prev?.next = next
             next?.prev = prev
+        }
+
+        override fun equals(other: Any?): Boolean {
+            return this === other
+        }
+
+        override fun hashCode(): Int {
+            return Objects.hash(value::class.java, createdAt.hashCode())
         }
 
         companion object {

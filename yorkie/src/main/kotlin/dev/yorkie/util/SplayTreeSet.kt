@@ -9,11 +9,11 @@ import dev.yorkie.util.SplayTreeSet.LengthCalculator
  * @link https://www.cs.cmu.edu/~sleator/papers/self-adjusting.pdf
  */
 // NOTE(skhugh): should SplayTree implement MutableSet?
-internal class SplayTreeSet<V>(lengthCalculator: LengthCalculator<V>? = null) {
+internal class SplayTreeSet<V>(
     @Suppress("UNCHECKED_CAST")
     private val lengthCalculator: LengthCalculator<V> =
-        lengthCalculator ?: LengthCalculator.DEFAULT as LengthCalculator<V>
-
+        LengthCalculator.DEFAULT as LengthCalculator<V>,
+) {
     private val valueToNodes = mutableMapOf<V, Node<V>>()
 
     @VisibleForTesting

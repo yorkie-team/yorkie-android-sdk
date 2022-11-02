@@ -5,7 +5,8 @@ import dev.yorkie.document.time.TimeTicket
 /**
  * [CrdtContainer] represents CrdtArray or CrdtObject.
  */
-internal abstract class CrdtContainer(createdAt: TimeTicket) : CrdtElement(createdAt) {
+internal abstract class CrdtContainer : CrdtElement() {
+
     abstract fun subPathOf(createdAt: TimeTicket): String?
 
     abstract fun delete(element: CrdtElement)

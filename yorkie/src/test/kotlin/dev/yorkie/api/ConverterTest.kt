@@ -164,7 +164,7 @@ class ConverterTest {
 
     @Test
     fun `should convert CrdtObject`() {
-        val crdtObject = CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap())
+        val crdtObject = CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap())
         val converted = crdtObject.toPBJsonObject().toCrdtElement()
         assertEquals(crdtObject.toJson(), converted.toJson())
     }
@@ -204,7 +204,7 @@ class ConverterTest {
 
     @Test
     fun `should convert ElementSimple`() {
-        val crdtObject = CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap())
+        val crdtObject = CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap())
         val crdtArray = CrdtArray(TimeTicket.InitialTimeTicket)
         val primitive = CrdtPrimitive("str", TimeTicket.InitialTimeTicket)
         val crdtElements = listOf(

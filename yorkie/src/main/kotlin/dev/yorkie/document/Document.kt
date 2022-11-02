@@ -14,6 +14,7 @@ import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.findPrefixes
@@ -39,7 +40,7 @@ public class Document private constructor(
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
 
-    private var root: CrdtRoot = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
+    private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = RhtPQMap()))
 
     @get:VisibleForTesting
     internal var clone: CrdtRoot? = null

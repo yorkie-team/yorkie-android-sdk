@@ -65,4 +65,17 @@ class CrdtRootTest {
         assertEquals(k2_1_1, root.findByCreatedAt(k2_1_1.createdAt))
         assertEquals("$.k2.1.1", root.createPath(k2_1_1.createdAt))
     }
+
+    @Test
+    fun `test gc`() {
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap())
+        obj["k1"] = CrdtPrimitive("v1", TimeTicket.InitialTimeTicket.copy(lamport = 1))
+        obj["k2"] = CrdtPrimitive("v2", TimeTicket.InitialTimeTicket.copy(lamport = 2))
+        val root = CrdtRoot(obj)
+        obj["k1"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 3))
+        obj["k2"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))
+        root.registerRemovedElement(obj["k1"])
+        root.registerRemovedElement(obj["k2"])
+        root.garbageCollect(TimeTicket.InitialTimeTicket.copy(lamport = 5))
+    }
 }

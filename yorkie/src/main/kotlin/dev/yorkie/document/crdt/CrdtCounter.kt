@@ -54,7 +54,7 @@ internal data class CrdtCounter private constructor(
     }
 
     override fun deepCopy(): CrdtElement {
-        return CrdtCounter(value, createdAt, _movedAt, _removedAt)
+        return copy()
     }
 
     companion object {
@@ -66,7 +66,7 @@ internal data class CrdtCounter private constructor(
             _removedAt: TimeTicket? = null,
         ) = CrdtCounter(value.sanitized(), createdAt, _movedAt, _removedAt)
 
-        fun CounterValue.sanitized(): Number = when (counterType()) {
+        private fun CounterValue.sanitized(): Number = when (counterType()) {
             CounterType.IntegerCnt -> toInt()
             CounterType.LongCnt -> toLong()
             CounterType.DoubleCnt -> toDouble()

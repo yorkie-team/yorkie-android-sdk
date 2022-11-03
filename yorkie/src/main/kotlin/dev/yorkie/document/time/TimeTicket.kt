@@ -20,7 +20,7 @@ public data class TimeTicket(
     override fun compareTo(other: TimeTicket): Int {
         return lamport.compareTo(other.lamport).takeUnless { it == 0 }
             ?: actorID.compareTo(other.actorID).takeUnless { it == 0 }
-            ?: delimiter.compareTo(delimiter)
+            ?: delimiter.compareTo(other.delimiter)
     }
 
     companion object {

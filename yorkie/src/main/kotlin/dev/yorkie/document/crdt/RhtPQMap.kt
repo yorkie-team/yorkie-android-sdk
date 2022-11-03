@@ -7,13 +7,12 @@ import dev.yorkie.util.YorkieLogger
 /**
  * [RhtPQMap] is replicated hash table with a priority queue by creation time.
  */
-internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
+internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.Node<T>> {
     private val logTag = "RhtPQMap"
 
-    private val elementQueueMapByKey:
-        MutableMap<String, MaxPriorityQueue<RhtPQMapNode<T>>> = mutableMapOf()
+    private val elementQueueMapByKey: MutableMap<String, MaxPriorityQueue<Node<T>>> = mutableMapOf()
 
-    private val nodeMapByCreatedAt: MutableMap<TimeTicket, RhtPQMapNode<T>> = mutableMapOf()
+    private val nodeMapByCreatedAt: MutableMap<TimeTicket, Node<T>> = mutableMapOf()
 
     /**
      * Sets the [value] using the given [key].
@@ -23,8 +22,8 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
         var removed: T? = null
         val queue = elementQueueMapByKey[key]
         if (queue?.isNotEmpty() == true) {
-            val node = queue.peek() as RhtPQMapNode
-            if (!node.isRemoved() && node.remove(value.createdAt)) {
+            val node = queue.peek() as Node
+            if (!node.isRemoved && node.remove(value.createdAt)) {
                 removed = node.value
             }
         }
@@ -36,7 +35,7 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
      * Sets the [value] using the given [key] internally.
      */
     private fun setInternal(key: String, value: T) {
-        val node = RhtPQMapNode(key, value)
+        val node = Node(key, value)
         val queue = elementQueueMapByKey.getOrPut(key) { MaxPriorityQueue() }
         queue.add(node)
         nodeMapByCreatedAt[value.createdAt] = node
@@ -47,7 +46,7 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
      * and [TimeTicket] will be removed by [executedAt].
      * If the object exists in [nodeMapByCreatedAt] by same key [createdAt], it will return.
      *
-     * @throws NoSuchElementException if [RhtPQMapNode] doesn't exist.
+     * @throws NoSuchElementException if [Node] doesn't exist.
      */
     fun remove(createdAt: TimeTicket, executedAt: TimeTicket): T {
         val node = nodeMapByCreatedAt[createdAt]
@@ -57,7 +56,7 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
     }
 
     /**
-     * Returns [RhtPQMapNode.strKey] of node based on [createdAt].
+     * Returns [Node.strKey] of node based on [createdAt].
      * The node will be found in [nodeMapByCreatedAt] using [createdAt]
      *
      * @throws NoSuchElementException if RHTPQMapNode doesn't exist.
@@ -106,12 +105,12 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
 
     /**
      * Checks the element exists in [elementQueueMapByKey] using [key].
-     * If the [RhtPQMapNode] is exist, then returns true, otherwise false.
+     * If the [Node] is exist, then returns true, otherwise false.
      */
     fun has(key: String): Boolean {
         val queue = elementQueueMapByKey[key] ?: return false
         val node = queue.peek() ?: return false
-        return !node.isRemoved()
+        return !node.isRemoved
     }
 
     /**
@@ -129,14 +128,14 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
      *
      * @throws NoSuchElementException if there is an empty MaxPriorityQueue.
      */
-    fun getKeyOfQueue(): Sequence<RhtPQMapNode<T>> {
+    fun getKeyOfQueue(): Sequence<Node<T>> {
         return elementQueueMapByKey.values
             .asSequence()
             .map { it.element() }
     }
 
-    override fun iterator(): Iterator<RhtPQMapNode<T>> {
-        return object : Iterator<RhtPQMapNode<T>> {
+    override fun iterator(): Iterator<Node<T>> {
+        return object : Iterator<Node<T>> {
             val pqIterators = elementQueueMapByKey.values.map { it.iterator() }
             var nodes = buildList {
                 pqIterators.forEach {
@@ -149,7 +148,7 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
 
             override fun hasNext() = index < nodes.size
 
-            override fun next(): RhtPQMapNode<T> {
+            override fun next(): Node<T> {
                 return nodes[index++]
             }
         }
@@ -167,19 +166,18 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
     }
 
     /**
-     * [RhtPQMapNode] is a node of [RhtPQMap].
+     * [Node] is a node of [RhtPQMap].
      */
-    data class RhtPQMapNode<T : CrdtElement>(
+    data class Node<T : CrdtElement>(
         val strKey: String,
         val value: T,
-    ) : Comparable<RhtPQMapNode<T>> {
+    ) : Comparable<Node<T>> {
 
         /**
          * Checks whether this value was removed.
          */
-        fun isRemoved(): Boolean {
-            return value.isRemoved
-        }
+        val isRemoved: Boolean
+            get() = value.isRemoved
 
         /**
          * Removes a value base on removing time.
@@ -188,7 +186,7 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
             return value.remove(removedAt)
         }
 
-        override fun compareTo(other: RhtPQMapNode<T>): Int {
+        override fun compareTo(other: Node<T>): Int {
             return value.createdAt.compareTo(other.value.createdAt)
         }
     }

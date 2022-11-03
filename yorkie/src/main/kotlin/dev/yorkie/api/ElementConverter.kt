@@ -19,7 +19,6 @@ import dev.yorkie.document.crdt.CrdtCounter.CounterType
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
-import dev.yorkie.document.crdt.PrimitiveType
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RhtPQMap
 
@@ -102,16 +101,16 @@ internal fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
     )
 }
 
-internal fun PBValueType.toPrimitiveType(): PrimitiveType {
+internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
     return when (this) {
-        PBValueType.VALUE_TYPE_NULL -> PrimitiveType.Null
-        PBValueType.VALUE_TYPE_BOOLEAN -> PrimitiveType.Boolean
-        PBValueType.VALUE_TYPE_INTEGER -> PrimitiveType.Integer
-        PBValueType.VALUE_TYPE_LONG -> PrimitiveType.Long
-        PBValueType.VALUE_TYPE_DOUBLE -> PrimitiveType.Double
-        PBValueType.VALUE_TYPE_STRING -> PrimitiveType.String
-        PBValueType.VALUE_TYPE_BYTES -> PrimitiveType.Bytes
-        PBValueType.VALUE_TYPE_DATE -> PrimitiveType.Date
+        PBValueType.VALUE_TYPE_NULL -> CrdtPrimitive.Type.Null
+        PBValueType.VALUE_TYPE_BOOLEAN -> CrdtPrimitive.Type.Boolean
+        PBValueType.VALUE_TYPE_INTEGER -> CrdtPrimitive.Type.Integer
+        PBValueType.VALUE_TYPE_LONG -> CrdtPrimitive.Type.Long
+        PBValueType.VALUE_TYPE_DOUBLE -> CrdtPrimitive.Type.Double
+        PBValueType.VALUE_TYPE_STRING -> CrdtPrimitive.Type.String
+        PBValueType.VALUE_TYPE_BYTES -> CrdtPrimitive.Type.Bytes
+        PBValueType.VALUE_TYPE_DATE -> CrdtPrimitive.Type.Date
         else -> error("unimplemented type $this")
     }
 }
@@ -157,7 +156,7 @@ internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
     }
 }
 
-internal fun List<RhtPQMap.RhtPQMapNode<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
+internal fun List<RhtPQMap.Node<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
     return map {
         rHTNode {
             key = it.strKey
@@ -189,7 +188,7 @@ internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
     return jSONElement {
         primitive = primitive {
             type = crdtPrimitive.type.toPBValueType()
-            value = crdtPrimitive.toBytes().toByteString()
+            value = crdtPrimitive.toBytes()
             createdAt = crdtPrimitive.createdAt.toPBTimeTicket()
             crdtPrimitive.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtPrimitive.removedAt?.let { removedAt = it.toPBTimeTicket() }
@@ -197,16 +196,16 @@ internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
     }
 }
 
-internal fun PrimitiveType.toPBValueType(): PBValueType {
+internal fun CrdtPrimitive.Type.toPBValueType(): PBValueType {
     return when (this) {
-        PrimitiveType.Null -> PBValueType.VALUE_TYPE_NULL
-        PrimitiveType.Boolean -> PBValueType.VALUE_TYPE_BOOLEAN
-        PrimitiveType.Integer -> PBValueType.VALUE_TYPE_INTEGER
-        PrimitiveType.Long -> PBValueType.VALUE_TYPE_LONG
-        PrimitiveType.Double -> PBValueType.VALUE_TYPE_DOUBLE
-        PrimitiveType.String -> PBValueType.VALUE_TYPE_STRING
-        PrimitiveType.Bytes -> PBValueType.VALUE_TYPE_BYTES
-        PrimitiveType.Date -> PBValueType.VALUE_TYPE_DATE
+        CrdtPrimitive.Type.Null -> PBValueType.VALUE_TYPE_NULL
+        CrdtPrimitive.Type.Boolean -> PBValueType.VALUE_TYPE_BOOLEAN
+        CrdtPrimitive.Type.Integer -> PBValueType.VALUE_TYPE_INTEGER
+        CrdtPrimitive.Type.Long -> PBValueType.VALUE_TYPE_LONG
+        CrdtPrimitive.Type.Double -> PBValueType.VALUE_TYPE_DOUBLE
+        CrdtPrimitive.Type.String -> PBValueType.VALUE_TYPE_STRING
+        CrdtPrimitive.Type.Bytes -> PBValueType.VALUE_TYPE_BYTES
+        CrdtPrimitive.Type.Date -> PBValueType.VALUE_TYPE_DATE
     }
 }
 
@@ -267,7 +266,7 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
             is CrdtArray -> type = PBValueType.VALUE_TYPE_JSON_ARRAY
             is CrdtPrimitive -> {
                 type = element.type.toPBValueType()
-                value = element.toBytes().toByteString()
+                value = element.toBytes()
             }
             is CrdtCounter -> {
                 type = element.type.toPBCounterType()

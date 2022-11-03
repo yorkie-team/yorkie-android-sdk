@@ -7,7 +7,7 @@ import dev.yorkie.document.time.TimeTicket
  */
 internal abstract class CrdtTextElement : CrdtElement() {
 
-    abstract fun getRemovedNodesLen(): Int
+    abstract fun getRemovedNodesLength(): Int
 
     abstract fun deleteTextNodesWithGarbage(executedAt: TimeTicket): Int
 }

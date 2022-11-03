@@ -91,7 +91,21 @@ public class JsonObject internal constructor(
         )
     }
 
-    public operator fun <T : JsonElement> get(key: String) = target[key].toJsonElement<T>(context)
+    public operator fun <T : JsonElement> get(key: String): T {
+        return try {
+            target[key].toJsonElement(context)
+        } catch (e: IllegalStateException) {
+            throw NoSuchElementException("element with key: $key does not exist")
+        }
+    }
+
+    public fun <T : JsonElement> getOrNull(key: String): T? {
+        return try {
+            target[key].toJsonElement(context)
+        } catch (e: IllegalStateException) {
+            null
+        }
+    }
 
     public fun remove(key: String) {
         val executedAt = context.issueTimeTicket()

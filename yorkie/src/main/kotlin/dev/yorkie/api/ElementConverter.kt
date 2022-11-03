@@ -157,7 +157,7 @@ internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
     }
 }
 
-internal fun List<RhtPQMap.RhtPQMapNode<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
+internal fun List<RhtPQMap.Node<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
     return map {
         rHTNode {
             key = it.strKey
@@ -189,7 +189,7 @@ internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
     return jSONElement {
         primitive = primitive {
             type = crdtPrimitive.type.toPBValueType()
-            value = crdtPrimitive.toBytes().toByteString()
+            value = crdtPrimitive.toBytes()
             createdAt = crdtPrimitive.createdAt.toPBTimeTicket()
             crdtPrimitive.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtPrimitive.removedAt?.let { removedAt = it.toPBTimeTicket() }
@@ -267,7 +267,7 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
             is CrdtArray -> type = PBValueType.VALUE_TYPE_JSON_ARRAY
             is CrdtPrimitive -> {
                 type = element.type.toPBValueType()
-                value = element.toBytes().toByteString()
+                value = element.toBytes()
             }
             is CrdtCounter -> {
                 type = element.type.toPBCounterType()

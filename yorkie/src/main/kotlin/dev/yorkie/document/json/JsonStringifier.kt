@@ -1,5 +1,6 @@
 package dev.yorkie.document.json
 
+import com.google.protobuf.ByteString
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
@@ -22,7 +23,7 @@ internal object JsonStringifier {
                 buffer.append(
                     when (type) {
                         PrimitiveType.String -> """"${escapeString(value as String)}""""
-                        PrimitiveType.Bytes -> """"${(value as ByteArray).decodeToString()}""""
+                        PrimitiveType.Bytes -> """"${(value as ByteString).toStringUtf8()}""""
                         PrimitiveType.Date -> (value as Date).time.toString()
                         else -> "$value"
                     },

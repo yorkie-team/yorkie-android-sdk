@@ -1,5 +1,6 @@
 package dev.yorkie.document.json
 
+import com.google.protobuf.ByteString
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.PrimitiveType
 import java.util.Date
@@ -31,7 +32,7 @@ public class JsonPrimitive internal constructor(
             Long::class -> Type.Long
             Double::class -> Type.Double
             String::class -> Type.String
-            ByteArray::class -> Type.Bytes
+            ByteString::class -> Type.Bytes
             Date::class -> Type.Date
             else -> false
         }

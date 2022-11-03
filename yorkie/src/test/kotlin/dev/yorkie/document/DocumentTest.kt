@@ -44,7 +44,7 @@ class DocumentTest {
 
             result = target.updateAsync {
                 it.remove("k1")
-                val array: JsonArray = it["k3"]
+                val array = it.getAs<JsonArray>("k3")
                 array.removeAt(0)
                 it.remove("k2")
                 array.removeAt(2)

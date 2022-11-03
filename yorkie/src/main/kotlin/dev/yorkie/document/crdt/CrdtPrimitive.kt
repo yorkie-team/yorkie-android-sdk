@@ -17,14 +17,14 @@ internal data class CrdtPrimitive private constructor(
     val value: Any? = _value.sanitized()
 
     val type = when (value) {
-        is Boolean -> PrimitiveType.Boolean
-        is Int -> PrimitiveType.Integer
-        is Long -> PrimitiveType.Long
-        is Double -> PrimitiveType.Double
-        is String -> PrimitiveType.String
-        is ByteString -> PrimitiveType.Bytes
-        is Date -> PrimitiveType.Date
-        else -> PrimitiveType.Null
+        is Boolean -> Type.Boolean
+        is Int -> Type.Integer
+        is Long -> Type.Long
+        is Double -> Type.Double
+        is String -> Type.String
+        is ByteString -> Type.Bytes
+        is Date -> Type.Date
+        else -> Type.Null
     }
 
     val isNumericType = type in NUMERIC_TYPES
@@ -46,29 +46,29 @@ internal data class CrdtPrimitive private constructor(
 
     fun toBytes(): ByteString {
         return when (type) {
-            PrimitiveType.Null -> ByteString.EMPTY
-            PrimitiveType.Boolean -> byteArrayOf(if (value == true) 1 else 0).toByteString()
-            PrimitiveType.Integer -> {
+            Type.Null -> ByteString.EMPTY
+            Type.Boolean -> byteArrayOf(if (value == true) 1 else 0).toByteString()
+            Type.Integer -> {
                 ByteBuffer.allocate(Int.SIZE_BYTES)
                     .putInt(value as Int)
                     .array()
                     .toByteString()
             }
-            PrimitiveType.Long -> {
+            Type.Long -> {
                 ByteBuffer.allocate(Long.SIZE_BYTES)
                     .putLong(value as Long)
                     .array()
                     .toByteString()
             }
-            PrimitiveType.Double -> {
+            Type.Double -> {
                 ByteBuffer.allocate(Double.SIZE_BYTES)
                     .putDouble(value as Double)
                     .array()
                     .toByteString()
             }
-            PrimitiveType.String -> (value as String).toByteStringUtf8()
-            PrimitiveType.Bytes -> value as ByteString
-            PrimitiveType.Date -> {
+            Type.String -> (value as String).toByteStringUtf8()
+            Type.Bytes -> value as ByteString
+            Type.Date -> {
                 ByteBuffer.allocate(Long.SIZE_BYTES)
                     .putLong((value as Date).time)
                     .array()
@@ -79,9 +79,9 @@ internal data class CrdtPrimitive private constructor(
 
     companion object {
         private val NUMERIC_TYPES = setOf(
-            PrimitiveType.Integer,
-            PrimitiveType.Long,
-            PrimitiveType.Double,
+            Type.Integer,
+            Type.Long,
+            Type.Double,
         )
 
         operator fun invoke(
@@ -105,26 +105,26 @@ internal data class CrdtPrimitive private constructor(
             else -> null
         }
 
-        fun fromBytes(type: PrimitiveType, bytes: ByteString): Any? {
+        fun fromBytes(type: Type, bytes: ByteString): Any? {
             fun ByteString.asByteBuffer() = ByteBuffer.wrap(toByteArray())
 
             return when (type) {
-                PrimitiveType.Null -> null
-                PrimitiveType.Boolean -> bytes.first().toInt() == 1
-                PrimitiveType.Integer -> bytes.asByteBuffer().int
-                PrimitiveType.Long -> bytes.asByteBuffer().long
-                PrimitiveType.Double -> bytes.asByteBuffer().double
-                PrimitiveType.String -> bytes.toStringUtf8()
-                PrimitiveType.Bytes -> bytes
-                PrimitiveType.Date -> Date(bytes.asByteBuffer().long)
+                Type.Null -> null
+                Type.Boolean -> bytes.first().toInt() == 1
+                Type.Integer -> bytes.asByteBuffer().int
+                Type.Long -> bytes.asByteBuffer().long
+                Type.Double -> bytes.asByteBuffer().double
+                Type.String -> bytes.toStringUtf8()
+                Type.Bytes -> bytes
+                Type.Date -> Date(bytes.asByteBuffer().long)
             }
         }
     }
-}
 
-/**
- * Primitive is a CRDT element that represents a primitive value.
- */
-internal enum class PrimitiveType {
-    Null, Boolean, Integer, Long, Double, String, Bytes, Date
+    /**
+     * Primitive is a CRDT element that represents a primitive value.
+     */
+    internal enum class Type {
+        Null, Boolean, Integer, Long, Double, String, Bytes, Date
+    }
 }

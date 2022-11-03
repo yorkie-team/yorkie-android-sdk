@@ -6,7 +6,6 @@ import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
-import dev.yorkie.document.crdt.PrimitiveType
 import java.util.Date
 
 internal object JsonStringifier {
@@ -22,9 +21,9 @@ internal object JsonStringifier {
             is CrdtPrimitive -> {
                 buffer.append(
                     when (type) {
-                        PrimitiveType.String -> """"${escapeString(value as String)}""""
-                        PrimitiveType.Bytes -> """"${(value as ByteString).toStringUtf8()}""""
-                        PrimitiveType.Date -> (value as Date).time.toString()
+                        CrdtPrimitive.Type.String -> """"${escapeString(value as String)}""""
+                        CrdtPrimitive.Type.Bytes -> """"${(value as ByteString).toStringUtf8()}""""
+                        CrdtPrimitive.Type.Date -> (value as Date).time.toString()
                         else -> "$value"
                     },
                 )

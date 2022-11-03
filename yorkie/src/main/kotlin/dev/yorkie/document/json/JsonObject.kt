@@ -91,7 +91,7 @@ public class JsonObject internal constructor(
         )
     }
 
-    public operator fun <T : JsonElement> get(key: String): T {
+    public operator fun get(key: String): JsonElement {
         return try {
             target[key].toJsonElement(context)
         } catch (e: IllegalStateException) {
@@ -99,10 +99,30 @@ public class JsonObject internal constructor(
         }
     }
 
-    public fun <T : JsonElement> getOrNull(key: String): T? {
+    public fun getOrNull(key: String): JsonElement? {
+        return try {
+            get(key)
+        } catch (e: NoSuchElementException) {
+            null
+        }
+    }
+
+    @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
+    public inline fun <reified T : JsonElement> getAs(key: String): T {
         return try {
             target[key].toJsonElement(context)
         } catch (e: IllegalStateException) {
+            throw NoSuchElementException("element with key: $key does not exist")
+        }
+    }
+
+    @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
+    public inline fun <reified T : JsonElement> getAsOrNull(key: String): T? {
+        return try {
+            getAs(key)
+        } catch (e: TypeCastException) {
+            null
+        } catch (e: NoSuchElementException) {
             null
         }
     }

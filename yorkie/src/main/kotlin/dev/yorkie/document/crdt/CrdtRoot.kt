@@ -94,7 +94,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     /**
      * Returns length of nodes which can be garbage collected.
      */
-    fun getGarbageLen(): Int {
+    fun getGarbageLength(): Int {
         var count = 0
         removedElementSetByCreatedAt.forEach { createdAt ->
             count++
@@ -110,7 +110,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         textWithGarbageSetByCreatedAt.forEach { createdAt ->
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
             val text = pair.element as CrdtTextElement
-            count += text.getRemovedNodesLen()
+            count += text.getRemovedNodesLength()
         }
 
         return count

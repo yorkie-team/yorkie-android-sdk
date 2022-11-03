@@ -18,7 +18,7 @@ internal data class CheckPoint(
         return if (increase == 0) {
             this
         } else {
-            CheckPoint(serverSeq, clientSeq + increase)
+            copy(clientSeq = clientSeq + increase)
         }
     }
 

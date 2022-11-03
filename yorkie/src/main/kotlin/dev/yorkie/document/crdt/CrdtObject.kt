@@ -74,11 +74,12 @@ internal data class CrdtObject(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {
-        val clone = CrdtObject(createdAt, _movedAt, _removedAt, RhtPQMap())
-        rht.forEach {
-            clone.rht[it.strKey] = it.value.deepCopy()
+        val rhtClone = RhtPQMap<CrdtElement>().apply {
+            rht.forEach { (strKey, value) ->
+                set(strKey, value)
+            }
         }
-        return clone
+        return copy(rht = rhtClone)
     }
 
     /**
@@ -106,7 +107,7 @@ internal data class CrdtObject(
                     val node = nodes[index]
                     if (!keySet.contains(node.strKey)) {
                         keySet.add(node.strKey)
-                        if (!node.isRemoved()) return true
+                        if (!node.isRemoved) return true
                     }
                     index++
                 }

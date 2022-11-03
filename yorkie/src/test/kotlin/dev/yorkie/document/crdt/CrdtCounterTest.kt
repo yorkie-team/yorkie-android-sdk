@@ -8,6 +8,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.nio.ByteBuffer
 import java.util.Date
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 
 class CrdtCounterTest {
 
@@ -113,5 +115,13 @@ class CrdtCounterTest {
         val minInt = CrdtCounter(Int.MIN_VALUE, InitialTimeTicket)
         minInt.increase(CrdtPrimitive(-1, InitialTimeTicket))
         assertEquals(Int.MIN_VALUE - 1L, minInt.value)
+    }
+
+    @Test
+    fun `should use same instance for value on deepCopy`() {
+        val counter = CrdtCounter(4, InitialTimeTicket)
+        val clone = counter.deepCopy() as CrdtCounter
+        assertNotSame(counter, clone)
+        assertSame(counter.value, clone.value)
     }
 }

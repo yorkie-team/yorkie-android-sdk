@@ -5,10 +5,12 @@ import dev.yorkie.document.time.TimeTicket
 /**
  * [CrdtArray] represents Array data type containing logical clocks.
  */
-internal class CrdtArray(
-    createdAt: TimeTicket,
+internal data class CrdtArray(
+    override val createdAt: TimeTicket,
+    override var _movedAt: TimeTicket? = null,
+    override var _removedAt: TimeTicket? = null,
     val elements: RgaTreeList = RgaTreeList(),
-) : CrdtContainer(createdAt), Iterable<CrdtElement> {
+) : CrdtContainer(), Iterable<CrdtElement> {
     val head
         get() = elements.head
 
@@ -102,7 +104,7 @@ internal class CrdtArray(
     }
 
     override fun deepCopy(): CrdtElement {
-        val clone = CrdtArray(createdAt).apply { remove(removedAt) }
+        val clone = copy(elements = RgaTreeList())
         elements.forEach { node ->
             clone.elements.insertAfter(clone.lastCreatedAt, node.value.deepCopy())
         }

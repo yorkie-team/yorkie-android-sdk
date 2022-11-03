@@ -66,7 +66,7 @@ public class JsonObject internal constructor(
      * TODO(skhugh): we need to find a better way to handle this
      */
     public fun setNewObject(key: String): JsonObject {
-        val crdtObject = CrdtObject(context.issueTimeTicket(), RhtPQMap())
+        val crdtObject = CrdtObject(context.issueTimeTicket(), rht = RhtPQMap())
         setAndRegister(key, crdtObject)
         return crdtObject.toJsonElement(context)
     }

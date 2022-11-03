@@ -91,7 +91,7 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
                     documentKey = request.changePack.documentKey
                     snapshot = CrdtObject(
                         InitialTimeTicket,
-                        RhtPQMap<CrdtElement>().apply {
+                        rht = RhtPQMap<CrdtElement>().apply {
                             set(
                                 "k1",
                                 CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),

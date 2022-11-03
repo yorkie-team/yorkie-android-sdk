@@ -9,7 +9,10 @@ import dev.yorkie.document.time.TimeTicket
  * [parentCreatedAt] is the creation time of the target element to execute the operation.
  * [executedAt] is the execution time of this operation
  */
-internal abstract class Operation(val parentCreatedAt: TimeTicket, var executedAt: TimeTicket) {
+internal abstract class Operation {
+    abstract val parentCreatedAt: TimeTicket
+
+    abstract var executedAt: TimeTicket
 
     /**
      * Returns the created time of the effected element.
@@ -26,16 +29,5 @@ internal abstract class Operation(val parentCreatedAt: TimeTicket, var executedA
      */
     fun setActor(actorID: ActorID) {
         executedAt = executedAt.setActor(actorID)
-    }
-
-    override fun equals(other: Any?): Boolean {
-        return this.toString() == other.toString()
-    }
-
-    override fun hashCode(): Int {
-        var result = parentCreatedAt.hashCode()
-        result = 31 * result + executedAt.hashCode()
-        result = 31 * result + effectedCreatedAt.hashCode()
-        return result
     }
 }

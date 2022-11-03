@@ -15,15 +15,28 @@ internal abstract class CrdtElement(
     val id: TimeTicket
         get() = createdAt
 
+    var movedAt: TimeTicket?
+        get() = _movedAt
+        private set(value) {
+            _movedAt = value
+        }
+
+    var removedAt: TimeTicket?
+        get() = _removedAt
+        private set(value) {
+            _removedAt = value
+        }
+
     val isRemoved: Boolean
         get() = removedAt != null
 
-    var movedAt: TimeTicket? = movedAt
-        set(value) {
-            if (value > field) {
-                field = value
-            }
+    fun move(movedAt: TimeTicket?): Boolean {
+        if (movedAt > this.movedAt) {
+            this.movedAt = movedAt
+            return true
         }
+        return false
+    }
 
     fun remove(removedAt: TimeTicket?): Boolean {
         if (createdAt < removedAt && this.removedAt < removedAt) {

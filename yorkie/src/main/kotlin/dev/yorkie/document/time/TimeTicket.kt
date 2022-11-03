@@ -28,7 +28,11 @@ internal data class TimeTicket(
         const val MAX_DELIMITER = Int.MAX_VALUE
         const val MAX_LAMPORT = Long.MAX_VALUE
 
-        private val NullTimeTicket = TimeTicket(Long.MIN_VALUE, INITIAL_DELIMITER, INITIAL_ACTOR_ID)
+        internal val NullTimeTicket = TimeTicket(
+            Long.MIN_VALUE,
+            INITIAL_DELIMITER,
+            INITIAL_ACTOR_ID,
+        )
 
         val InitialTimeTicket = TimeTicket(0, INITIAL_DELIMITER, INITIAL_ACTOR_ID)
         val MaxTimeTicket = TimeTicket(MAX_LAMPORT, MAX_DELIMITER, MAX_ACTOR_ID)

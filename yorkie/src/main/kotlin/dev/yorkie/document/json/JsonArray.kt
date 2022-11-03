@@ -55,7 +55,7 @@ public class JsonArray internal constructor(
     }
 
     public fun putNewObject(): JsonObject {
-        val obj = CrdtObject(context.issueTimeTicket(), RhtPQMap())
+        val obj = CrdtObject(context.issueTimeTicket(), rht = RhtPQMap())
         putCrdtElement(obj)
         return obj.toJsonElement(context)
     }

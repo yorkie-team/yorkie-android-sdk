@@ -9,8 +9,12 @@ internal fun Client.Options.authInterceptor(): ClientInterceptor? {
         return null
     }
     val metadata = Metadata().apply {
-        put("x-api-key".asMetadataKey(), apiKey)
-        put("authorization".asMetadataKey(), token)
+        if (apiKey != null) {
+            put("x-api-key".asMetadataKey(), apiKey)
+        }
+        if (token != null) {
+            put("authorization".asMetadataKey(), token)
+        }
     }
     return MetadataUtils.newAttachHeadersInterceptor(metadata)
 }

@@ -155,6 +155,17 @@ internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.RhtPQMapNode<T>> {
         }
     }
 
+    override fun equals(other: Any?): Boolean {
+        if (other !is RhtPQMap<*>) {
+            return false
+        }
+        return nodeMapByCreatedAt == other.nodeMapByCreatedAt
+    }
+
+    override fun hashCode(): Int {
+        return nodeMapByCreatedAt.hashCode()
+    }
+
     /**
      * [RhtPQMapNode] is a node of [RhtPQMap].
      */

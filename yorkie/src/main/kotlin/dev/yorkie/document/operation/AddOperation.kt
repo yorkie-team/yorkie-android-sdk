@@ -9,12 +9,12 @@ import dev.yorkie.util.YorkieLogger
 /**
  * [AddOperation] is an operation representing adding an element to an [CrdtArray].
  */
-internal class AddOperation(
+internal data class AddOperation(
     val prevCreatedAt: TimeTicket,
     val value: CrdtElement,
-    parentCreatedAt: TimeTicket,
-    executedAt: TimeTicket,
-) : Operation(parentCreatedAt, executedAt) {
+    override val parentCreatedAt: TimeTicket,
+    override var executedAt: TimeTicket,
+) : Operation() {
 
     /**
      * Returns the created time of the effected element.
@@ -37,13 +37,6 @@ internal class AddOperation(
             }
             YorkieLogger.e(TAG, "fail to execute, only array can execute add")
         }
-    }
-
-    /**
-     * Returns a string containing the meta data.
-     */
-    override fun toString(): String {
-        return "$parentCreatedAt.ADD"
     }
 
     companion object {

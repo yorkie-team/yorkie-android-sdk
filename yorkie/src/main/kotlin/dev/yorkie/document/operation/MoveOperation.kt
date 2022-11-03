@@ -8,12 +8,12 @@ import dev.yorkie.util.YorkieLogger
 /**
  * [MoveOperation] is an operation representing moving an element to an [CrdtArray].
  */
-internal class MoveOperation(
+internal data class MoveOperation(
     val prevCreatedAt: TimeTicket,
     val createdAt: TimeTicket,
-    parentCreatedAt: TimeTicket,
-    executedAt: TimeTicket,
-) : Operation(parentCreatedAt, executedAt) {
+    override val parentCreatedAt: TimeTicket,
+    override var executedAt: TimeTicket,
+) : Operation() {
 
     /**
      * Returns the created time of the effected element.
@@ -38,13 +38,6 @@ internal class MoveOperation(
             }
             YorkieLogger.e(TAG, "fail to execute, only array can execute move")
         }
-    }
-
-    /**
-     * Returns a string containing the meta data.
-     */
-    override fun toString(): String {
-        return "$parentCreatedAt.MOVE"
     }
 
     companion object {

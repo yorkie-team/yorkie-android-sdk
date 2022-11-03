@@ -7,11 +7,12 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 /**
  * [CrdtElement] represents element type containing logical clock.
  */
-internal abstract class CrdtElement(
-    val createdAt: TimeTicket,
-    movedAt: TimeTicket? = null,
-    var removedAt: TimeTicket? = null,
-) {
+@Suppress("PropertyName")
+internal abstract class CrdtElement {
+    abstract val createdAt: TimeTicket
+    protected abstract var _movedAt: TimeTicket?
+    protected abstract var _removedAt: TimeTicket?
+
     val id: TimeTicket
         get() = createdAt
 

@@ -6,7 +6,6 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.RhtPQMap
-import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.time.TimeTicket
@@ -14,8 +13,8 @@ import java.util.Date
 
 public class JsonArray internal constructor(
     internal val context: ChangeContext,
-    internal val target: CrdtArray,
-) : JsonElement, Collection<JsonElement> {
+    override val target: CrdtArray,
+) : JsonElement(), Collection<JsonElement> {
     internal val id
         get() = target.createdAt
 
@@ -56,7 +55,7 @@ public class JsonArray internal constructor(
     }
 
     public fun putNewObject(): JsonObject {
-        val obj = CrdtObject(context.issueTimeTicket(), RhtPQMap())
+        val obj = CrdtObject(context.issueTimeTicket(), rht = RhtPQMap())
         putCrdtElement(obj)
         return obj.toJsonElement(context)
     }
@@ -103,9 +102,6 @@ public class JsonArray internal constructor(
         return target.map { it.toJsonElement<JsonElement>(context) }.containsAll(elements)
     }
 
-    /**
-     * TODO(skhugh): check if checking length is enough. maybe tombstone should be considered?
-     */
     override fun isEmpty(): Boolean {
         return target.length == 0
     }

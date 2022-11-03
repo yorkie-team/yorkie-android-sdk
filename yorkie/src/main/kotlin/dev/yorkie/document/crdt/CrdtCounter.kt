@@ -3,15 +3,22 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
 
-typealias CounterValue = Number
+internal typealias CounterValue = Number
 
 /**
  * [CrdtCounter] represents changeable number data type.
  */
-internal class CrdtCounter(value: CounterValue, createdAt: TimeTicket) : CrdtElement(createdAt) {
-    var value = value.sanitized()
+@Suppress("DataClassPrivateConstructor")
+internal data class CrdtCounter private constructor(
+    private var _value: CounterValue,
+    override val createdAt: TimeTicket,
+    override var _movedAt: TimeTicket? = null,
+    override var _removedAt: TimeTicket? = null,
+) : CrdtElement() {
+    var value: CounterValue
+        get() = _value
         private set(value) {
-            field = value.sanitized()
+            _value = value.sanitized()
         }
 
     val type
@@ -46,15 +53,18 @@ internal class CrdtCounter(value: CounterValue, createdAt: TimeTicket) : CrdtEle
         }
     }
 
-    override fun toJson(): String {
-        return "$value"
-    }
-
     override fun deepCopy(): CrdtElement {
-        return CrdtCounter(value, createdAt).apply { movedAt = this.movedAt }
+        return CrdtCounter(value, createdAt, _movedAt, _removedAt)
     }
 
     companion object {
+
+        operator fun invoke(
+            value: CounterValue,
+            createdAt: TimeTicket,
+            _movedAt: TimeTicket? = null,
+            _removedAt: TimeTicket? = null,
+        ) = CrdtCounter(value.sanitized(), createdAt, _movedAt, _removedAt)
 
         fun CounterValue.sanitized(): Number = when (counterType()) {
             CounterType.IntegerCnt -> toInt()

@@ -12,7 +12,7 @@ class CrdtRootTest {
     // TODO(7hong13): maybe need to separate it into multiple unit test functions.
     @Test
     fun `basic test`() {
-        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, RhtPQMap()))
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap()))
         val cc = ChangeContext(ChangeID.InitialChangeID, root, null)
         assertNull(root.findByCreatedAt(TimeTicket.MaxTimeTicket))
         assertEquals("", root.createPath(TimeTicket.MaxTimeTicket))
@@ -33,7 +33,7 @@ class CrdtRootTest {
         assertNull(root.findByCreatedAt(k1.createdAt))
 
         // set '$.k2'
-        val k2 = CrdtObject(cc.issueTimeTicket(), RhtPQMap())
+        val k2 = CrdtObject(cc.issueTimeTicket(), rht = RhtPQMap())
         root.rootObject["k2"] = k2
         root.registerElement(k2, root.rootObject)
         assertEquals(2, root.elementMapSize)
@@ -64,5 +64,18 @@ class CrdtRootTest {
         assertEquals(5, root.elementMapSize)
         assertEquals(k2_1_1, root.findByCreatedAt(k2_1_1.createdAt))
         assertEquals("$.k2.1.1", root.createPath(k2_1_1.createdAt))
+    }
+
+    @Test
+    fun `test gc`() {
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap())
+        obj["k1"] = CrdtPrimitive("v1", TimeTicket.InitialTimeTicket.copy(lamport = 1))
+        obj["k2"] = CrdtPrimitive("v2", TimeTicket.InitialTimeTicket.copy(lamport = 2))
+        val root = CrdtRoot(obj)
+        obj["k1"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 3))
+        obj["k2"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))
+        root.registerRemovedElement(obj["k1"])
+        root.registerRemovedElement(obj["k2"])
+        root.garbageCollect(TimeTicket.InitialTimeTicket.copy(lamport = 5))
     }
 }

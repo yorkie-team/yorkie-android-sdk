@@ -1,15 +1,16 @@
 package dev.yorkie.document.crdt
 
 import com.google.protobuf.ByteString
-import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
 import java.util.Date
 
-internal class CrdtPrimitive(
+internal data class CrdtPrimitive(
     val value: Any?,
-    createdAtTime: TimeTicket,
-) : CrdtElement(createdAtTime) {
+    override val createdAt: TimeTicket,
+    override var _movedAt: TimeTicket? = null,
+    override var _removedAt: TimeTicket? = null,
+) : CrdtElement() {
     val type = when (value) {
         is Boolean -> PrimitiveType.Boolean
         is Int -> PrimitiveType.Integer
@@ -24,24 +25,10 @@ internal class CrdtPrimitive(
     val isNumericType = type in NUMERIC_TYPES
 
     /**
-     * Returns the JSON encoding of this object.
-     */
-    override fun toJson(): String {
-        return when (type) {
-            PrimitiveType.String -> """"${escapeString(value as String)}""""
-            PrimitiveType.Bytes -> """"${(value as ByteArray).decodeToString()}""""
-            PrimitiveType.Date -> (value as Date).time.toString()
-            else -> "$value"
-        }
-    }
-
-    /**
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {
-        return CrdtPrimitive(value, createdAt).apply {
-            movedAt = this.movedAt
-        }
+        return CrdtPrimitive(value, createdAt, _movedAt, _removedAt)
     }
 
     fun toBytes(): ByteArray {

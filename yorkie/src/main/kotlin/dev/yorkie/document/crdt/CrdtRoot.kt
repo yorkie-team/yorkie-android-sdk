@@ -15,9 +15,9 @@ import dev.yorkie.util.YorkieLogger
  */
 internal class CrdtRoot(val rootObject: CrdtObject) {
     private val elementPairMapByCreatedAt =
-        hashMapOf(rootObject.createdAt to CrdtElementPair(rootObject))
-    private val removedElementSetByCreatedAt = hashSetOf<TimeTicket>()
-    private val textWithGarbageSetByCreatedAt = hashSetOf<TimeTicket>()
+        mutableMapOf(rootObject.createdAt to CrdtElementPair(rootObject))
+    private val removedElementSetByCreatedAt = mutableSetOf<TimeTicket>()
+    private val textWithGarbageSetByCreatedAt = mutableSetOf<TimeTicket>()
 
     val elementMapSize
         get() = elementPairMapByCreatedAt.size
@@ -128,25 +128,23 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     fun garbageCollect(executedAt: TimeTicket): Int {
         var count = 0
-        try {
-            removedElementSetByCreatedAt.forEach { createdAt ->
-                val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
-                if (pair.element.isRemoved && pair.element.removedAt <= executedAt) {
-                    pair.parent?.delete(pair.element)
-                    count += garbageCollectInternal(pair.element)
-                }
+        removedElementSetByCreatedAt.toSet().forEach { createdAt ->
+            val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
+            if (pair.element.isRemoved && pair.element.removedAt <= executedAt) {
+                pair.parent?.delete(pair.element)
+                count += garbageCollectInternal(pair.element)
             }
-        } catch (e: Exception) {
-            // TODO(7hong): handle ConcurrentModificationException
         }
 
-        textWithGarbageSetByCreatedAt.forEach { createdAt ->
-            val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
+        val textGarbageIterator = textWithGarbageSetByCreatedAt.iterator()
+        while (textGarbageIterator.hasNext()) {
+            val createdAt = textGarbageIterator.next()
+            val pair = elementPairMapByCreatedAt[createdAt] ?: continue
             val text = pair.element as CrdtTextElement
 
             val removedNodeCount = text.deleteTextNodesWithGarbage(executedAt)
             if (removedNodeCount > 0) {
-                textWithGarbageSetByCreatedAt.remove(text.createdAt)
+                textGarbageIterator.remove()
             }
             count += removedNodeCount
         }

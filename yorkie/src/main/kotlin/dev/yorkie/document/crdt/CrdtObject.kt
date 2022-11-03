@@ -6,12 +6,14 @@ import dev.yorkie.document.time.TimeTicket
  * [CrdtObject] represents object datatype, but unlike regular JSON, it has time
  * tickets which is created by logical clock.
  */
-internal class CrdtObject(
-    createdAt: TimeTicket,
-    private val memberNodes: RhtPQMap<CrdtElement>,
-) : CrdtContainer(createdAt), Iterable<Pair<String, CrdtElement>> {
-    val rht
-        get() = memberNodes.toList()
+internal data class CrdtObject(
+    override val createdAt: TimeTicket,
+    override var _movedAt: TimeTicket? = null,
+    override var _removedAt: TimeTicket? = null,
+    private val rht: RhtPQMap<CrdtElement> = RhtPQMap(),
+) : CrdtContainer(), Iterable<Pair<String, CrdtElement>> {
+    val memberNodes
+        get() = rht.toList()
 
     /**
      * Returns the array of keys in this object.
@@ -23,67 +25,58 @@ internal class CrdtObject(
      * Returns the sub path of the given element.
      */
     override fun subPathOf(createdAt: TimeTicket): String {
-        return memberNodes.subPathOf(createdAt)
+        return rht.subPathOf(createdAt)
     }
 
     /**
      * Physically deletes the given [element].
      */
     override fun delete(element: CrdtElement) {
-        memberNodes.delete(element)
+        rht.delete(element)
     }
 
     /**
      * Sets the given element of the given key.
      */
     operator fun set(key: String, value: CrdtElement): CrdtElement? {
-        return memberNodes.set(key, value)
+        return rht.set(key, value)
     }
 
     /**
      * Removes the element of the given key.
      */
     override fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
-        return memberNodes.remove(createdAt, executedAt)
+        return rht.remove(createdAt, executedAt)
     }
 
     /**
      * Removes the element of the given key and execution time.
      */
     fun removeByKey(key: String, executedAt: TimeTicket): CrdtElement {
-        return memberNodes.removeByKey(key, executedAt)
+        return rht.removeByKey(key, executedAt)
     }
 
     /**
      * Returns the value of the given key.
      */
     operator fun get(key: String): CrdtElement {
-        return memberNodes[key]
+        return rht[key]
     }
 
     /**
      * Returns whether the element exists of the given key or not.
      */
     fun has(key: String): Boolean {
-        return memberNodes.has(key)
-    }
-
-    /**
-     * Returns the JSON encoding of this object.
-     */
-    override fun toJson(): String {
-        return joinToString(",", "{", "}") {
-            "\"${it.first}\":${it.second.toJson()}"
-        }
+        return rht.has(key)
     }
 
     /**
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {
-        val clone = CrdtObject(createdAt, RhtPQMap()).apply { remove(removedAt) }
-        memberNodes.forEach {
-            clone.memberNodes[it.strKey] = it.value.deepCopy()
+        val clone = CrdtObject(createdAt, _movedAt, _removedAt, RhtPQMap())
+        rht.forEach {
+            clone.rht[it.strKey] = it.value.deepCopy()
         }
         return clone
     }
@@ -92,7 +85,7 @@ internal class CrdtObject(
      * Returns the descendants of this object by traversing.
      */
     override fun getDescendants(callback: (CrdtElement, CrdtContainer) -> Boolean) {
-        memberNodes.forEach {
+        rht.forEach {
             val element = it.value
             if (callback(element, this)) return
 
@@ -104,7 +97,7 @@ internal class CrdtObject(
 
     override fun iterator(): Iterator<Pair<String, CrdtElement>> {
         val keySet = mutableSetOf<String>()
-        val nodes = memberNodes.map { it }
+        val nodes = rht.map { it }
         var index = 0
 
         return object : Iterator<Pair<String, CrdtElement>> {

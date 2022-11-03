@@ -14,6 +14,7 @@ import dev.yorkie.api.v1.rHTNode
 import dev.yorkie.api.v1.removedAtOrNull
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
+import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
 import dev.yorkie.document.crdt.CrdtCounter.CounterType
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
@@ -71,10 +72,12 @@ internal fun PBJsonObject.toCrdtObject(): CrdtObject {
     nodesList.forEach { node ->
         rht[node.key] = node.element.toCrdtElement()
     }
-    return CrdtObject(createdAt.toTimeTicket(), rht).also {
-        it.movedAt = movedAtOrNull?.toTimeTicket()
-        it.removedAt = removedAtOrNull?.toTimeTicket()
-    }
+    return CrdtObject(
+        createdAt = createdAt.toTimeTicket(),
+        _movedAt = movedAtOrNull?.toTimeTicket(),
+        _removedAt = removedAtOrNull?.toTimeTicket(),
+        rht = rht,
+    )
 }
 
 internal fun PBJsonArray.toCrdtArray(): CrdtArray {
@@ -82,20 +85,21 @@ internal fun PBJsonArray.toCrdtArray(): CrdtArray {
     nodesList.forEach { node ->
         rgaTreeList.insert(node.element.toCrdtElement())
     }
-    return CrdtArray(createdAt.toTimeTicket(), rgaTreeList).also {
-        it.movedAt = movedAtOrNull?.toTimeTicket()
-        it.removedAt = removedAtOrNull?.toTimeTicket()
-    }
+    return CrdtArray(
+        createdAt = createdAt.toTimeTicket(),
+        _movedAt = movedAtOrNull?.toTimeTicket(),
+        _removedAt = removedAtOrNull?.toTimeTicket(),
+        elements = rgaTreeList,
+    )
 }
 
 internal fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
     return CrdtPrimitive(
-        CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
-        createdAt.toTimeTicket(),
-    ).also {
-        it.movedAt = movedAtOrNull?.toTimeTicket()
-        it.removedAt = removedAtOrNull?.toTimeTicket()
-    }
+        value = CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
+        createdAt = createdAt.toTimeTicket(),
+        _movedAt = movedAtOrNull?.toTimeTicket(),
+        _removedAt = removedAtOrNull?.toTimeTicket(),
+    )
 }
 
 internal fun PBValueType.toPrimitiveType(): PrimitiveType {
@@ -113,7 +117,12 @@ internal fun PBValueType.toPrimitiveType(): PrimitiveType {
 }
 
 internal fun PBCounter.toCrdtCounter(): CrdtCounter {
-    TODO("implement after valueFromBytes function")
+    return CrdtCounter(
+        value = value.toByteArray().asCounterValue(type.toCounterType()),
+        createdAt = createdAt.toTimeTicket(),
+        _movedAt = movedAtOrNull?.toTimeTicket(),
+        _removedAt = removedAtOrNull?.toTimeTicket(),
+    )
 }
 
 internal fun PBValueType.toCounterType(): CounterType {
@@ -143,7 +152,7 @@ internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
             createdAt = crdtObject.createdAt.toPBTimeTicket()
             crdtObject.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtObject.removedAt?.let { removedAt = it.toPBTimeTicket() }
-            nodes.addAll(rht.toPBRhtNodes())
+            nodes.addAll(memberNodes.toPBRhtNodes())
         }
     }
 }
@@ -224,7 +233,7 @@ internal fun CounterType.toPBCounterType(): PBValueType {
 
 internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
     return when (type) {
-        PBValueType.VALUE_TYPE_JSON_OBJECT -> CrdtObject(createdAt.toTimeTicket(), RhtPQMap())
+        PBValueType.VALUE_TYPE_JSON_OBJECT -> CrdtObject(createdAt.toTimeTicket(), rht = RhtPQMap())
         PBValueType.VALUE_TYPE_JSON_ARRAY -> CrdtArray(createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_TEXT -> TODO("not yet implemented")
         PBValueType.VALUE_TYPE_RICH_TEXT -> TODO("not yet implemented")

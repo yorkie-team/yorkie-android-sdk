@@ -11,11 +11,11 @@ import dev.yorkie.util.YorkieLogger
  * [IncreaseOperation] represents an operation that increments a numeric value to [CrdtCounter].
  * Among [CrdtPrimitive] elements, numeric types Integer, Long, and Double are used as values.
  */
-internal class IncreaseOperation(
+internal data class IncreaseOperation(
     val value: CrdtElement,
-    parentCreatedAt: TimeTicket,
-    executedAt: TimeTicket,
-) : Operation(parentCreatedAt, executedAt) {
+    override val parentCreatedAt: TimeTicket,
+    override var executedAt: TimeTicket,
+) : Operation() {
 
     /**
      * Returns the created time of the effected element.
@@ -37,13 +37,6 @@ internal class IncreaseOperation(
             }
             YorkieLogger.e(TAG, "fail to execute, only Counter can execute increase")
         }
-    }
-
-    /**
-     * Returns a string containing the meta data.
-     */
-    override fun toString(): String {
-        return "$parentCreatedAt.INCREASE"
     }
 
     companion object {

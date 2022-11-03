@@ -10,12 +10,12 @@ import dev.yorkie.util.YorkieLogger
  * [SetOperation] represents an operation that stores the value corresponding to the
  * given key in [CrdtObject].
  */
-internal class SetOperation(
+internal data class SetOperation(
     val key: String,
     val value: CrdtElement,
-    parentCreatedAt: TimeTicket,
-    executedAt: TimeTicket,
-) : Operation(parentCreatedAt, executedAt) {
+    override val parentCreatedAt: TimeTicket,
+    override var executedAt: TimeTicket,
+) : Operation() {
 
     /**
      * Returns the created time of the effected element.
@@ -38,13 +38,6 @@ internal class SetOperation(
             }
             YorkieLogger.e(TAG, "fail to execute, only object can execute set")
         }
-    }
-
-    /**
-     * Returns a string containing the meta data.
-     */
-    override fun toString(): String {
-        return "$parentCreatedAt.SET"
     }
 
     companion object {

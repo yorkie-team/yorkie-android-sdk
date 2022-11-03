@@ -53,10 +53,6 @@ internal data class CrdtCounter private constructor(
         }
     }
 
-    override fun toJson(): String {
-        return "$value"
-    }
-
     override fun deepCopy(): CrdtElement {
         return CrdtCounter(value, createdAt, _movedAt, _removedAt)
     }

@@ -34,8 +34,8 @@ import org.apache.commons.collections4.trie.PatriciaTrie
  */
 public class Document private constructor(
     public val key: Key,
-    private val eventStream: MutableSharedFlow<Event<*>>,
-) : Flow<Document.Event<*>> by eventStream {
+    private val eventStream: MutableSharedFlow<Event>,
+) : Flow<Document.Event> by eventStream {
     private val dispatcher = createSingleThreadDispatcher("Document($key)")
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
@@ -169,6 +169,12 @@ public class Document private constructor(
         // TODO: also apply to root
     }
 
+    public fun getRoot(): JsonObject {
+        val clone = ensureClone()
+        val context = ChangeContext(changeID.next(), clone, null)
+        return JsonObject(context, clone.rootObject)
+    }
+
     // NOTE(7hong13): original comment from JS-SDK:
     // `garbageCollect` purges elements that were removed before the given time.
     /**
@@ -197,17 +203,17 @@ public class Document private constructor(
         return root.toJson()
     }
 
-    public sealed class Event<T>(public val value: T) {
+    public interface Event {
 
-        public class Snapshot internal constructor(value: ByteString) : Event<ByteString>(value)
+        public class Snapshot internal constructor(public val data: ByteString) : Event
 
         public class LocalChange internal constructor(
-            value: List<ChangeInfo>,
-        ) : Event<List<ChangeInfo>>(value)
+            public val changeInfos: List<ChangeInfo>,
+        ) : Event
 
         public class RemoteChange internal constructor(
-            value: List<ChangeInfo>,
-        ) : Event<List<ChangeInfo>>(value)
+            public val changeInfos: List<ChangeInfo>,
+        ) : Event
 
         public class ChangeInfo(
             public val change: Change,

@@ -54,9 +54,9 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 public class Client @VisibleForTesting internal constructor(
     private val channel: Channel,
-    private val options: Options = Options.Default,
-    private val eventStream: MutableSharedFlow<Event<*>> = MutableSharedFlow(),
-) : Flow<Client.Event<*>> by eventStream {
+    private val options: Options = Options(),
+    private val eventStream: MutableSharedFlow<Event> = MutableSharedFlow(),
+) : Flow<Client.Event> by eventStream {
     private val scope = CoroutineScope(
         SupervisorJob() +
             createSingleThreadDispatcher("Client(${options.key})"),
@@ -92,7 +92,7 @@ public class Client @VisibleForTesting internal constructor(
         context: Context,
         rpcAddress: String,
         usePlainText: Boolean = false,
-        options: Options = Options.Default,
+        options: Options = Options(),
     ) : this(
         channel = AndroidChannelBuilder.forTarget(rpcAddress)
             .run { if (usePlainText) usePlaintext() else this }
@@ -337,18 +337,18 @@ public class Client @VisibleForTesting internal constructor(
      * It tells the server that this [Client] will synchronize the given [Document].
      */
     public fun attachAsync(
-        doc: Document,
+        document: Document,
         isManualSync: Boolean = false,
     ): Deferred<Boolean> {
         return scope.async {
             require(isActive) {
                 "client is not active"
             }
-            doc.setActor(requireClientId())
+            document.setActor(requireClientId())
 
             val request = attachDocumentRequest {
                 clientId = requireClientId().toByteString()
-                changePack = doc.createChangePack().toPBChangePack()
+                changePack = document.createChangePack().toPBChangePack()
             }
             val response = try {
                 service.attachDocument(request)
@@ -357,8 +357,8 @@ public class Client @VisibleForTesting internal constructor(
                 return@async false
             }
             val pack = response.changePack.toChangePack()
-            doc.applyChangePack(pack)
-            attachments[doc.key] = Attachment(doc, !isManualSync)
+            document.applyChangePack(pack)
+            attachments[document.key] = Attachment(document, !isManualSync)
             runWatchLoop()
             true
         }
@@ -483,17 +483,12 @@ public class Client @VisibleForTesting internal constructor(
          * The default value is `1000`(ms).
          */
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
-    ) {
+    )
 
-        companion object {
-            internal val Default = Options()
-        }
-    }
+    public interface Event {
 
-    public sealed class Event<T>(public val value: T) {
+        public class DocumentChanged(public val documentKeys: List<Document.Key>) : Event
 
-        public class DocumentChanged(value: List<Document.Key>) : Event<List<Document.Key>>(value)
-
-        public class DocumentSynced(value: DocumentSyncResult) : Event<DocumentSyncResult>(value)
+        public class DocumentSynced(public val result: DocumentSyncResult) : Event
     }
 }

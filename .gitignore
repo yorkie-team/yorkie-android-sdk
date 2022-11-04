@@ -27,3 +27,4 @@ proguard/
 captures/
 *.iws
 *.ipr
+/.idea/androidTestResultsUserPreferences.xml

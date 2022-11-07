@@ -75,7 +75,9 @@ class KanbanBoardViewModel : ViewModel() {
         val list = jsonArray.map {
             val jsonObject = it as JsonObject
             val title = jsonObject.get<JsonPrimitive>("title").value as String
-            val cards = jsonObject.get<JsonArray>("cards").map { Card((it as JsonPrimitive).value as String) }
+            val cards = jsonObject.get<JsonArray>("cards").map { Card(
+                (it as JsonPrimitive).value as String,
+            ) }
             KanbanColumn(title = title, cards = cards)
         }
         viewModelScope.launch {

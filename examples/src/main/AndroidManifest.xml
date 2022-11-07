@@ -18,7 +18,7 @@
                 android:value="" />
         </activity>
 
-        <activity android:name=".KanbanActivity"
+        <activity android:name=".KanbanBoardActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -7,30 +7,93 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: gradle
+      - run: chmod +x gradlew
+      - uses: gradle/gradle-build-action@v2
+      - run: ./gradlew lintKotlin
+      - run: ./gradlew lint
 
-    - name: set up JDK 11
-      uses: actions/setup-java@v3
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: gradle
+      - run: chmod +x gradlew
+      - uses: gradle/gradle-build-action@v2
+      - run: ./gradlew testDebugUnitTest
+      - run: ./gradlew jacocoTestReport
+      - uses: actions/upload-artifact@v3
+        with:
+          name: unit-test-artifact
+          path: yorkie/build/jacoco/jacoco.xml
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+  instrumentation-tests:
+    name: Instrumentation tests
+    strategy:
+      matrix:
+        api-level: [ 23, 26, 28 ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: gradle
+      - run: chmod +x gradlew
+      - uses: gradle/gradle-build-action@v2
+      - run: docker-compose -f docker/docker-compose-ci.yml up --build -d
+      - uses: actions/cache@v3
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.api-level }}-x86_64
+      - if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: adb uninstall dev.yorkie.test; ./gradlew createDebugAndroidTestCoverageReport
+      - uses: actions/upload-artifact@v3
+        with:
+          name: android-test-artifact
+          path: yorkie/build/reports/coverage/androidTest/debug/connected/report.xml
 
-    - name: Check with Gradle
-      run: ./gradlew check
-
-    - name: Run JaCoCo
-      run: ./gradlew jacocoTestReport
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        fail_ci_if_error: true
-        verbose: true
+  codecov:
+    name: Codecov
+    needs: [ unit-tests, instrumentation-tests ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v2
+      - uses: codecov/codecov-action@v3
+        with:
+          fail_ci_if_error: true
+          verbose: false

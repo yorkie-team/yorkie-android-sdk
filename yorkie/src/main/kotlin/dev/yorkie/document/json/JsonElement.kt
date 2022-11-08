@@ -14,15 +14,34 @@ public abstract class JsonElement {
     override fun toString() = toJson()
 
     companion object {
+        private val TypeMapper = mapOf(
+            CrdtObject::class.java to JsonObject::class.java,
+            CrdtArray::class.java to JsonArray::class.java,
+            CrdtPrimitive::class.java to JsonPrimitive::class.java,
+        )
 
         @Suppress("UNCHECKED_CAST")
-        internal fun <T : JsonElement> CrdtElement.toJsonElement(context: ChangeContext): T {
-            return when (this) {
-                is CrdtObject -> JsonObject(context, this)
-                is CrdtArray -> JsonArray(context, this)
-                is CrdtPrimitive -> JsonPrimitive(this)
-                else -> error("unknown CrdtElement type: $this")
-            } as T
+        internal inline fun <reified T : JsonElement> CrdtElement.toJsonElement(
+            context: ChangeContext,
+        ): T {
+            val clazz = if (T::class.java == JsonElement::class.java) {
+                TypeMapper[this::class.java]
+            } else {
+                T::class.java
+            }
+            return try {
+                when (clazz) {
+                    JsonObject::class.java -> JsonObject(context, this as CrdtObject)
+                    JsonArray::class.java -> JsonArray(context, this as CrdtArray)
+                    JsonPrimitive::class.java -> JsonPrimitive(this as CrdtPrimitive)
+                    else -> throw TypeCastException("unknown CrdtElement type: $this")
+                } as T
+            } catch (e: ClassCastException) {
+                if (e is TypeCastException) {
+                    throw e
+                }
+                throw TypeCastException(e.message)
+            }
         }
     }
 }

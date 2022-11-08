@@ -104,11 +104,12 @@ internal data class CrdtArray(
     }
 
     override fun deepCopy(): CrdtElement {
-        val clone = copy(elements = RgaTreeList())
-        elements.forEach { node ->
-            clone.elements.insertAfter(clone.lastCreatedAt, node.value.deepCopy())
+        val elementsClone = RgaTreeList().apply {
+            elements.forEach { node ->
+                insertAfter(lastCreatedAt, node.value.deepCopy())
+            }
         }
-        return clone
+        return copy(elements = elementsClone)
     }
 
     override fun iterator(): Iterator<CrdtElement> {

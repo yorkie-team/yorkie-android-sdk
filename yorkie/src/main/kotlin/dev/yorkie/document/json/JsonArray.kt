@@ -25,7 +25,17 @@ public class JsonArray internal constructor(
         return target[index]?.toJsonElement(context)
     }
 
-    operator fun get(createdAt: TimeTicket): JsonElement? {
+    public operator fun get(createdAt: TimeTicket): JsonElement? {
+        return target[createdAt]?.toJsonElement(context)
+    }
+
+    @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
+    public inline fun <reified T : JsonElement> getAs(index: Int): T? {
+        return target[index]?.toJsonElement(context)
+    }
+
+    @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
+    public inline fun <reified T : JsonElement> getAs(createdAt: TimeTicket): T? {
         return target[createdAt]?.toJsonElement(context)
     }
 

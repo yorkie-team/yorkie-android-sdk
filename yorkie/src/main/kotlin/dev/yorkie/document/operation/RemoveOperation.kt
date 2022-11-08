@@ -36,13 +36,6 @@ internal data class RemoveOperation(
         }
     }
 
-    /**
-     * Returns a string containing the meta data.
-     */
-    override fun toString(): String {
-        return "$parentCreatedAt.REMOVE"
-    }
-
     companion object {
         private const val TAG = "RemoveOperation"
     }

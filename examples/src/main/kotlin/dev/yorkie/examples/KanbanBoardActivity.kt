@@ -23,8 +23,8 @@ class KanbanBoardActivity : ComponentActivity() {
                 color = MaterialTheme.colors.background,
             ) {
                 val cardColumns by viewModel.list.collectAsState()
-                val onNewColumnAdded: (KanbanColumn) -> Unit = { viewModel.addCardColumn(it) }
-                val onNewCardAdded: (KanbanColumn, Card) -> Unit =
+                val onNewColumnAdded: (String) -> Unit = { viewModel.addCardColumn(it) }
+                val onNewCardAdded: (KanbanColumn, String) -> Unit =
                     { kanbanColumn, card -> viewModel.addCardToColumn(kanbanColumn, card) }
                 val onColumnDeleted: (KanbanColumn) -> Unit = { viewModel.deleteCardColumn(it) }
 

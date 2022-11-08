@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -63,7 +64,7 @@ fun KanbanColumn(
     onNewCardAdded: (KanbanColumn, Card) -> Unit,
     onColumnDeleted: (KanbanColumn) -> Unit,
 ) {
-    val height = (kanbanColumn.cards.size + 2) * 60
+    val height = (kanbanColumn.cards.size + 2) * 70
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -136,7 +137,7 @@ fun KanbanAddCard(
         TextField(
             modifier = Modifier
                 .padding(8.dp)
-                .height(45.dp),
+                .defaultMinSize(minHeight = 45.dp),
             shape = RoundedCornerShape(4.dp),
             colors = TextFieldDefaults.textFieldColors(
                 backgroundColor = Color.White,
@@ -182,7 +183,7 @@ fun KanbanAddColumn(onNewColumnAdded: (KanbanColumn) -> Unit) {
         TextField(
             modifier = Modifier
                 .padding(8.dp)
-                .height(45.dp)
+                .defaultMinSize(minHeight = 45.dp)
                 .fillMaxWidth(),
             shape = RoundedCornerShape(4.dp),
             colors = TextFieldDefaults.textFieldColors(

@@ -198,8 +198,7 @@ public class Document private constructor(
     }
 
     public fun getRoot(): JsonObject {
-        ensureClone()
-        val clone = requireNotNull(clone)
+        val clone = ensureClone()
         val context = ChangeContext(changeID.next(), clone, null)
         return JsonObject(context, clone.rootObject)
     }

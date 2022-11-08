@@ -36,7 +36,7 @@ class KanbanBoardViewModel : ViewModel() {
             client.collect {
                 if (it is Client.Event.DocumentSynced) {
                     try {
-                        updateDocument(it.value.document.getRoot().getAs(DOCUMENT_LIST_KEY))
+                        updateDocument(it.result.document.getRoot().getAs(DOCUMENT_LIST_KEY))
                     } catch (e: Exception) {
                         document.updateAsync { jsonObject ->
                             jsonObject.setNewArray(DOCUMENT_LIST_KEY)

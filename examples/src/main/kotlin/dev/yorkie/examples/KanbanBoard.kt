@@ -32,20 +32,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.yorkie.document.time.TimeTicket
+import kotlinx.collections.immutable.ImmutableList
 
 data class KanbanColumn(
     val title: String,
-    val cards: List<Card>,
-    var id: TimeTicket = TimeTicket.InitialTimeTicket,
+    val cards: ImmutableList<Card>,
+    val id: TimeTicket = TimeTicket.InitialTimeTicket,
 )
 
-data class Card(val title: String, var id: TimeTicket = TimeTicket.InitialTimeTicket)
+data class Card(val title: String)
 
 @Composable
 fun KanbanBoard(
-    kanbanColumns: List<KanbanColumn>,
-    onNewColumnAdded: (KanbanColumn) -> Unit,
-    onNewCardAdded: (KanbanColumn, Card) -> Unit,
+    kanbanColumns: ImmutableList<KanbanColumn>,
+    onNewColumnAdded: (String) -> Unit,
+    onNewCardAdded: (KanbanColumn, String) -> Unit,
     onColumnDeleted: (KanbanColumn) -> Unit,
 ) {
     LazyColumn {
@@ -61,7 +62,7 @@ fun KanbanBoard(
 @Composable
 fun KanbanColumn(
     kanbanColumn: KanbanColumn,
-    onNewCardAdded: (KanbanColumn, Card) -> Unit,
+    onNewCardAdded: (KanbanColumn, String) -> Unit,
     onColumnDeleted: (KanbanColumn) -> Unit,
 ) {
     val height = (kanbanColumn.cards.size + 2) * 70
@@ -125,7 +126,7 @@ fun KanbanCard(title: String) {
 @Composable
 fun KanbanAddCard(
     column: KanbanColumn,
-    onNewCardAdded: (KanbanColumn, Card) -> Unit,
+    onNewCardAdded: (KanbanColumn, String) -> Unit,
 ) {
     var newTitle by remember { mutableStateOf("") }
 
@@ -150,7 +151,7 @@ fun KanbanAddCard(
         )
         TextButton(
             onClick = {
-                onNewCardAdded(column, Card(newTitle))
+                onNewCardAdded(column, newTitle)
                 newTitle = ""
             },
         ) {
@@ -160,7 +161,7 @@ fun KanbanAddCard(
 }
 
 @Composable
-fun KanbanAddColumn(onNewColumnAdded: (KanbanColumn) -> Unit) {
+fun KanbanAddColumn(onNewColumnAdded: (String) -> Unit) {
     var newTitle by remember { mutableStateOf("") }
 
     Column(
@@ -174,7 +175,7 @@ fun KanbanAddColumn(onNewColumnAdded: (KanbanColumn) -> Unit) {
     ) {
         TextButton(
             onClick = {
-                onNewColumnAdded(KanbanColumn(newTitle, emptyList()))
+                onNewColumnAdded(newTitle)
                 newTitle = ""
             },
         ) {

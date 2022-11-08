@@ -6,7 +6,7 @@ import dev.yorkie.document.time.ActorID.Companion.MAX_ACTOR_ID
 /**
  * [TimeTicket] is a timestamp of the logical clock. Ticket is immutable.
  */
-data class TimeTicket(
+public data class TimeTicket(
     val lamport: Long,
     val delimiter: Int,
     val actorID: ActorID,

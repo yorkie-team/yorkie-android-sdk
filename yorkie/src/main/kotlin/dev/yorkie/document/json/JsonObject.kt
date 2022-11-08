@@ -14,15 +14,12 @@ import java.util.Date
 public class JsonObject internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtObject,
-) : JsonElement(), Collection<JsonElement> {
+) : JsonElement() {
     public val id
         get() = target.createdAt
 
     public val keys: List<String>
         get() = target.keys
-
-    override val size: Int
-        get() = target.keys.size
 
     public operator fun set(key: String, value: Boolean) {
         setPrimitive(key, value)
@@ -112,38 +109,5 @@ public class JsonObject internal constructor(
             ),
         )
         context.registerRemovedElement(removed)
-    }
-
-    override fun contains(element: JsonElement): Boolean {
-        return target.asSequence()
-            .map { it.second.toJsonElement<JsonElement>(context) }
-            .contains(element)
-    }
-
-    override fun containsAll(elements: Collection<JsonElement>): Boolean {
-        return target.map { it.second.toJsonElement<JsonElement>(context) }.containsAll(elements)
-    }
-
-    override fun isEmpty(): Boolean {
-        return target.keys.isEmpty()
-    }
-
-    override fun iterator(): Iterator<JsonElement> {
-        return JsonObjectIterator(context, target)
-    }
-
-    private class JsonObjectIterator(
-        private val context: ChangeContext,
-        target: CrdtObject,
-    ) : Iterator<JsonElement> {
-        private val targetIterator = target.iterator()
-
-        override fun hasNext(): Boolean {
-            return targetIterator.hasNext()
-        }
-
-        override fun next(): JsonElement {
-            return targetIterator.next().second.toJsonElement(context)
-        }
     }
 }

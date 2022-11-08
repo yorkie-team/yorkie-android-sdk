@@ -49,7 +49,7 @@ class KanbanBoardViewModel : ViewModel() {
             document.updateAsync {
                 it.get<JsonArray>(DOCUMENT_LIST_KEY).putNewObject().apply {
                     set("title", column.title)
-                    setNewObject("cards")
+                    setNewArray("cards")
                 }.also { newObject ->
                     column.id = newObject.id
                 }
@@ -61,7 +61,7 @@ class KanbanBoardViewModel : ViewModel() {
         viewModelScope.launch {
             document.updateAsync {
                 val column = it.get<JsonArray>(DOCUMENT_LIST_KEY)[cardColumn.id] as JsonObject
-                column.get<JsonObject>("cards").apply {
+                column.get<JsonArray>("cards").putNewObject().apply {
                     set("title", card.title)
                 }.also { newObject ->
                     card.id = newObject.id
@@ -83,8 +83,9 @@ class KanbanBoardViewModel : ViewModel() {
             lists.map {
                 val column = it as JsonObject
                 val title = column.get<JsonPrimitive>("title").value as String
-                val cards = column.get<JsonObject>("cards").map { card ->
-                    Card((card as JsonPrimitive).value as String)
+                val cards = column.get<JsonArray>("cards").map { card ->
+                    val cardTitle = (card as JsonObject).get<JsonPrimitive>("title").value as String
+                    Card(cardTitle)
                 }
                 KanbanColumn(title = title, cards = cards, id = it.id)
             }.also {
@@ -94,7 +95,7 @@ class KanbanBoardViewModel : ViewModel() {
     }
 
     companion object {
-        private const val DOCUMENT_KEY = "test key"
+        private const val DOCUMENT_KEY = "test key3"
         private const val DOCUMENT_LIST_KEY = "lists"
     }
 }

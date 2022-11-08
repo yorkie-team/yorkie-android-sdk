@@ -115,7 +115,9 @@ public class JsonObject internal constructor(
     }
 
     override fun contains(element: JsonElement): Boolean {
-        return target.asSequence().map { it.second.toJsonElement<JsonElement>(context) }.contains(element)
+        return target.asSequence()
+            .map { it.second.toJsonElement<JsonElement>(context) }
+            .contains(element)
     }
 
     override fun containsAll(elements: Collection<JsonElement>): Boolean {

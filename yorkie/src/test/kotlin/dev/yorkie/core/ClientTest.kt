@@ -155,14 +155,14 @@ class ClientTest {
             val changeEvent = assertIs<DocumentChanged>(events.first())
             verify(service).watchDocuments(watchRequestCaptor.capture(), any())
             assertIsTestActorID(watchRequestCaptor.value.client.id)
-            assertEquals(1, changeEvent.value.size)
-            assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.value.first().value)
+            assertEquals(1, changeEvent.documentKeys.size)
+            assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.documentKeys.first().value)
 
             val syncRequestCaptor = ArgumentCaptor.forClass(PushPullRequest::class.java)
             val syncEvent = assertIs<DocumentSynced>(events.last())
             verify(service).pushPull(syncRequestCaptor.capture(), any())
             assertIsTestActorID(syncRequestCaptor.value.clientId)
-            val synced = assertIs<Client.DocumentSyncResult.Synced>(syncEvent.value)
+            val synced = assertIs<Client.DocumentSyncResult.Synced>(syncEvent.result)
             assertEquals(document, synced.document)
             assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
@@ -192,7 +192,7 @@ class ClientTest {
                 it["k1"] = 1
             }.await()
             val syncEvent = assertIs<DocumentSynced>(target.first())
-            val failed = assertIs<Client.DocumentSyncResult.SyncFailed>(syncEvent.value)
+            val failed = assertIs<Client.DocumentSyncResult.SyncFailed>(syncEvent.result)
             assertEquals(document, failed.document)
 
             assertEquals(

@@ -117,7 +117,7 @@ class DocumentTest {
     @Test
     fun `should emit local change events when document properties are changed`() {
         runTest {
-            val events = mutableListOf<Document.Event<*>>()
+            val events = mutableListOf<Document.Event>()
             val collectJob = launch(UnconfinedTestDispatcher()) {
                 target.collect(events::add)
             }
@@ -132,7 +132,7 @@ class DocumentTest {
             assertEquals(1, events.size)
             var event = events.first()
             assertIs<Document.Event.LocalChange>(event)
-            var change = event.value.first().change
+            var change = event.changeInfos.first().change
             assertEquals(2, change.operations.size)
             assertTrue(change.operations.all { it is SetOperation })
 
@@ -152,7 +152,7 @@ class DocumentTest {
             assertEquals(2, events.size)
             event = events.last()
             assertIs<Document.Event.LocalChange>(event)
-            change = event.value.first().change
+            change = event.changeInfos.first().change
             assertEquals(2, change.operations.size)
             assertTrue(change.operations.all { it is RemoveOperation })
 

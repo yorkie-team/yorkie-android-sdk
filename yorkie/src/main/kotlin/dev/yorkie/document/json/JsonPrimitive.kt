@@ -2,6 +2,7 @@ package dev.yorkie.document.json
 
 import com.google.protobuf.ByteString
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.CrdtPrimitive.Type
 import java.util.Date
 
 public class JsonPrimitive internal constructor(

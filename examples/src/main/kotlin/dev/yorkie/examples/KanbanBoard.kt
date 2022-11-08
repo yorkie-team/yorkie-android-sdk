@@ -30,24 +30,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.yorkie.document.time.TimeTicket
 
 data class KanbanColumn(
     val title: String,
     val cards: List<Card>,
+    var id: TimeTicket = TimeTicket.InitialTimeTicket,
 )
 
-data class Card(val title: String)
+data class Card(val title: String, var id: TimeTicket = TimeTicket.InitialTimeTicket)
 
 @Composable
 fun KanbanBoard(
     kanbanColumns: List<KanbanColumn>,
     onNewColumnAdded: (KanbanColumn) -> Unit,
     onNewCardAdded: (KanbanColumn, Card) -> Unit,
-    onCardDeleted: (String) -> Unit,
+    onColumnDeleted: (KanbanColumn) -> Unit,
 ) {
     LazyColumn {
         items(kanbanColumns) { kanbanColumn ->
-            KanbanColumn(kanbanColumn, onNewCardAdded, onCardDeleted)
+            KanbanColumn(kanbanColumn, onNewCardAdded, onColumnDeleted)
         }
         item {
             KanbanAddColumn(onNewColumnAdded)
@@ -59,7 +61,7 @@ fun KanbanBoard(
 fun KanbanColumn(
     kanbanColumn: KanbanColumn,
     onNewCardAdded: (KanbanColumn, Card) -> Unit,
-    onCardDeleted: (String) -> Unit,
+    onColumnDeleted: (KanbanColumn) -> Unit,
 ) {
     val height = (kanbanColumn.cards.size + 2) * 60
     Column(
@@ -80,7 +82,7 @@ fun KanbanColumn(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(text = kanbanColumn.title, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            TextButton(onClick = { onCardDeleted(kanbanColumn.title) }) {
+            TextButton(onClick = { onColumnDeleted(kanbanColumn) }) {
                 Text(text = "❌", fontWeight = FontWeight.Bold, fontSize = 20.sp)
             }
         }

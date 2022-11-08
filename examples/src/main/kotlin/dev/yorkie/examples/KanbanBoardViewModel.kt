@@ -49,7 +49,9 @@ class KanbanBoardViewModel : ViewModel() {
             document.updateAsync {
                 it.get<JsonArray>(DOCUMENT_LIST_KEY).putNewObject().apply {
                     set("title", column.title)
-                    setNewArray("cards")
+                    setNewObject("cards")
+                }.also { newObject ->
+                    column.id = newObject.id
                 }
             }.await()
         }
@@ -58,7 +60,12 @@ class KanbanBoardViewModel : ViewModel() {
     fun addCardToColumn(cardColumn: KanbanColumn, card: Card) {
         viewModelScope.launch {
             document.updateAsync {
-                TODO("not yet implemented")
+                val column = it.get<JsonArray>(DOCUMENT_LIST_KEY)[cardColumn.id] as JsonObject
+                column.get<JsonObject>("cards").apply {
+                    set("title", card.title)
+                }.also { newObject ->
+                    card.id = newObject.id
+                }
             }.await()
         }
     }
@@ -66,29 +73,28 @@ class KanbanBoardViewModel : ViewModel() {
     fun deleteCardColumn(cardColumn: KanbanColumn) {
         viewModelScope.launch {
             document.updateAsync {
-                TODO("not yet implemented")
+                it.get<JsonArray>(DOCUMENT_LIST_KEY).remove(cardColumn.id)
             }.await()
         }
     }
 
-    private fun updateDocument(jsonArray: JsonArray) {
-        val list = jsonArray.map {
-            val jsonObject = it as JsonObject
-            val title = jsonObject.get<JsonPrimitive>("title").value as String
-            val cards = jsonObject.get<JsonArray>("cards").map {
-                Card(
-                    (it as JsonPrimitive).value as String,
-                )
-            }
-            KanbanColumn(title = title, cards = cards)
-        }
+    private fun updateDocument(lists: JsonArray) {
         viewModelScope.launch {
-            _list.emit(list)
+            lists.map {
+                val column = it as JsonObject
+                val title = column.get<JsonPrimitive>("title").value as String
+                val cards = column.get<JsonObject>("cards").map { card ->
+                    Card((card as JsonPrimitive).value as String)
+                }
+                KanbanColumn(title = title, cards = cards, id = it.id)
+            }.also {
+                _list.emit(it)
+            }
         }
     }
 
     companion object {
-        private const val DOCUMENT_KEY = "kanban-board3243"
-        private const val DOCUMENT_LIST_KEY = "list"
+        private const val DOCUMENT_KEY = "test key"
+        private const val DOCUMENT_LIST_KEY = "lists"
     }
 }

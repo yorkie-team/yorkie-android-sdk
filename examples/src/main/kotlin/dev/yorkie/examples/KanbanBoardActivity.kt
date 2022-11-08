@@ -26,11 +26,13 @@ class KanbanBoardActivity : ComponentActivity() {
                 val onNewColumnAdded: (KanbanColumn) -> Unit = { viewModel.addCardColumn(it) }
                 val onNewCardAdded: (KanbanColumn, Card) -> Unit =
                     { kanbanColumn, card -> viewModel.addCardToColumn(kanbanColumn, card) }
+                val onColumnDeleted: (KanbanColumn) -> Unit = { viewModel.deleteCardColumn(it) }
+
                 KanbanBoard(
                     kanbanColumns = cardColumns,
                     onNewColumnAdded = onNewColumnAdded,
                     onNewCardAdded = onNewCardAdded,
-                    onCardDeleted = {},
+                    onColumnDeleted = onColumnDeleted,
                 )
             }
         }

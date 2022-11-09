@@ -6,6 +6,7 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.RhtPQMap
+import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 import java.util.Date
@@ -14,7 +15,7 @@ public class JsonObject internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtObject,
 ) : JsonElement() {
-    internal val id
+    public val id
         get() = target.createdAt
 
     public val keys: List<String>

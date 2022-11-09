@@ -25,7 +25,17 @@ public class JsonArray internal constructor(
         return target[index]?.toJsonElement(context)
     }
 
-    internal operator fun get(createdAt: TimeTicket): JsonElement? {
+    public operator fun get(createdAt: TimeTicket): JsonElement? {
+        return target[createdAt]?.toJsonElement(context)
+    }
+
+    @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
+    public inline fun <reified T : JsonElement> getAs(index: Int): T? {
+        return target[index]?.toJsonElement(context)
+    }
+
+    @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
+    public inline fun <reified T : JsonElement> getAs(createdAt: TimeTicket): T? {
         return target[createdAt]?.toJsonElement(context)
     }
 
@@ -83,6 +93,20 @@ public class JsonArray internal constructor(
     public fun removeAt(index: Int): JsonElement? {
         val executedAt = context.issueTimeTicket()
         val deleted = target.removeByIndex(index, executedAt) ?: return null
+        context.push(
+            RemoveOperation(
+                createdAt = deleted.createdAt,
+                parentCreatedAt = target.createdAt,
+                executedAt = executedAt,
+            ),
+        )
+        context.registerRemovedElement(deleted)
+        return deleted.toJsonElement(context)
+    }
+
+    public fun remove(createdAt: TimeTicket): JsonElement {
+        val executedAt = context.issueTimeTicket()
+        val deleted = target.remove(createdAt, executedAt)
         context.push(
             RemoveOperation(
                 createdAt = deleted.createdAt,

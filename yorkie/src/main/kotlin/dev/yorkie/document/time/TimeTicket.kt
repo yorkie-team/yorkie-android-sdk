@@ -25,11 +25,12 @@ public data class TimeTicket(
 
     companion object {
         internal const val INITIAL_DELIMITER = 0
+        internal const val INITIAL_LAMPORT = 0L
         internal const val MAX_DELIMITER = Int.MAX_VALUE
         internal const val MAX_LAMPORT = Long.MAX_VALUE
 
         internal val NullTimeTicket = TimeTicket(
-            Long.MIN_VALUE,
+            INITIAL_LAMPORT,
             INITIAL_DELIMITER,
             INITIAL_ACTOR_ID,
         )

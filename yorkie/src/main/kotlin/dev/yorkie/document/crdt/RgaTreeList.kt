@@ -1,7 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.NullTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
 
@@ -12,8 +12,8 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     private val dummyHead = Node(
         CrdtPrimitive(
             value = 1,
-            createdAt = NullTimeTicket,
-            _removedAt = NullTimeTicket,
+            createdAt = InitialTimeTicket,
+            _removedAt = InitialTimeTicket,
         ),
     )
     var last: Node = dummyHead

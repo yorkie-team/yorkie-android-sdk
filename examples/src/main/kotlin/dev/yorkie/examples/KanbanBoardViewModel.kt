@@ -95,7 +95,7 @@ class KanbanBoardViewModel : ViewModel() {
     }
 
     companion object {
-        private const val DOCUMENT_KEY = "test key3"
+        private const val DOCUMENT_KEY = "vuejs-kanban"
         private const val DOCUMENT_LIST_KEY = "lists"
     }
 }

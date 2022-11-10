@@ -72,7 +72,7 @@ class ClientTest {
             assertEquals(peerStatus.first().actorId, client1.requireClientId())
 
             client2.attachAsync(document2).await()
-            peerStatus = client1.peerStatus.dropWhile { it == peerStatus }.first()
+            peerStatus = client1.peerStatus.dropWhile { it.size < 2 }.first()
             assertEquals(2, peerStatus.size)
             assertEquals(peerStatus.first().actorId, client1.requireClientId())
             assertEquals(peerStatus.last().actorId, client2.requireClientId())

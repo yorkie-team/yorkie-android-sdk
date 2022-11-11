@@ -83,7 +83,7 @@ jobs:
           ram-size: 8192M
           disable-animations: true
           script: |
-            adb uninstall dev.yorkie.test;
+            adb shell pm list packages | grep dev.yorkie.test && adb uninstall dev.yorkie.test || true;
             ./gradlew yorkie:createDebugAndroidTestCoverageReport
       - uses: actions/upload-artifact@v3
         with:
@@ -141,6 +141,7 @@ jobs:
           disable-animations: true
           script: |
             ./gradlew microbenchmark:assembleReleaseAndroidTest;
+            adb shell pm list packages | grep dev.yorkie.microbenchmark.test && adb uninstall dev.yorkie.microbenchmark.test || true;
             adb install microbenchmark/build/outputs/apk/androidTest/release/microbenchmark-release-androidTest.apk;
             adb shell am instrument -w -e no-isolated-storage true -e additionalTestOutputDir /sdcard/Download/ -e "androidx.benchmark.suppressErrors" "EMULATOR,LOW-BATTERY,UNLOCKED" dev.yorkie.microbenchmark.test/androidx.benchmark.junit4.AndroidBenchmarkRunner;
             adb shell find /sdcard/Download -name "*-benchmarkData.json" | tr -d '\r' | xargs -n1 adb pull

@@ -5,6 +5,7 @@ import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtArray
+import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.RhtPQMap
@@ -166,6 +167,7 @@ class ConverterTest {
     fun `should convert CrdtObject`() {
         val crdtObject = CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap())
         val converted = crdtObject.toPBJsonObject().toCrdtElement()
+
         assertEquals(crdtObject.toJson(), converted.toJson())
     }
 
@@ -173,7 +175,20 @@ class ConverterTest {
     fun `should convert CrdtArray`() {
         val crdtArray = CrdtArray(TimeTicket.InitialTimeTicket)
         val converted = crdtArray.toPBJsonArray().toCrdtElement()
+
         assertEquals(crdtArray.toJson(), converted.toJson())
+    }
+
+    @Test
+    fun `should convert CrdtCounter`() {
+        val counterInt = CrdtCounter(1, TimeTicket.InitialTimeTicket)
+        val counterDouble = CrdtCounter(1.0, TimeTicket.InitialTimeTicket)
+        val counterLong = CrdtCounter(1L, TimeTicket.InitialTimeTicket)
+        val counters = listOf(counterInt, counterDouble, counterLong)
+
+        counters.forEach {
+            assertEquals(it.toJson(), it.toPBCounter().toCrdtElement().toJson())
+        }
     }
 
     @Test

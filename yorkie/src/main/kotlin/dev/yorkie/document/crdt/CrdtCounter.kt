@@ -86,6 +86,14 @@ internal data class CrdtCounter private constructor(
                     CounterType.DoubleCnt -> double
                 }
             }
+
+        fun fromBytes(counterType: CounterType, bytes: ByteArray): Number {
+            return when (counterType) {
+                CounterType.IntegerCnt -> ByteBuffer.wrap(bytes).int
+                CounterType.DoubleCnt -> ByteBuffer.wrap(bytes).double
+                CounterType.LongCnt -> ByteBuffer.wrap(bytes).long
+            }
+        }
     }
 
     enum class CounterType {

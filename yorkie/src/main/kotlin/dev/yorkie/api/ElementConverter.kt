@@ -251,7 +251,10 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
         PBValueType.VALUE_TYPE_INTEGER_CNT,
         PBValueType.VALUE_TYPE_DOUBLE_CNT,
         PBValueType.VALUE_TYPE_LONG_CNT,
-        -> TODO("implement after valueFromBytes function")
+        -> CrdtCounter(
+            CrdtCounter.fromBytes(type.toCounterType(), value.toByteArray()),
+            createdAt.toTimeTicket(),
+        )
         else -> error("unimplemented type $this")
     }
 }

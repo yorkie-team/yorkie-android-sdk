@@ -21,16 +21,12 @@ internal data class CrdtCounter private constructor(
             _value = value.sanitized()
         }
 
-    val type
-        get() = value.counterType()
+    val type = _value.counterType()
 
     fun toBytes(): ByteArray {
         return when (type) {
             CounterType.IntegerCnt -> ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value.toInt())
             CounterType.LongCnt -> ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value.toLong())
-            CounterType.DoubleCnt -> {
-                ByteBuffer.allocate(Double.SIZE_BYTES).putDouble(value.toDouble())
-            }
         }.array()
     }
 
@@ -39,17 +35,9 @@ internal data class CrdtCounter private constructor(
         require(primitive.isNumericType && primitiveValue is Number) {
             "Unsupported type of value: ${primitive.type}"
         }
-        val increaseResult = value.toDouble() + primitiveValue.toDouble()
         value = when (type) {
-            CounterType.IntegerCnt -> {
-                if (increaseResult < Int.MIN_VALUE || increaseResult > Int.MAX_VALUE) {
-                    increaseResult.toLong()
-                } else {
-                    increaseResult.toInt()
-                }
-            }
-            CounterType.LongCnt -> increaseResult.toLong()
-            CounterType.DoubleCnt -> increaseResult
+            CounterType.IntegerCnt -> value.toInt() + primitiveValue.toInt()
+            CounterType.LongCnt -> value.toLong() + primitiveValue.toLong()
         }
     }
 
@@ -69,13 +57,12 @@ internal data class CrdtCounter private constructor(
         private fun CounterValue.sanitized(): Number = when (counterType()) {
             CounterType.IntegerCnt -> toInt()
             CounterType.LongCnt -> toLong()
-            CounterType.DoubleCnt -> toDouble()
         }
 
-        fun CounterValue.counterType() = when (this) {
-            is Byte, is Short, is Int -> CounterType.IntegerCnt
+        private fun CounterValue.counterType() = when (this) {
+            is Int -> CounterType.IntegerCnt
             is Long -> CounterType.LongCnt
-            else -> CounterType.DoubleCnt
+            else -> error("Counter supports only Int and Long")
         }
 
         fun ByteArray.asCounterValue(counterType: CounterType): Number =
@@ -83,20 +70,11 @@ internal data class CrdtCounter private constructor(
                 when (counterType) {
                     CounterType.IntegerCnt -> int
                     CounterType.LongCnt -> long
-                    CounterType.DoubleCnt -> double
                 }
             }
-
-        fun fromBytes(counterType: CounterType, bytes: ByteArray): Number {
-            return when (counterType) {
-                CounterType.IntegerCnt -> ByteBuffer.wrap(bytes).int
-                CounterType.DoubleCnt -> ByteBuffer.wrap(bytes).double
-                CounterType.LongCnt -> ByteBuffer.wrap(bytes).long
-            }
-        }
     }
 
     enum class CounterType {
-        IntegerCnt, LongCnt, DoubleCnt
+        IntegerCnt, LongCnt
     }
 }

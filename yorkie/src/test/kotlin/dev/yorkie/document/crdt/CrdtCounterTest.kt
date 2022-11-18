@@ -16,76 +16,58 @@ class CrdtCounterTest {
     @Test
     fun `verify increasing positive numeric data of Counter works properly`() {
         val int = CrdtCounter(1, InitialTimeTicket)
-        val double = CrdtCounter(10.0, InitialTimeTicket)
         val long = CrdtCounter(100L, InitialTimeTicket)
 
         val intOperand = CrdtPrimitive(1, InitialTimeTicket)
-        val doubleOperand = CrdtPrimitive(10.0, InitialTimeTicket)
         val longOperand = CrdtPrimitive(100L, InitialTimeTicket)
 
         int.increase(intOperand)
-        int.increase(doubleOperand)
         int.increase(longOperand)
-        assertEquals(112, int.value)
-
-        double.increase(intOperand)
-        double.increase(doubleOperand)
-        double.increase(longOperand)
-        assertEquals(121.0, double.value)
+        assertEquals(102, int.value)
 
         long.increase(intOperand)
-        long.increase(doubleOperand)
         long.increase(longOperand)
-        assertEquals(211L, long.value)
+        assertEquals(201L, long.value)
     }
 
     @Test
     fun `verify increasing with non numeric data type throws error`() {
-        val double = CrdtCounter(10.0, InitialTimeTicket)
+        val int = CrdtCounter(10, InitialTimeTicket)
         val str = CrdtPrimitive("hello", InitialTimeTicket)
         val bool = CrdtPrimitive(true, InitialTimeTicket)
         val bytes = CrdtPrimitive(ByteArray(1), InitialTimeTicket)
         val date = CrdtPrimitive(Date(), InitialTimeTicket)
 
         assertThrows(IllegalArgumentException::class.java) {
-            double.increase(str)
+            int.increase(str)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            double.increase(bool)
+            int.increase(bool)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            double.increase(bytes)
+            int.increase(bytes)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            double.increase(date)
+            int.increase(date)
         }
-        assertEquals(10.0, double.value)
+        assertEquals(10, int.value)
     }
 
     @Test
     fun `verify increasing with negative numeric data works properly`() {
         val int = CrdtCounter(1, InitialTimeTicket)
-        val double = CrdtCounter(10.0, InitialTimeTicket)
         val long = CrdtCounter(100L, InitialTimeTicket)
 
         val intOperand = CrdtPrimitive(-1, InitialTimeTicket)
-        val doubleOperand = CrdtPrimitive(-10.0, InitialTimeTicket)
         val longOperand = CrdtPrimitive(-100L, InitialTimeTicket)
 
         int.increase(intOperand)
-        int.increase(doubleOperand)
         int.increase(longOperand)
-        assertEquals(-110, int.value)
-
-        double.increase(intOperand)
-        double.increase(doubleOperand)
-        double.increase(longOperand)
-        assertEquals(-101.0, double.value)
+        assertEquals(-100, int.value)
 
         long.increase(intOperand)
-        long.increase(doubleOperand)
         long.increase(longOperand)
-        assertEquals(-11L, long.value)
+        assertEquals(-1L, long.value)
     }
 
     @Test
@@ -99,22 +81,17 @@ class CrdtCounterTest {
         val longValue = longInBytes.asCounterValue(CrdtCounter.CounterType.LongCnt)
         assertEquals(333L, longValue)
         assertArrayEquals(longInBytes, CrdtCounter(333L, InitialTimeTicket).toBytes())
-
-        val doubleInBytes = ByteBuffer.allocate(Double.SIZE_BYTES).putDouble(1.234).array()
-        val doubleValue = doubleInBytes.asCounterValue(CrdtCounter.CounterType.DoubleCnt)
-        assertEquals(1.234, doubleValue)
-        assertArrayEquals(doubleInBytes, CrdtCounter(1.234, InitialTimeTicket).toBytes())
     }
 
     @Test
-    fun `verify increase handles Int overflow gracefully`() {
+    fun `verify increase allows Int overflow`() {
         val maxInt = CrdtCounter(Int.MAX_VALUE, InitialTimeTicket)
         maxInt.increase(CrdtPrimitive(1, InitialTimeTicket))
-        assertEquals(Int.MAX_VALUE + 1L, maxInt.value)
+        assertEquals(Int.MAX_VALUE + 1, maxInt.value)
 
         val minInt = CrdtCounter(Int.MIN_VALUE, InitialTimeTicket)
         minInt.increase(CrdtPrimitive(-1, InitialTimeTicket))
-        assertEquals(Int.MIN_VALUE - 1L, minInt.value)
+        assertEquals(Int.MIN_VALUE - 1, minInt.value)
     }
 
     @Test
@@ -123,5 +100,12 @@ class CrdtCounterTest {
         val clone = counter.deepCopy() as CrdtCounter
         assertNotSame(counter, clone)
         assertSame(counter.value, clone.value)
+    }
+
+    @Test
+    fun `should throw IllegalStateException when input data type is neither Int nor Long`() {
+        assertThrows(IllegalStateException::class.java) {
+            CrdtCounter(4.0, InitialTimeTicket)
+        }
     }
 }

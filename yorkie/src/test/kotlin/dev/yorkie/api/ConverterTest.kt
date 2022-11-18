@@ -182,13 +182,10 @@ class ConverterTest {
     @Test
     fun `should convert CrdtCounter`() {
         val counterInt = CrdtCounter(1, TimeTicket.InitialTimeTicket)
-        val counterDouble = CrdtCounter(1.0, TimeTicket.InitialTimeTicket)
-        val counterLong = CrdtCounter(1L, TimeTicket.InitialTimeTicket)
-        val counters = listOf(counterInt, counterDouble, counterLong)
+        assertEquals(counterInt.toJson(), counterInt.toPBCounter().toCrdtElement().toJson())
 
-        counters.forEach {
-            assertEquals(it.toJson(), it.toPBCounter().toCrdtElement().toJson())
-        }
+        val counterLong = CrdtCounter(100L, TimeTicket.InitialTimeTicket)
+        assertEquals(counterLong.toJson(), counterLong.toPBCounter().toCrdtElement().toJson())
     }
 
     @Test

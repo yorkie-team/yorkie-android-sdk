@@ -128,7 +128,6 @@ internal fun PBValueType.toCounterType(): CounterType {
     return when (this) {
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.IntegerCnt
         PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.LongCnt
-        PBValueType.VALUE_TYPE_DOUBLE_CNT -> CounterType.DoubleCnt
         else -> error("unimplemented value type: $this")
     }
 }
@@ -226,7 +225,6 @@ internal fun CounterType.toPBCounterType(): PBValueType {
     return when (this) {
         CounterType.IntegerCnt -> PBValueType.VALUE_TYPE_INTEGER_CNT
         CounterType.LongCnt -> PBValueType.VALUE_TYPE_LONG_CNT
-        CounterType.DoubleCnt -> PBValueType.VALUE_TYPE_DOUBLE_CNT
     }
 }
 
@@ -250,9 +248,8 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
         )
         PBValueType.VALUE_TYPE_INTEGER_CNT,
         PBValueType.VALUE_TYPE_DOUBLE_CNT,
-        PBValueType.VALUE_TYPE_LONG_CNT,
         -> CrdtCounter(
-            CrdtCounter.fromBytes(type.toCounterType(), value.toByteArray()),
+            value.toByteArray().asCounterValue(type.toCounterType()),
             createdAt.toTimeTicket(),
         )
         else -> error("unimplemented type $this")

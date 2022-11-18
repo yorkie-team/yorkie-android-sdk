@@ -1,7 +1,9 @@
 package dev.yorkie.document.json
 
 import dev.yorkie.document.change.ChangeContext
+import dev.yorkie.document.crdt.CounterValue
 import dev.yorkie.document.crdt.CrdtArray
+import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
@@ -76,6 +78,20 @@ public class JsonObject internal constructor(
         val crdtArray = CrdtArray(context.issueTimeTicket())
         setAndRegister(key, crdtArray)
         return crdtArray.toJsonElement(context)
+    }
+
+    public fun setNewCounter(key: String, value: Int): JsonCounter {
+        return setNewCounterInternal(key, value)
+    }
+
+    public fun setNewCounter(key: String, value: Long): JsonCounter {
+        return setNewCounterInternal(key, value)
+    }
+
+    private fun setNewCounterInternal(key: String, value: CounterValue) : JsonCounter {
+        val counter = CrdtCounter(value, context.issueTimeTicket())
+        setAndRegister(key, counter)
+        return counter.toJsonElement(context)
     }
 
     private fun setAndRegister(key: String, element: CrdtElement) {

@@ -93,6 +93,9 @@ class DocumentTest {
                 val arrayArray = array.putNewArray()
                 arrayArray.put(1)
                 arrayArray.put(2)
+
+                obj.setNewCounter("int", 100)
+                obj.setNewCounter("long", 100L)
             }.await()
 
             assertJsonContentEquals(
@@ -106,7 +109,9 @@ class DocumentTest {
                             "k6": "test string\n\n",
                             "k7": "bytes",
                             "k8": 1000,
-                            "k9": [true, 1, 100, 111.111, "test", "bytes", 10000, {"k1": 1}, [1, 2]]
+                            "k9": [true, 1, 100, 111.111, "test", "bytes", 10000, {"k1": 1}, [1, 2]],
+                            "int": 100,
+                            "long": 100
                         }
                 }""",
                 target.toJson(),

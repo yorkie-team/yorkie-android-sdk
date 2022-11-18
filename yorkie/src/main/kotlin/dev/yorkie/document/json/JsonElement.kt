@@ -2,6 +2,7 @@ package dev.yorkie.document.json
 
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtArray
+import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
@@ -18,6 +19,7 @@ public abstract class JsonElement {
             CrdtObject::class.java to JsonObject::class.java,
             CrdtArray::class.java to JsonArray::class.java,
             CrdtPrimitive::class.java to JsonPrimitive::class.java,
+            CrdtCounter::class.java to JsonCounter::class.java,
         )
 
         @Suppress("UNCHECKED_CAST")
@@ -34,6 +36,7 @@ public abstract class JsonElement {
                     JsonObject::class.java -> JsonObject(context, this as CrdtObject)
                     JsonArray::class.java -> JsonArray(context, this as CrdtArray)
                     JsonPrimitive::class.java -> JsonPrimitive(this as CrdtPrimitive)
+                    JsonCounter::class.java -> JsonCounter(context, this as CrdtCounter)
                     else -> throw TypeCastException("unknown CrdtElement type: $this")
                 } as T
             } catch (e: ClassCastException) {

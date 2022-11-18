@@ -24,7 +24,7 @@ public class JsonCounter internal constructor(
                 value = counterValue,
                 parentCreatedAt = target.createdAt,
                 executedAt = ticket,
-            )
+            ),
         )
         return this
     }

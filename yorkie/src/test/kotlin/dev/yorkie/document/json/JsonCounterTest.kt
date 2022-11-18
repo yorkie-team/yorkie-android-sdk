@@ -22,7 +22,8 @@ class JsonCounterTest {
         }
 
         assertJsonContentEquals(
-            """{ "k1": { "age": 1101 } }""", document.toJson(),
+            """{ "k1": { "age": 1101 } }""",
+            document.toJson(),
         )
     }
 
@@ -38,7 +39,8 @@ class JsonCounterTest {
         }
 
         assertJsonContentEquals(
-            """{ "k1": { "length": 1101 } }""", document.toJson(),
+            """{ "k1": { "length": 1101 } }""",
+            document.toJson(),
         )
     }
 }

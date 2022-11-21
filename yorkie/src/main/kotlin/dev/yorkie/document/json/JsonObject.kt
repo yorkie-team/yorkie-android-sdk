@@ -89,7 +89,11 @@ public class JsonObject internal constructor(
     }
 
     private fun setNewCounterInternal(key: String, value: CounterValue): JsonCounter {
-        val counter = CrdtCounter(value, context.issueTimeTicket())
+        val counter = if (value is Int) {
+            CrdtCounter(value, context.issueTimeTicket())
+        } else {
+            CrdtCounter(value.toLong(), context.issueTimeTicket())
+        }
         setAndRegister(key, counter)
         return counter.toJsonElement(context)
     }

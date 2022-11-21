@@ -13,12 +13,17 @@ public class JsonCounter internal constructor(
     public val id
         get() = target.id
 
-    fun increase(value: CounterValue): JsonCounter {
+    public fun increase(value: Int): JsonCounter {
+        return increaseInternal(value)
+    }
+
+    public fun increase(value: Long): JsonCounter {
+        return increaseInternal(value)
+    }
+
+    private fun increaseInternal(value: CounterValue): JsonCounter {
         val ticket = context.issueTimeTicket()
         val counterValue = CrdtPrimitive(value, ticket)
-        require(counterValue.isNumericType) {
-            "Unsupported type of value: ${counterValue.type}"
-        }
         context.push(
             IncreaseOperation(
                 value = counterValue,

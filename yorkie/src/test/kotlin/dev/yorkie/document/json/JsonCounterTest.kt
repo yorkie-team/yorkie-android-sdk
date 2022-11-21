@@ -2,9 +2,11 @@ package dev.yorkie.document.json
 
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.Document
+import dev.yorkie.document.crdt.CrdtCounter.CounterType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import kotlin.test.assertEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class JsonCounterTest {
@@ -42,5 +44,21 @@ class JsonCounterTest {
             """{ "k1": { "length": 1101 } }""",
             document.toJson(),
         )
+    }
+
+    @Test
+    fun `verify whether increase input type is casted to counter type`() {
+        runTest {
+            document.updateAsync {
+                val obj = it.setNewObject("k1")
+                val lengthLong = obj.setNewCounter("lengthLong", 1L)
+                lengthLong.increase(1000)
+                assertEquals(CounterType.IntegerCnt, lengthLong.target.type)
+
+                val lengthInt = obj.setNewCounter("lengthInt", 1)
+                lengthInt.increase(1000L)
+                assertEquals(CounterType.LongCnt, lengthInt.target.type)
+            }.await()
+        }
     }
 }

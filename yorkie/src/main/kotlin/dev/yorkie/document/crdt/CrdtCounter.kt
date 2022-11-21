@@ -18,7 +18,7 @@ internal data class CrdtCounter private constructor(
     var value: CounterValue
         get() = _value
         private set(value) {
-            _value = value.sanitized()
+            _value = value
         }
 
     val type = _value.counterType()
@@ -32,7 +32,7 @@ internal data class CrdtCounter private constructor(
 
     fun increase(primitive: CrdtPrimitive) {
         val primitiveValue = primitive.value
-        require(primitive.isNumericType && primitiveValue is Number) {
+        require(primitive.isNumericType && primitiveValue is Number && primitiveValue !is Double) {
             "Unsupported type of value: ${primitive.type}"
         }
         value = when (type) {
@@ -48,21 +48,22 @@ internal data class CrdtCounter private constructor(
     companion object {
 
         operator fun invoke(
-            value: CounterValue,
+            value: Int,
             createdAt: TimeTicket,
             _movedAt: TimeTicket? = null,
             _removedAt: TimeTicket? = null,
-        ) = CrdtCounter(value.sanitized(), createdAt, _movedAt, _removedAt)
+        ) = CrdtCounter(value, createdAt, _movedAt, _removedAt)
 
-        private fun CounterValue.sanitized(): Number = when (counterType()) {
-            CounterType.IntegerCnt -> toInt()
-            CounterType.LongCnt -> toLong()
-        }
+        operator fun invoke(
+            value: Long,
+            createdAt: TimeTicket,
+            _movedAt: TimeTicket? = null,
+            _removedAt: TimeTicket? = null,
+        ) = CrdtCounter(value, createdAt, _movedAt, _removedAt)
 
         private fun CounterValue.counterType() = when (this) {
             is Int -> CounterType.IntegerCnt
-            is Long -> CounterType.LongCnt
-            else -> error("Counter supports only Int and Long")
+            else -> CounterType.LongCnt
         }
 
         fun ByteArray.asCounterValue(counterType: CounterType): Number =

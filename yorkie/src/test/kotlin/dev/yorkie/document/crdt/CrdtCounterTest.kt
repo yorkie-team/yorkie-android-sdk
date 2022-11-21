@@ -37,6 +37,7 @@ class CrdtCounterTest {
         val bool = CrdtPrimitive(true, InitialTimeTicket)
         val bytes = CrdtPrimitive(ByteArray(1), InitialTimeTicket)
         val date = CrdtPrimitive(Date(), InitialTimeTicket)
+        val double = CrdtPrimitive(1.0, InitialTimeTicket)
 
         assertThrows(IllegalArgumentException::class.java) {
             int.increase(str)
@@ -49,6 +50,9 @@ class CrdtCounterTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             int.increase(date)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            int.increase(double)
         }
         assertEquals(10, int.value)
     }
@@ -100,12 +104,5 @@ class CrdtCounterTest {
         val clone = counter.deepCopy() as CrdtCounter
         assertNotSame(counter, clone)
         assertSame(counter.value, clone.value)
-    }
-
-    @Test
-    fun `should throw IllegalStateException when input data type is neither Int nor Long`() {
-        assertThrows(IllegalStateException::class.java) {
-            CrdtCounter(4.0, InitialTimeTicket)
-        }
     }
 }

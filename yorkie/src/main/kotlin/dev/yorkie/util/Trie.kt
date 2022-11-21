@@ -1,3 +1,5 @@
+// ktlint-disable filename
+
 package dev.yorkie.util
 
 import org.apache.commons.collections4.trie.PatriciaTrie

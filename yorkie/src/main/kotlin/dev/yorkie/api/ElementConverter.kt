@@ -116,19 +116,28 @@ internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
 }
 
 internal fun PBCounter.toCrdtCounter(): CrdtCounter {
-    return CrdtCounter(
-        value = value.toByteArray().asCounterValue(type.toCounterType()),
-        createdAt = createdAt.toTimeTicket(),
-        _movedAt = movedAtOrNull?.toTimeTicket(),
-        _removedAt = removedAtOrNull?.toTimeTicket(),
-    )
+    val type = type.toCounterType()
+    return if (type == CounterType.IntegerCnt) {
+        CrdtCounter(
+            value = value.toByteArray().asCounterValue(type).toInt(),
+            createdAt = createdAt.toTimeTicket(),
+            _movedAt = movedAtOrNull?.toTimeTicket(),
+            _removedAt = removedAtOrNull?.toTimeTicket(),
+        )
+    } else {
+        CrdtCounter(
+            value = value.toByteArray().asCounterValue(type).toLong(),
+            createdAt = createdAt.toTimeTicket(),
+            _movedAt = movedAtOrNull?.toTimeTicket(),
+            _removedAt = removedAtOrNull?.toTimeTicket(),
+        )
+    }
 }
 
 internal fun PBValueType.toCounterType(): CounterType {
     return when (this) {
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.IntegerCnt
         PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.LongCnt
-        PBValueType.VALUE_TYPE_DOUBLE_CNT -> CounterType.DoubleCnt
         else -> error("unimplemented value type: $this")
     }
 }
@@ -226,7 +235,6 @@ internal fun CounterType.toPBCounterType(): PBValueType {
     return when (this) {
         CounterType.IntegerCnt -> PBValueType.VALUE_TYPE_INTEGER_CNT
         CounterType.LongCnt -> PBValueType.VALUE_TYPE_LONG_CNT
-        CounterType.DoubleCnt -> PBValueType.VALUE_TYPE_DOUBLE_CNT
     }
 }
 
@@ -248,10 +256,14 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
             createdAt.toTimeTicket(),
         )
-        PBValueType.VALUE_TYPE_INTEGER_CNT,
-        PBValueType.VALUE_TYPE_DOUBLE_CNT,
-        PBValueType.VALUE_TYPE_LONG_CNT,
-        -> TODO("implement after valueFromBytes function")
+        PBValueType.VALUE_TYPE_INTEGER_CNT -> CrdtCounter(
+            value.toByteArray().asCounterValue(type.toCounterType()).toInt(),
+            createdAt.toTimeTicket(),
+        )
+        PBValueType.VALUE_TYPE_LONG_CNT -> CrdtCounter(
+            value.toByteArray().asCounterValue(type.toCounterType()).toLong(),
+            createdAt.toTimeTicket(),
+        )
         else -> error("unimplemented type $this")
     }
 }

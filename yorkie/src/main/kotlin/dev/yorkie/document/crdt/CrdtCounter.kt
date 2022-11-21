@@ -18,38 +18,26 @@ internal data class CrdtCounter private constructor(
     var value: CounterValue
         get() = _value
         private set(value) {
-            _value = value.sanitized()
+            _value = value
         }
 
-    val type
-        get() = value.counterType()
+    val type = _value.counterType()
 
     fun toBytes(): ByteArray {
         return when (type) {
             CounterType.IntegerCnt -> ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value.toInt())
             CounterType.LongCnt -> ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value.toLong())
-            CounterType.DoubleCnt -> {
-                ByteBuffer.allocate(Double.SIZE_BYTES).putDouble(value.toDouble())
-            }
         }.array()
     }
 
     fun increase(primitive: CrdtPrimitive) {
         val primitiveValue = primitive.value
-        require(primitive.isNumericType && primitiveValue is Number) {
+        require(primitive.isNumericType && primitiveValue is Number && primitiveValue !is Double) {
             "Unsupported type of value: ${primitive.type}"
         }
-        val increaseResult = value.toDouble() + primitiveValue.toDouble()
         value = when (type) {
-            CounterType.IntegerCnt -> {
-                if (increaseResult < Int.MIN_VALUE || increaseResult > Int.MAX_VALUE) {
-                    increaseResult.toLong()
-                } else {
-                    increaseResult.toInt()
-                }
-            }
-            CounterType.LongCnt -> increaseResult.toLong()
-            CounterType.DoubleCnt -> increaseResult
+            CounterType.IntegerCnt -> value.toInt() + primitiveValue.toInt()
+            CounterType.LongCnt -> value.toLong() + primitiveValue.toLong()
         }
     }
 
@@ -60,22 +48,22 @@ internal data class CrdtCounter private constructor(
     companion object {
 
         operator fun invoke(
-            value: CounterValue,
+            value: Int,
             createdAt: TimeTicket,
             _movedAt: TimeTicket? = null,
             _removedAt: TimeTicket? = null,
-        ) = CrdtCounter(value.sanitized(), createdAt, _movedAt, _removedAt)
+        ) = CrdtCounter(value, createdAt, _movedAt, _removedAt)
 
-        private fun CounterValue.sanitized(): Number = when (counterType()) {
-            CounterType.IntegerCnt -> toInt()
-            CounterType.LongCnt -> toLong()
-            CounterType.DoubleCnt -> toDouble()
-        }
+        operator fun invoke(
+            value: Long,
+            createdAt: TimeTicket,
+            _movedAt: TimeTicket? = null,
+            _removedAt: TimeTicket? = null,
+        ) = CrdtCounter(value, createdAt, _movedAt, _removedAt)
 
-        fun CounterValue.counterType() = when (this) {
-            is Byte, is Short, is Int -> CounterType.IntegerCnt
-            is Long -> CounterType.LongCnt
-            else -> CounterType.DoubleCnt
+        private fun CounterValue.counterType() = when (this) {
+            is Int -> CounterType.IntegerCnt
+            else -> CounterType.LongCnt
         }
 
         fun ByteArray.asCounterValue(counterType: CounterType): Number =
@@ -83,12 +71,11 @@ internal data class CrdtCounter private constructor(
                 when (counterType) {
                     CounterType.IntegerCnt -> int
                     CounterType.LongCnt -> long
-                    CounterType.DoubleCnt -> double
                 }
             }
     }
 
     enum class CounterType {
-        IntegerCnt, LongCnt, DoubleCnt
+        IntegerCnt, LongCnt
     }
 }

@@ -9,7 +9,7 @@ import dev.yorkie.util.YorkieLogger
 
 /**
  * [IncreaseOperation] represents an operation that increments a numeric value to [CrdtCounter].
- * Among [CrdtPrimitive] elements, numeric types Integer, Long, and Double are used as values.
+ * Among [CrdtPrimitive] elements, numeric types Integer and Long are used as values.
  */
 internal data class IncreaseOperation(
     val value: CrdtElement,

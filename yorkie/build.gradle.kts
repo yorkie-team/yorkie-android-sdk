@@ -6,6 +6,7 @@ plugins {
     kotlin("android")
     id("com.google.protobuf")
     id("com.dicedmelon.gradle.jacoco-android")
+    id("maven-publish")
 }
 
 jacoco {
@@ -14,6 +15,7 @@ jacoco {
 
 android {
     namespace = "dev.yorkie"
+    version = findProperty("VERSION_NAME").toString()
     compileSdk = 33
 
     defaultConfig {
@@ -23,7 +25,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
-
     buildTypes {
         debug {
             enableUnitTestCoverage = true
@@ -50,6 +51,30 @@ android {
         csv.enabled(false)
         xml.enabled(true)
         html.enabled(false)
+    }
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+        extensions.configure<PublishingExtension> {
+            repositories {
+                mavenCentral {
+                    credentials {
+                        username = System.getenv("MAVEN_USERNAME")
+                        password = System.getenv("MAVEN_PASSWORD")
+                    }
+                }
+            }
+            afterEvaluate {
+                publications.create<MavenPublication>("release") {
+                    from(components["release"])
+                    groupId = findProperty("GROUP").toString()
+                    artifactId = property("POM_ARTIFACT_ID").toString()
+                    version = findProperty("VERSION_NAME").toString()
+                }
+            }
+        }
     }
 }
 
@@ -91,7 +116,6 @@ protobuf {
 }
 
 dependencies {
-    implementation("androidx.test.ext:junit-ktx:1.1.3")
     protobuf(project(":yorkie:proto"))
 
     implementation("io.grpc:grpc-stub:${Versions.grpc}")
@@ -112,7 +136,7 @@ dependencies {
     testImplementation("com.google.code.gson:gson:2.10")
     testImplementation("io.grpc:grpc-testing:${Versions.grpc}")
 
-    androidTestImplementation("androidx.test.ext:junit:1.1.3")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.4.0")
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.1.4")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
     androidTestImplementation(kotlin("test"))
 }

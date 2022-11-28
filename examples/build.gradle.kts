@@ -63,10 +63,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:${Versions.coroutines}")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:${Versions.viewModel}")
     implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.5")
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.3")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.4.0")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4:${Versions.composeUi}")
     debugImplementation("androidx.compose.ui:ui-tooling:${Versions.composeUi}")
     debugImplementation("androidx.compose.ui:ui-test-manifest:${Versions.composeUi}")
 }

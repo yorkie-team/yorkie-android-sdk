@@ -7,6 +7,7 @@ plugins {
     id("com.google.protobuf")
     id("com.dicedmelon.gradle.jacoco-android")
     id("maven-publish")
+    id("org.jetbrains.dokka")
 }
 
 jacoco {

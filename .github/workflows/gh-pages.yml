@@ -1,0 +1,19 @@
+name: Github Pages Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy-to-github-pages:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: ./gradlew dokkaHtml
+      - uses: JamesIves/github-pages-deploy-action@v4.4.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: gh-pages
+          folder: yorkie/build/dokka/html
+          target-folder: ./docs

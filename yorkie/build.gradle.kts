@@ -6,6 +6,7 @@ plugins {
     kotlin("android")
     id("com.google.protobuf")
     id("com.dicedmelon.gradle.jacoco-android")
+    id("org.jetbrains.dokka")
 }
 
 jacoco {

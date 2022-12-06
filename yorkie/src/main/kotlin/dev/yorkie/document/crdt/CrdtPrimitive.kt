@@ -7,6 +7,10 @@ import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
 import java.util.Date
 
+/**
+ * [CrdtPrimitive] presents a value of primitive type. Only values of type
+ * included in [CrdtPrimitive] can be set to the document.
+ */
 @Suppress("DataClassPrivateConstructor")
 internal data class CrdtPrimitive private constructor(
     private val _value: Any?,
@@ -121,9 +125,7 @@ internal data class CrdtPrimitive private constructor(
         }
     }
 
-    /**
-     * Primitive is a CRDT element that represents a primitive value.
-     */
+
     internal enum class Type {
         Null, Boolean, Integer, Long, Double, String, Bytes, Date
     }

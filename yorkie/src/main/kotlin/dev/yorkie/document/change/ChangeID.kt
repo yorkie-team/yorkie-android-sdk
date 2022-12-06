@@ -38,7 +38,7 @@ internal data class ChangeID(
     }
 
     /**
-     * `setActor` sets the given actor.
+     * Sets the given [actorID].
      */
     fun setActor(actorID: ActorID) = copy(actor = actorID)
 

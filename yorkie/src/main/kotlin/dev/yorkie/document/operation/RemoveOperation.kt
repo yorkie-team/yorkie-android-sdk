@@ -6,7 +6,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
 /**
- * [RemoveOperation] is an operation representing removes an element from [CrdtContainer].
+ * [RemoveOperation] is an operation that removes an element from [CrdtContainer].
  */
 internal data class RemoveOperation(
     val createdAt: TimeTicket,
@@ -21,7 +21,7 @@ internal data class RemoveOperation(
         get() = parentCreatedAt
 
     /**
-     * Executes this [RemoveOperation] on the given [Document.root].
+     * Executes this [RemoveOperation] on the given [root].
      */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)

@@ -24,7 +24,7 @@ internal data class SetOperation(
         get() = value.createdAt
 
     /**
-     * Executes this [SetOperation] on the given [Document.root].
+     * Executes this [SetOperation] on the given [root].
      */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)

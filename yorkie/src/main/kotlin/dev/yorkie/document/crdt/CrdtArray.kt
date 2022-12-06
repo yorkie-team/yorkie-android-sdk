@@ -3,7 +3,7 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 
 /**
- * [CrdtArray] represents Array data type containing logical clocks.
+ * [CrdtArray] represents an array data type containing [CrdtElement]s.
  */
 internal data class CrdtArray(
     override val createdAt: TimeTicket,

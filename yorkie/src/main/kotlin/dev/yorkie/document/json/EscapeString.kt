@@ -1,9 +1,9 @@
 package dev.yorkie.document.json
 
 /**
- * Escapes string.
+ * Escapes the given string.
  */
-fun escapeString(str: String): String {
+internal fun escapeString(str: String): String {
     return str.replace("\\", "\\\\")
         .replace("\"", "\\\"")
         .replace("\'", "\\'")

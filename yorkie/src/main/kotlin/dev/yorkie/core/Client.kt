@@ -102,7 +102,7 @@ public class Client @VisibleForTesting internal constructor(
     )
 
     /**
-     * activates this client. That is, it register itself to the server
+     * Activates this [Client]. That is, it registers itself to the server
      * and receives a unique ID from the server. The given ID is used to
      * distinguish different clients.
      */
@@ -270,7 +270,7 @@ public class Client @VisibleForTesting internal constructor(
 
         when (watchEvent.type ?: return) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
-                eventStream.emit(Event.DocumentChanged(responseKeys.map(Document::Key)))
+                eventStream.emit(Event.DocumentsChanged(responseKeys.map(Document::Key)))
             }
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED,
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED,
@@ -334,7 +334,7 @@ public class Client @VisibleForTesting internal constructor(
 
     /**
      * Attaches the given [Document] to this [Client].
-     * It tells the server that this [Client] will synchronize the given [Document].
+     * It tells the server that this [Client] will synchronize [document].
      */
     public fun attachAsync(
         document: Document,
@@ -396,7 +396,7 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     /**
-     * deactivates this client.
+     * Deactivates this [Client].
      */
     public fun deactivateAsync(): Deferred<Boolean> {
         return scope.async {
@@ -426,22 +426,43 @@ public class Client @VisibleForTesting internal constructor(
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
 
+    /**
+     * Client status types.
+     */
     public sealed interface Status {
+        /**
+         * Client activated status.
+         */
         public class Activated internal constructor(
             internal val clientId: ActorID,
             internal val clientKey: String,
         ) : Status
 
+        /**
+         * Client deactivated status.
+         */
         public object Deactivated : Status
     }
 
+    /**
+     * Stream connection status types.
+     */
     public enum class StreamConnectionStatus {
         Connected, Disconnected
     }
 
+    /**
+     * Document sync result types.
+     */
     public sealed class DocumentSyncResult(public val document: Document) {
+        /**
+         * Type when [document] synced successfully.
+         */
         public class Synced(document: Document) : DocumentSyncResult(document)
 
+        /**
+         * Type when [document] sync failed.
+         */
         public class SyncFailed(
             document: Document,
             @Suppress("unused") public val cause: Throwable?,
@@ -449,7 +470,7 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     /**
-     * user-settable options used when defining [Client].
+     * User-settable options used when defining [Client].
      */
     public data class Options(
         /**
@@ -468,7 +489,7 @@ public class Client @VisibleForTesting internal constructor(
          */
         public val apiKey: String? = null,
         /**
-         * Authentication token of this client used to identify the user of the client.
+         * Authentication token of this [Client] used to identify the user of the client.
          */
         public val token: String? = null,
         /**
@@ -485,10 +506,19 @@ public class Client @VisibleForTesting internal constructor(
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
     )
 
+    /**
+     * Indicates events that occur in [Client].
+     * It can be delivered using [Client.collect].
+     */
     public interface Event {
+        /**
+         * Client event type when documents changed.
+         */
+        public class DocumentsChanged(public val documentKeys: List<Document.Key>) : Event
 
-        public class DocumentChanged(public val documentKeys: List<Document.Key>) : Event
-
+        /**
+         * Client event type when document synced.
+         */
         public class DocumentSynced(public val result: DocumentSyncResult) : Event
     }
 }

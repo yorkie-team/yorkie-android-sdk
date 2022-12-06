@@ -29,8 +29,7 @@ import org.apache.commons.collections4.trie.PatriciaTrie
 
 /**
  * A CRDT-based data type.
- * We can represent the model of the application.
- * And we can edit it even while offline.
+ * We can represent the model of the application and edit it even while offline.
  */
 public class Document private constructor(
     public val key: Key,
@@ -175,8 +174,6 @@ public class Document private constructor(
         return JsonObject(context, clone.rootObject)
     }
 
-    // NOTE(7hong13): original comment from JS-SDK:
-    // `garbageCollect` purges elements that were removed before the given time.
     /**
      * Deletes elements that were removed before the given time.
      */
@@ -205,22 +202,37 @@ public class Document private constructor(
 
     public interface Event {
 
+        /**
+         * An event that occurs when a snapshot is received from the server.
+         */
         public class Snapshot internal constructor(public val data: ByteString) : Event
 
+        /**
+         * An event that occurs when the document is changed by local changes.
+         */
         public class LocalChange internal constructor(
             public val changeInfos: List<ChangeInfo>,
         ) : Event
 
+        /**
+         * An event that occurs when the document is changed by remote changes.
+         */
         public class RemoteChange internal constructor(
             public val changeInfos: List<ChangeInfo>,
         ) : Event
 
+        /**
+         * Represents a pair of [Change] and the JsonPath of the changed element.
+         */
         public class ChangeInfo(
             public val change: Change,
             @Suppress("unused") public val paths: List<String>,
         )
     }
 
+    /**
+     * Represents a unique key to identify [Document].
+     */
     @JvmInline
     public value class Key(public val value: String)
 }

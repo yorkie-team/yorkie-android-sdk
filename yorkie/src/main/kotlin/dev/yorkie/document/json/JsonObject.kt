@@ -11,8 +11,13 @@ import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.time.TimeTicket
 import java.util.Date
 
+/**
+ * [JsonObject] represents a JSON object, but unlike regular JSON, it has
+ * [TimeTicket]s created by logical clock to resolve conflicts.
+ */
 public class JsonObject internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtObject,

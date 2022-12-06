@@ -334,7 +334,7 @@ public class Client @VisibleForTesting internal constructor(
 
     /**
      * Attaches the given [Document] to this [Client].
-     * It tells the server that this [Client] will synchronize [document].
+     * It tells the server that this [Client] will synchronize the given [document].
      */
     public fun attachAsync(
         document: Document,
@@ -507,7 +507,7 @@ public class Client @VisibleForTesting internal constructor(
     )
 
     /**
-     * Indicates events that occur in [Client].
+     * Indicates events that occur in this [Client].
      * It can be delivered using [Client.collect].
      */
     public interface Event {

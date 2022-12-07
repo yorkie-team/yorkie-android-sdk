@@ -427,11 +427,12 @@ public class Client @VisibleForTesting internal constructor(
     private data class SyncResult(val document: Document, val result: Result<Unit>)
 
     /**
-     * Client status types.
+     * Represents the status of the client.
      */
     public sealed interface Status {
         /**
-         * Client activated status.
+         * Means that the client is activated. If the client is activated,
+         * all [Document]s of the client are ready to be used.
          */
         public class Activated internal constructor(
             internal val clientId: ActorID,
@@ -439,20 +440,22 @@ public class Client @VisibleForTesting internal constructor(
         ) : Status
 
         /**
-         * Client deactivated status.
+         * Means that the client is not activated. It is the initial stastus of the client.
+         * If the client is deactivated, all [Document]s of the client are also not used.
          */
         public object Deactivated : Status
     }
 
     /**
-     * Stream connection status types.
+     * Represents whether the stream connection between the client
+     * and the server is connected or not.
      */
     public enum class StreamConnectionStatus {
         Connected, Disconnected
     }
 
     /**
-     * Document sync result types.
+     * Represents the result of synchronizing the document with the server.
      */
     public sealed class DocumentSyncResult(public val document: Document) {
         /**
@@ -507,17 +510,17 @@ public class Client @VisibleForTesting internal constructor(
     )
 
     /**
-     * Indicates events that occur in this [Client].
+     * Represents the type of the events that the client can emit.
      * It can be delivered using [Client.collect].
      */
     public interface Event {
         /**
-         * Client event type when documents changed.
+         * Means that the documents of the client has changed.
          */
         public class DocumentsChanged(public val documentKeys: List<Document.Key>) : Event
 
         /**
-         * Client event type when document synced.
+         * Means that the document has synced with the server.
          */
         public class DocumentSynced(public val result: DocumentSyncResult) : Event
     }

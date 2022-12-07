@@ -6,7 +6,8 @@ import java.nio.ByteBuffer
 internal typealias CounterValue = Number
 
 /**
- * [CrdtCounter] represents changeable number data type.
+ * [CrdtCounter] is a CRDT implementation of a counter. It is used to represent a number
+ * that can be incremented or decremented.
  */
 @Suppress("DataClassPrivateConstructor")
 internal data class CrdtCounter private constructor(

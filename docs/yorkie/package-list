@@ -8,12 +8,12 @@ $dokka.location:dev.yorkie.core/Client.DocumentSyncResult.Synced///PointingToDec
 $dokka.location:dev.yorkie.core/Client.DocumentSyncResult.Synced/Synced/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-document-sync-result/-synced/-synced.html
 $dokka.location:dev.yorkie.core/Client.DocumentSyncResult///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-document-sync-result/index.html
 $dokka.location:dev.yorkie.core/Client.DocumentSyncResult/document/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-document-sync-result/document.html
-$dokka.location:dev.yorkie.core/Client.Event.DocumentChanged///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-document-changed/index.html
-$dokka.location:dev.yorkie.core/Client.Event.DocumentChanged/DocumentChanged/#kotlin.collections.List[dev.yorkie.document.Document.Key]/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-document-changed/-document-changed.html
-$dokka.location:dev.yorkie.core/Client.Event.DocumentChanged/documentKeys/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-document-changed/document-keys.html
 $dokka.location:dev.yorkie.core/Client.Event.DocumentSynced///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-document-synced/index.html
 $dokka.location:dev.yorkie.core/Client.Event.DocumentSynced/DocumentSynced/#dev.yorkie.core.Client.DocumentSyncResult/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-document-synced/-document-synced.html
 $dokka.location:dev.yorkie.core/Client.Event.DocumentSynced/result/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-document-synced/result.html
+$dokka.location:dev.yorkie.core/Client.Event.DocumentsChanged///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-documents-changed/index.html
+$dokka.location:dev.yorkie.core/Client.Event.DocumentsChanged/DocumentsChanged/#kotlin.collections.List[dev.yorkie.document.Document.Key]/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-documents-changed/-documents-changed.html
+$dokka.location:dev.yorkie.core/Client.Event.DocumentsChanged/documentKeys/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-documents-changed/document-keys.html
 $dokka.location:dev.yorkie.core/Client.Event///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/index.html
 $dokka.location:dev.yorkie.core/Client.Options///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/index.html
 $dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#dev.yorkie.core.PresenceInfo?#kotlin.String?#kotlin.String?#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
@@ -56,7 +56,6 @@ $dokka.location:dev.yorkie.core/PresenceInfo/data/#/PointingToDeclaration/yorki
 $dokka.location:dev.yorkie.document.change////PointingToDeclaration/yorkie/dev.yorkie.document.change/index.html
 $dokka.location:dev.yorkie.document.change/Change///PointingToDeclaration/yorkie/dev.yorkie.document.change/-change/index.html
 $dokka.location:dev.yorkie.document.json////PointingToDeclaration/yorkie/dev.yorkie.document.json/index.html
-$dokka.location:dev.yorkie.document.json//escapeString/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.json/escape-string.html
 $dokka.location:dev.yorkie.document.json/JsonArray///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/index.html
 $dokka.location:dev.yorkie.document.json/JsonArray/contains/#dev.yorkie.document.json.JsonElement/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/contains.html
 $dokka.location:dev.yorkie.document.json/JsonArray/containsAll/#kotlin.collections.Collection[dev.yorkie.document.json.JsonElement]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/contains-all.html
@@ -162,15 +161,9 @@ $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yo
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html
 $dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.Function1[dev.yorkie.document.json.JsonObject,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
-$dokka.location:dev.yorkie.util////PointingToDeclaration/yorkie/dev.yorkie.util/index.html
-$dokka.location:dev.yorkie.util//findPrefixes/org.apache.commons.collections4.trie.PatriciaTrie[kotlin.String]#/PointingToDeclaration/yorkie/dev.yorkie.util/find-prefixes.html
-$dokka.location:dev.yorkie.util/Logger///PointingToDeclaration/yorkie/dev.yorkie.util/-logger/index.html
-$dokka.location:dev.yorkie.util/Logger/d/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-logger/d.html
-$dokka.location:dev.yorkie.util/Logger/e/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-logger/e.html
 dev.yorkie.core
 dev.yorkie.document
 dev.yorkie.document.change
 dev.yorkie.document.json
 dev.yorkie.document.time
-dev.yorkie.util
 

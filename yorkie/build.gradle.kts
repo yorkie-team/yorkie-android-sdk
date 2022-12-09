@@ -60,7 +60,9 @@ android {
         }
         extensions.configure<PublishingExtension> {
             repositories {
-                mavenCentral {
+                maven {
+                    name = "OSSRH"
+                    setUrl("https://oss.sonatype.org/service/local/staging/deploy/maven2/")
                     credentials {
                         username = System.getenv("MAVEN_USERNAME")
                         password = System.getenv("MAVEN_PASSWORD")

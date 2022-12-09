@@ -14,8 +14,8 @@ import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.WatchDocumentsRequest
 import dev.yorkie.api.v1.YorkieServiceGrpc
 import dev.yorkie.assertJsonContentEquals
-import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
+import dev.yorkie.core.Client.Event.DocumentsChanged
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.INITIALIZATION_DOCUMENT_KEY
@@ -152,7 +152,7 @@ class ClientTest {
             val watchRequestCaptor = ArgumentCaptor.forClass(WatchDocumentsRequest::class.java)
             target.attachAsync(document).await()
             val events = eventAsync.await()
-            val changeEvent = assertIs<DocumentChanged>(events.first())
+            val changeEvent = assertIs<DocumentsChanged>(events.first())
             verify(service).watchDocuments(watchRequestCaptor.capture(), any())
             assertIsTestActorID(watchRequestCaptor.value.client.id)
             assertEquals(1, changeEvent.documentKeys.size)

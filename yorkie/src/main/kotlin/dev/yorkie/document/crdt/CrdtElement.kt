@@ -5,7 +5,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 
 /**
- * [CrdtElement] represents element type containing logical clock.
+ * [CrdtElement] represents an element that has [TimeTicket]s.
  */
 @Suppress("PropertyName")
 internal abstract class CrdtElement {

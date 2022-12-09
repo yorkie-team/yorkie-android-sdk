@@ -4,7 +4,7 @@ package dev.yorkie.util
 
 import org.apache.commons.collections4.trie.PatriciaTrie
 
-fun PatriciaTrie<String>.findPrefixes(): List<CharArray> {
+internal fun PatriciaTrie<String>.findPrefixes(): List<CharArray> {
     val paths = keys.toList()
     var prefix = ""
     return buildList {

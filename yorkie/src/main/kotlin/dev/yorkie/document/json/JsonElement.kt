@@ -7,6 +7,10 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 
+/**
+ * [JsonElement] is a wrapper for [CrdtElement] that provides users with an
+ * easy-to-use interface for manipulating [Document]s.
+ */
 public abstract class JsonElement {
     internal abstract val target: CrdtElement
 

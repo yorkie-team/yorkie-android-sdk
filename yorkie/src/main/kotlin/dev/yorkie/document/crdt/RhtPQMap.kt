@@ -5,7 +5,7 @@ import dev.yorkie.util.MaxPriorityQueue
 import dev.yorkie.util.YorkieLogger
 
 /**
- * [RhtPQMap] is replicated hash table with a priority queue by creation time.
+ * [RhtPQMap] is a replicated hash table that uses a priority queue based on creation time.
  */
 internal class RhtPQMap<T : CrdtElement> : Iterable<RhtPQMap.Node<T>> {
     private val logTag = "RhtPQMap"

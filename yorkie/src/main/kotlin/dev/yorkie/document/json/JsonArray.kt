@@ -11,6 +11,10 @@ import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.time.TimeTicket
 import java.util.Date
 
+/**
+ * [JsonArray] represents a JSON array, but unlike regular JSON, it has
+ * [TimeTicket]s created by logical clock to resolve conflicts.
+ */
 public class JsonArray internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtArray,

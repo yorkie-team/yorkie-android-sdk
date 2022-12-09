@@ -6,7 +6,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
 
 /**
- * [RgaTreeList] is replicated growable array.
+ * [RgaTreeList] is a replicated growable array.
  */
 internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     private val dummyHead = Node(
@@ -137,7 +137,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     }
 
     /**
-     * Returns node of the given index.
+     * Returns node of the given [index].
      */
     fun getByIndex(index: Int): Node? {
         if (length <= index) return null

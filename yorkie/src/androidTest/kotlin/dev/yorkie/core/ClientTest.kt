@@ -3,8 +3,8 @@ package dev.yorkie.core
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.yorkie.core.Client.DocumentSyncResult
-import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
+import dev.yorkie.core.Client.Event.DocumentsChanged
 import dev.yorkie.core.Client.StreamConnectionStatus
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
@@ -89,8 +89,8 @@ class ClientTest {
             while (client2Events.none { it is DocumentSynced }) {
                 delay(50)
             }
-            val changeEvent = assertIs<DocumentChanged>(
-                client2Events.first { it is DocumentChanged },
+            val changeEvent = assertIs<DocumentsChanged>(
+                client2Events.first { it is DocumentsChanged },
             )
             assertContentEquals(listOf(Document.Key(documentKey)), changeEvent.documentKeys)
             var syncEvent = assertIs<DocumentSynced>(client2Events.first { it is DocumentSynced })

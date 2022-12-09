@@ -3,8 +3,8 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 
 /**
- * [CrdtObject] represents object datatype, but unlike regular JSON, it has time
- * tickets which is created by logical clock.
+ * [CrdtObject] represents an object data type, but unlike regular JSON, it has
+ * [TimeTicket]s which are created by logical clock.
  */
 internal data class CrdtObject(
     override val createdAt: TimeTicket,

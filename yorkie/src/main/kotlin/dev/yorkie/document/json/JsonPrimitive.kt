@@ -5,6 +5,9 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtPrimitive.Type
 import java.util.Date
 
+/**
+ * [JsonPrimitive] represents a [CrdtPrimitive] in JSON format.
+ */
 public class JsonPrimitive internal constructor(
     override val target: CrdtPrimitive,
 ) : JsonElement() {

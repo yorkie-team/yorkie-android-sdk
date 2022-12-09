@@ -23,7 +23,7 @@ internal data class AddOperation(
         get() = value.createdAt
 
     /**
-     * Executes this [AddOperation] on the given [Document.root].
+     * Executes this [AddOperation] on the given [root].
      */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)

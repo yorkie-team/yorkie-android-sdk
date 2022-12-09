@@ -22,7 +22,7 @@ internal data class MoveOperation(
         get() = createdAt
 
     /**
-     * Executes this [MoveOperation] on the given [Document.root].
+     * Executes this [MoveOperation] on the given [root].
      */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)

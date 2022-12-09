@@ -7,7 +7,7 @@ import dev.yorkie.document.time.TimeTicket
 /**
  * Represents an operation to be executed on a document.
  * [parentCreatedAt] is the creation time of the target element to execute the operation.
- * [executedAt] is the execution time of this operation
+ * [executedAt] is the execution time of this operation.
  */
 internal abstract class Operation {
     abstract val parentCreatedAt: TimeTicket
@@ -20,7 +20,7 @@ internal abstract class Operation {
     abstract val effectedCreatedAt: TimeTicket
 
     /**
-     * Executes this [Operation] on the given [Document.root].
+     * Executes this [Operation] on the given [root].
      */
     abstract fun execute(root: CrdtRoot)
 

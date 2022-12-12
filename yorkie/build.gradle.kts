@@ -75,6 +75,30 @@ android {
                     groupId = findProperty("GROUP").toString()
                     artifactId = property("POM_ARTIFACT_ID").toString()
                     version = findProperty("VERSION_NAME").toString()
+                    pom {
+                        name.set(findProperty("POM_NAME").toString())
+                        description.set(findProperty("POM_DESCRIPTION").toString())
+                        url.set(findProperty("POM_URL").toString())
+                        scm {
+                            url.set(findProperty("POM_SCM_URL").toString())
+                            connection.set(findProperty("POM_SCM_CONNECTION").toString())
+                            developerConnection.set(findProperty("POM_SCM_DEV_CONNECTION").toString())
+                        }
+                        licenses {
+                            license {
+                                name.set(findProperty("POM_LICENCE_NAME").toString())
+                                url.set(findProperty("POM_LICENCE_URL").toString())
+                                distribution.set(findProperty("POM_LICENCE_DIST").toString())
+                            }
+                        }
+                        developers {
+                            developer {
+                                id.set(findProperty("POM_DEVELOPER_ID").toString())
+                                name.set(findProperty("POM_DEVELOPER_NAME").toString())
+                                url.set(findProperty("POM_DEVELOPER_URL").toString())
+                            }
+                        }
+                    }
                 }
             }
         }

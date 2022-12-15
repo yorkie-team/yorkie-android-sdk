@@ -24,7 +24,7 @@ class KanbanBoardViewModel : ViewModel() {
     val list: StateFlow<ImmutableList<KanbanColumn>> = _list.asStateFlow()
 
     fun init(context: Context) {
-        val client = Client(context, "10.0.2.2:8080", true)
+        val client = Client(context, "api.yorkie.dev ", 443, true)
         viewModelScope.launch {
             if (client.activateAsync().await()) {
                 client.attachAsync(document).await()
@@ -95,7 +95,7 @@ class KanbanBoardViewModel : ViewModel() {
     }
 
     companion object {
-        private const val DOCUMENT_KEY = "vuejs-kanban"
+        private const val DOCUMENT_KEY = "vuejs-kanban1"
         private const val DOCUMENT_LIST_KEY = "lists"
     }
 }

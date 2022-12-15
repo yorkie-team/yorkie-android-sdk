@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun Greeting() {
         val context = LocalContext.current
-        val client = remember { Client(context, "10.0.2.2:8080", true) }
+        val client = remember { Client(context, "10.0.2.2", 8080, true) }
         val scope = rememberCoroutineScope()
         val statusState by client.status.collectAsState()
 

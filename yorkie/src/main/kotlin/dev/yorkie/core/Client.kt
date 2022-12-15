@@ -90,11 +90,12 @@ public class Client @VisibleForTesting internal constructor(
 
     public constructor(
         context: Context,
-        rpcAddress: String,
+        rpcHost: String,
+        rpcPort: Int,
         usePlainText: Boolean = false,
         options: Options = Options(),
     ) : this(
-        channel = AndroidChannelBuilder.forTarget(rpcAddress)
+        channel = AndroidChannelBuilder.forAddress(rpcHost, rpcPort)
             .run { if (usePlainText) usePlaintext() else this }
             .context(context.applicationContext)
             .build(),

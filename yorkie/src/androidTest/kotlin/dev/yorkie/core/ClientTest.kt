@@ -167,7 +167,8 @@ class ClientTest {
 
     private fun createClient() = Client(
         InstrumentationRegistry.getInstrumentation().targetContext,
-        "10.0.2.2:8080",
+        "10.0.2.2",
+        8080,
         true,
     )
 

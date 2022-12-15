@@ -8,10 +8,26 @@ plugins {
     id("com.dicedmelon.gradle.jacoco-android")
     id("maven-publish")
     id("org.jetbrains.dokka")
+    id("signing")
 }
 
 jacoco {
     toolVersion = "0.8.8"
+}
+
+tasks.register<Zip>("stuffZip") {
+    archiveBaseName.set("stuff")
+    from("src/stuff")
+}
+
+signing {
+    useInMemoryPgpKeys(
+        System.getenv("PGP_KEY_ID"),
+        System.getenv("PGP_SECRET_KEY"),
+        System.getenv("PGP_PASSWORD"),
+    )
+    sign(tasks["stuffZip"])
+    sign(publishing.publications)
 }
 
 android {

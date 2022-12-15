@@ -32,7 +32,7 @@ $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus///PointingToDeclar
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-stream-connection-status/value-of.html
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-stream-connection-status/values.html
 $dokka.location:dev.yorkie.core/Client///PointingToDeclaration/yorkie/dev.yorkie.core/-client/index.html
-$dokka.location:dev.yorkie.core/Client/Client/#android.content.Context#kotlin.String#kotlin.Boolean#dev.yorkie.core.Client.Options/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
+$dokka.location:dev.yorkie.core/Client/Client/#android.content.Context#kotlin.String#kotlin.Int#kotlin.Boolean#dev.yorkie.core.Client.Options/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
 $dokka.location:dev.yorkie.core/Client/activateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/activate-async.html
 $dokka.location:dev.yorkie.core/Client/attachAsync/#dev.yorkie.document.Document#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-async.html
 $dokka.location:dev.yorkie.core/Client/deactivateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/deactivate-async.html

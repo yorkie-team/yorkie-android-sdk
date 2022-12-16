@@ -1,5 +1,3 @@
-@file:Suppress("UnstableApiUsage")
-
 pluginManagement {
     repositories {
         gradlePluginPortal()
@@ -12,8 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        mavenLocal()
     }
 }
-rootProject.name = "Yorkie Android SDK"
-include(":examples:kanban:app", ":yorkie", ":yorkie:proto", ":microbenchmark")
+rootProject.name = "Kanban App"
+include(":app")

@@ -114,8 +114,8 @@ internal class SplayTreeSet<V>(
         newNode.left = target
         target.parent = newNode
         target.right = null
-        updateWeight(target)
-        updateWeight(newNode)
+        updateWeight(target.value)
+        updateWeight(newNode.value)
         return
     }
 
@@ -148,7 +148,7 @@ internal class SplayTreeSet<V>(
         }
 
         node.unlink()
-        root?.let(::updateWeight)
+        root?.let { updateWeight(it.value) }
         valueToNodes.remove(node.value)
     }
 
@@ -195,7 +195,7 @@ internal class SplayTreeSet<V>(
     private fun updateTreeWeight(node: Node<V>?) {
         var target = node
         while (target != null) {
-            updateWeight(target)
+            updateWeight(target.value)
             target = target.parent
         }
     }
@@ -259,16 +259,17 @@ internal class SplayTreeSet<V>(
                 } else if (node.isRightChild) {
                     rotateLeft(node)
                 }
-                updateWeight(node)
+                updateWeight(node.value)
                 return
             }
         }
     }
 
     /**
-     * Recalculates weight of [node].
+     * Recalculates weight of node.
      */
-    private fun updateWeight(node: Node<V>) {
+    fun updateWeight(target: V) {
+        val node = valueToNodes[target] ?: return
         node.initWeight()
         node.increaseWeight(node.leftWeight)
         node.increaseWeight(node.rightWeight)
@@ -293,8 +294,8 @@ internal class SplayTreeSet<V>(
         pivot.left = root
         pivot.left?.parent = pivot
 
-        updateWeight(root)
-        updateWeight(pivot)
+        updateWeight(root.value)
+        updateWeight(pivot.value)
     }
 
     private fun rotateRight(pivot: Node<V>?) {
@@ -316,8 +317,8 @@ internal class SplayTreeSet<V>(
         pivot.right = root
         pivot.right?.parent = pivot
 
-        updateWeight(root)
-        updateWeight(pivot)
+        updateWeight(root.value)
+        updateWeight(pivot.value)
     }
 
     private val Node<V>?.isLeftChild

@@ -62,7 +62,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
             val inserted = insertAfter(
                 fromLeft,
                 RgaTreeSplitNode(
-                    RgaTreeSplitNodeID(executedAt, 0), it,
+                    RgaTreeSplitNodeID(executedAt, 0),
+                    it,
                 ),
             )
             if (changes.isNotEmpty() && changes.last().from == index) {
@@ -182,7 +183,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
         candidates: List<RgaTreeSplitNode<T>>,
         executedAt: TimeTicket,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
-    ): Triple<List<TextChange>, Map<ActorID, TimeTicket>, Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>> {
+    ): Triple<
+        List<TextChange>, Map<ActorID, TimeTicket>, Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>,
+        > {
         if (candidates.isEmpty()) {
             return Triple(emptyList(), emptyMap(), emptyMap())
         }
@@ -203,7 +206,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
         nodesToDelete.forEach { node ->
             // Then, make nodes be tombstones and map that.
             val actorID = node.createdAt.actorID
-            if (!createdAtMapByActor.containsKey(actorID) || createdAtMapByActor[actorID] < node.id.createdAt) {
+            if (!createdAtMapByActor.containsKey(actorID)
+                || createdAtMapByActor[actorID] < node.id.createdAt
+            ) {
                 createdAtMapByActor[actorID] = node.id.createdAt
             }
             removedNodeMap[node.id] = node
@@ -250,7 +255,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
      * Finds the edges outside [candidates].
      * If right edge is null, it means [candidates] contains the end of text.
      */
-    private fun findEdgesOfCandidates(candidates: List<RgaTreeSplitNode<T>>): Pair<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>?> {
+    private fun findEdgesOfCandidates(
+        candidates: List<RgaTreeSplitNode<T>>,
+    ): Pair<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>?> {
         if (candidates.isEmpty()) {
             error("findEdgesOfCandidates error: candidates is empty")
         }
@@ -379,8 +386,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
         return RgaTreeSplitIterator(head)
     }
 
-    private class RgaTreeSplitIterator<T : RgaTreeSplitValue>(private val head: RgaTreeSplitNode<T>) :
-        Iterator<RgaTreeSplitNode<T>> {
+    private class RgaTreeSplitIterator<T : RgaTreeSplitValue>(
+        private val head: RgaTreeSplitNode<T>,
+    ) : Iterator<RgaTreeSplitNode<T>> {
         private var node = head
 
         override fun hasNext(): Boolean {

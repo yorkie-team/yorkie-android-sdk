@@ -206,8 +206,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
         nodesToDelete.forEach { node ->
             // Then, make nodes be tombstones and map that.
             val actorID = node.createdAt.actorID
-            if (!createdAtMapByActor.containsKey(actorID)
-                || createdAtMapByActor[actorID] < node.id.createdAt
+            if (!createdAtMapByActor.containsKey(actorID) ||
+                createdAtMapByActor[actorID] < node.id.createdAt
             ) {
                 createdAtMapByActor[actorID] = node.id.createdAt
             }

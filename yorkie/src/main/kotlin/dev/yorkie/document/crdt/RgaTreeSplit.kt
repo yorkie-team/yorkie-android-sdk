@@ -16,7 +16,7 @@ internal typealias RgaTreeSplitNodeRange = Pair<RgaTreeSplitNodePos, RgaTreeSpli
  * reduce the size of CRDT metadata. When an edit occurs on a block,
  * the block is split.
  */
-internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T>> {
+internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
     val head: RgaTreeSplitNode<T> = RgaTreeSplitNode(InitialRgaTreeSplitNodeID)
     private val treeByIndex = SplayTreeSet<RgaTreeSplitNode<T>>().apply { insert(head) }
     private val treeByID = TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>().apply {
@@ -58,7 +58,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
 
         // 3. Insert a new node.
         value?.let {
-            val index = findIndexFromNodePos(fromLeft.createdRange().second, true)
+            val index = findIndexFromNodePos(fromLeft.createRange().second, true)
             val inserted = insertAfter(
                 fromLeft,
                 RgaTreeSplitNode(
@@ -276,11 +276,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
                 if (leftBoundary.next == rightBoundary) continue
 
                 fromIndex =
-                    findIndexesFromRange(requireNotNull(leftBoundary.next).createdRange()).first
+                    findIndexesFromRange(requireNotNull(leftBoundary.next).createRange()).first
                 toIndex = if (rightBoundary == null) {
                     treeByIndex.length
                 } else {
-                    findIndexesFromRange(requireNotNull(rightBoundary.next).createdRange()).second
+                    findIndexesFromRange(requireNotNull(rightBoundary.next).createRange()).second
                 }
             }
             if (fromIndex < toIndex) {
@@ -386,7 +386,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
         return RgaTreeSplitIterator(head)
     }
 
-    private class RgaTreeSplitIterator<T : RgaTreeSplitValue>(
+    private class RgaTreeSplitIterator<T : CharSequence>(
         private val head: RgaTreeSplitNode<T>,
     ) : Iterator<RgaTreeSplitNode<T>> {
         private var node = head
@@ -425,7 +425,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue> : Iterable<RgaTreeSplitNode<T
     }
 }
 
-internal data class RgaTreeSplitNode<T : RgaTreeSplitValue>(
+internal data class RgaTreeSplitNode<T : CharSequence>(
     val id: RgaTreeSplitNodeID,
     private var value: T? = null,
 ) {
@@ -488,9 +488,9 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue>(
 
     @Suppress("UNCHECKED_CAST")
     private fun splitValue(offset: Int): T {
-        val newValue = requireNotNull(value).substring(0, offset) as T
+        val newValue = requireNotNull(value).subSequence(0, offset) as T
         value = newValue
-        return newValue.substring(offset, newValue.length) as T
+        return newValue.subSequence(offset, newValue.length) as T
     }
 
     // NOTE(7hong13): original comment from JS-SDK:
@@ -511,12 +511,15 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue>(
         removedAt = executedAt
     }
 
-    fun createdRange(): RgaTreeSplitNodeRange {
+    fun createRange(): RgaTreeSplitNodeRange {
         return RgaTreeSplitNodeRange(RgaTreeSplitNodePos(id, 0), RgaTreeSplitNodePos(id, length))
     }
 }
 
-internal data class RgaTreeSplitNodeID(val createdAt: TimeTicket, val offset: Int) {
+internal data class RgaTreeSplitNodeID(
+    val createdAt: TimeTicket,
+    val offset: Int,
+) : Comparable<RgaTreeSplitNodeID> {
     /**
      * Returns whether the given ID has the same creation time with this [RgaTreeSplitNodeID].
      */
@@ -528,15 +531,17 @@ internal data class RgaTreeSplitNodeID(val createdAt: TimeTicket, val offset: In
     fun split(offset: Int): RgaTreeSplitNodeID {
         return RgaTreeSplitNodeID(createdAt, this.offset + offset)
     }
+
+    override fun compareTo(other: RgaTreeSplitNodeID): Int {
+        return if (createdAt != other.createdAt) {
+            createdAt.compareTo(other.createdAt)
+        } else {
+            offset.compareTo(other.offset)
+        }
+    }
 }
 
 internal data class RgaTreeSplitNodePos(val id: RgaTreeSplitNodeID, val relativeOffSet: Int) {
     val absoluteID: RgaTreeSplitNodeID
         get() = RgaTreeSplitNodeID(id.createdAt, id.offset + relativeOffSet)
-}
-
-internal interface RgaTreeSplitValue {
-    val length: Int
-
-    fun substring(indexStart: Int, indexEnd: Int?): RgaTreeSplitValue
 }

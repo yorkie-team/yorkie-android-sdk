@@ -18,6 +18,9 @@ internal data class SelectOperation(
         get() = parentCreatedAt
 
     // TODO(7hong13): Should check if parentObject is CrdtRichText
+    /**
+     * Returns the created time of the effected element.
+     */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         if (parentObject is CrdtText) {

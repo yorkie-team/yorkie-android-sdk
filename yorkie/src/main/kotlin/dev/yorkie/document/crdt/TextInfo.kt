@@ -10,8 +10,8 @@ import dev.yorkie.document.time.TimeTicket
 internal data class TextChange(
     val type: TextChangeType,
     val actor: ActorID,
-    val from: Number,
-    val to: Number,
+    val from: Int,
+    val to: Int,
     var content: String? = null,
 )
 

@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -16,9 +17,11 @@ internal typealias RgaTreeSplitNodeRange = Pair<RgaTreeSplitNodePos, RgaTreeSpli
  * reduce the size of CRDT metadata. When an edit occurs on a block,
  * the block is split.
  */
+@Suppress("UNCHECKED_CAST")
 internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
-    val head: RgaTreeSplitNode<T> = RgaTreeSplitNode(InitialRgaTreeSplitNodeID)
-    private val treeByIndex = SplayTreeSet<RgaTreeSplitNode<T>>().apply { insert(head) }
+    val head = RgaTreeSplitNode(InitialNodeID, INITIAL_NODE_VALUE as T)
+    private val treeByIndex =
+        SplayTreeSet<RgaTreeSplitNode<T>> { it.contentLength }.apply { insert(head) }
     private val treeByID = TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>().apply {
         put(head.id, head)
     }
@@ -41,20 +44,26 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         range: RgaTreeSplitNodeRange,
         executedAt: TimeTicket,
         value: T?,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
+        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): Triple<RgaTreeSplitNodePos, Map<ActorID, TimeTicket>, List<TextChange>> {
         // 1. Split nodes.
-        val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
+        val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
 
         // 2. Delete between from and to.
-        val nodesToDelete = findBetween(fromRight, toRight)
+        val nodesToDelete = if (toRight != null && fromRight != null) {
+            findBetween(fromRight, toRight)
+        } else {
+            emptyList()
+        }
+
         val (changes, latestCreatedAtMap, removedNodeMapByNodeKey) = deleteNodes(
             nodesToDelete,
             executedAt,
             latestCreatedAtMapByActor,
         )
-        var caretPos = RgaTreeSplitNodePos(toRight.id, 0)
+        val caretID = toRight?.id ?: toLeft.id
+        var caretPos = RgaTreeSplitNodePos(caretID, 0)
 
         // 3. Insert a new node.
         value?.let {
@@ -84,7 +93,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
 
         // 4. Add removed nodes.
         removedNodeMapByNodeKey.forEach {
-            removedNodeMapByNodeKey.toMutableMap()[it.key] = it.value
+            removedNodeMap[it.key] = it.value
         }
 
         return Triple(caretPos, latestCreatedAtMap, changes)
@@ -96,17 +105,16 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
     fun findNodeWithSplit(
         pos: RgaTreeSplitNodePos,
         executedAt: TimeTicket,
-    ): Pair<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>> {
+    ): Pair<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>?> {
         val absoluteID = pos.absoluteID
         var node = findFloorNodePreferToLeft(absoluteID)
         val relativeOffSet = absoluteID.offset - node.id.offset
         splitNode(node, relativeOffSet)
 
         while (node.hasNext && executedAt < node.next?.createdAt) {
-            node = requireNotNull(node.next)
+            node = node.next ?: break
         }
-        // NOTE(7hong13): node.next can be null?
-        return Pair(node, requireNotNull(node.next))
+        return Pair(node, node.next)
     }
 
     private fun findFloorNodePreferToLeft(id: RgaTreeSplitNodeID): RgaTreeSplitNode<T> {
@@ -121,7 +129,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
 
     private fun findFloorNode(id: RgaTreeSplitNodeID): RgaTreeSplitNode<T>? {
         val entry = treeByID.floorEntry(id) ?: return null
-        return if (entry.key == id && entry.key.hasSameCreatedAt(id)) {
+        return if (entry.key != id && !entry.key.hasSameCreatedAt(id)) {
             null
         } else {
             entry.value
@@ -142,9 +150,8 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         treeByIndex.updateWeight(splitNode)
         insertAfter(node, splitNode)
         node.insertionNext?.setInsertionPrev(splitNode)
-
-        node.insertionNext?.setInsertionPrev(splitNode)
         splitNode.setInsertionPrev(node)
+
         return splitNode
     }
 
@@ -155,8 +162,9 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         prevNode: RgaTreeSplitNode<T>,
         newNode: RgaTreeSplitNode<T>,
     ): RgaTreeSplitNode<T> {
-        prevNode.next?.setPrev(newNode)
+        val next = prevNode.next
         newNode.setPrev(prevNode)
+        next?.setPrev(newNode)
 
         treeByID[newNode.id] = newNode
         treeByIndex.insertAfter(prevNode, newNode)
@@ -227,7 +235,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
     ): Pair<List<RgaTreeSplitNode<T>>, List<RgaTreeSplitNode<T>?>> {
         val isRemote = latestCreatedAtMapByActor != null
         val nodesToDelete = mutableListOf<RgaTreeSplitNode<T>>()
-        val nodesToKeep = mutableListOf<RgaTreeSplitNode<T>>()
+        val nodesToKeep = mutableListOf<RgaTreeSplitNode<T>?>()
 
         val (leftEdge, rightEdge) = findEdgesOfCandidates(candidates)
         nodesToKeep.add(leftEdge)
@@ -235,8 +243,8 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         candidates.forEach { node ->
             val actorID = node.createdAt.actorID
             val latestCreatedAt =
-                if (isRemote && latestCreatedAtMapByActor?.containsKey(actorID) == true) {
-                    latestCreatedAtMapByActor[actorID] ?: InitialTimeTicket
+                if (isRemote) {
+                    latestCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
                 } else {
                     MaxTimeTicket
                 }
@@ -246,7 +254,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
                 nodesToKeep.add(node)
             }
         }
-        rightEdge?.let(nodesToKeep::add)
+        nodesToKeep.add(rightEdge)
 
         return Pair(nodesToDelete, nodesToKeep)
     }
@@ -271,16 +279,16 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         return buildList {
             var (fromIndex, toIndex) = Pair(0, 0)
             for (index in 0..boundaries.size - 2) {
-                val leftBoundary = requireNotNull(boundaries[index])
+                val leftBoundary = boundaries[index]
                 val rightBoundary = boundaries[index + 1]
-                if (leftBoundary.next == rightBoundary) continue
+                if (leftBoundary?.next == rightBoundary) continue
 
                 fromIndex =
-                    findIndexesFromRange(requireNotNull(leftBoundary.next).createRange()).first
+                    findIndexesFromRange(requireNotNull(leftBoundary?.next).createRange()).first
                 toIndex = if (rightBoundary == null) {
                     treeByIndex.length
                 } else {
-                    findIndexesFromRange(requireNotNull(rightBoundary.next).createRange()).second
+                    findIndexesFromRange(requireNotNull(rightBoundary.prev).createRange()).second
                 }
             }
             if (fromIndex < toIndex) {
@@ -386,20 +394,18 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         return RgaTreeSplitIterator(head)
     }
 
-    private class RgaTreeSplitIterator<T : CharSequence>(
-        private val head: RgaTreeSplitNode<T>,
-    ) : Iterator<RgaTreeSplitNode<T>> {
-        private var node = head
+    private class RgaTreeSplitIterator<T : CharSequence>(head: RgaTreeSplitNode<T>) :
+        Iterator<RgaTreeSplitNode<T>> {
+        private var node: RgaTreeSplitNode<T>? = head
 
         override fun hasNext(): Boolean {
-            if (node == head) {
-                node = head.next ?: return false
-            }
-            return node.hasNext
+            return node?.hasNext == true
         }
 
         override fun next(): RgaTreeSplitNode<T> {
-            return requireNotNull(node.next)
+            return requireNotNull(node?.next).apply {
+                node = node?.next
+            }
         }
     }
 
@@ -420,14 +426,24 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         return clone
     }
 
+    fun toJson(): String {
+        return buildString {
+            this@RgaTreeSplit.forEach { node ->
+                if (!node.isRemoved) append(node.value)
+            }
+        }
+    }
+
     companion object {
-        private val InitialRgaTreeSplitNodeID = RgaTreeSplitNodeID(InitialTimeTicket, 0)
+        private val InitialNodeID = RgaTreeSplitNodeID(InitialTimeTicket, 0)
+        private const val INITIAL_NODE_VALUE = ""
     }
 }
 
 internal data class RgaTreeSplitNode<T : CharSequence>(
     val id: RgaTreeSplitNodeID,
-    private var value: T? = null,
+    private var _value: T,
+    private var _removedAt: TimeTicket? = null,
 ) {
     var prev: RgaTreeSplitNode<T>? = null
         private set
@@ -438,17 +454,14 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
     var insertionNext: RgaTreeSplitNode<T>? = null
         private set
 
-    var removedAt: TimeTicket? = null
-        private set
-
     val createdAt: TimeTicket
         get() = id.createdAt
 
     val length: Int
-        get() = removedAt?.let { contentLength } ?: 0
+        get() = _removedAt?.let { contentLength } ?: 0
 
     val contentLength: Int
-        get() = value?.length ?: 0
+        get() = _value.length
 
     val hasNext: Boolean
         get() = next != null
@@ -457,7 +470,14 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
         get() = insertionPrev != null
 
     val isRemoved: Boolean
-        get() = removedAt != null
+        get() = _removedAt != null
+
+    val removedAt: TimeTicket?
+        get() = _removedAt
+
+    @VisibleForTesting
+    val value
+        get() = _value
 
     fun setPrev(node: RgaTreeSplitNode<T>?) {
         prev = node
@@ -483,14 +503,14 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
      * Creates a new split node of the given [offset].
      */
     fun split(offset: Int): RgaTreeSplitNode<T> {
-        return RgaTreeSplitNode(id.split(offset), splitValue(offset))
+        return RgaTreeSplitNode(id.split(offset), splitValue(offset), _removedAt)
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun splitValue(offset: Int): T {
-        val newValue = requireNotNull(value).subSequence(0, offset) as T
-        value = newValue
-        return newValue.subSequence(offset, newValue.length) as T
+        val valueBefore = _value
+        _value = valueBefore.subSequence(0, offset) as T
+        return valueBefore.subSequence(offset, valueBefore.length) as T
     }
 
     // NOTE(7hong13): original comment from JS-SDK:
@@ -499,7 +519,7 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
     fun canDelete(executedAt: TimeTicket, latestCreatedAt: TimeTicket): Boolean {
-        return latestCreatedAt < createdAt && (isRemoved || removedAt < executedAt)
+        return createdAt <= latestCreatedAt && (isRemoved || _removedAt < executedAt)
     }
 
     // NOTE(7hong13): original comment from JS-SDK:
@@ -508,11 +528,19 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
      * Removes this [RgaTreeSplitNode] at the given [executedAt].
      */
     fun remove(executedAt: TimeTicket?) {
-        removedAt = executedAt
+        _removedAt = executedAt
     }
 
     fun createRange(): RgaTreeSplitNodeRange {
         return RgaTreeSplitNodeRange(RgaTreeSplitNodePos(id, 0), RgaTreeSplitNodePos(id, length))
+    }
+
+    override fun hashCode(): Int {
+        return id.hashCode()
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return super.equals(other)
     }
 }
 

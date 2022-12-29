@@ -6,7 +6,7 @@ import dev.yorkie.document.time.TimeTicket
 internal data class CrdtText(
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket?,
-    override var _removedAt: TimeTicket?
+    override var _removedAt: TimeTicket?,
 ) : CrdtTextElement() {
 
     override fun getRemovedNodesLength(): Int {

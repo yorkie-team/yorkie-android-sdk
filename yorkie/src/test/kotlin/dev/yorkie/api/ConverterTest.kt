@@ -153,7 +153,8 @@ class ConverterTest {
             TimeTicket.InitialTimeTicket,
         )
         val nodePos = RgaTreeSplitNodePos(
-            RgaTreeSplitNodeID(TimeTicket.InitialTimeTicket, 0), 0,
+            RgaTreeSplitNodeID(TimeTicket.InitialTimeTicket, 0),
+            0,
         )
         val editOperation = EditOperation(
             nodePos,

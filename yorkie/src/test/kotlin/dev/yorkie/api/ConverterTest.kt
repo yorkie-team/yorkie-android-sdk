@@ -8,11 +8,15 @@ import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.RgaTreeSplitNodeID
+import dev.yorkie.document.crdt.RgaTreeSplitNodePos
 import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
@@ -148,12 +152,31 @@ class ConverterTest {
             TimeTicket.InitialTimeTicket,
             TimeTicket.InitialTimeTicket,
         )
+        val nodePos = RgaTreeSplitNodePos(
+            RgaTreeSplitNodeID(TimeTicket.InitialTimeTicket, 0), 0,
+        )
+        val editOperation = EditOperation(
+            nodePos,
+            nodePos,
+            mapOf(ActorID("edit") to TimeTicket.InitialTimeTicket),
+            "edit",
+            TimeTicket.InitialTimeTicket,
+            TimeTicket.InitialTimeTicket,
+        )
+        val selectOperation = SelectOperation(
+            nodePos,
+            nodePos,
+            TimeTicket.InitialTimeTicket,
+            TimeTicket.InitialTimeTicket,
+        )
         val converted = listOf(
             addOperation.toPBOperation(),
             setOperation.toPBOperation(),
             removeOperation.toPBOperation(),
             moveOperation.toPBOperation(),
             increaseOperation.toPBOperation(),
+            editOperation.toPBOperation(),
+            selectOperation.toPBOperation(),
         ).toOperations()
 
         assertEquals(addOperation, converted[0])
@@ -161,6 +184,8 @@ class ConverterTest {
         assertEquals(removeOperation, converted[2])
         assertEquals(moveOperation, converted[3])
         assertEquals(increaseOperation, converted[4])
+        assertEquals(editOperation, converted[5])
+        assertEquals(selectOperation, converted[6])
     }
 
     @Test

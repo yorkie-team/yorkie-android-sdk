@@ -12,6 +12,9 @@ import dev.yorkie.api.v1.movedAtOrNull
 import dev.yorkie.api.v1.rGANode
 import dev.yorkie.api.v1.rHTNode
 import dev.yorkie.api.v1.removedAtOrNull
+import dev.yorkie.api.v1.textNode
+import dev.yorkie.api.v1.textNodeID
+import dev.yorkie.api.v1.textNodePos
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
@@ -20,6 +23,10 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.RgaTreeList
+import dev.yorkie.document.crdt.RgaTreeSplit
+import dev.yorkie.document.crdt.RgaTreeSplitNode
+import dev.yorkie.document.crdt.RgaTreeSplitNodeID
+import dev.yorkie.document.crdt.RgaTreeSplitNodePos
 import dev.yorkie.document.crdt.RhtPQMap
 
 internal typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
@@ -189,6 +196,52 @@ internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
 internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
     return map {
         rGANode { element = it.value.toPBJsonElement() }
+    }
+}
+
+internal fun RgaTreeSplitNodePos.toPBTextNodePos(): PBTextNodePos {
+    return textNodePos {
+        createdAt = this@toPBTextNodePos.id.createdAt.toPBTimeTicket()
+        offset = this@toPBTextNodePos.id.offset
+        relativeOffset = this@toPBTextNodePos.relativeOffSet
+    }
+}
+
+internal fun PBTextNodePos.toRgaTreeSplitNodePos(): RgaTreeSplitNodePos {
+    return RgaTreeSplitNodePos(
+        id = RgaTreeSplitNodeID(createdAt.toTimeTicket(), offset),
+        relativeOffSet = relativeOffset,
+    )
+}
+
+internal fun RgaTreeSplitNodeID.toPBTextNodeID(): PBTextNodeID {
+    return textNodeID {
+        createdAt = this@toPBTextNodeID.createdAt.toPBTimeTicket()
+        offset = this@toPBTextNodeID.offset
+    }
+}
+
+internal fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
+    return RgaTreeSplitNodeID(createdAt.toTimeTicket(), offset)
+}
+
+internal fun RgaTreeSplit<String>.toPBTextNodes(): List<PBTextNode> {
+    return buildList {
+        this@toPBTextNodes.forEach { node ->
+            add(
+                textNode {
+                    id = node.id.toPBTextNodeID()
+                    value = node.value
+                    node.removedAt?.let { removedAt = it.toPBTimeTicket() }
+                },
+            )
+        }
+    }
+}
+
+internal fun PBTextNode.toRgaReeSplitNode(): RgaTreeSplitNode<String> {
+    return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), value).apply {
+        remove(this@toRgaReeSplitNode.removedAt.toTimeTicket())
     }
 }
 

@@ -230,7 +230,6 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
             return value.remove(removedAt)
         }
 
-        // NOTE(7hong13): removed comment since this function literally do 'delete' the node.
         fun delete() {
             prev?.next = next
             next?.prev = prev

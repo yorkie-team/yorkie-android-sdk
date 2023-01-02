@@ -1,17 +1,22 @@
 package dev.yorkie.api
 
 import dev.yorkie.api.v1.OperationKt.add
+import dev.yorkie.api.v1.OperationKt.edit
 import dev.yorkie.api.v1.OperationKt.increase
 import dev.yorkie.api.v1.OperationKt.move
 import dev.yorkie.api.v1.OperationKt.remove
+import dev.yorkie.api.v1.OperationKt.select
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.operation
 import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.time.ActorID
 
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
 
@@ -46,8 +51,24 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 executedAt = it.increase.executedAt.toTimeTicket(),
                 value = it.increase.value.toCrdtElement(),
             )
-            it.hasEdit() -> TODO("not yet implemented")
-            it.hasSelect() -> TODO("not yet implemented")
+            it.hasEdit() -> EditOperation(
+                fromPos = it.edit.from.toRgaTreeSplitNodePos(),
+                toPos = it.edit.to.toRgaTreeSplitNodePos(),
+                parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
+                executedAt = it.edit.executedAt.toTimeTicket(),
+                maxCreatedAtMapByActor = buildMap {
+                    it.edit.createdAtMapByActorMap.forEach { entry ->
+                        set(ActorID(entry.key), entry.value.toTimeTicket())
+                    }
+                },
+                content = it.edit.content,
+            )
+            it.hasSelect() -> SelectOperation(
+                fromPos = it.select.from.toRgaTreeSplitNodePos(),
+                toPos = it.select.to.toRgaTreeSplitNodePos(),
+                parentCreatedAt = it.select.parentCreatedAt.toTimeTicket(),
+                executedAt = it.select.executedAt.toTimeTicket(),
+            )
             it.hasRichEdit() -> TODO("not yet implemented")
             it.hasStyle() -> TODO("not yet implemented")
             else -> error("unimplemented operation")
@@ -55,7 +76,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
     }
 }
 
-// TODO(7hong13): should check Edit, Select, RichEdit, Style Operations
+// TODO(7hong13): should check RichEdit, Style Operations
 internal fun Operation.toPBOperation(): PBOperation {
     return when (val operation = this@toPBOperation) {
         is SetOperation -> {
@@ -102,6 +123,30 @@ internal fun Operation.toPBOperation(): PBOperation {
                 increase = increase {
                     parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
                     value = operation.value.toPBJsonElementSimple()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                }
+            }
+        }
+        is EditOperation -> {
+            operation {
+                edit = edit {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    from = operation.fromPos.toPBTextNodePos()
+                    to = operation.toPos.toPBTextNodePos()
+                    content = operation.content
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                    operation.maxCreatedAtMapByActor.forEach {
+                        createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
+                    }
+                }
+            }
+        }
+        is SelectOperation -> {
+            operation {
+                select = select {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    from = operation.fromPos.toPBTextNodePos()
+                    to = operation.toPos.toPBTextNodePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                 }
             }

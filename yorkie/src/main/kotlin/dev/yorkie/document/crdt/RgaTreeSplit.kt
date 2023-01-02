@@ -192,7 +192,9 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         executedAt: TimeTicket,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
     ): Triple<
-        MutableList<TextChange>, Map<ActorID, TimeTicket>, Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>,
+        MutableList<TextChange>,
+        Map<ActorID, TimeTicket>,
+        Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>,
         > {
         if (candidates.isEmpty()) {
             return Triple(mutableListOf(), emptyMap(), emptyMap())

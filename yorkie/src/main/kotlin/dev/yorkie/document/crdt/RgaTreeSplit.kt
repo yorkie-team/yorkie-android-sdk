@@ -78,7 +78,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
             if (changes.isNotEmpty() && changes.last().from == index) {
                 changes.last().content = it.toString()
             } else {
-                changes.toMutableList().add(
+                changes.add(
                     TextChange(
                         TextChangeType.Content,
                         executedAt.actorID,
@@ -192,10 +192,10 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         executedAt: TimeTicket,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
     ): Triple<
-        List<TextChange>, Map<ActorID, TimeTicket>, Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>,
+        MutableList<TextChange>, Map<ActorID, TimeTicket>, Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>,
         > {
         if (candidates.isEmpty()) {
-            return Triple(emptyList(), emptyMap(), emptyMap())
+            return Triple(mutableListOf(), emptyMap(), emptyMap())
         }
 
         // There are 2 types of nodes in [candidates]: should delete, should not delete.
@@ -210,7 +210,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         val removedNodeMap = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
 
         // First, we need to collect indexes for change.
-        val changes = makeChanges(nodesToKeep, executedAt)
+        val changes = makeChanges(nodesToKeep, executedAt).toMutableList()
         nodesToDelete.forEach { node ->
             // Then, make nodes be tombstones and map that.
             val actorID = node.createdAt.actorID

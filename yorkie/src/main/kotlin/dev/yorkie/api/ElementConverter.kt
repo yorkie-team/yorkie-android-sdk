@@ -226,15 +226,11 @@ internal fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
 }
 
 internal fun RgaTreeSplit<String>.toPBTextNodes(): List<PBTextNode> {
-    return buildList {
-        this@toPBTextNodes.forEach { node ->
-            add(
-                textNode {
-                    id = node.id.toPBTextNodeID()
-                    value = node.value
-                    node.removedAt?.let { removedAt = it.toPBTimeTicket() }
-                },
-            )
+    return this@toPBTextNodes.map { node ->
+        textNode {
+            id = node.id.toPBTextNodeID()
+            value = node.value
+            node.removedAt?.let { removedAt = it.toPBTimeTicket() }
         }
     }
 }

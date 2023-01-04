@@ -11,12 +11,12 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 internal class Rht : Iterable<Rht.Node> {
     private val nodeMapByKey = mutableMapOf<String, Node>()
 
-    val entrySet: List<Entry>
+    val entrySet: Set<Entry>
         get() {
             return nodeMapByKey.map {
                 val (key, node) = it
                 Entry(key, node.value)
-            }
+            }.toSet()
         }
 
     fun set(key: String, value: String, executedAt: TimeTicket) {

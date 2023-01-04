@@ -39,7 +39,7 @@ class RhtTest {
     }
 
     @Test
-    fun `should check whether entrySet value is returned correctly`() {
+    fun `verify entrySet is returned correctly`() {
         val testData = mapOf("key0" to "value0", "key1" to "value1", "key2" to "value2")
         testData.entries.forEach {
             target.set(it.key, it.value, TimeTicket.InitialTimeTicket)

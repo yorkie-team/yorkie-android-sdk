@@ -17,7 +17,6 @@ internal data class SelectOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    // TODO(7hong13): Should check if parentObject is CrdtRichText
     /**
      * Returns the created time of the effected element.
      */

@@ -29,9 +29,7 @@ internal data class RemoveOperation(
             val element = parentObject.remove(createdAt, executedAt)
             root.registerRemovedElement(element)
         } else {
-            if (parentObject == null) {
-                YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            }
+            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "only object and array can execute remove: $parentObject")
         }
     }

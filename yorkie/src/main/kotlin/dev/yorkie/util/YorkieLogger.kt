@@ -11,6 +11,7 @@ internal object YorkieLogger {
 
     fun e(tag: String, message: String) {
         logger?.e("$TAG_PREFIX$tag", message)
+        throw Exception(message)
     }
 }
 

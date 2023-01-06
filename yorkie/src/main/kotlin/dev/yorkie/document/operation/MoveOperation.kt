@@ -27,15 +27,9 @@ internal data class MoveOperation(
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         if (parentObject is CrdtArray) {
-            parentObject.moveAfter(
-                prevCreatedAt,
-                createdAt,
-                executedAt,
-            )
+            parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
         } else {
-            if (parentObject == null) {
-                YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            }
+            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only array can execute move")
         }
     }

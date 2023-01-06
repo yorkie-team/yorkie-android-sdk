@@ -25,9 +25,7 @@ internal data class SelectOperation(
         if (parentObject is CrdtText) {
             parentObject.select(RgaTreeSplitNodeRange(fromPos, toPos), executedAt)
         } else {
-            if (parentObject == null) {
-                YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            }
+            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only Text, RichText can execute select")
         }
     }

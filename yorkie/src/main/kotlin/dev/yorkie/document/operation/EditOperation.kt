@@ -9,7 +9,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
 /**
- * [EditOperation] is an operations representing editing Text.
+ * [EditOperation] is an operations representing editing rich text.
  */
 internal data class EditOperation(
     val fromPos: RgaTreeSplitNodePos,
@@ -18,6 +18,7 @@ internal data class EditOperation(
     val content: String,
     override val parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
+    val attributes: Map<String, String>? = null,
 ) : Operation() {
 
     /**
@@ -34,6 +35,7 @@ internal data class EditOperation(
                 content,
                 executedAt,
                 maxCreatedAtMapByActor,
+                attributes,
             )
             if (fromPos != toPos) {
                 root.registerTextWithGarbage(parentObject)

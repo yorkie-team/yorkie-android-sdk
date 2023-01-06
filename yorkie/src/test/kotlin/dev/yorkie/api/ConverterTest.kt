@@ -18,6 +18,7 @@ import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Assert.assertEquals
@@ -156,7 +157,7 @@ class ConverterTest {
             RgaTreeSplitNodeID(TimeTicket.InitialTimeTicket, 0),
             0,
         )
-        val editOperation = EditOperation(
+        val editOperationWithoutAttrs = EditOperation(
             nodePos,
             nodePos,
             mapOf(ActorID("edit") to TimeTicket.InitialTimeTicket),
@@ -164,9 +165,25 @@ class ConverterTest {
             TimeTicket.InitialTimeTicket,
             TimeTicket.InitialTimeTicket,
         )
+        val editOperationWithAttrs = EditOperation(
+            nodePos,
+            nodePos,
+            mapOf(ActorID("edit") to TimeTicket.InitialTimeTicket),
+            "edit",
+            TimeTicket.InitialTimeTicket,
+            TimeTicket.InitialTimeTicket,
+            mapOf("style" to "bold"),
+        )
         val selectOperation = SelectOperation(
             nodePos,
             nodePos,
+            TimeTicket.InitialTimeTicket,
+            TimeTicket.InitialTimeTicket,
+        )
+        val styleOperation = StyleOperation(
+            nodePos,
+            nodePos,
+            mapOf("style" to "bold"),
             TimeTicket.InitialTimeTicket,
             TimeTicket.InitialTimeTicket,
         )
@@ -176,8 +193,10 @@ class ConverterTest {
             removeOperation.toPBOperation(),
             moveOperation.toPBOperation(),
             increaseOperation.toPBOperation(),
-            editOperation.toPBOperation(),
+            editOperationWithoutAttrs.toPBOperation(),
+            editOperationWithAttrs.toPBOperation(),
             selectOperation.toPBOperation(),
+            styleOperation.toPBOperation(),
         ).toOperations()
 
         assertEquals(addOperation, converted[0])
@@ -185,8 +204,10 @@ class ConverterTest {
         assertEquals(removeOperation, converted[2])
         assertEquals(moveOperation, converted[3])
         assertEquals(increaseOperation, converted[4])
-        assertEquals(editOperation, converted[5])
-        assertEquals(selectOperation, converted[6])
+        assertEquals(editOperationWithoutAttrs, converted[5])
+        assertEquals(editOperationWithAttrs, converted[6])
+        assertEquals(selectOperation, converted[7])
+        assertEquals(styleOperation, converted[8])
     }
 
     @Test

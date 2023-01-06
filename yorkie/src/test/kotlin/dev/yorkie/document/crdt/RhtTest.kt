@@ -39,20 +39,20 @@ class RhtTest {
     }
 
     @Test
-    fun `verify entrySet is returned correctly`() {
+    fun `verify nodeKeyValueMap is returned correctly`() {
         val testData = mapOf("key0" to "value0", "key1" to "value1", "key2" to "value2")
         testData.entries.forEach {
             target.set(it.key, it.value, TimeTicket.InitialTimeTicket)
         }
 
-        target.entrySet.forEachIndexed { index, obj ->
+        target.nodeKeyValueMap.entries.forEachIndexed { index, obj ->
             assertEquals("key$index", obj.key)
             assertEquals("value$index", obj.value)
         }
     }
 
     private fun Rht.getStructureAsString(): String {
-        return entrySet.joinToString("") { "${it.key}:${it.value}" }
+        return nodeKeyValueMap.entries.joinToString("") { "${it.key}:${it.value}" }
     }
 
     companion object {

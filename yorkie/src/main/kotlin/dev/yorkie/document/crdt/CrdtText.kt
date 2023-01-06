@@ -3,34 +3,161 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 
-internal data class CrdtText(
+/**
+ * [CrdtText] is a custom CRDT data type to represent the contents of text editors.
+ */
+@Suppress("DataClassPrivateConstructor")
+internal data class CrdtText private constructor(
+    val rgaTreeSplit: RgaTreeSplit<TextValue>,
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket?,
-    override var _removedAt: TimeTicket?,
+    override var _movedAt: TimeTicket? = null,
+    override var _removedAt: TimeTicket? = null,
 ) : CrdtElement() {
+    private val selectionMap = mutableMapOf<ActorID, Selection>()
+
+    private var onChangesHandler: ((List<TextChange>) -> Unit)? = null
+
+    private var remoteChangeLock: Boolean = false
 
     val removedNodesLength: Int
-        get() = TODO("Not yet implemented")
+        get() = rgaTreeSplit.removedNodesLength
 
+    val values
+        get() = buildList {
+            rgaTreeSplit.forEach { node ->
+                if (!node.isRemoved) {
+                    val value = node.value
+                    add(TextVal(value.content, value.attributes))
+                }
+            }
+        }
+
+    /**
+     * Edits the given [range] with the given [content] and [attributes].
+     */
     fun edit(
         range: RgaTreeSplitNodeRange,
         content: String,
         executedAt: TimeTicket,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        attributes: Map<String, String>? = null,
     ): Map<ActorID, TimeTicket> {
-        TODO("Not yet implemented")
+        val value = if (content.isNotEmpty()) {
+            TextValue(content).apply {
+                attributes?.forEach { setAttribute(it.key, it.value, executedAt) }
+            }
+        } else {
+            null
+        }
+
+        val (caretPos, latestCreatedAtMap, changes) = rgaTreeSplit.edit(
+            range,
+            executedAt,
+            value,
+            latestCreatedAtMapByActor,
+        )
+
+        selectPrev(RgaTreeSplitNodeRange(caretPos, caretPos), executedAt)?.let { changes.add(it) }
+        handleChanges(changes)
+        return latestCreatedAtMap
     }
 
-    // NOTE(7hong13): updatedAt vs executedAt ?
-    fun select(range: RgaTreeSplitNodeRange, updatedAt: TimeTicket) {
-        TODO("Not yet implemented")
+    private fun selectPrev(range: RgaTreeSplitNodeRange, executedAt: TimeTicket): TextChange? {
+        val prevSelection = selectionMap[executedAt.actorID] ?: run {
+            selectionMap[executedAt.actorID] = Selection(range.first, range.second, executedAt)
+            return null
+        }
+        return if (prevSelection.executedAt < executedAt) {
+            selectionMap[executedAt.actorID] = Selection(range.first, range.second, executedAt)
+            val (from, to) = rgaTreeSplit.findIndexesFromRange(range)
+            TextChange(TextChangeType.Selection, executedAt.actorID, from, to)
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Applies the style of the given [range].
+     * 1. Split nodes with from and to.
+     * 2. Style nodes between from and to.
+     */
+    fun style(
+        range: RgaTreeSplitNodeRange,
+        attributes: Map<String, String>,
+        executedAt: TimeTicket,
+    ) {
+        // 1. Split nodes with from and to.
+        val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
+        val fromRight = rgaTreeSplit.findNodeWithSplit(range.first, executedAt).second
+
+        // 2. Style nodes between from and to.
+        val changes = rgaTreeSplit.findBetween(fromRight, toRight)
+            .filterNot { it.isRemoved }
+            .map { node ->
+                val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createRange())
+                attributes.forEach { node.value.setAttribute(it.key, it.value, executedAt) }
+                TextChange(
+                    TextChangeType.Style,
+                    executedAt.actorID,
+                    fromIndex,
+                    toIndex,
+                    null,
+                    attributes,
+                )
+            }
+
+        handleChanges(changes)
+    }
+
+    /**
+     * Stores that the given [range] has been selected.
+     */
+    fun select(range: RgaTreeSplitNodeRange, executedAt: TimeTicket) {
+        if (!remoteChangeLock) return
+
+        val change = selectPrev(range, executedAt) ?: return
+        handleChanges(listOf(change))
+    }
+
+    /**
+     * Returns a pair of [RgaTreeSplitNodePos] of the given integer offsets.
+     */
+    fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitNodeRange {
+        val fromPos = rgaTreeSplit.findNodePos(fromIndex)
+        return if (fromIndex == toIndex) {
+            RgaTreeSplitNodeRange(fromPos, fromPos)
+        } else {
+            RgaTreeSplitNodeRange(fromPos, rgaTreeSplit.findNodePos(toIndex))
+        }
     }
 
     fun deleteTextNodesWithGarbage(executedAt: TimeTicket): Int {
-        TODO("Not yet implemented")
+        return rgaTreeSplit.deleteTextNodesWithGarbage(executedAt)
     }
 
     override fun deepCopy(): CrdtElement {
         return copy()
+    }
+
+    /**
+     * Registers a handler of onChanges event.
+     */
+    fun onChanges(handler: ((List<TextChange>) -> Unit)) {
+        onChangesHandler = handler
+    }
+
+    private fun handleChanges(changes: List<TextChange>) {
+        onChangesHandler ?: return
+        remoteChangeLock = true
+        onChangesHandler?.invoke(changes)
+        remoteChangeLock = false
+    }
+
+    companion object {
+        fun create(rgaTreeSplit: RgaTreeSplit<TextValue>, createdAt: TimeTicket): CrdtText {
+            return CrdtText(rgaTreeSplit, createdAt).apply {
+                edit(createRange(0, 0), "\n", createdAt)
+            }
+        }
     }
 }

@@ -50,12 +50,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
 
         // 2. Delete between from and to.
-        val nodesToDelete = if (toRight != null && fromRight != null) {
-            findBetween(fromRight, toRight)
-        } else {
-            emptyList()
-        }
-
+        val nodesToDelete = findBetween(fromRight, toRight)
         val (changes, latestCreatedAtMap, removedNodeMapByNodeKey) = deleteNodes(
             nodesToDelete,
             executedAt,
@@ -174,9 +169,12 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
      * Returns nodes between [fromNode] and [toNode].
      */
     fun findBetween(
-        fromNode: RgaTreeSplitNode<T>,
-        toNode: RgaTreeSplitNode<T>,
+        fromNode: RgaTreeSplitNode<T>?,
+        toNode: RgaTreeSplitNode<T>?,
     ): List<RgaTreeSplitNode<T>> {
+        if (fromNode == null || toNode == null) {
+            return emptyList()
+        }
         var current: RgaTreeSplitNode<T> = fromNode
         return buildList {
             while (current != toNode) {
@@ -345,7 +343,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
     }
 
     /**
-     * Fins the node of the given [id].
+     * Finds the node of the given [id].
      */
     fun findNode(id: RgaTreeSplitNodeID): RgaTreeSplitNode<T> {
         return requireNotNull(findFloorNode(id))

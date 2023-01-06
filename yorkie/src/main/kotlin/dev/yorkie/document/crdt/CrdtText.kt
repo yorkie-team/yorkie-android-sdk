@@ -7,19 +7,10 @@ internal data class CrdtText(
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket?,
     override var _removedAt: TimeTicket?,
-) : CrdtTextElement() {
+) : CrdtElement() {
 
-    override fun getRemovedNodesLength(): Int {
-        TODO("Not yet implemented")
-    }
-
-    override fun deleteTextNodesWithGarbage(executedAt: TimeTicket): Int {
-        TODO("Not yet implemented")
-    }
-
-    override fun deepCopy(): CrdtElement {
-        TODO("Not yet implemented")
-    }
+    val removedNodesLength: Int
+        get() = TODO("Not yet implemented")
 
     fun edit(
         range: RgaTreeSplitNodeRange,
@@ -33,5 +24,13 @@ internal data class CrdtText(
     // NOTE(7hong13): updatedAt vs executedAt ?
     fun select(range: RgaTreeSplitNodeRange, updatedAt: TimeTicket) {
         TODO("Not yet implemented")
+    }
+
+    fun deleteTextNodesWithGarbage(executedAt: TimeTicket): Int {
+        TODO("Not yet implemented")
+    }
+
+    override fun deepCopy(): CrdtElement {
+        return copy()
     }
 }

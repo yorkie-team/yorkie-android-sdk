@@ -43,14 +43,13 @@ internal typealias PBTextNodeID = dev.yorkie.api.v1.TextNodeID
 internal typealias PBTextNodePos = dev.yorkie.api.v1.TextNodePos
 internal typealias PBTextNode = dev.yorkie.api.v1.TextNode
 
-// TODO(7hong13): should implement toPBTextNodeID, toPBTextNodePos, toPBTextNodes, toPBText,
-//  and RgaTreeSplit related functions later.
+// TODO(7hong13): should implement toPBText later.
 
 internal fun ByteString.toCrdtObject(): CrdtObject {
     return PBJsonElement.parseFrom(this).jsonObject.toCrdtObject()
 }
 
-// // TODO(7hong13): should check CrdtText, CrdtRichText
+// // TODO(7hong13): should check CrdtText
 internal fun CrdtElement.toByteString(): ByteString {
     return when (this) {
         is CrdtObject -> toPBJsonObject().toByteString()
@@ -317,7 +316,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
     }
 }
 
-// TODO("check CrdtText and CrdtRichText")
+// TODO("check CrdtText")
 internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
     val element = this@toPBJsonElementSimple
     return jSONElementSimple {

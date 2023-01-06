@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -45,7 +44,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         executedAt: TimeTicket,
         value: T?,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Triple<RgaTreeSplitNodePos, Map<ActorID, TimeTicket>, List<TextChange>> {
+    ): Triple<RgaTreeSplitNodePos, Map<ActorID, TimeTicket>, MutableList<TextChange>> {
         // 1. Split nodes.
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
         val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
@@ -328,7 +327,6 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         for (index in 0..boundaries.size - 2) {
             val leftBoundary = boundaries[index]
             val rightBoundary = boundaries[index + 1]
-            // NOTE(7hong13): below comment has a typo in JS-SDK.
             // If there is no node to delete between boundaries, do nothing.
             if (leftBoundary?.next != rightBoundary) {
                 treeByIndex.deleteRange(requireNotNull(leftBoundary), rightBoundary)
@@ -336,8 +334,6 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         }
     }
 
-    // NOTE(7hong13): original comment from JS-SDK:
-    // `findNodePos` finds RGATreeSplitNodePos of given offset.
     /**
      * Finds [RgaTreeSplitNodePos] of the given [index].
      */
@@ -477,7 +473,6 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
     val removedAt: TimeTicket?
         get() = _removedAt
 
-    @VisibleForTesting
     val value
         get() = _value
 
@@ -515,8 +510,6 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
         return valueBefore.subSequence(offset, valueBefore.length) as T
     }
 
-    // NOTE(7hong13): original comment from JS-SDK:
-    // `canDelete` checks if node is able to delete.
     /**
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
@@ -524,8 +517,6 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
         return createdAt <= latestCreatedAt && (isRemoved || _removedAt < executedAt)
     }
 
-    // NOTE(7hong13): original comment from JS-SDK:
-    // `remove` removes node of given edited time.
     /**
      * Removes this [RgaTreeSplitNode] at the given [executedAt].
      */

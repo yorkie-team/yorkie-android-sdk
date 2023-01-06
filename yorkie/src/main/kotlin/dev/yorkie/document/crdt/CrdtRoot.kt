@@ -87,7 +87,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     /**
      * Registers the given [text] to the hast set.
      */
-    fun registerTextWithGarbage(text: CrdtTextElement) {
+    fun registerTextWithGarbage(text: CrdtText) {
         textWithGarbageSetByCreatedAt.add(text.createdAt)
     }
 
@@ -109,8 +109,8 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
 
         textWithGarbageSetByCreatedAt.forEach { createdAt ->
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
-            val text = pair.element as CrdtTextElement
-            count += text.getRemovedNodesLength()
+            val text = pair.element as CrdtText
+            count += text.removedNodesLength
         }
 
         return count
@@ -140,7 +140,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         while (textGarbageIterator.hasNext()) {
             val createdAt = textGarbageIterator.next()
             val pair = elementPairMapByCreatedAt[createdAt] ?: continue
-            val text = pair.element as CrdtTextElement
+            val text = pair.element as CrdtText
 
             val removedNodeCount = text.deleteTextNodesWithGarbage(executedAt)
             if (removedNodeCount > 0) {

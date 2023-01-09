@@ -19,7 +19,7 @@ class TrieTest {
     }
 
     @Test
-    fun `should find words with specific prefix`() {
+    fun `should find words with specific prefixes`() {
         words.forEach { trie[it] = it }
         val philResult = trie.prefixMap("phil").values.toList()
         val unResult = trie.prefixMap("un").values.toList()

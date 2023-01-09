@@ -32,9 +32,7 @@ internal data class IncreaseOperation(
             val copiedValue = value.deepCopy() as CrdtPrimitive
             parentObject.increase(copiedValue)
         } else {
-            if (parentObject == null) {
-                YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            }
+            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only Counter can execute increase")
         }
     }

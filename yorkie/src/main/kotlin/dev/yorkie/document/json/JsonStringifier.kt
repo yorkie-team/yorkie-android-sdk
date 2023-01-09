@@ -6,6 +6,7 @@ import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.CrdtText
 import java.util.Date
 
 internal object JsonStringifier {
@@ -51,6 +52,14 @@ internal object JsonStringifier {
                     }
                 }
                 buffer.append("}")
+            }
+            is CrdtText -> {
+                buffer.append(
+                    "[${
+                    rgaTreeSplit.filterNot { it.isRemoved }
+                        .joinToString(",") { it.value.toJson() }
+                    }]",
+                )
             }
         }
     }

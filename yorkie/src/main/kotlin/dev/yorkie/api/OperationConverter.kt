@@ -7,6 +7,7 @@ import dev.yorkie.api.v1.OperationKt.move
 import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.select
 import dev.yorkie.api.v1.OperationKt.set
+import dev.yorkie.api.v1.OperationKt.style
 import dev.yorkie.api.v1.operation
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.EditOperation
@@ -16,6 +17,7 @@ import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.time.ActorID
 
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
@@ -51,32 +53,39 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 executedAt = it.increase.executedAt.toTimeTicket(),
                 value = it.increase.value.toCrdtElement(),
             )
-            it.hasEdit() -> EditOperation(
-                fromPos = it.edit.from.toRgaTreeSplitNodePos(),
-                toPos = it.edit.to.toRgaTreeSplitNodePos(),
-                parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
-                executedAt = it.edit.executedAt.toTimeTicket(),
-                maxCreatedAtMapByActor = buildMap {
-                    it.edit.createdAtMapByActorMap.forEach { entry ->
-                        set(ActorID(entry.key), entry.value.toTimeTicket())
-                    }
-                },
-                content = it.edit.content,
-            )
+            it.hasEdit() -> {
+                EditOperation(
+                    fromPos = it.edit.from.toRgaTreeSplitNodePos(),
+                    toPos = it.edit.to.toRgaTreeSplitNodePos(),
+                    parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
+                    executedAt = it.edit.executedAt.toTimeTicket(),
+                    maxCreatedAtMapByActor = buildMap {
+                        it.edit.createdAtMapByActorMap.forEach { entry ->
+                            set(ActorID(entry.key), entry.value.toTimeTicket())
+                        }
+                    },
+                    content = it.edit.content,
+                    attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() },
+                )
+            }
             it.hasSelect() -> SelectOperation(
                 fromPos = it.select.from.toRgaTreeSplitNodePos(),
                 toPos = it.select.to.toRgaTreeSplitNodePos(),
                 parentCreatedAt = it.select.parentCreatedAt.toTimeTicket(),
                 executedAt = it.select.executedAt.toTimeTicket(),
             )
-            it.hasRichEdit() -> TODO("not yet implemented")
-            it.hasStyle() -> TODO("not yet implemented")
-            else -> error("unimplemented operation")
+            it.hasStyle() -> StyleOperation(
+                fromPos = it.style.from.toRgaTreeSplitNodePos(),
+                toPos = it.style.to.toRgaTreeSplitNodePos(),
+                attributes = it.style.attributesMap,
+                parentCreatedAt = it.style.parentCreatedAt.toTimeTicket(),
+                executedAt = it.style.executedAt.toTimeTicket(),
+            )
+            else -> throw IllegalArgumentException("unimplemented operation")
         }
     }
 }
 
-// TODO(7hong13): should check RichEdit, Style Operations
 internal fun Operation.toPBOperation(): PBOperation {
     return when (val operation = this@toPBOperation) {
         is SetOperation -> {
@@ -138,6 +147,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                     operation.maxCreatedAtMapByActor.forEach {
                         createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
                     }
+                    operation.attributes?.forEach { attributes[it.key] = it.value }
                 }
             }
         }
@@ -151,7 +161,18 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
-        else -> error("unimplemented operation $operation")
+        is StyleOperation -> {
+            operation {
+                style = style {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    from = operation.fromPos.toPBTextNodePos()
+                    to = operation.toPos.toPBTextNodePos()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                    operation.attributes.forEach { attributes[it.key] = it.value }
+                }
+            }
+        }
+        else -> throw IllegalArgumentException("unimplemented operation $operation")
     }
 }
 

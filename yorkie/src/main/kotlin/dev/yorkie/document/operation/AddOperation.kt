@@ -32,9 +32,7 @@ internal data class AddOperation(
             parentObject.insertAfter(prevCreatedAt, copiedValue)
             root.registerElement(copiedValue, parentObject)
         } else {
-            if (parentObject == null) {
-                YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            }
+            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only array can execute add")
         }
     }

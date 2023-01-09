@@ -169,7 +169,7 @@ class ClientTest {
         InstrumentationRegistry.getInstrumentation().targetContext,
         "10.0.2.2",
         8080,
-        true,
+        usePlainText = true,
     )
 
     private fun createDocument(key: String) = Document(Document.Key(key))

@@ -7,9 +7,10 @@ import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
-internal data class SelectOperation(
+internal data class StyleOperation(
     val fromPos: RgaTreeSplitNodePos,
     val toPos: RgaTreeSplitNodePos,
+    val attributes: Map<String, String>,
     override val parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
@@ -17,20 +18,17 @@ internal data class SelectOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    /**
-     * Returns the created time of the effected element.
-     */
     override fun execute(root: CrdtRoot) {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         if (parentObject is CrdtText) {
-            parentObject.select(RgaTreeSplitNodeRange(fromPos, toPos), executedAt)
+            parentObject.style(RgaTreeSplitNodeRange(fromPos, toPos), attributes, executedAt)
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            YorkieLogger.e(TAG, "fail to execute, only Text, RichText can execute select")
+            YorkieLogger.e(TAG, "fail to execute, only Text can execute style")
         }
     }
 
     companion object {
-        private const val TAG = "SelectOperation"
+        private const val TAG = "StyleOperation"
     }
 }

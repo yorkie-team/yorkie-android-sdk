@@ -33,9 +33,7 @@ internal data class SetOperation(
             parentObject[key] = copiedValue
             root.registerElement(copiedValue, parentObject)
         } else {
-            if (parentObject == null) {
-                YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            }
+            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only object can execute set")
         }
     }

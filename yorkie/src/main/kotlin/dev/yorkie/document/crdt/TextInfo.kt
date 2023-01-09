@@ -44,6 +44,9 @@ internal data class TextValue(
     val attributes
         get() = _attributes.nodeKeyValueMap
 
+    val attributesWithTimeTicket
+        get() = _attributes.toList()
+
     override fun get(index: Int): Char = content[index]
 
     override fun subSequence(startIndex: Int, endIndex: Int): CharSequence {
@@ -58,8 +61,6 @@ internal data class TextValue(
         val attrs = _attributes.nodeKeyValueMap.entries.joinToString(",", "{", "}") {
             """"${it.key}":"${escapeString(it.value)}""""
         }
-        return """{"attrs":$attrs,"content":${escapeString(content)}}"""
+        return """{"attrs":$attrs,"content":"${escapeString(content)}"}"""
     }
 }
-
-internal data class TextVal(val content: String, val attributes: Map<String, String>)

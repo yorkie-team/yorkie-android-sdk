@@ -6,8 +6,7 @@ import dev.yorkie.document.time.TimeTicket
 /**
  * [CrdtText] is a custom CRDT data type to represent the contents of text editors.
  */
-@Suppress("DataClassPrivateConstructor")
-internal data class CrdtText private constructor(
+internal data class CrdtText(
     val rgaTreeSplit: RgaTreeSplit<TextValue>,
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket? = null,
@@ -23,14 +22,8 @@ internal data class CrdtText private constructor(
         get() = rgaTreeSplit.removedNodesLength
 
     val values
-        get() = buildList {
-            rgaTreeSplit.forEach { node ->
-                if (!node.isRemoved) {
-                    val value = node.value
-                    add(TextVal(value.content, value.attributes))
-                }
-            }
-        }
+        get() = rgaTreeSplit.filterNot { it.isRemoved }
+            .map { it.value.content to it.value.attributes }
 
     /**
      * Edits the given [range] with the given [content] and [attributes].
@@ -39,8 +32,8 @@ internal data class CrdtText private constructor(
         range: RgaTreeSplitNodeRange,
         content: String,
         executedAt: TimeTicket,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
         attributes: Map<String, String>? = null,
+        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): Map<ActorID, TimeTicket> {
         val value = if (content.isNotEmpty()) {
             TextValue(content).apply {
@@ -151,13 +144,5 @@ internal data class CrdtText private constructor(
         remoteChangeLock = true
         onChangesHandler?.invoke(changes)
         remoteChangeLock = false
-    }
-
-    companion object {
-        fun create(rgaTreeSplit: RgaTreeSplit<TextValue>, createdAt: TimeTicket): CrdtText {
-            return CrdtText(rgaTreeSplit, createdAt).apply {
-                edit(createRange(0, 0), "\n", createdAt)
-            }
-        }
     }
 }

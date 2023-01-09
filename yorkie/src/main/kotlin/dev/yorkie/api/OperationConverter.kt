@@ -65,7 +65,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                         }
                     },
                     content = it.edit.content,
-                    attributes = it.edit.attributesMap.takeIf { attrs -> attrs.isNotEmpty() },
+                    attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() },
                 )
             }
             it.hasSelect() -> SelectOperation(
@@ -81,7 +81,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 parentCreatedAt = it.style.parentCreatedAt.toTimeTicket(),
                 executedAt = it.style.executedAt.toTimeTicket(),
             )
-            else -> error("unimplemented operation")
+            else -> throw IllegalArgumentException("unimplemented operation")
         }
     }
 }
@@ -172,7 +172,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
-        else -> error("unimplemented operation $operation")
+        else -> throw IllegalArgumentException("unimplemented operation $operation")
     }
 }
 

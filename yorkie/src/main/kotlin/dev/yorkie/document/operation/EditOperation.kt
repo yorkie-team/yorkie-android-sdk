@@ -34,8 +34,8 @@ internal data class EditOperation(
                 RgaTreeSplitNodeRange(fromPos, toPos),
                 content,
                 executedAt,
-                maxCreatedAtMapByActor,
                 attributes,
+                maxCreatedAtMapByActor,
             )
             if (fromPos != toPos) {
                 root.registerTextWithGarbage(parentObject)

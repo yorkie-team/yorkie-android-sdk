@@ -6,6 +6,7 @@ import dev.yorkie.api.v1.JSONElementKt.counter
 import dev.yorkie.api.v1.JSONElementKt.jSONArray
 import dev.yorkie.api.v1.JSONElementKt.jSONObject
 import dev.yorkie.api.v1.JSONElementKt.primitive
+import dev.yorkie.api.v1.JSONElementKt.text
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.movedAtOrNull
@@ -13,6 +14,7 @@ import dev.yorkie.api.v1.rGANode
 import dev.yorkie.api.v1.rHTNode
 import dev.yorkie.api.v1.removedAtOrNull
 import dev.yorkie.api.v1.textNode
+import dev.yorkie.api.v1.textNodeAttr
 import dev.yorkie.api.v1.textNodeID
 import dev.yorkie.api.v1.textNodePos
 import dev.yorkie.document.crdt.CrdtArray
@@ -22,12 +24,14 @@ import dev.yorkie.document.crdt.CrdtCounter.CounterType
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNode
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
 import dev.yorkie.document.crdt.RhtPQMap
+import dev.yorkie.document.crdt.TextValue
 
 internal typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
 internal typealias PBJsonElementSimple = dev.yorkie.api.v1.JSONElementSimple
@@ -43,20 +47,18 @@ internal typealias PBTextNodeID = dev.yorkie.api.v1.TextNodeID
 internal typealias PBTextNodePos = dev.yorkie.api.v1.TextNodePos
 internal typealias PBTextNode = dev.yorkie.api.v1.TextNode
 
-// TODO(7hong13): should implement toPBText later.
-
 internal fun ByteString.toCrdtObject(): CrdtObject {
     return PBJsonElement.parseFrom(this).jsonObject.toCrdtObject()
 }
 
-// // TODO(7hong13): should check CrdtText
 internal fun CrdtElement.toByteString(): ByteString {
     return when (this) {
         is CrdtObject -> toPBJsonObject().toByteString()
         is CrdtArray -> toPBJsonArray().toByteString()
+        is CrdtText -> toPBText().toByteString()
         is CrdtPrimitive -> toPBPrimitive().toByteString()
         is CrdtCounter -> toPBCounter().toByteString()
-        else -> error("unimplemented element $this")
+        else -> throw IllegalArgumentException("unimplemented element $this")
     }
 }
 
@@ -64,11 +66,10 @@ internal fun PBJsonElement.toCrdtElement(): CrdtElement {
     return when {
         hasJsonObject() -> jsonObject.toCrdtObject()
         hasJsonArray() -> jsonArray.toCrdtArray()
+        hasText() -> text.toCrdtText()
         hasPrimitive() -> primitive.toCrdtPrimitive()
-        hasText() -> TODO("not yet implemented")
-        hasRichText() -> TODO("not yet implemented")
         hasCounter() -> counter.toCrdtCounter()
-        else -> error("unimplemented element: $this")
+        else -> throw IllegalArgumentException("unimplemented element: $this")
     }
 }
 
@@ -85,7 +86,7 @@ internal fun PBJsonObject.toCrdtObject(): CrdtObject {
     )
 }
 
-internal fun PBJsonArray.toCrdtArray(): CrdtArray {
+private fun PBJsonArray.toCrdtArray(): CrdtArray {
     val rgaTreeList = RgaTreeList()
     nodesList.forEach { node ->
         rgaTreeList.insert(node.element.toCrdtElement())
@@ -98,7 +99,26 @@ internal fun PBJsonArray.toCrdtArray(): CrdtArray {
     )
 }
 
-internal fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
+internal fun PBText.toCrdtText(): CrdtText {
+    val rgaTreeSplit = RgaTreeSplit<TextValue>()
+
+    var prev = rgaTreeSplit.head
+    nodesList.forEach { node ->
+        val current = rgaTreeSplit.insertAfter(prev, node.toRgaTreeSplitNode())
+        if (node.hasInsPrevId()) {
+            current.setInsertionPrev(rgaTreeSplit.findNode(node.insPrevId.toRgaTreeSplitNodeID()))
+        }
+        prev = current
+    }
+    return CrdtText(
+        rgaTreeSplit = rgaTreeSplit,
+        createdAt = createdAt.toTimeTicket(),
+        _removedAt = removedAt.toTimeTicket(),
+        _movedAt = movedAt.toTimeTicket(),
+    )
+}
+
+private fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
     return CrdtPrimitive(
         value = CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
         createdAt = createdAt.toTimeTicket(),
@@ -107,7 +127,7 @@ internal fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
     )
 }
 
-internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
+private fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
     return when (this) {
         PBValueType.VALUE_TYPE_NULL -> CrdtPrimitive.Type.Null
         PBValueType.VALUE_TYPE_BOOLEAN -> CrdtPrimitive.Type.Boolean
@@ -117,11 +137,11 @@ internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
         PBValueType.VALUE_TYPE_STRING -> CrdtPrimitive.Type.String
         PBValueType.VALUE_TYPE_BYTES -> CrdtPrimitive.Type.Bytes
         PBValueType.VALUE_TYPE_DATE -> CrdtPrimitive.Type.Date
-        else -> error("unimplemented type $this")
+        else -> throw IllegalArgumentException("unimplemented type $this")
     }
 }
 
-internal fun PBCounter.toCrdtCounter(): CrdtCounter {
+private fun PBCounter.toCrdtCounter(): CrdtCounter {
     val type = type.toCounterType()
     return if (type == CounterType.IntegerCnt) {
         CrdtCounter(
@@ -140,22 +160,22 @@ internal fun PBCounter.toCrdtCounter(): CrdtCounter {
     }
 }
 
-internal fun PBValueType.toCounterType(): CounterType {
+private fun PBValueType.toCounterType(): CounterType {
     return when (this) {
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.IntegerCnt
         PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.LongCnt
-        else -> error("unimplemented value type: $this")
+        else -> throw IllegalArgumentException("unimplemented value type: $this")
     }
 }
 
-// TODO(7hong13): should check CrdtText
 internal fun CrdtElement.toPBJsonElement(): PBJsonElement {
     return when (this) {
         is CrdtObject -> toPBJsonObject()
         is CrdtArray -> toPBJsonArray()
+        is CrdtText -> toPBText()
         is CrdtPrimitive -> toPBPrimitive()
         is CrdtCounter -> toPBCounter()
-        else -> error("unimplemented element: $this")
+        else -> throw IllegalArgumentException("unimplemented element: $this")
     }
 }
 
@@ -192,9 +212,38 @@ internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
     }
 }
 
-internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
+private fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
     return map {
         rGANode { element = it.value.toPBJsonElement() }
+    }
+}
+
+internal fun CrdtText.toPBText(): PBJsonElement {
+    val crdtText = this
+    return jSONElement {
+        text = text {
+            createdAt = crdtText.createdAt.toPBTimeTicket()
+            crdtText.movedAt?.let { movedAt = it.toPBTimeTicket() }
+            crdtText.removedAt?.let { removedAt = it.toPBTimeTicket() }
+            nodes.addAll(rgaTreeSplit.toPBTextNodes())
+        }
+    }
+}
+
+private fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
+    return this@toPBTextNodes.map { node ->
+        textNode {
+            id = node.id.toPBTextNodeID()
+            value = node.value.content
+            node.removedAt?.let { removedAt = it.toPBTimeTicket() }
+            node.value.attributesWithTimeTicket.forEach {
+                attributes[it.key] = textNodeAttr {
+                    key = it.key
+                    value = it.value
+                    updatedAt = it.executedAt.toPBTimeTicket()
+                }
+            }
+        }
     }
 }
 
@@ -213,30 +262,25 @@ internal fun PBTextNodePos.toRgaTreeSplitNodePos(): RgaTreeSplitNodePos {
     )
 }
 
-internal fun RgaTreeSplitNodeID.toPBTextNodeID(): PBTextNodeID {
+private fun RgaTreeSplitNodeID.toPBTextNodeID(): PBTextNodeID {
     return textNodeID {
         createdAt = this@toPBTextNodeID.createdAt.toPBTimeTicket()
         offset = this@toPBTextNodeID.offset
     }
 }
 
-internal fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
+private fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
     return RgaTreeSplitNodeID(createdAt.toTimeTicket(), offset)
 }
 
-internal fun RgaTreeSplit<String>.toPBTextNodes(): List<PBTextNode> {
-    return this@toPBTextNodes.map { node ->
-        textNode {
-            id = node.id.toPBTextNodeID()
-            value = node.value
-            node.removedAt?.let { removedAt = it.toPBTimeTicket() }
+private fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
+    val textValue = TextValue(value).apply {
+        attributesMap.forEach { (_, value) ->
+            setAttribute(value.key, value.value, value.updatedAt.toTimeTicket())
         }
     }
-}
-
-internal fun PBTextNode.toRgaReeSplitNode(): RgaTreeSplitNode<String> {
-    return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), value).apply {
-        remove(this@toRgaReeSplitNode.removedAt.toTimeTicket())
+    return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), textValue).apply {
+        remove(this@toRgaTreeSplitNode.removedAt.toTimeTicket())
     }
 }
 
@@ -253,7 +297,7 @@ internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
     }
 }
 
-internal fun CrdtPrimitive.Type.toPBValueType(): PBValueType {
+private fun CrdtPrimitive.Type.toPBValueType(): PBValueType {
     return when (this) {
         CrdtPrimitive.Type.Null -> PBValueType.VALUE_TYPE_NULL
         CrdtPrimitive.Type.Boolean -> PBValueType.VALUE_TYPE_BOOLEAN
@@ -279,7 +323,7 @@ internal fun CrdtCounter.toPBCounter(): PBJsonElement {
     }
 }
 
-internal fun CounterType.toPBCounterType(): PBValueType {
+private fun CounterType.toPBCounterType(): PBValueType {
     return when (this) {
         CounterType.IntegerCnt -> PBValueType.VALUE_TYPE_INTEGER_CNT
         CounterType.LongCnt -> PBValueType.VALUE_TYPE_LONG_CNT
@@ -290,8 +334,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
     return when (type) {
         PBValueType.VALUE_TYPE_JSON_OBJECT -> CrdtObject(createdAt.toTimeTicket(), rht = RhtPQMap())
         PBValueType.VALUE_TYPE_JSON_ARRAY -> CrdtArray(createdAt.toTimeTicket())
-        PBValueType.VALUE_TYPE_TEXT -> TODO("not yet implemented")
-        PBValueType.VALUE_TYPE_RICH_TEXT -> TODO("not yet implemented")
+        PBValueType.VALUE_TYPE_TEXT -> CrdtText(RgaTreeSplit(), createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_NULL,
         PBValueType.VALUE_TYPE_BOOLEAN,
         PBValueType.VALUE_TYPE_INTEGER,
@@ -312,11 +355,10 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             value.toByteArray().asCounterValue(type.toCounterType()).toLong(),
             createdAt.toTimeTicket(),
         )
-        else -> error("unimplemented type $this")
+        else -> throw IllegalArgumentException("unimplemented type $this")
     }
 }
 
-// TODO("check CrdtText")
 internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
     val element = this@toPBJsonElementSimple
     return jSONElementSimple {
@@ -324,6 +366,10 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
         when (element) {
             is CrdtObject -> type = PBValueType.VALUE_TYPE_JSON_OBJECT
             is CrdtArray -> type = PBValueType.VALUE_TYPE_JSON_ARRAY
+            is CrdtText -> {
+                type = PBValueType.VALUE_TYPE_TEXT
+                createdAt = element.createdAt.toPBTimeTicket()
+            }
             is CrdtPrimitive -> {
                 type = element.type.toPBValueType()
                 value = element.toBytes()
@@ -332,7 +378,7 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
                 type = element.type.toPBCounterType()
                 value = element.toBytes().toByteString()
             }
-            else -> error("unimplemented element: $element")
+            else -> throw IllegalArgumentException("unimplemented element: $element")
         }
     }
 }

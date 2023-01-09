@@ -51,6 +51,9 @@ internal data class CrdtText(
             latestCreatedAtMapByActor,
         )
 
+        if (content.isNotEmpty() && attributes != null) {
+            changes.last().attributes = attributes
+        }
         selectPrev(RgaTreeSplitNodeRange(caretPos, caretPos), executedAt)?.let { changes.add(it) }
         handleChanges(changes)
         return latestCreatedAtMap
@@ -107,7 +110,7 @@ internal data class CrdtText(
      * Stores that the given [range] has been selected.
      */
     fun select(range: RgaTreeSplitNodeRange, executedAt: TimeTicket) {
-        if (!remoteChangeLock) return
+        if (remoteChangeLock) return
 
         val change = selectPrev(range, executedAt) ?: return
         handleChanges(listOf(change))
@@ -130,7 +133,7 @@ internal data class CrdtText(
     }
 
     override fun deepCopy(): CrdtElement {
-        return copy()
+        return copy(rgaTreeSplit = rgaTreeSplit.deepCopy())
     }
 
     /**

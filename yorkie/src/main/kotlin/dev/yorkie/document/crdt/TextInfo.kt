@@ -14,7 +14,7 @@ internal data class TextChange(
     val from: Int,
     val to: Int,
     var content: String? = null,
-    val attributes: Map<String, String>? = null,
+    var attributes: Map<String, String>? = null,
 )
 
 /**

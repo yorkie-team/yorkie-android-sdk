@@ -172,14 +172,11 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         fromNode: RgaTreeSplitNode<T>?,
         toNode: RgaTreeSplitNode<T>?,
     ): List<RgaTreeSplitNode<T>> {
-        if (fromNode == null || toNode == null) {
-            return emptyList()
-        }
-        var current: RgaTreeSplitNode<T> = fromNode
+        var current: RgaTreeSplitNode<T>? = fromNode
         return buildList {
             while (current != toNode) {
-                add(current)
-                current = current.next ?: break
+                add(current ?: break)
+                current = current?.next ?: break
             }
         }
     }
@@ -266,7 +263,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         candidates: List<RgaTreeSplitNode<T>>,
     ): Pair<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>?> {
         if (candidates.isEmpty()) {
-            error("findEdgesOfCandidates error: candidates is empty")
+            throw IllegalArgumentException("findEdgesOfCandidates error: candidates is empty")
         }
         return Pair(requireNotNull(candidates.first().prev), candidates.last().next)
     }

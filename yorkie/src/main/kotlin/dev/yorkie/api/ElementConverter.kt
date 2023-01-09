@@ -113,8 +113,8 @@ internal fun PBText.toCrdtText(): CrdtText {
     return CrdtText(
         rgaTreeSplit = rgaTreeSplit,
         createdAt = createdAt.toTimeTicket(),
-        _removedAt = removedAt.toTimeTicket(),
-        _movedAt = movedAt.toTimeTicket(),
+        _removedAt = removedAtOrNull?.toTimeTicket(),
+        _movedAt = movedAtOrNull?.toTimeTicket(),
     )
 }
 
@@ -235,7 +235,7 @@ private fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
         textNode {
             id = node.id.toPBTextNodeID()
             value = node.value.content
-            node.removedAt?.let { removedAt = it.toPBTimeTicket() }
+            node.removedAt?.let { removedAt = it.toPBTimeTicket() } ?: clearRemovedAt()
             node.value.attributesWithTimeTicket.forEach {
                 attributes[it.key] = textNodeAttr {
                     key = it.key
@@ -280,7 +280,7 @@ private fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
         }
     }
     return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), textValue).apply {
-        remove(this@toRgaTreeSplitNode.removedAt.toTimeTicket())
+        remove(this@toRgaTreeSplitNode.removedAtOrNull?.toTimeTicket())
     }
 }
 

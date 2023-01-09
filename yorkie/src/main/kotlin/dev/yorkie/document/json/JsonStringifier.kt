@@ -54,12 +54,12 @@ internal object JsonStringifier {
                 buffer.append("}")
             }
             is CrdtText -> {
-                buffer.append("[")
                 buffer.append(
+                    "[${
                     rgaTreeSplit.filterNot { it.isRemoved }
-                        .joinToString(",") { it.value.toJson() },
+                        .joinToString(",") { it.value.toJson() }
+                    }]",
                 )
-                buffer.append("]")
             }
         }
     }

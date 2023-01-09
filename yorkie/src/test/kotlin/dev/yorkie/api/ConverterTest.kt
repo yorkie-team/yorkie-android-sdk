@@ -18,7 +18,6 @@ import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
-import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
 import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.EditOperation
@@ -294,14 +293,9 @@ class ConverterTest {
     @Test
     fun `should convert CrdtText`() {
         val crdtText = CrdtText(RgaTreeSplit(), InitialTimeTicket).apply {
-            edit(
-                RgaTreeSplitNodeRange(rgaTreeSplit.findNodePos(0), rgaTreeSplit.findNodePos(0)),
-                "Text",
-                InitialTimeTicket,
-            )
+            edit(createRange(0, 0), "Text", InitialTimeTicket)
         }
         val converted = crdtText.toPBText().toCrdtElement()
-
         assertEquals(crdtText.toJson(), converted.toJson())
     }
 

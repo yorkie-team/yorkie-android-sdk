@@ -16,6 +16,7 @@ internal data class CrdtText(
 
     private var onChangesHandler: ((List<TextChange>) -> Unit)? = null
 
+    @Volatile
     private var remoteChangeLock: Boolean = false
 
     val removedNodesLength: Int

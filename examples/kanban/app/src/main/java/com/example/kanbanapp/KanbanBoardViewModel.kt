@@ -24,7 +24,7 @@ class KanbanBoardViewModel : ViewModel() {
     val list: StateFlow<ImmutableList<KanbanColumn>> = _list.asStateFlow()
 
     fun init(context: Context) {
-        val client = Client(context, "api.yorkie.dev", 443, false)
+        val client = Client(context, "api.yorkie.dev", 443)
         viewModelScope.launch {
             if (client.activateAsync().await()) {
                 client.attachAsync(document).await()

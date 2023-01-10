@@ -176,7 +176,7 @@ dependencies {
     testImplementation("org.mockito.kotlin:mockito-kotlin:4.0.0")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${Versions.coroutines}")
-    testImplementation("com.google.code.gson:gson:2.10")
+    testImplementation("com.google.code.gson:gson:2.10.1")
     testImplementation("io.grpc:grpc-testing:${Versions.grpc}")
 
     androidTestImplementation("androidx.test.ext:junit-ktx:1.1.4")

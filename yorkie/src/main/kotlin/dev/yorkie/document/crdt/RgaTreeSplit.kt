@@ -132,7 +132,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
 
     private fun splitNode(node: RgaTreeSplitNode<T>, offset: Int): RgaTreeSplitNode<T>? {
         if (offset > node.contentLength) {
-            error("offset should be less than or equal to length")
+            throw IllegalArgumentException("offset should be less than or equal to length")
         }
         if (offset == 0) {
             return node

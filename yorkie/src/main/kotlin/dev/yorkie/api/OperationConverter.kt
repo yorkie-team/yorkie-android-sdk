@@ -53,21 +53,20 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 executedAt = it.increase.executedAt.toTimeTicket(),
                 value = it.increase.value.toCrdtElement(),
             )
-            it.hasEdit() -> {
-                EditOperation(
-                    fromPos = it.edit.from.toRgaTreeSplitNodePos(),
-                    toPos = it.edit.to.toRgaTreeSplitNodePos(),
-                    parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
-                    executedAt = it.edit.executedAt.toTimeTicket(),
-                    maxCreatedAtMapByActor = buildMap {
-                        it.edit.createdAtMapByActorMap.forEach { entry ->
-                            set(ActorID(entry.key), entry.value.toTimeTicket())
-                        }
-                    },
-                    content = it.edit.content,
-                    attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() },
-                )
-            }
+            it.hasEdit() -> EditOperation(
+                fromPos = it.edit.from.toRgaTreeSplitNodePos(),
+                toPos = it.edit.to.toRgaTreeSplitNodePos(),
+                parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
+                executedAt = it.edit.executedAt.toTimeTicket(),
+                maxCreatedAtMapByActor = buildMap {
+                    it.edit.createdAtMapByActorMap.forEach { entry ->
+                        set(ActorID(entry.key), entry.value.toTimeTicket())
+                    }
+                },
+                content = it.edit.content,
+                attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() }
+                    ?: mapOf(),
+            )
             it.hasSelect() -> SelectOperation(
                 fromPos = it.select.from.toRgaTreeSplitNodePos(),
                 toPos = it.select.to.toRgaTreeSplitNodePos(),
@@ -147,7 +146,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                     operation.maxCreatedAtMapByActor.forEach {
                         createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
                     }
-                    operation.attributes?.forEach { attributes[it.key] = it.value }
+                    operation.attributes.forEach { attributes[it.key] = it.value }
                 }
             }
         }

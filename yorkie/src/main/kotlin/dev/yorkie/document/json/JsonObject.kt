@@ -7,8 +7,9 @@ import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RhtPQMap
-import dev.yorkie.document.json.JsonElement.Companion.toJsonElement
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket
@@ -83,6 +84,12 @@ public class JsonObject internal constructor(
         val crdtArray = CrdtArray(context.issueTimeTicket())
         setAndRegister(key, crdtArray)
         return crdtArray.toJsonElement(context)
+    }
+
+    public fun setNewText(key: String): JsonText {
+        val crdtText = CrdtText(RgaTreeSplit(), context.issueTimeTicket())
+        setAndRegister(key, crdtText)
+        return crdtText.toJsonElement(context)
     }
 
     public fun setNewCounter(key: String, value: Int): JsonCounter {

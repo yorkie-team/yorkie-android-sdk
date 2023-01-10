@@ -200,6 +200,7 @@ class ConverterTest {
             "edit",
             InitialTimeTicket,
             InitialTimeTicket,
+            mapOf(),
         )
         val editOperationWithAttrs = EditOperation(
             nodePos,

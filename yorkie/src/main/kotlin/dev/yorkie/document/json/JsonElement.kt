@@ -6,6 +6,7 @@ import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.CrdtText
 
 /**
  * [JsonElement] is a wrapper for [CrdtElement] that provides users with an
@@ -22,6 +23,7 @@ public abstract class JsonElement {
         private val TypeMapper = mapOf(
             CrdtObject::class.java to JsonObject::class.java,
             CrdtArray::class.java to JsonArray::class.java,
+            CrdtText::class.java to JsonText::class.java,
             CrdtPrimitive::class.java to JsonPrimitive::class.java,
             CrdtCounter::class.java to JsonCounter::class.java,
         )
@@ -39,6 +41,7 @@ public abstract class JsonElement {
                 when (clazz) {
                     JsonObject::class.java -> JsonObject(context, this as CrdtObject)
                     JsonArray::class.java -> JsonArray(context, this as CrdtArray)
+                    JsonText::class.java -> JsonText(context, this as CrdtText)
                     JsonPrimitive::class.java -> JsonPrimitive(this as CrdtPrimitive)
                     JsonCounter::class.java -> JsonCounter(context, this as CrdtCounter)
                     else -> throw TypeCastException("unknown CrdtElement type: $this")

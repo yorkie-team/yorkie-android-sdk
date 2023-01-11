@@ -3,6 +3,7 @@ package dev.yorkie.document.change
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.time.TimeTicket
 
@@ -46,6 +47,13 @@ internal data class ChangeContext(
      */
     fun registerRemovedElement(element: CrdtElement) {
         root.registerRemovedElement(element)
+    }
+
+    /**
+     * Registers text element that has removed nodes for garbage collection.
+     */
+    fun registerRemovedNodeTextElement(text: CrdtText) {
+        root.registerTextWithGarbage(text)
     }
 
     /**

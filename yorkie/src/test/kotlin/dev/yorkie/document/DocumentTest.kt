@@ -3,6 +3,7 @@ package dev.yorkie.document
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.json.JsonArray
+import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -96,6 +97,9 @@ class DocumentTest {
 
                 obj.setNewCounter("int", 100)
                 obj.setNewCounter("long", 100L)
+
+                obj.setNewText("text").edit(0, 0, "Hello World")
+                obj.getAs<JsonText>("text").style(0, 1, mapOf("b" to "1"))
             }.await()
 
             assertJsonContentEquals(
@@ -111,7 +115,8 @@ class DocumentTest {
                             "k8": 1000,
                             "k9": [true, 1, 100, 111.111, "test", "bytes", 10000, {"k1": 1}, [1, 2]],
                             "int": 100,
-                            "long": 100
+                            "long": 100,
+                            "text": [{"attrs":{"b":"1"},"content":"H"},{"attrs":{},"content":"ello World"}]
                         }
                 }""",
                 target.toJson(),

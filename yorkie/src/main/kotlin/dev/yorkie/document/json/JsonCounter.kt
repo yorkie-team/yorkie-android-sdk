@@ -6,6 +6,9 @@ import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.IncreaseOperation
 
+/**
+ * [JsonCounter] is a custom data type that is used to counter.
+ */
 public class JsonCounter internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtCounter,

@@ -8,7 +8,7 @@ import dev.yorkie.document.time.TimeTicket
  * The value passed as an argument to [CrdtText.onChanges].
  * [CrdtText.onChanges] is called when the [CrdtText] is modified.
  */
-internal data class TextChange(
+public data class TextChange(
     val type: TextChangeType,
     val actor: ActorID,
     val from: Int,
@@ -20,7 +20,7 @@ internal data class TextChange(
 /**
  * The type of [TextChange].
  */
-internal enum class TextChangeType {
+public enum class TextChangeType {
     Content, Selection, Style
 }
 

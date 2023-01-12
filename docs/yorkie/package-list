@@ -24,6 +24,8 @@ $dokka.location:dev.yorkie.core/Client.Options/reconnectStreamDelay/#/PointingTo
 $dokka.location:dev.yorkie.core/Client.Options/syncLoopDuration/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/sync-loop-duration.html
 $dokka.location:dev.yorkie.core/Client.Options/token/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/token.html
 $dokka.location:dev.yorkie.core/Client.Status.Activated///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/index.html
+$dokka.location:dev.yorkie.core/Client.Status.Activated/clientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/client-id.html
+$dokka.location:dev.yorkie.core/Client.Status.Activated/clientKey/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/client-key.html
 $dokka.location:dev.yorkie.core/Client.Status.Deactivated///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-deactivated/index.html
 $dokka.location:dev.yorkie.core/Client.Status///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/index.html
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus.Connected///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-stream-connection-status/-connected/index.html
@@ -40,6 +42,7 @@ $dokka.location:dev.yorkie.core/Client/detachAsync/#dev.yorkie.document.Document
 $dokka.location:dev.yorkie.core/Client/isActive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/is-active.html
 $dokka.location:dev.yorkie.core/Client/peerStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/peer-status.html
 $dokka.location:dev.yorkie.core/Client/presenceInfo/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/presence-info.html
+$dokka.location:dev.yorkie.core/Client/requireClientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-client-id.html
 $dokka.location:dev.yorkie.core/Client/status/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/status.html
 $dokka.location:dev.yorkie.core/Client/streamConnectionStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/stream-connection-status.html
 $dokka.location:dev.yorkie.core/Client/syncAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/sync-async.html

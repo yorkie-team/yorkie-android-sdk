@@ -36,18 +36,13 @@ internal data class Selection(
 internal data class TextValue(
     val content: String,
     private val _attributes: Rht = Rht(),
-) : CharSequence {
-
-    override val length: Int
-        get() = content.length
+) : CharSequence by content {
 
     val attributes
         get() = _attributes.nodeKeyValueMap
 
     val attributesWithTimeTicket
         get() = _attributes.toList()
-
-    override fun get(index: Int): Char = content[index]
 
     override fun subSequence(startIndex: Int, endIndex: Int): CharSequence {
         return TextValue(content.substring(startIndex, endIndex), _attributes.deepCopy())
@@ -62,5 +57,9 @@ internal data class TextValue(
             """"${it.key}":"${escapeString(it.value)}""""
         }
         return """{"attrs":$attrs,"content":"${escapeString(content)}"}"""
+    }
+
+    override fun toString(): String {
+        return content
     }
 }

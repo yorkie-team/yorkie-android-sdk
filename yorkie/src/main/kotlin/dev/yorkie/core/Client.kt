@@ -423,7 +423,7 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    internal fun requireClientId() = (status.value as Status.Activated).clientId
+    public fun requireClientId() = (status.value as Status.Activated).clientId
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
 
@@ -436,8 +436,8 @@ public class Client @VisibleForTesting internal constructor(
          * all [Document]s of the client are ready to be used.
          */
         public class Activated internal constructor(
-            internal val clientId: ActorID,
-            internal val clientKey: String,
+            public val clientId: ActorID,
+            public val clientKey: String,
         ) : Status
 
         /**

@@ -39,9 +39,11 @@ public class Document private constructor(
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
 
+    @Volatile
     private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = RhtPQMap()))
 
     @get:VisibleForTesting
+    @Volatile
     internal var clone: CrdtRoot? = null
         private set
 
@@ -143,8 +145,8 @@ public class Document private constructor(
         eventStream.emit(Event.RemoteChange(changesInfo))
     }
 
-    private fun ensureClone(): CrdtRoot {
-        return clone ?: root.deepCopy().also { clone = it }
+    private suspend fun ensureClone(): CrdtRoot = withContext(dispatcher) {
+        clone ?: root.deepCopy().also { clone = it }
     }
 
     /**
@@ -168,10 +170,10 @@ public class Document private constructor(
         // TODO: also apply to root
     }
 
-    public fun getRoot(): JsonObject {
+    public suspend fun getRoot(): JsonObject = withContext(dispatcher) {
         val clone = ensureClone()
         val context = ChangeContext(changeID.next(), clone, null)
-        return JsonObject(context, clone.rootObject)
+        JsonObject(context, clone.rootObject)
     }
 
     /**

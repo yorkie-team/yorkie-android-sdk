@@ -17,6 +17,27 @@ Read the [full documentation](https://yorkie.dev/docs) for all details.
 
 For developers with MAC, you should add `protoc_platform=osx-x86_64` to your `local.properties`.
 
+## Testing yorkie-android-sdk with Envoy, Yorkie and MongoDB.
+
+Start MongoDB, Yorkie and Envoy proxy in a terminal session.
+
+```bash
+$ docker-compose -f docker/docker-compose.yml up --build -d
+```
+
+Start the test in another terminal session.
+
+```bash
+$ ./gradlew test
+```
+
+To get the latest server locally, run the command below then restart containers again:
+
+```bash
+$ docker pull yorkieteam/yorkie:latest
+$ docker-compose -f docker/docker-compose.yml up --build -d
+```
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting patches and the contribution workflow.

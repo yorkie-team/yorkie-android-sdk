@@ -13,8 +13,8 @@ public data class TextChange(
     val actor: ActorID,
     val from: Int,
     val to: Int,
-    var content: String? = null,
-    var attributes: Map<String, String>? = null,
+    val content: String? = null,
+    val attributes: Map<String, String>? = null,
 )
 
 /**
@@ -36,13 +36,21 @@ internal data class Selection(
 internal data class TextValue(
     val content: String,
     private val _attributes: Rht = Rht(),
-) : CharSequence by content {
+) : RgaTreeSplitValue<TextValue> {
 
     val attributes
         get() = _attributes.nodeKeyValueMap
 
     val attributesWithTimeTicket
         get() = _attributes.toList()
+
+    override val length: Int by content::length
+
+    override fun get(index: Int): Char = content[index]
+
+    override fun deepCopy(): TextValue {
+        return copy(_attributes = _attributes.deepCopy())
+    }
 
     override fun subSequence(startIndex: Int, endIndex: Int): CharSequence {
         return TextValue(content.substring(startIndex, endIndex), _attributes.deepCopy())

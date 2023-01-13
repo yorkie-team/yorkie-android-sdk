@@ -52,7 +52,7 @@ internal data class CrdtText(
         )
 
         if (content.isNotEmpty() && attributes != null) {
-            changes.last().attributes = attributes
+            changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
         selectPrev(RgaTreeSplitNodeRange(caretPos, caretPos), executedAt)?.let { changes.add(it) }
         handleChanges(changes)

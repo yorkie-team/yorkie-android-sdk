@@ -16,9 +16,9 @@ internal typealias RgaTreeSplitNodeRange = Pair<RgaTreeSplitNodePos, RgaTreeSpli
  * reduce the size of CRDT metadata. When an edit occurs on a block,
  * the block is split.
  */
-@Suppress("UNCHECKED_CAST")
-internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
-    val head = RgaTreeSplitNode(InitialNodeID, INITIAL_NODE_VALUE as T)
+internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNode<T>> {
+    @Suppress("UNCHECKED_CAST")
+    val head = RgaTreeSplitNode(InitialNodeID, InitialNodeValue) as RgaTreeSplitNode<T>
     private val treeByIndex =
         SplayTreeSet<RgaTreeSplitNode<T>> { it.contentLength }.apply { insert(head) }
     private val treeByID = TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>().apply {
@@ -70,7 +70,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
                 ),
             )
             if (changes.isNotEmpty() && changes.last().from == index) {
-                changes.last().content = it.toString()
+                changes[changes.lastIndex] = changes.last().copy(content = it.toString())
             } else {
                 changes.add(
                     TextChange(
@@ -387,7 +387,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         return RgaTreeSplitIterator(head)
     }
 
-    private class RgaTreeSplitIterator<T : CharSequence>(head: RgaTreeSplitNode<T>) :
+    private class RgaTreeSplitIterator<T : RgaTreeSplitValue<T>>(head: RgaTreeSplitNode<T>) :
         Iterator<RgaTreeSplitNode<T>> {
         private var node: RgaTreeSplitNode<T>? = head
 
@@ -408,7 +408,7 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
         var prev = clone.head
         var current: RgaTreeSplitNode<T>
         while (node != null) {
-            current = clone.insertAfter(prev, node.copy())
+            current = clone.insertAfter(prev, node.deepCopy())
             if (node.hasInsertionPrev) {
                 val insertionPrevNode = clone.findNode(requireNotNull(node.insertionPrev).id)
                 current.setInsertionPrev(insertionPrevNode)
@@ -429,11 +429,26 @@ internal class RgaTreeSplit<T : CharSequence> : Iterable<RgaTreeSplitNode<T>> {
 
     companion object {
         private val InitialNodeID = RgaTreeSplitNodeID(InitialTimeTicket, 0)
-        private const val INITIAL_NODE_VALUE = ""
+
+        object InitialNodeValue : RgaTreeSplitValue<InitialNodeValue> {
+
+            override fun deepCopy(): InitialNodeValue = this
+
+            override val length: Int = 0
+
+            override fun get(index: Int): Char = throw IndexOutOfBoundsException()
+
+            override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = this
+        }
     }
 }
 
-internal data class RgaTreeSplitNode<T : CharSequence>(
+internal interface RgaTreeSplitValue<T : RgaTreeSplitValue<T>> : CharSequence {
+
+    fun deepCopy(): T
+}
+
+internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     val id: RgaTreeSplitNodeID,
     private var _value: T,
     private var _removedAt: TimeTicket? = null,
@@ -521,6 +536,10 @@ internal data class RgaTreeSplitNode<T : CharSequence>(
 
     fun createRange(): RgaTreeSplitNodeRange {
         return RgaTreeSplitNodeRange(RgaTreeSplitNodePos(id, 0), RgaTreeSplitNodePos(id, length))
+    }
+
+    fun deepCopy(): RgaTreeSplitNode<T> {
+        return copy(_value = _value.deepCopy())
     }
 
     override fun hashCode(): Int {

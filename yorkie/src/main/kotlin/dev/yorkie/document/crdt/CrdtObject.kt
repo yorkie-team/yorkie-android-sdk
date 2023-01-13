@@ -76,7 +76,7 @@ internal data class CrdtObject(
     override fun deepCopy(): CrdtObject {
         val rhtClone = RhtPQMap<CrdtElement>().apply {
             rht.forEach { (strKey, value) ->
-                set(strKey, value)
+                set(strKey, value.deepCopy())
             }
         }
         return copy(rht = rhtClone)

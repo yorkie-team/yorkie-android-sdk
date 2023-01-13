@@ -16,4 +16,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Yorkie Android SDK"
-include(":examples:kanban:app", ":yorkie", ":yorkie:proto", ":microbenchmark")
+include(":examples:kanban", ":yorkie", ":yorkie:proto", ":microbenchmark")

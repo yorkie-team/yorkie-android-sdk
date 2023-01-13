@@ -238,7 +238,6 @@ private fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
             node.removedAt?.let { removedAt = it.toPBTimeTicket() } ?: clearRemovedAt()
             node.value.attributesWithTimeTicket.forEach {
                 attributes[it.key] = textNodeAttr {
-                    key = it.key
                     value = it.value
                     updatedAt = it.executedAt.toPBTimeTicket()
                 }
@@ -275,8 +274,8 @@ private fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
 
 private fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
     val textValue = TextValue(value).apply {
-        attributesMap.forEach { (_, value) ->
-            setAttribute(value.key, value.value, value.updatedAt.toTimeTicket())
+        attributesMap.forEach { (key, attr) ->
+            setAttribute(key, attr.value, attr.updatedAt.toTimeTicket())
         }
     }
     return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), textValue).apply {

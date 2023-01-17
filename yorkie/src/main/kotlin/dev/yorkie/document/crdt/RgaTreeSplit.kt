@@ -44,7 +44,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         executedAt: TimeTicket,
         value: T?,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Triple<RgaTreeSplitNodePos, Map<ActorID, TimeTicket>, MutableList<TextChange>> {
+    ): Triple<RgaTreeSplitNodePos, Map<ActorID, TimeTicket>, List<ContentChange>> {
         // 1. Split nodes.
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
         val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
@@ -73,8 +73,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
                 changes[changes.lastIndex] = changes.last().copy(content = it.toString())
             } else {
                 changes.add(
-                    TextChange(
-                        TextChangeType.Content,
+                    ContentChange(
                         executedAt.actorID,
                         index,
                         index,
@@ -186,7 +185,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         executedAt: TimeTicket,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
     ): Triple<
-        MutableList<TextChange>,
+        MutableList<ContentChange>,
         Map<ActorID, TimeTicket>,
         Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>,
         > {
@@ -271,7 +270,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     private fun makeChanges(
         boundaries: List<RgaTreeSplitNode<T>?>,
         executedAt: TimeTicket,
-    ): List<TextChange> {
+    ): List<ContentChange> {
         return buildList {
             var (fromIndex, toIndex) = Pair(0, 0)
             for (index in 0..boundaries.size - 2) {
@@ -288,7 +287,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
                 }
             }
             if (fromIndex < toIndex) {
-                add(TextChange(TextChangeType.Content, executedAt.actorID, fromIndex, toIndex))
+                add(ContentChange(executedAt.actorID, fromIndex, toIndex))
             }
         }.reversed()
     }
@@ -426,6 +425,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
             }
         }
     }
+
+    data class ContentChange(
+        val actorID: ActorID,
+        val from: Int,
+        val to: Int,
+        val content: String? = null,
+    )
 
     companion object {
         private val InitialNodeID = RgaTreeSplitNodeID(InitialTimeTicket, 0)

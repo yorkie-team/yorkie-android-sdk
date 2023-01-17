@@ -23,14 +23,14 @@ class CrdtTextTest {
             mapOf("b" to "1"),
         )
         assertEquals(
-            """[{"attrs":{"b":"1"},"content":"ABCD"}]""",
+            """[{"attrs":{"b":"1"},"val":"ABCD"}]""",
             target.toJson(),
         )
 
         target.edit(target.createRange(3, 3), "\n", TimeTicket.InitialTimeTicket)
         assertEquals(
-            """[{"attrs":{"b":"1"},"content":"ABC"},{"attrs":{},"content":"\n"},""" +
-                """{"attrs":{"b":"1"},"content":"D"}]""",
+            """[{"attrs":{"b":"1"},"val":"ABC"},{"attrs":{},"val":"\n"},""" +
+                """{"attrs":{"b":"1"},"val":"D"}]""",
             target.toJson(),
         )
     }
@@ -38,11 +38,11 @@ class CrdtTextTest {
     @Test
     fun `should handle edit operations without attributes`() {
         target.edit(target.createRange(0, 0), "A", TimeTicket.InitialTimeTicket)
-        assertEquals("""[{"attrs":{},"content":"A"}]""", target.toJson())
+        assertEquals("""[{"attrs":{},"val":"A"}]""", target.toJson())
 
         target.edit(target.createRange(0, 0), "B", TimeTicket.InitialTimeTicket)
         assertEquals(
-            """[{"attrs":{},"content":"A"},{"attrs":{},"content":"B"}]""",
+            """[{"attrs":{},"val":"A"},{"attrs":{},"val":"B"}]""",
             target.toJson(),
         )
     }

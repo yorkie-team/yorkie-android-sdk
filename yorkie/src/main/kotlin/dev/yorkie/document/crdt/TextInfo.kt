@@ -64,7 +64,7 @@ internal data class TextValue(
         val attrs = _attributes.nodeKeyValueMap.entries.joinToString(",", "{", "}") {
             """"${it.key}":"${escapeString(it.value)}""""
         }
-        return """{"attrs":$attrs,"content":"${escapeString(content)}"}"""
+        return """{"attrs":$attrs,"val":"${escapeString(content)}"}"""
     }
 
     override fun toString(): String {

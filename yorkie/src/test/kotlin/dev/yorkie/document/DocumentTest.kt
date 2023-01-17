@@ -116,7 +116,7 @@ class DocumentTest {
                             "k9": [true, 1, 100, 111.111, "test", "bytes", 10000, {"k1": 1}, [1, 2]],
                             "int": 100,
                             "long": 100,
-                            "text": [{"attrs":{"b":"1"},"content":"H"},{"attrs":{},"content":"ello World"}]
+                            "text": [{"attrs":{"b":"1"},"val":"H"},{"attrs":{},"val":"ello World"}]
                         }
                 }""",
                 target.toJson(),

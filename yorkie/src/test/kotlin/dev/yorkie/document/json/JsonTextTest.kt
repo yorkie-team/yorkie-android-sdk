@@ -34,11 +34,11 @@ class JsonTextTest {
     @Test
     fun `should handle text edit operations`() {
         target.edit(0, 0, "Hello World")
-        assertEquals("""[{"attrs":{},"val":"Hello World"}]""", target.toJson())
+        assertEquals("""[{"val":"Hello World"}]""", target.toJson())
 
         target.edit(6, 11, "Yorkie", mapOf("b" to "1"))
         assertEquals(
-            """[{"attrs":{},"val":"Hello "},{"attrs":{"b":"1"},"val":"Yorkie"}]""",
+            """[{"val":"Hello "},{"attrs":{"b":"1"},"val":"Yorkie"}]""",
             target.toJson(),
         )
     }
@@ -46,11 +46,11 @@ class JsonTextTest {
     @Test
     fun `should handle style operations`() {
         target.edit(0, 0, "Hello World")
-        assertEquals("""[{"attrs":{},"val":"Hello World"}]""", target.toJson())
+        assertEquals("""[{"val":"Hello World"}]""", target.toJson())
 
         target.style(0, 1, mapOf("b" to "1"))
         assertEquals(
-            """[{"attrs":{"b":"1"},"val":"H"},{"attrs":{},"val":"ello World"}]""",
+            """[{"attrs":{"b":"1"},"val":"H"},{"val":"ello World"}]""",
             target.toJson(),
         )
     }

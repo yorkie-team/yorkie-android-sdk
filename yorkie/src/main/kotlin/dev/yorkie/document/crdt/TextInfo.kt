@@ -61,10 +61,14 @@ internal data class TextValue(
     }
 
     fun toJson(): String {
-        val attrs = _attributes.nodeKeyValueMap.entries.joinToString(",", "{", "}") {
+        val attrs = _attributes.nodeKeyValueMap.entries.joinToString(",") {
             """"${it.key}":"${escapeString(it.value)}""""
         }
-        return """{"attrs":$attrs,"content":"${escapeString(content)}"}"""
+        return if (attrs.isEmpty()) {
+            """{"val":"${escapeString(content)}"}"""
+        } else {
+            """{"attrs":{$attrs},"val":"${escapeString(content)}"}"""
+        }
     }
 
     override fun toString(): String {

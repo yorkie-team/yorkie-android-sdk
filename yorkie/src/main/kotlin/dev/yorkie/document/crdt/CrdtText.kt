@@ -27,31 +27,41 @@ internal data class CrdtText(
             .map { it.value.content to it.value.attributes }
 
     /**
-     * Edits the given [range] with the given [content] and [attributes].
+     * Edits the given [range] with the given [value] and [attributes].
      */
     fun edit(
         range: RgaTreeSplitNodeRange,
-        content: String,
+        value: String,
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): Map<ActorID, TimeTicket> {
-        val value = if (content.isNotEmpty()) {
-            TextValue(content).apply {
+        val textValue = if (value.isNotEmpty()) {
+            TextValue(value).apply {
                 attributes?.forEach { setAttribute(it.key, it.value, executedAt) }
             }
         } else {
             null
         }
 
-        val (caretPos, latestCreatedAtMap, changes) = rgaTreeSplit.edit(
+        val (caretPos, latestCreatedAtMap, contentChanges) = rgaTreeSplit.edit(
             range,
             executedAt,
-            value,
+            textValue,
             latestCreatedAtMapByActor,
         )
 
-        if (content.isNotEmpty() && attributes != null) {
+        val changes = contentChanges.map {
+            TextChange(
+                TextChangeType.Content,
+                it.actorID,
+                it.from,
+                it.to,
+                it.content,
+            )
+        }.toMutableList()
+
+        if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
         selectPrev(RgaTreeSplitNodeRange(caretPos, caretPos), executedAt)?.let { changes.add(it) }

@@ -45,9 +45,9 @@ android {
 dependencies {
     androidTestImplementation(project(":yorkie"))
     androidTestImplementation("androidx.test:runner:1.5.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.4")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.benchmark:benchmark-junit4:1.2.0-alpha08")
+    androidTestImplementation("androidx.benchmark:benchmark-junit4:1.2.0-alpha09")
     androidTestImplementation(kotlin("test"))
-    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${Versions.coroutines}")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4")
 }

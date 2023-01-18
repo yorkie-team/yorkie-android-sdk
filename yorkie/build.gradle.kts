@@ -1,5 +1,4 @@
 import com.google.protobuf.gradle.id
-import com.google.protobuf.gradle.protobuf
 
 plugins {
     id("com.android.library")
@@ -121,7 +120,16 @@ android {
     }
 }
 
+object Versions {
+    const val protobuf = "3.21.12"
+    const val grpc = "1.52.1"
+    const val grpcKotlin = "1.3.0"
+    const val coroutines = "1.6.4"
+}
+
 protobuf {
+    val protocPlatform = findProperty("protoc_platform")?.toString().orEmpty()
+
     protoc {
         artifact = "com.google.protobuf:protoc:${Versions.protobuf}${protocPlatform}"
     }
@@ -170,7 +178,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:${Versions.coroutines}")
 
-    implementation("org.apache.commons:commons-collections4:${Versions.apacheCommonCollection}")
+    implementation("org.apache.commons:commons-collections4:4.4")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:4.0.0")
@@ -179,7 +187,7 @@ dependencies {
     testImplementation("com.google.code.gson:gson:2.10.1")
     testImplementation("io.grpc:grpc-testing:${Versions.grpc}")
 
-    androidTestImplementation("androidx.test.ext:junit-ktx:1.1.4")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation(kotlin("test"))
 }

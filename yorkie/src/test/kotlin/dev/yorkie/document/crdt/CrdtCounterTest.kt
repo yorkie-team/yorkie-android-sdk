@@ -87,6 +87,7 @@ class CrdtCounterTest {
         assertArrayEquals(longInBytes, CrdtCounter(333L, InitialTimeTicket).toBytes())
     }
 
+    @Suppress("INTEGER_OVERFLOW")
     @Test
     fun `verify increase allows Int overflow`() {
         val maxInt = CrdtCounter(Int.MAX_VALUE, InitialTimeTicket)

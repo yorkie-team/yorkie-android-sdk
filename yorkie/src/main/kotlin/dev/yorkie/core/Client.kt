@@ -40,12 +40,14 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.channels.Channel as EventChannel
 
 /**
  * Client that can communicate with the server.
@@ -87,6 +89,7 @@ public class Client @VisibleForTesting internal constructor(
 
     private var syncLoop: Job? = null
     private var watchLoop: Job? = null
+    private val presenceMapInitEvent = EventChannel<Boolean>(EventChannel.BUFFERED)
 
     public constructor(
         context: Context,
@@ -239,6 +242,7 @@ public class Client @VisibleForTesting internal constructor(
                 }
             }
             emitPeerStatus()
+            presenceMapInitEvent.send(true)
             return
         }
         val watchEvent = response.event
@@ -361,7 +365,7 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             attachments[document.key] = Attachment(document, !isManualSync)
             runWatchLoop()
-            true
+            presenceMapInitEvent.receive()
         }
     }
 

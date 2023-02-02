@@ -31,6 +31,7 @@ import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -213,7 +214,10 @@ public class Client @VisibleForTesting internal constructor(
                 attachment.isRealTimeSync
             }.map { (_, attachment) ->
                 attachment.document.key.value
-            }.takeIf { it.isNotEmpty() } ?: return@launch
+            }.takeIf { it.isNotEmpty() } ?: run {
+                presenceMapInitEvent.send(true)
+                return@launch
+            }
 
             val request = watchDocumentsRequest {
                 client = toPBClient()
@@ -224,6 +228,7 @@ public class Client @VisibleForTesting internal constructor(
                 .retry {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
                     delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                    presenceMapInitEvent.send(false)
                     true
                 }
                 .collect {
@@ -233,6 +238,7 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
         if (response.hasInitialization()) {
             response.initialization.peersMapByDocMap.forEach { (documentKey, peers) ->
@@ -242,7 +248,9 @@ public class Client @VisibleForTesting internal constructor(
                 }
             }
             emitPeerStatus()
-            presenceMapInitEvent.send(true)
+            if (!presenceMapInitEvent.isClosedForSend) {
+                presenceMapInitEvent.send(true)
+            }
             return
         }
         val watchEvent = response.event
@@ -284,6 +292,9 @@ public class Client @VisibleForTesting internal constructor(
                 emitPeerStatus()
             }
             DocEventType.UNRECOGNIZED -> TODO()
+        }
+        if (!presenceMapInitEvent.isClosedForSend) {
+            presenceMapInitEvent.send(true)
         }
     }
 
@@ -365,11 +376,7 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             attachments[document.key] = Attachment(document, !isManualSync)
             runWatchLoop()
-            presenceMapInitEvent.receive().also { received ->
-                if (received) {
-                    presenceMapInitEvent.close()
-                }
-            }
+            presenceMapInitEvent.receive()
         }
     }
 

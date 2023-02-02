@@ -365,7 +365,11 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             attachments[document.key] = Attachment(document, !isManualSync)
             runWatchLoop()
-            presenceMapInitEvent.receive()
+            presenceMapInitEvent.receive().also { received ->
+                if (received) {
+                    presenceMapInitEvent.close()
+                }
+            }
         }
     }
 

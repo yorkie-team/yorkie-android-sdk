@@ -31,7 +31,6 @@ import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -228,7 +227,6 @@ public class Client @VisibleForTesting internal constructor(
                 .retry {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
                     delay(options.reconnectStreamDelay.inWholeMilliseconds)
-                    presenceMapInitEvent.send(false)
                     true
                 }
                 .collect {
@@ -238,7 +236,6 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
         if (response.hasInitialization()) {
             response.initialization.peersMapByDocMap.forEach { (documentKey, peers) ->
@@ -248,9 +245,7 @@ public class Client @VisibleForTesting internal constructor(
                 }
             }
             emitPeerStatus()
-            if (!presenceMapInitEvent.isClosedForSend) {
-                presenceMapInitEvent.send(true)
-            }
+            presenceMapInitEvent.send(true)
             return
         }
         val watchEvent = response.event
@@ -292,9 +287,6 @@ public class Client @VisibleForTesting internal constructor(
                 emitPeerStatus()
             }
             DocEventType.UNRECOGNIZED -> TODO()
-        }
-        if (!presenceMapInitEvent.isClosedForSend) {
-            presenceMapInitEvent.send(true)
         }
     }
 

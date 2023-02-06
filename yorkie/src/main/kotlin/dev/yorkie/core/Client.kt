@@ -41,13 +41,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
-import kotlinx.coroutines.channels.Channel as EventChannel
 
 /**
  * Client that can communicate with the server.
@@ -89,7 +89,6 @@ public class Client @VisibleForTesting internal constructor(
 
     private var syncLoop: Job? = null
     private var watchLoop: Job? = null
-    private val presenceMapInitEvent = EventChannel<Boolean>(EventChannel.BUFFERED)
 
     public constructor(
         context: Context,
@@ -213,10 +212,7 @@ public class Client @VisibleForTesting internal constructor(
                 attachment.isRealTimeSync
             }.map { (_, attachment) ->
                 attachment.document.key.value
-            }.takeIf { it.isNotEmpty() } ?: run {
-                presenceMapInitEvent.send(true)
-                return@launch
-            }
+            }.takeIf { it.isNotEmpty() } ?: return@launch
 
             val request = watchDocumentsRequest {
                 client = toPBClient()
@@ -245,7 +241,6 @@ public class Client @VisibleForTesting internal constructor(
                 }
             }
             emitPeerStatus()
-            presenceMapInitEvent.send(true)
             return
         }
         val watchEvent = response.event
@@ -309,14 +304,17 @@ public class Client @VisibleForTesting internal constructor(
                 return@async false
             }
 
+            val realTimeAttachments = attachments.filter { it.value.isRealTimeSync }
+            realTimeAttachments.forEach {
+                waitForInitialization(it.key)
+            }
+
             presenceInfo = presenceInfo.copy(
                 clock = presenceInfo.clock + 1,
                 data = presenceInfo.data + (key to value),
             )
 
-            val documentKeys = attachments.filter {
-                it.value.isRealTimeSync
-            }.map { (key, attachment) ->
+            val documentKeys = realTimeAttachments.map { (key, attachment) ->
                 attachment.peerPresences[requireClientId()] = presenceInfo
                 key.value
             }.takeIf {
@@ -368,7 +366,8 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             attachments[document.key] = Attachment(document, !isManualSync)
             runWatchLoop()
-            presenceMapInitEvent.receive()
+            waitForInitialization(document.key)
+            true
         }
     }
 
@@ -431,6 +430,16 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     public fun requireClientId() = (status.value as Status.Activated).clientId
+
+    private suspend fun waitForInitialization(documentKey: Document.Key) {
+        val attachment = attachments[documentKey] ?: return
+        if (!attachment.isRealTimeSync) {
+            return
+        }
+        peerStatus.first { statusList ->
+            statusList.any { it.documentKey == documentKey }
+        }
+    }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
 

@@ -172,15 +172,15 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
         request: WatchDocumentsRequest,
         responseObserver: StreamObserver<WatchDocumentsResponse>,
     ) {
-        if (request.documentKeysList.contains(WATCH_SYNC_ERROR_DOCUMENT_KEY)) {
+        val keys = request.documentKeysList
+        if (keys.contains(WATCH_SYNC_ERROR_DOCUMENT_KEY)) {
             responseObserver.onError(StatusException(Status.UNAVAILABLE))
             return
         }
         responseObserver.onNext(
             watchDocumentsResponse {
                 when {
-                    request.documentKeysList.size == 1 &&
-                        request.documentKeysList.contains(SLOW_INITIALIZATION_DOCUMENT_KEY) -> {
+                    keys.size == 1 && keys.contains(SLOW_INITIALIZATION_DOCUMENT_KEY) -> {
                         Thread.sleep(5_000)
                         initialization = initialization {
                             peersMapByDoc[SLOW_INITIALIZATION_DOCUMENT_KEY] = clients {
@@ -196,7 +196,7 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
                             }
                         }
                     }
-                    request.documentKeysList.contains(INITIALIZATION_DOCUMENT_KEY) -> {
+                    keys.contains(INITIALIZATION_DOCUMENT_KEY) -> {
                         initialization = initialization {
                             peersMapByDoc[INITIALIZATION_DOCUMENT_KEY] = clients {
                                 clients.add(
@@ -209,7 +209,7 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
                                     },
                                 )
                             }
-                            if (request.documentKeysList.contains(SLOW_INITIALIZATION_DOCUMENT_KEY)) {
+                            if (keys.contains(SLOW_INITIALIZATION_DOCUMENT_KEY)) {
                                 peersMapByDoc[SLOW_INITIALIZATION_DOCUMENT_KEY] = clients {
                                     clients.add(
                                         client {
@@ -228,7 +228,7 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
                         event = docEvent {
                             type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
                             publisher = request.client
-                            documentKeys.addAll(request.documentKeysList)
+                            documentKeys.addAll(keys)
                         }
                     }
                 }

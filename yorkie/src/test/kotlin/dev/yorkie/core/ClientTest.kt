@@ -336,7 +336,7 @@ class ClientTest {
             val slowAttach = target.attachAsync(document2)
             delay(500)
             target.attachAsync(document1).await()
-            slowAttach.await()
+            assertTrue(slowAttach.isCompleted)
             assertTrue(
                 target.peerStatus.value.any {
                     it.documentKey == Key(INITIALIZATION_DOCUMENT_KEY)

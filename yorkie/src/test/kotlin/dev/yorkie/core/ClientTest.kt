@@ -20,6 +20,7 @@ import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.INITIALIZATION_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.SLOW_INITIALIZATION_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.UPDATE_PRESENCE_ERROR_DOCUMENT_KEY
@@ -34,6 +35,7 @@ import io.grpc.inprocess.InProcessServerBuilder
 import io.grpc.testing.GrpcCleanupRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
@@ -322,6 +324,29 @@ class ClientTest {
 
             target.detachAsync(document).await()
             target.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun `should wait for attached document's presence to be initialized`() {
+        runTest {
+            val document1 = Document(Key(INITIALIZATION_DOCUMENT_KEY))
+            val document2 = Document(Key(SLOW_INITIALIZATION_DOCUMENT_KEY))
+            target.activateAsync().await()
+            val slowAttach = target.attachAsync(document2)
+            delay(500)
+            target.attachAsync(document1).await()
+            slowAttach.await()
+            assertTrue(
+                target.peerStatus.value.any {
+                    it.documentKey == Key(INITIALIZATION_DOCUMENT_KEY)
+                },
+            )
+            assertTrue(
+                target.peerStatus.value.any {
+                    it.documentKey == Key(SLOW_INITIALIZATION_DOCUMENT_KEY)
+                },
+            )
         }
     }
 

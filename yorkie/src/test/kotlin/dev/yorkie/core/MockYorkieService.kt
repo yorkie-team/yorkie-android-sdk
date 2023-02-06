@@ -178,25 +178,58 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
         }
         responseObserver.onNext(
             watchDocumentsResponse {
-                if (request.documentKeysList.contains(INITIALIZATION_DOCUMENT_KEY)) {
-                    initialization = initialization {
-                        peersMapByDoc[INITIALIZATION_DOCUMENT_KEY] = clients {
-                            clients.add(
-                                client {
-                                    id = request.client.id
-                                    presence = presence {
-                                        clock = 1
-                                        data["k1"] = "v1"
-                                    }
-                                },
-                            )
+                when {
+                    request.documentKeysList.size == 1 &&
+                        request.documentKeysList.contains(SLOW_INITIALIZATION_DOCUMENT_KEY) -> {
+                        Thread.sleep(5_000)
+                        initialization = initialization {
+                            peersMapByDoc[SLOW_INITIALIZATION_DOCUMENT_KEY] = clients {
+                                clients.add(
+                                    client {
+                                        id = request.client.id
+                                        presence = presence {
+                                            clock = 1
+                                            data["k1"] = "v1"
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
-                } else {
-                    event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
-                        publisher = request.client
-                        documentKeys.addAll(request.documentKeysList)
+                    request.documentKeysList.contains(INITIALIZATION_DOCUMENT_KEY) -> {
+                        initialization = initialization {
+                            peersMapByDoc[INITIALIZATION_DOCUMENT_KEY] = clients {
+                                clients.add(
+                                    client {
+                                        id = request.client.id
+                                        presence = presence {
+                                            clock = 1
+                                            data["k1"] = "v1"
+                                        }
+                                    },
+                                )
+                            }
+                            if (request.documentKeysList.contains(SLOW_INITIALIZATION_DOCUMENT_KEY)) {
+                                peersMapByDoc[SLOW_INITIALIZATION_DOCUMENT_KEY] = clients {
+                                    clients.add(
+                                        client {
+                                            id = request.client.id
+                                            presence = presence {
+                                                clock = 1
+                                                data["k1"] = "v1"
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    else -> {
+                        event = docEvent {
+                            type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
+                            publisher = request.client
+                            documentKeys.addAll(request.documentKeysList)
+                        }
                     }
                 }
             },
@@ -224,6 +257,7 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val UPDATE_PRESENCE_ERROR_DOCUMENT_KEY = "UPDATE_PRESENCE_ERROR_DOCUMENT_KEY"
         internal const val INITIALIZATION_DOCUMENT_KEY = "INITIALIZATION_DOCUMENT_KEY"
+        internal const val SLOW_INITIALIZATION_DOCUMENT_KEY = "SLOW_INITIALIZATION_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000FFFF0000000000")
     }
 }

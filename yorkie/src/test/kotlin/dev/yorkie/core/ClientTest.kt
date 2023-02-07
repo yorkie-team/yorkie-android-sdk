@@ -12,13 +12,12 @@ import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.PushPullRequest
 import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.WatchDocumentsRequest
-import dev.yorkie.api.v1.YorkieServiceGrpc
+import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.Event.DocumentsChanged
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
-import dev.yorkie.core.MockYorkieService.Companion.INITIALIZATION_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.SLOW_INITIALIZATION_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
@@ -46,8 +45,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mockito.AdditionalAnswers.delegatesTo
-import org.mockito.ArgumentCaptor
-import org.mockito.ArgumentMatchers.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import kotlin.test.assertContentEquals
@@ -64,7 +62,7 @@ class ClientTest {
     private lateinit var channel: Channel
     private lateinit var target: Client
 
-    private val service = mock<YorkieServiceGrpc.YorkieServiceImplBase>(
+    private val service = mock<YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase>(
         defaultAnswer = delegatesTo(MockYorkieService()),
     )
 
@@ -89,25 +87,20 @@ class ClientTest {
     fun `should activate and deactivate`() {
         runTest {
             assertFalse(target.isActive)
-            val activateRequestCaptor = ArgumentCaptor.forClass(ActivateClientRequest::class.java)
+            val activateRequestCaptor = argumentCaptor<ActivateClientRequest>()
             assertTrue(target.activateAsync().await())
-            verify(service).activateClient(activateRequestCaptor.capture(), any())
-            assertEquals(TEST_KEY, activateRequestCaptor.value.clientKey)
+            verify(service).activateClient(activateRequestCaptor.capture())
+            assertEquals(TEST_KEY, activateRequestCaptor.firstValue.clientKey)
             assertTrue(target.isActive)
 
             val activatedStatus = assertIs<Client.Status.Activated>(target.status.value)
             assertEquals(TEST_KEY, activatedStatus.clientKey)
             assertEquals(TEST_ACTOR_ID, activatedStatus.clientId)
 
-            val deactivateRequestCaptor = ArgumentCaptor.forClass(
-                DeactivateClientRequest::class.java,
-            )
+            val deactivateRequestCaptor = argumentCaptor<DeactivateClientRequest>()
             assertTrue(target.deactivateAsync().await())
-            verify(service).deactivateClient(
-                deactivateRequestCaptor.capture(),
-                any(),
-            )
-            assertIsTestActorID(deactivateRequestCaptor.value.clientId)
+            verify(service).deactivateClient(deactivateRequestCaptor.capture())
+            assertIsTestActorID(deactivateRequestCaptor.firstValue.clientId)
             assertFalse(target.isActive)
             assertIs<Client.Status.Deactivated>(target.status.value)
         }
@@ -119,25 +112,25 @@ class ClientTest {
             val document = Document(Key(NORMAL_DOCUMENT_KEY))
             target.activateAsync().await()
 
-            val attachRequestCaptor = ArgumentCaptor.forClass(AttachDocumentRequest::class.java)
+            val attachRequestCaptor = argumentCaptor<AttachDocumentRequest>()
             target.attachAsync(document, true).await()
-            verify(service).attachDocument(attachRequestCaptor.capture(), any())
-            assertIsTestActorID(attachRequestCaptor.value.clientId)
-            assertIsEmptyChangePack(attachRequestCaptor.value.changePack)
+            verify(service).attachDocument(attachRequestCaptor.capture())
+            assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
+            assertIsEmptyChangePack(attachRequestCaptor.firstValue.changePack)
             assertJsonContentEquals("""{"k1": 4}""", document.toJson())
 
-            val syncRequestCaptor = ArgumentCaptor.forClass(PushPullRequest::class.java)
+            val syncRequestCaptor = argumentCaptor<PushPullRequest>()
             target.syncAsync().await()
-            verify(service).pushPull(syncRequestCaptor.capture(), any())
-            assertIsTestActorID(syncRequestCaptor.value.clientId)
-            assertIsEmptyChangePack(syncRequestCaptor.value.changePack)
+            verify(service).pushPull(syncRequestCaptor.capture())
+            assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
+            assertIsEmptyChangePack(syncRequestCaptor.firstValue.changePack)
             assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
-            val detachRequestCaptor = ArgumentCaptor.forClass(DetachDocumentRequest::class.java)
+            val detachRequestCaptor = argumentCaptor<DetachDocumentRequest>()
             target.detachAsync(document).await()
-            verify(service).detachDocument(detachRequestCaptor.capture(), any())
-            assertIsTestActorID(detachRequestCaptor.value.clientId)
-            assertIsEmptyChangePack(detachRequestCaptor.value.changePack)
+            verify(service).detachDocument(detachRequestCaptor.capture())
+            assertIsTestActorID(detachRequestCaptor.firstValue.clientId)
+            assertIsEmptyChangePack(detachRequestCaptor.firstValue.changePack)
             target.deactivateAsync().await()
         }
     }
@@ -151,19 +144,19 @@ class ClientTest {
             val eventAsync = async(UnconfinedTestDispatcher()) {
                 target.take(2).toList()
             }
-            val watchRequestCaptor = ArgumentCaptor.forClass(WatchDocumentsRequest::class.java)
+            val watchRequestCaptor = argumentCaptor<WatchDocumentsRequest>()
             target.attachAsync(document).await()
             val events = eventAsync.await()
             val changeEvent = assertIs<DocumentsChanged>(events.first())
-            verify(service).watchDocuments(watchRequestCaptor.capture(), any())
-            assertIsTestActorID(watchRequestCaptor.value.client.id)
+            verify(service).watchDocuments(watchRequestCaptor.capture())
+            assertIsTestActorID(watchRequestCaptor.firstValue.client.id)
             assertEquals(1, changeEvent.documentKeys.size)
             assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.documentKeys.first().value)
 
-            val syncRequestCaptor = ArgumentCaptor.forClass(PushPullRequest::class.java)
+            val syncRequestCaptor = argumentCaptor<PushPullRequest>()
             val syncEvent = assertIs<DocumentSynced>(events.last())
-            verify(service).pushPull(syncRequestCaptor.capture(), any())
-            assertIsTestActorID(syncRequestCaptor.value.clientId)
+            verify(service).pushPull(syncRequestCaptor.capture())
+            assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
             val synced = assertIs<Client.DocumentSyncResult.Synced>(syncEvent.result)
             assertEquals(document, synced.document)
             assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
@@ -199,7 +192,9 @@ class ClientTest {
 
             assertEquals(
                 Client.StreamConnectionStatus.Disconnected,
-                target.streamConnectionStatus.value,
+                target.streamConnectionStatus.first {
+                    it == Client.StreamConnectionStatus.Disconnected
+                },
             )
 
             target.detachAsync(document).await()
@@ -258,16 +253,14 @@ class ClientTest {
             target.activateAsync().await()
             target.attachAsync(document).await()
 
-            val updatePresenceRequestCaptor = ArgumentCaptor.forClass(
-                UpdatePresenceRequest::class.java,
-            )
+            val updatePresenceRequestCaptor = argumentCaptor<UpdatePresenceRequest>()
             assertTrue(target.updatePresenceAsync("k1", "v2").await())
-            verify(service).updatePresence(updatePresenceRequestCaptor.capture(), any())
-            assertIsTestActorID(updatePresenceRequestCaptor.value.client.id)
-            assertEquals(1, updatePresenceRequestCaptor.value.client.presence.clock)
+            verify(service).updatePresence(updatePresenceRequestCaptor.capture())
+            assertIsTestActorID(updatePresenceRequestCaptor.firstValue.client.id)
+            assertEquals(1, updatePresenceRequestCaptor.firstValue.client.presence.clock)
             assertContentEquals(
                 listOf("k1" to "v2"),
-                updatePresenceRequestCaptor.value.client.presence.dataMap.map {
+                updatePresenceRequestCaptor.firstValue.client.presence.dataMap.map {
                     it.key to it.value
                 },
             )
@@ -309,13 +302,13 @@ class ClientTest {
     fun `should update presence on document watch if it has initialization`() {
         runTest {
             val initialStatus = target.peerStatus.value
-            val document = Document(Key(INITIALIZATION_DOCUMENT_KEY))
+            val document = Document(Key(NORMAL_DOCUMENT_KEY))
             target.activateAsync().await()
             target.attachAsync(document).await()
 
             assertEquals(
                 PeerStatus(
-                    Key(INITIALIZATION_DOCUMENT_KEY),
+                    Key(NORMAL_DOCUMENT_KEY),
                     target.requireClientId(),
                     PresenceInfo(1, mapOf("k1" to "v1")),
                 ),
@@ -330,7 +323,7 @@ class ClientTest {
     @Test
     fun `should wait for attached document's presence to be initialized`() {
         runTest {
-            val document1 = Document(Key(INITIALIZATION_DOCUMENT_KEY))
+            val document1 = Document(Key(NORMAL_DOCUMENT_KEY))
             val document2 = Document(Key(SLOW_INITIALIZATION_DOCUMENT_KEY))
             target.activateAsync().await()
             val slowAttach = target.attachAsync(document2)
@@ -339,7 +332,7 @@ class ClientTest {
             assertTrue(slowAttach.isCompleted)
             assertTrue(
                 target.peerStatus.value.any {
-                    it.documentKey == Key(INITIALIZATION_DOCUMENT_KEY)
+                    it.documentKey == Key(NORMAL_DOCUMENT_KEY)
                 },
             )
             assertTrue(
@@ -347,6 +340,7 @@ class ClientTest {
                     it.documentKey == Key(SLOW_INITIALIZATION_DOCUMENT_KEY)
                 },
             )
+            target.deactivateAsync().await()
         }
     }
 

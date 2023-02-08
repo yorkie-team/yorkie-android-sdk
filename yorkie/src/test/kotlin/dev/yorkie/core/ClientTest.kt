@@ -28,6 +28,7 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Key
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.time.ActorID
 import io.grpc.Channel
 import io.grpc.inprocess.InProcessChannelBuilder
 import io.grpc.inprocess.InProcessServerBuilder
@@ -340,6 +341,55 @@ class ClientTest {
                     it.documentKey == Key(SLOW_INITIALIZATION_DOCUMENT_KEY)
                 },
             )
+            target.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun `should properly emit peer status on changes`() {
+        runTest {
+            val document = Document(Key(NORMAL_DOCUMENT_KEY))
+            val peerStatusHistoryAsync = async(UnconfinedTestDispatcher()) {
+                target.peerStatus.take(5).toList()
+            }
+
+            target.activateAsync().await()
+            target.attachAsync(document).await()
+
+            val peerStatusHistory = peerStatusHistoryAsync.await()
+            val initialStatus = PeerStatus(
+                document.key,
+                TEST_ACTOR_ID,
+                PresenceInfo(1, mapOf("k1" to "v1")),
+            )
+
+            assertTrue(peerStatusHistory.first().isEmpty())
+            assertContentEquals(listOf(initialStatus), peerStatusHistory[1])
+            assertContentEquals(
+                listOf(
+                    initialStatus,
+                    PeerStatus(
+                        document.key,
+                        ActorID.MAX_ACTOR_ID,
+                        PresenceInfo(2, mapOf("k1" to "v1")),
+                    ),
+                ),
+                peerStatusHistory[2],
+            )
+            assertContentEquals(
+                listOf(
+                    initialStatus,
+                    PeerStatus(
+                        document.key,
+                        ActorID.MAX_ACTOR_ID,
+                        PresenceInfo(3, mapOf("k1" to "v2")),
+                    ),
+                ),
+                peerStatusHistory[3],
+            )
+            assertContentEquals(listOf(initialStatus), peerStatusHistory.last())
+
+            target.detachAsync(document).await()
             target.deactivateAsync().await()
         }
     }

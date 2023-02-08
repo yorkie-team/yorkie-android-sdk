@@ -249,13 +249,14 @@ public class Client @VisibleForTesting internal constructor(
             return
         }
         val watchEvent = response.event
-        val responseKeys = watchEvent.documentKeysList
+        val eventType = watchEvent.type ?: return
+        val documentKeys = watchEvent.documentKeysList
         val publisher = watchEvent.publisher.id.toActorID()
         val presence = watchEvent.publisher.presence.toPresence()
-        responseKeys.forEach { key ->
+        documentKeys.forEach { key ->
             val attachment = attachments.value[Document.Key(key)] ?: return@forEach
             val presences = attachment.peerPresences
-            when (watchEvent.type ?: return@forEach) {
+            when (eventType) {
                 DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
                     presences[publisher] = presence
                 }
@@ -276,9 +277,9 @@ public class Client @VisibleForTesting internal constructor(
             }
         }
 
-        when (watchEvent.type ?: return) {
+        when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
-                eventStream.emit(Event.DocumentsChanged(responseKeys.map(Document::Key)))
+                eventStream.emit(Event.DocumentsChanged(documentKeys.map(Document::Key)))
             }
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED,
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED,
@@ -286,7 +287,9 @@ public class Client @VisibleForTesting internal constructor(
             -> {
                 emitPeerStatus()
             }
-            DocEventType.UNRECOGNIZED -> TODO()
+            DocEventType.UNRECOGNIZED -> {
+                // nothing to do
+            }
         }
     }
 

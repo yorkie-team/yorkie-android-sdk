@@ -182,22 +182,63 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                     },
                 )
             }
-            while (true) {
-                delay(1_000)
-                if (keys.contains(WATCH_SYNC_ERROR_DOCUMENT_KEY)) {
-                    throw StatusException(Status.UNAVAILABLE)
-                } else {
-                    emit(
-                        watchDocumentsResponse {
-                            event = docEvent {
-                                type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
-                                publisher = request.client
-                                documentKeys.addAll(keys)
-                            }
-                        },
-                    )
-                }
+            delay(1_000)
+            if (keys.contains(WATCH_SYNC_ERROR_DOCUMENT_KEY)) {
+                throw StatusException(Status.UNAVAILABLE)
             }
+            emit(
+                watchDocumentsResponse {
+                    event = docEvent {
+                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
+                        publisher = request.client
+                        documentKeys.addAll(keys)
+                    }
+                },
+            )
+            delay(1_000)
+            emit(
+                watchDocumentsResponse {
+                    event = docEvent {
+                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED
+                        publisher = client {
+                            id = ActorID.MAX_ACTOR_ID.toByteString()
+                            presence = presence {
+                                clock = 2
+                                data["k1"] = "v1"
+                            }
+                        }
+                        documentKeys.addAll(keys)
+                    }
+                },
+            )
+            delay(3_000)
+            emit(
+                watchDocumentsResponse {
+                    event = docEvent {
+                        type = DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED
+                        publisher = client {
+                            id = ActorID.MAX_ACTOR_ID.toByteString()
+                            presence = presence {
+                                clock = 3
+                                data["k1"] = "v2"
+                            }
+                        }
+                        documentKeys.addAll(keys)
+                    }
+                },
+            )
+            delay(2_000)
+            emit(
+                watchDocumentsResponse {
+                    event = docEvent {
+                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED
+                        publisher = client {
+                            id = ActorID.MAX_ACTOR_ID.toByteString()
+                        }
+                        documentKeys.addAll(keys)
+                    }
+                },
+            )
         }
     }
 

@@ -249,7 +249,7 @@ public class Client @VisibleForTesting internal constructor(
             return
         }
         val watchEvent = response.event
-        val eventType = watchEvent.type ?: return
+        val eventType = checkNotNull(watchEvent.type)
         val documentKeys = watchEvent.documentKeysList
         val publisher = watchEvent.publisher.id.toActorID()
         val presence = watchEvent.publisher.presence.toPresence()

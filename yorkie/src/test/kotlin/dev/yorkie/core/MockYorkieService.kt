@@ -23,7 +23,7 @@ import dev.yorkie.api.v1.ValueType
 import dev.yorkie.api.v1.WatchDocumentsRequest
 import dev.yorkie.api.v1.WatchDocumentsResponse
 import dev.yorkie.api.v1.WatchDocumentsResponseKt.initialization
-import dev.yorkie.api.v1.YorkieServiceGrpc
+import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.api.v1.activateClientResponse
 import dev.yorkie.api.v1.attachDocumentResponse
 import dev.yorkie.api.v1.change
@@ -46,104 +46,75 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import io.grpc.Status
 import io.grpc.StatusException
-import io.grpc.stub.StreamObserver
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import java.nio.ByteBuffer
 
-class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
+class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
 
-    override fun activateClient(
-        request: ActivateClientRequest,
-        responseObserver: StreamObserver<ActivateClientResponse>,
-    ) {
-        responseObserver.onNext(
-            activateClientResponse {
-                clientId = TEST_ACTOR_ID.toByteString()
-                clientKey = request.clientKey
-            },
-        )
-        responseObserver.onCompleted()
+    override suspend fun activateClient(request: ActivateClientRequest): ActivateClientResponse {
+        return activateClientResponse {
+            clientId = TEST_ACTOR_ID.toByteString()
+            clientKey = request.clientKey
+        }
     }
 
-    override fun deactivateClient(
+    override suspend fun deactivateClient(
         request: DeactivateClientRequest,
-        responseObserver: StreamObserver<DeactivateClientResponse>,
-    ) {
-        responseObserver.onNext(
-            deactivateClientResponse {
-                clientId = request.clientId
-            },
-        )
-        responseObserver.onCompleted()
+    ): DeactivateClientResponse {
+        return deactivateClientResponse {
+            clientId = request.clientId
+        }
     }
 
-    override fun attachDocument(
-        request: AttachDocumentRequest,
-        responseObserver: StreamObserver<AttachDocumentResponse>,
-    ) {
+    override suspend fun attachDocument(request: AttachDocumentRequest): AttachDocumentResponse {
         if (request.changePack.documentKey == ATTACH_ERROR_DOCUMENT_KEY) {
-            responseObserver.onError(StatusException(Status.UNKNOWN))
-            return
+            throw StatusException(Status.UNKNOWN)
         }
-        responseObserver.onNext(
-            attachDocumentResponse {
-                clientId = request.clientId
-                changePack = changePack {
-                    documentKey = request.changePack.documentKey
-                    snapshot = CrdtObject(
-                        InitialTimeTicket,
-                        rht = RhtPQMap<CrdtElement>().apply {
-                            set(
-                                "k1",
-                                CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),
-                            )
-                        },
-                    ).toByteString()
-                    minSyncedTicket = PBTimeTicket.getDefaultInstance()
-                }
-            },
-        )
-        responseObserver.onCompleted()
+        return attachDocumentResponse {
+            clientId = request.clientId
+            changePack = changePack {
+                documentKey = request.changePack.documentKey
+                snapshot = CrdtObject(
+                    InitialTimeTicket,
+                    rht = RhtPQMap<CrdtElement>().apply {
+                        set(
+                            "k1",
+                            CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),
+                        )
+                    },
+                ).toByteString()
+                minSyncedTicket = PBTimeTicket.getDefaultInstance()
+            }
+        }
     }
 
-    override fun detachDocument(
-        request: DetachDocumentRequest,
-        responseObserver: StreamObserver<DetachDocumentResponse>,
-    ) {
+    override suspend fun detachDocument(request: DetachDocumentRequest): DetachDocumentResponse {
         if (request.changePack.documentKey == DETACH_ERROR_DOCUMENT_KEY) {
-            responseObserver.onError(StatusException(Status.UNKNOWN))
-            return
+            throw StatusException(Status.UNKNOWN)
         }
-        responseObserver.onNext(
-            detachDocumentResponse {
-                clientKey = TEST_KEY
-            },
-        )
-        responseObserver.onCompleted()
+        return detachDocumentResponse {
+            clientKey = TEST_KEY
+        }
     }
 
-    override fun pushPull(
-        request: PushPullRequest,
-        responseObserver: StreamObserver<PushPullResponse>,
-    ) {
+    override suspend fun pushPull(request: PushPullRequest): PushPullResponse {
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
-            responseObserver.onError(StatusException(Status.UNAVAILABLE))
-            return
+            throw StatusException(Status.UNAVAILABLE)
         }
-        responseObserver.onNext(
-            pushPullResponse {
-                clientId = request.clientId
-                changePack = changePack {
-                    minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
-                    changes.add(
-                        change {
-                            operations.add(createSetOperation())
-                            operations.add(createRemoveOperation())
-                        },
-                    )
-                }
-            },
-        )
-        responseObserver.onCompleted()
+        return pushPullResponse {
+            clientId = request.clientId
+            changePack = changePack {
+                minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
+                changes.add(
+                    change {
+                        operations.add(createSetOperation())
+                        operations.add(createRemoveOperation())
+                    },
+                )
+            }
+        }
     }
 
     private fun createSetOperation() = operation {
@@ -168,52 +139,73 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
         }
     }
 
-    override fun watchDocuments(
-        request: WatchDocumentsRequest,
-        responseObserver: StreamObserver<WatchDocumentsResponse>,
-    ) {
-        if (request.documentKeysList.contains(WATCH_SYNC_ERROR_DOCUMENT_KEY)) {
-            responseObserver.onError(StatusException(Status.UNAVAILABLE))
-            return
-        }
-        responseObserver.onNext(
-            watchDocumentsResponse {
-                if (request.documentKeysList.contains(INITIALIZATION_DOCUMENT_KEY)) {
-                    initialization = initialization {
-                        peersMapByDoc[INITIALIZATION_DOCUMENT_KEY] = clients {
-                            clients.add(
-                                client {
-                                    id = request.client.id
-                                    presence = presence {
-                                        clock = 1
-                                        data["k1"] = "v1"
-                                    }
-                                },
-                            )
+    override fun watchDocuments(request: WatchDocumentsRequest): Flow<WatchDocumentsResponse> {
+        val keys = request.documentKeysList
+        return flow {
+            if (keys.size == 1 && keys.contains(SLOW_INITIALIZATION_DOCUMENT_KEY)) {
+                delay(5_000)
+                emit(
+                    watchDocumentsResponse {
+                        initialization = initialization {
+                            peersMapByDoc[SLOW_INITIALIZATION_DOCUMENT_KEY] = clients {
+                                clients.add(
+                                    client {
+                                        id = request.client.id
+                                        presence = presence {
+                                            clock = 1
+                                            data["k1"] = "v1"
+                                        }
+                                    },
+                                )
+                            }
                         }
-                    }
+                    },
+                )
+            } else {
+                emit(
+                    watchDocumentsResponse {
+                        initialization = initialization {
+                            keys.forEach {
+                                peersMapByDoc[it] = clients {
+                                    clients.add(
+                                        client {
+                                            id = request.client.id
+                                            presence = presence {
+                                                clock = 1
+                                                data["k1"] = "v1"
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+            while (true) {
+                delay(1_000)
+                if (keys.contains(WATCH_SYNC_ERROR_DOCUMENT_KEY)) {
+                    throw StatusException(Status.UNAVAILABLE)
                 } else {
-                    event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
-                        publisher = request.client
-                        documentKeys.addAll(request.documentKeysList)
-                    }
+                    emit(
+                        watchDocumentsResponse {
+                            event = docEvent {
+                                type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
+                                publisher = request.client
+                                documentKeys.addAll(keys)
+                            }
+                        },
+                    )
                 }
-            },
-        )
-        responseObserver.onCompleted()
+            }
+        }
     }
 
-    override fun updatePresence(
-        request: UpdatePresenceRequest,
-        responseObserver: StreamObserver<UpdatePresenceResponse>,
-    ) {
+    override suspend fun updatePresence(request: UpdatePresenceRequest): UpdatePresenceResponse {
         if (request.documentKeysList.contains(UPDATE_PRESENCE_ERROR_DOCUMENT_KEY)) {
-            responseObserver.onError(StatusException(Status.UNAVAILABLE))
-            return
+            throw StatusException(Status.UNAVAILABLE)
         }
-        responseObserver.onNext(UpdatePresenceResponse.getDefaultInstance())
-        responseObserver.onCompleted()
+        return UpdatePresenceResponse.getDefaultInstance()
     }
 
     companion object {
@@ -223,7 +215,7 @@ class MockYorkieService : YorkieServiceGrpc.YorkieServiceImplBase() {
         internal const val ATTACH_ERROR_DOCUMENT_KEY = "ATTACH_ERROR_DOCUMENT_KEY"
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val UPDATE_PRESENCE_ERROR_DOCUMENT_KEY = "UPDATE_PRESENCE_ERROR_DOCUMENT_KEY"
-        internal const val INITIALIZATION_DOCUMENT_KEY = "INITIALIZATION_DOCUMENT_KEY"
+        internal const val SLOW_INITIALIZATION_DOCUMENT_KEY = "SLOW_INITIALIZATION_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000FFFF0000000000")
     }
 }

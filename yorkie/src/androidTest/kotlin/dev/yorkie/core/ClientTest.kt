@@ -165,6 +165,50 @@ class ClientTest {
         }
     }
 
+    @Test
+    fun test_peer_presence_consistency() {
+        runBlocking {
+            val client1 = createClient()
+            val client2 = createClient()
+            val documentKey = UUID.randomUUID().toString()
+            val document1 = createDocument(documentKey)
+            val document2 = createDocument(documentKey)
+
+            client1.activateAsync().await()
+            client2.activateAsync().await()
+
+            client1.attachAsync(document1).await()
+            client2.attachAsync(document2).await()
+
+            client1.updatePresenceAsync("name", "A").await()
+            client2.updatePresenceAsync("name", "B").await()
+
+            withTimeout(1_000) {
+                client1.peerStatus.first {
+                    it.size == 2 && it.none { peerStatus -> peerStatus.presenceInfo.data.isEmpty() }
+                }
+                client2.peerStatus.first {
+                    it.size == 2 && it.none { peerStatus -> peerStatus.presenceInfo.data.isEmpty() }
+                }
+            }
+            listOf(client1.peerStatus.first(), client2.peerStatus.first()).forEach { status ->
+                assertEquals(
+                    mapOf("name" to "A"),
+                    status.first { it.actorId == client1.requireClientId() }.presenceInfo.data,
+                )
+                assertEquals(
+                    mapOf("name" to "B"),
+                    status.first { it.actorId == client2.requireClientId() }.presenceInfo.data,
+                )
+            }
+
+            client1.detachAsync(document1).await()
+            client2.detachAsync(document2).await()
+            client1.deactivateAsync().await()
+            client2.deactivateAsync().await()
+        }
+    }
+
     private fun createClient() = Client(
         InstrumentationRegistry.getInstrumentation().targetContext,
         "10.0.2.2",

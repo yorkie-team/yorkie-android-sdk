@@ -107,7 +107,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         while (node.hasNext && executedAt < node.next?.createdAt) {
             node = node.next ?: break
         }
-        return Pair(node, node.next)
+        return node to node.next
     }
 
     private fun findFloorNodePreferToLeft(id: RgaTreeSplitNodeID): RgaTreeSplitNode<T> {
@@ -251,7 +251,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         }
         nodesToKeep.add(rightEdge)
 
-        return Pair(nodesToDelete, nodesToKeep)
+        return nodesToDelete to nodesToKeep
     }
 
     /**
@@ -264,7 +264,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         if (candidates.isEmpty()) {
             throw IllegalArgumentException("findEdgesOfCandidates error: candidates is empty")
         }
-        return Pair(requireNotNull(candidates.first().prev), candidates.last().next)
+        return requireNotNull(candidates.first().prev) to candidates.last().next
     }
 
     private fun makeChanges(
@@ -272,7 +272,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         executedAt: TimeTicket,
     ): List<ContentChange> {
         return buildList {
-            var (fromIndex, toIndex) = Pair(0, 0)
+            var (fromIndex, toIndex) = 0 to 0
             for (index in 0..boundaries.size - 2) {
                 val leftBoundary = boundaries[index]
                 val rightBoundary = boundaries[index + 1]
@@ -294,7 +294,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
 
     fun findIndexesFromRange(range: RgaTreeSplitNodeRange): Pair<Int, Int> {
         val (fromPos, toPos) = range
-        return Pair(findIndexFromNodePos(fromPos, false), findIndexFromNodePos(toPos, true))
+        return findIndexFromNodePos(fromPos, false) to findIndexFromNodePos(toPos, true)
     }
 
     private fun findIndexFromNodePos(

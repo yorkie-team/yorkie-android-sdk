@@ -18,6 +18,7 @@ import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullRequest
 import dev.yorkie.api.v1.updatePresenceRequest
 import dev.yorkie.api.v1.watchDocumentsRequest
+import dev.yorkie.core.Attachment.Companion.UninitializedPresences
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
 import dev.yorkie.core.Client.Event.DocumentSynced
@@ -40,6 +41,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
@@ -61,7 +64,7 @@ public class Client @VisibleForTesting internal constructor(
         SupervisorJob() +
             createSingleThreadDispatcher("Client(${options.key})"),
     )
-    private val attachments = mutableMapOf<Document.Key, Attachment>()
+    private val attachments = MutableStateFlow<Map<Document.Key, Attachment>>(emptyMap())
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()
@@ -154,7 +157,7 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private fun filterRealTimeSyncNeeded() = attachments.filterValues { attachment ->
+    private fun filterRealTimeSyncNeeded() = attachments.value.filterValues { attachment ->
         attachment.isRealTimeSync &&
             (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
     }.map { (_, attachment) ->
@@ -169,7 +172,7 @@ public class Client @VisibleForTesting internal constructor(
     public fun syncAsync(): Deferred<Boolean> {
         return scope.async {
             var isAllSuccess = true
-            attachments.map { (_, attachment) ->
+            attachments.value.map { (_, attachment) ->
                 attachment.document
             }.asSyncFlow().collect { (document, result) ->
                 eventStream.emit(
@@ -206,7 +209,7 @@ public class Client @VisibleForTesting internal constructor(
     private fun runWatchLoop() {
         watchLoop?.cancel()
         watchLoop = scope.launch {
-            val realTimeSyncDocKeys = attachments.filterValues { attachment ->
+            val realTimeSyncDocKeys = attachments.value.filterValues { attachment ->
                 attachment.isRealTimeSync
             }.map { (_, attachment) ->
                 attachment.document.key.value
@@ -233,7 +236,11 @@ public class Client @VisibleForTesting internal constructor(
     private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
         if (response.hasInitialization()) {
             response.initialization.peersMapByDocMap.forEach { (documentKey, peers) ->
-                val attachment = attachments[Document.Key(documentKey)] ?: return@forEach
+                var attachment = attachments.value[Document.Key(documentKey)] ?: return@forEach
+                if (attachment.peerPresences == UninitializedPresences) {
+                    attachment = attachment.copy(peerPresences = mutableMapOf())
+                    attachments.value += Document.Key(documentKey) to attachment
+                }
                 peers.clientsList.forEach { peer ->
                     attachment.peerPresences[peer.id.toActorID()] = peer.presence.toPresence()
                 }
@@ -246,7 +253,7 @@ public class Client @VisibleForTesting internal constructor(
         val publisher = watchEvent.publisher.id.toActorID()
         val presence = watchEvent.publisher.presence.toPresence()
         responseKeys.forEach { key ->
-            val attachment = attachments[Document.Key(key)] ?: return@forEach
+            val attachment = attachments.value[Document.Key(key)] ?: return@forEach
             val presences = attachment.peerPresences
             when (watchEvent.type ?: return@forEach) {
                 DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
@@ -285,7 +292,7 @@ public class Client @VisibleForTesting internal constructor(
 
     private suspend fun emitPeerStatus() {
         _peerStatus.emit(
-            attachments.flatMap { (documentKey, attachment) ->
+            attachments.value.flatMap { (documentKey, attachment) ->
                 attachment.peerPresences.map { (actorID, presenceInfo) ->
                     PeerStatus(documentKey, actorID, presenceInfo)
                 }
@@ -302,14 +309,17 @@ public class Client @VisibleForTesting internal constructor(
                 return@async false
             }
 
+            val realTimeAttachments = attachments.value.filter { it.value.isRealTimeSync }
+            realTimeAttachments.forEach {
+                waitForInitialization(it.key)
+            }
+
             presenceInfo = presenceInfo.copy(
                 clock = presenceInfo.clock + 1,
                 data = presenceInfo.data + (key to value),
             )
 
-            val documentKeys = attachments.filter {
-                it.value.isRealTimeSync
-            }.map { (key, attachment) ->
+            val documentKeys = realTimeAttachments.map { (key, attachment) ->
                 attachment.peerPresences[requireClientId()] = presenceInfo
                 key.value
             }.takeIf {
@@ -359,8 +369,9 @@ public class Client @VisibleForTesting internal constructor(
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
-            attachments[document.key] = Attachment(document, !isManualSync)
+            attachments.value += document.key to Attachment(document, !isManualSync)
             runWatchLoop()
+            waitForInitialization(document.key)
             true
         }
     }
@@ -390,7 +401,7 @@ public class Client @VisibleForTesting internal constructor(
             }
             val pack = response.changePack.toChangePack()
             doc.applyChangePack(pack)
-            attachments.remove(doc.key)
+            attachments.value -= doc.key
             runWatchLoop()
             true
         }
@@ -424,6 +435,14 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     public fun requireClientId() = (status.value as Status.Activated).clientId
+
+    private suspend fun waitForInitialization(documentKey: Document.Key) {
+        attachments.first { attachments ->
+            with(attachments[documentKey]) {
+                this == null || !isRealTimeSync || peerPresences != UninitializedPresences
+            }
+        }
+    }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
 

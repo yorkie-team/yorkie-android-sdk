@@ -116,7 +116,7 @@ internal data class CrdtObject(
 
             override fun next(): Pair<String, CrdtElement> {
                 val node = nodes[index++]
-                return Pair(node.strKey, node.value)
+                return node.strKey to node.value
             }
         }
     }

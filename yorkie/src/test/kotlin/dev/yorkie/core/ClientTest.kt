@@ -329,7 +329,9 @@ class ClientTest {
             target.activateAsync().await()
             val slowAttach = target.attachAsync(document2)
             delay(500)
+            assertTrue(slowAttach.isActive)
             target.attachAsync(document1).await()
+            delay(100)
             assertTrue(slowAttach.isCompleted)
             assertTrue(
                 target.peerStatus.value.any {

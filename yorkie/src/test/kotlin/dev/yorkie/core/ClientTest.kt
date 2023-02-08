@@ -396,6 +396,18 @@ class ClientTest {
         }
     }
 
+    @Test
+    fun `activate and deactivate multiple times`() {
+        runTest {
+            target.activateAsync().await()
+            delay(500)
+            target.deactivateAsync().await()
+            target.activateAsync().await()
+            delay(500)
+            target.deactivateAsync().await()
+        }
+    }
+
     private fun assertIsTestActorID(clientId: ByteString) {
         assertEquals(TEST_ACTOR_ID, clientId.toActorID())
     }

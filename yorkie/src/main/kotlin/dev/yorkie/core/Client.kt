@@ -415,7 +415,7 @@ public class Client @VisibleForTesting internal constructor(
     public fun deactivateAsync(): Deferred<Boolean> {
         return scope.async {
             if (!isActive) {
-                return@async false
+                return@async true
             }
             activationJob.cancelChildren()
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)

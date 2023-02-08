@@ -397,14 +397,13 @@ class ClientTest {
     }
 
     @Test
-    fun `activate and deactivate multiple times`() {
+    fun `should handle activating and deactivating multiple times`() {
         runTest {
-            target.activateAsync().await()
+            assertTrue(target.activateAsync().await())
+            assertTrue(target.activateAsync().await())
             delay(500)
-            target.deactivateAsync().await()
-            target.activateAsync().await()
-            delay(500)
-            target.deactivateAsync().await()
+            assertTrue(target.deactivateAsync().await())
+            assertTrue(target.deactivateAsync().await())
         }
     }
 

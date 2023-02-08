@@ -32,9 +32,10 @@ import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -42,7 +43,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
@@ -64,6 +68,8 @@ public class Client @VisibleForTesting internal constructor(
         SupervisorJob() +
             createSingleThreadDispatcher("Client(${options.key})"),
     )
+    private val activationJob = SupervisorJob()
+
     private val attachments = MutableStateFlow<Map<Document.Key, Attachment>>(emptyMap())
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
@@ -87,9 +93,6 @@ public class Client @VisibleForTesting internal constructor(
             if (authInterceptor == null) this else withInterceptors(authInterceptor)
         }
     }
-
-    private var syncLoop: Job? = null
-    private var watchLoop: Job? = null
 
     public constructor(
         context: Context,
@@ -138,21 +141,18 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private fun runSyncLoop() {
-        syncLoop?.cancel()
-        syncLoop = scope.launch {
-            launch {
-                while (true) {
-                    filterRealTimeSyncNeeded().asSyncFlow().collect { (document, result) ->
-                        eventStream.emit(
-                            if (result.isSuccess) {
-                                DocumentSynced(Synced(document))
-                            } else {
-                                DocumentSynced(SyncFailed(document, result.exceptionOrNull()))
-                            },
-                        )
-                    }
-                    delay(options.syncLoopDuration.inWholeMilliseconds)
+        scope.launch(activationJob) {
+            while (true) {
+                filterRealTimeSyncNeeded().asSyncFlow().collect { (document, result) ->
+                    eventStream.emit(
+                        if (result.isSuccess) {
+                            DocumentSynced(Synced(document))
+                        } else {
+                            DocumentSynced(SyncFailed(document, result.exceptionOrNull()))
+                        },
+                    )
                 }
+                delay(options.syncLoopDuration.inWholeMilliseconds)
             }
         }
     }
@@ -206,27 +206,28 @@ public class Client @VisibleForTesting internal constructor(
             }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun runWatchLoop() {
-        watchLoop?.cancel()
-        watchLoop = scope.launch {
-            val realTimeSyncDocKeys = attachments.value.filterValues { attachment ->
-                attachment.isRealTimeSync
-            }.map { (_, attachment) ->
-                attachment.document.key.value
-            }.takeIf { it.isNotEmpty() } ?: return@launch
-
-            val request = watchDocumentsRequest {
-                client = toPBClient()
-                documentKeys.addAll(realTimeSyncDocKeys)
-            }
-
-            service.watchDocuments(request)
-                .retry {
+        scope.launch(activationJob) {
+            attachments.map { it.filterValues { attachment -> attachment.isRealTimeSync } }
+                .map { it.keys }
+                .distinctUntilChanged()
+                .map {
+                    if (it.isNotEmpty()) {
+                        watchDocumentsRequest {
+                            client = toPBClient()
+                            documentKeys.addAll(it.map(Document.Key::value))
+                        }
+                    } else {
+                        null
+                    }
+                }.flatMapLatest {
+                    it?.let(service::watchDocuments) ?: emptyFlow()
+                }.retry {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
                     delay(options.reconnectStreamDelay.inWholeMilliseconds)
                     true
-                }
-                .collect {
+                }.collect {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
                     handleWatchDocumentsResponse(it)
                 }
@@ -373,7 +374,6 @@ public class Client @VisibleForTesting internal constructor(
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
             attachments.value += document.key to Attachment(document, !isManualSync)
-            runWatchLoop()
             waitForInitialization(document.key)
             true
         }
@@ -405,7 +405,6 @@ public class Client @VisibleForTesting internal constructor(
             val pack = response.changePack.toChangePack()
             doc.applyChangePack(pack)
             attachments.value -= doc.key
-            runWatchLoop()
             true
         }
     }
@@ -416,10 +415,9 @@ public class Client @VisibleForTesting internal constructor(
     public fun deactivateAsync(): Deferred<Boolean> {
         return scope.async {
             if (!isActive) {
-                return@async false
+                return@async true
             }
-            syncLoop?.cancel()
-            watchLoop?.cancel()
+            activationJob.cancelChildren()
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 
             try {

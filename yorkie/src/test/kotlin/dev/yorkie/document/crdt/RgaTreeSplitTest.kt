@@ -20,7 +20,7 @@ class RgaTreeSplitTest {
         range = RgaTreeSplitNodeRange(target.findNodePos(1), target.findNodePos(3))
         target.edit(range, TimeTicket.InitialTimeTicket, TextValue("12"))
 
-        assertEquals("A12D", target.toJson())
+        assertEquals("A12D", target.toString())
     }
 
     @Test
@@ -30,6 +30,6 @@ class RgaTreeSplitTest {
         range = RgaTreeSplitNodeRange(target.findNodePos(3), target.findNodePos(3))
         target.edit(range, TimeTicket.InitialTimeTicket, TextValue("\n"))
 
-        assertEquals("ABC\nD", target.toJson())
+        assertEquals("ABC\nD", target.toString())
     }
 }

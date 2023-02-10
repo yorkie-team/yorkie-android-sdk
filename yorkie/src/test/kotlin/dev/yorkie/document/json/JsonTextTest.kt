@@ -12,6 +12,7 @@ import dev.yorkie.document.time.TimeTicket
 import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class JsonTextTest {
 
@@ -65,5 +66,21 @@ class JsonTextTest {
             }
         }
         target.select(2, 4)
+    }
+
+    @Test
+    fun `should handle text empty operations`() {
+        target.edit(0, 0, "ABCD")
+        assertTrue(target.toString().isNotEmpty())
+        target.empty()
+        assertTrue(target.toString().isEmpty())
+    }
+
+    @Test
+    fun `should handle text delete operations`() {
+        target.edit(0, 0, "ABCD")
+        assertEquals(target.toString(), "ABCD")
+        target.delete(1, 3)
+        assertEquals(target.toString(), "AD")
     }
 }

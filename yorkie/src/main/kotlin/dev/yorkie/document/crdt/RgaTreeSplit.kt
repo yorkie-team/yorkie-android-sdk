@@ -418,7 +418,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         return clone
     }
 
-    fun toJson(): String {
+    override fun toString(): String {
         return buildString {
             this@RgaTreeSplit.forEach { node ->
                 if (!node.isRemoved) append(node.value)

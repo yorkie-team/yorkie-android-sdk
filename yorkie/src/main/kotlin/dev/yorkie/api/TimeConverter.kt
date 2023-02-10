@@ -27,9 +27,9 @@ internal fun TimeTicket.toPBTimeTicket(): PBTimeTicket {
 }
 
 internal fun ByteString.toActorID(): ActorID {
-    return ActorID(BaseEncoding.base16().encode(toByteArray()))
+    return ActorID(BaseEncoding.base16().lowerCase().encode(toByteArray()))
 }
 
 internal fun ActorID.toByteString(): ByteString {
-    return BaseEncoding.base16().decode(value).toByteString()
+    return BaseEncoding.base16().lowerCase().decode(value).toByteString()
 }

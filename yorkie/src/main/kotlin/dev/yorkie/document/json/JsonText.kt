@@ -23,6 +23,9 @@ public class JsonText internal constructor(
     internal val values
         get() = target.values
 
+    public val length: Int
+        get() = target.length
+
     /**
      * Edits this [JsonText] with the given [content] and [attributes].
      */
@@ -106,10 +109,28 @@ public class JsonText internal constructor(
     }
 
     /**
+     * Deletes the text in the given range.
+     */
+    public fun delete(fromIndex: Int, toIndex: Int): Boolean {
+        return edit(fromIndex, toIndex, "")
+    }
+
+    /**
+     * Makes the text empty.
+     */
+    public fun empty(): Boolean {
+        return edit(0, target.length, "")
+    }
+
+    /**
      * Registers a handler of onChanges event.
      */
     public fun onChanges(handler: ((List<TextChange>) -> Unit)) {
         return target.onChanges(handler)
+    }
+
+    override fun toString(): String {
+        return target.toString()
     }
 
     companion object {

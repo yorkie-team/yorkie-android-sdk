@@ -26,6 +26,9 @@ internal data class CrdtText(
         get() = rgaTreeSplit.filterNot { it.isRemoved }
             .map { it.value.content to it.value.attributes }
 
+    val length: Int
+        get() = rgaTreeSplit.length
+
     /**
      * Edits the given [range] with the given [value] and [attributes].
      */
@@ -151,6 +154,10 @@ internal data class CrdtText(
      */
     fun onChanges(handler: ((List<TextChange>) -> Unit)) {
         onChangesHandler = handler
+    }
+
+    override fun toString(): String {
+        return rgaTreeSplit.toString()
     }
 
     private fun handleChanges(changes: List<TextChange>) {

@@ -20,6 +20,6 @@ public value class ActorID(val value: String) : Comparable<ActorID> {
         /**
          * [MAX_ACTOR_ID] is the maximum value of [ActorID].
          */
-        val MAX_ACTOR_ID: ActorID = ActorID("FFFFFFFFFFFFFFFFFFFFFFFF")
+        val MAX_ACTOR_ID: ActorID = ActorID("ffffffffffffffffffffffff")
     }
 }

@@ -20,32 +20,6 @@ class YorkieEditText @JvmOverloads constructor(
     init {
         fromRemote = false
 
-//        doOnTextChanged { text, start, before, count ->
-//            if (fromRemote) {
-//                fromRemote = false
-//                return@doOnTextChanged
-//            }
-//
-//            when {
-//                before < count -> {
-//                    val to = (start + count - 1).coerceAtLeast(0)
-//                    val content = text?.substring(start, to + 1) ?: ""
-//                    textEventHandler?.handleEditEvent(start, to, content)
-//                }
-//                before == count -> {
-//                    val content = text?.toString() ?: ""
-//                    val to = content.length.coerceAtLeast(0)
-//                    textEventHandler?.handleEditEvent(0, to, content)
-//                }
-//                before > count -> {
-//                    val content = runCatching {
-//                        text?.substring(start, start + before - 1) ?: ""
-//                    }.getOrElse { "" }
-//                    textEventHandler?.handleEditEvent(start, start + before, content)
-//                }
-//            }
-//        }
-
         doOnTextChanged { _, start, _, _ ->
             if (!fromRemote) {
                 cursorPos = start

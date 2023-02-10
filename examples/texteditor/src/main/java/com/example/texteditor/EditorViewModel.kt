@@ -20,7 +20,7 @@ class EditorViewModel : ViewModel(), YorkieEditText.TextEventHandler {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + NonCancellable)
 
     fun init(context: Context) {
-        client = Client(context, "api.yorkie.dev", 443, Client.Options(apiKey = API_KEY))
+        client = Client(context, "api.yorkie.dev", 443)
         viewModelScope.launch {
             if (client.activateAsync().await()) {
                 client.attachAsync(document).await()
@@ -60,8 +60,7 @@ class EditorViewModel : ViewModel(), YorkieEditText.TextEventHandler {
     }
 
     companion object {
-        private const val DOCUMENT_KEY = "text-editor5"
+        private const val DOCUMENT_KEY = "text-editor"
         private const val TEXT_KEY = "content"
-        private const val API_KEY = "cfhsiri1i6kasnml27b0"
     }
 }

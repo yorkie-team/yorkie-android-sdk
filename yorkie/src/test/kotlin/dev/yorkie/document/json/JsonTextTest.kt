@@ -72,7 +72,7 @@ class JsonTextTest {
     fun `should handle text empty operations`() {
         target.edit(0, 0, "ABCD")
         assertTrue(target.toString().isNotEmpty())
-        target.empty()
+        target.clear()
         assertTrue(target.toString().isEmpty())
     }
 

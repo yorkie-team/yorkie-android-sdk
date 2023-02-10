@@ -116,9 +116,9 @@ public class JsonText internal constructor(
     }
 
     /**
-     * Makes the text empty.
+     * Clears the text.
      */
-    public fun empty(): Boolean {
+    public fun clear(): Boolean {
         return edit(0, target.length, "")
     }
 

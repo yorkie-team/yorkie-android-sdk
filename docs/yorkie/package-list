@@ -144,11 +144,15 @@ $dokka.location:dev.yorkie.document.json/JsonPrimitive/type/#/PointingToDeclarat
 $dokka.location:dev.yorkie.document.json/JsonPrimitive/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-primitive/value.html
 $dokka.location:dev.yorkie.document.json/JsonText.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/-companion/index.html
 $dokka.location:dev.yorkie.document.json/JsonText///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/index.html
+$dokka.location:dev.yorkie.document.json/JsonText/clear/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/clear.html
+$dokka.location:dev.yorkie.document.json/JsonText/delete/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/delete.html
 $dokka.location:dev.yorkie.document.json/JsonText/edit/#kotlin.Int#kotlin.Int#kotlin.String#kotlin.collections.Map[kotlin.String,kotlin.String]?/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/edit.html
 $dokka.location:dev.yorkie.document.json/JsonText/id/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/id.html
+$dokka.location:dev.yorkie.document.json/JsonText/length/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/length.html
 $dokka.location:dev.yorkie.document.json/JsonText/onChanges/#kotlin.Function1[kotlin.collections.List[dev.yorkie.document.crdt.TextChange],kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/on-changes.html
 $dokka.location:dev.yorkie.document.json/JsonText/select/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/select.html
 $dokka.location:dev.yorkie.document.json/JsonText/style/#kotlin.Int#kotlin.Int#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/style.html
+$dokka.location:dev.yorkie.document.json/JsonText/toString/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/to-string.html
 $dokka.location:dev.yorkie.document.time////PointingToDeclaration/yorkie/dev.yorkie.document.time/index.html
 $dokka.location:dev.yorkie.document.time/ActorID.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.time/-actor-i-d/-companion/index.html
 $dokka.location:dev.yorkie.document.time/ActorID.Companion/INITIAL_ACTOR_ID/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-actor-i-d/-companion/-i-n-i-t-i-a-l_-a-c-t-o-r_-i-d.html

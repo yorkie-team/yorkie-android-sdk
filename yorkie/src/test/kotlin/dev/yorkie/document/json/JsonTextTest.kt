@@ -58,7 +58,6 @@ class JsonTextTest {
 
     @Test
     fun `should handle select operations`() {
-        target.edit(0, 0, "ABCD")
         target.onChanges { changes ->
             if (changes.first().type == TextChangeType.Selection) {
                 assertEquals(changes.first().from, 2)
@@ -69,7 +68,7 @@ class JsonTextTest {
     }
 
     @Test
-    fun `should handle text empty operations`() {
+    fun `should handle text clear operations`() {
         target.edit(0, 0, "ABCD")
         assertTrue(target.toString().isNotEmpty())
         target.clear()

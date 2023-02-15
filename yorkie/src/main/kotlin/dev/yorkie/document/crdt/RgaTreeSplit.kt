@@ -472,7 +472,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
         get() = id.createdAt
 
     val length: Int
-        get() = _removedAt?.let { contentLength } ?: 0
+        get() = if (isRemoved) 0 else contentLength
 
     val contentLength: Int
         get() = _value.length

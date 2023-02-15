@@ -1,6 +1,5 @@
 package com.example.kanbanapp
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.yorkie.core.Client

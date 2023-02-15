@@ -24,7 +24,7 @@
       android:layout_margin="20dp"
       android:background="@android:color/transparent"
       android:gravity="top"
-      android:text="@={viewModel.content}"
+      android:text="@{viewModel.content}"
       app:layout_constraintBottom_toBottomOf="parent"
       app:layout_constraintEnd_toEndOf="parent"
       app:layout_constraintStart_toStartOf="parent"

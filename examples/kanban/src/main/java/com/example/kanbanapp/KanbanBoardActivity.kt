@@ -10,13 +10,22 @@ import androidx.compose.material.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import dev.yorkie.core.Client
 
 class KanbanBoardActivity : ComponentActivity() {
-    private val viewModel: KanbanBoardViewModel by viewModels()
+    private val viewModel: KanbanBoardViewModel by viewModels {
+        viewModelFactory {
+            initializer {
+                val client = Client(this@KanbanBoardActivity, "api.yorkie.dev", 443)
+                KanbanBoardViewModel(client)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        viewModel.init(this)
         setContent {
             Surface(
                 modifier = Modifier.fillMaxSize(),

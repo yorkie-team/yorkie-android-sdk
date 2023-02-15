@@ -1,45 +1,64 @@
 package com.example.texteditor
 
-import android.content.Context
-import androidx.databinding.ObservableField
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.yorkie.core.Client
 import dev.yorkie.document.Document
+import dev.yorkie.document.crdt.TextChange
+import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.json.JsonText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.max
 
-class EditorViewModel : ViewModel(), YorkieEditText.TextEventHandler {
-    private lateinit var client: Client
+class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
     private val document = Document(Document.Key(DOCUMENT_KEY))
-    val content = ObservableField("")
-    private val coroutineScope = CoroutineScope(Dispatchers.IO + NonCancellable)
 
-    fun init(context: Context) {
-        client = Client(context, "api.yorkie.dev", 443)
+    private val _content = MutableStateFlow("")
+    val content: StateFlow<String> = _content
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+
+    private val changeEventHandler: ((List<TextChange>) -> Unit) = { changes ->
+        val clientID = client.requireClientId()
+        changes.filter { it.type == TextChangeType.Content && it.actor != clientID }
+            .forEach {
+                _content.value =
+                    _content.value.replaceRange(max(0, it.from), max(0, it.to), it.content ?: "")
+            }
+    }
+
+    init {
         viewModelScope.launch {
             if (client.activateAsync().await()) {
                 client.attachAsync(document).await()
+                document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)?.onChanges(changeEventHandler)
+                    ?: run {
+                        document.updateAsync {
+                            it.setNewText(TEXT_KEY).onChanges(changeEventHandler)
+                        }.await()
+                    }
+                syncText()
                 client.syncAsync().await()
             }
         }
 
         viewModelScope.launch {
-            client.collect { event ->
-                if (event is Client.Event.DocumentSynced) {
-                    val text = document.getRoot().getAsOrNull<JsonText>(TEXT_KEY) ?: run {
-                        document.updateAsync {
-                            it.setNewText(TEXT_KEY)
-                        }.await()
-                        return@collect
-                    }
-                    content.set(text.toString())
+            document.collect {
+                if (it is Document.Event.Snapshot) {
+                    syncText()
                 }
             }
+        }
+    }
+
+    private fun syncText() {
+        viewModelScope.launch {
+            val content = document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
+            _content.value = content.toString()
         }
     }
 
@@ -52,11 +71,12 @@ class EditorViewModel : ViewModel(), YorkieEditText.TextEventHandler {
         }
     }
 
-    fun onDestroy() {
+    override fun onCleared() {
         coroutineScope.launch {
             client.detachAsync(document).await()
             client.deactivateAsync().await()
         }
+        super.onCleared()
     }
 
     companion object {

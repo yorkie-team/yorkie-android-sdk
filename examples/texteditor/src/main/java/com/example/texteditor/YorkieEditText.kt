@@ -1,13 +1,10 @@
 package com.example.texteditor
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.widget.doAfterTextChanged
-import androidx.core.widget.doOnTextChanged
 
-@SuppressLint("ClickableViewAccessibility")
 class YorkieEditText @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -15,16 +12,9 @@ class YorkieEditText @JvmOverloads constructor(
 
     var textEventHandler: TextEventHandler? = null
     private var fromRemote = false
-    private var cursorPos = 0
 
     init {
         fromRemote = false
-
-        doOnTextChanged { _, start, _, _ ->
-            if (!fromRemote) {
-                cursorPos = start
-            }
-        }
 
         doAfterTextChanged {
             if (fromRemote) {
@@ -40,7 +30,6 @@ class YorkieEditText @JvmOverloads constructor(
     override fun setText(text: CharSequence?, type: BufferType?) {
         fromRemote = true
         super.setText(text, type)
-        setSelection(cursorPos.coerceAtMost(text?.length ?: 0))
     }
 
     interface TextEventHandler {

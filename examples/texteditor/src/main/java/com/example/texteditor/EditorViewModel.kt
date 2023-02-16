@@ -27,7 +27,11 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
         changes.filter { it.type == TextChangeType.Content && it.actor != clientID }
             .forEach {
                 _content.value =
-                    _content.value.replaceRange(max(0, it.from), max(0, it.to), it.content ?: "")
+                    _content.value.replaceRange(
+                        it.from.coerceAtLeast(0),
+                        it.to.coerceAtLeast(0),
+                        it.content ?: "",
+                    )
             }
     }
 
@@ -80,7 +84,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     }
 
     companion object {
-        private const val DOCUMENT_KEY = "text-editor"
-        private const val TEXT_KEY = "content"
+        private const val DOCUMENT_KEY = "document-key"
+        private const val TEXT_KEY = "text-key"
     }
 }

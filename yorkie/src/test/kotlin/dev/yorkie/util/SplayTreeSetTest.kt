@@ -99,6 +99,15 @@ class SplayTreeSetTest {
         assertIfRangeCutOff(nodes, 3..7)
     }
 
+    @Test
+    fun `should handle indexOf correctly with single node`() {
+        val node = Node("A")
+        target.insert(node)
+        assertEquals(0, target.indexOf(node))
+        target.delete(node)
+        assertEquals(-1, target.indexOf(node))
+    }
+
     private fun assertIfRangeCutOff(nodes: List<Node>, targetRange: IntRange) {
         assertEquals(
             0,

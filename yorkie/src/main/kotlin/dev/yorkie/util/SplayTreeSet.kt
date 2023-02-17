@@ -73,7 +73,7 @@ internal class SplayTreeSet<V>(
      */
     fun indexOf(value: V?): Int {
         val node = valueToNodes[value]
-        if (node == null || !node.hasLinks) {
+        if (node == null || node !== root && !node.hasLinks) {
             return -1
         }
         var index = 0

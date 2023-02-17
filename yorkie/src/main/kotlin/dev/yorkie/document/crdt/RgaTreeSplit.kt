@@ -323,7 +323,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
             val rightBoundary = boundaries[index + 1]
             // If there is no node to delete between boundaries, do nothing.
             if (leftBoundary?.next != rightBoundary) {
-                treeByIndex.deleteRange(requireNotNull(leftBoundary), rightBoundary)
+                treeByIndex.cutOffRange(requireNotNull(leftBoundary), rightBoundary)
             }
         }
     }

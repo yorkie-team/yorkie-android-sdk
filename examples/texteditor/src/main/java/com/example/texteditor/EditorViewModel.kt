@@ -7,31 +7,26 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.TextChange
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.json.JsonText
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import kotlin.math.max
 
 class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
     private val document = Document(Document.Key(DOCUMENT_KEY))
 
-    private val _content = MutableStateFlow("")
-    val content: StateFlow<String> = _content
+    private val _content = MutableSharedFlow<String>()
+    val content = _content.asSharedFlow()
 
-    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private val _textChanges = MutableSharedFlow<TextChange>()
+    val textChanges = _textChanges.asSharedFlow()
 
     private val changeEventHandler: ((List<TextChange>) -> Unit) = { changes ->
         val clientID = client.requireClientId()
         changes.filter { it.type == TextChangeType.Content && it.actor != clientID }
             .forEach {
-                _content.value =
-                    _content.value.replaceRange(
-                        it.from.coerceAtLeast(0),
-                        it.to.coerceAtLeast(0),
-                        it.content ?: "",
-                    )
+                viewModelScope.launch {
+                    _textChanges.emit(it)
+                }
             }
     }
 
@@ -45,8 +40,8 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
                             it.setNewText(TEXT_KEY).onChanges(changeEventHandler)
                         }.await()
                     }
-                syncText()
                 client.syncAsync().await()
+                syncText()
             }
         }
 
@@ -62,21 +57,21 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private fun syncText() {
         viewModelScope.launch {
             val content = document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
-            _content.value = content.toString()
+            _content.emit(content?.toString().orEmpty())
         }
     }
 
-    override fun handleEditEvent(from: Int, to: Int, content: String) {
+    override fun handleEditEvent(from: Int, to: Int, content: CharSequence) {
         viewModelScope.launch {
             document.updateAsync {
                 val jsonText = it.getAs<JsonText>(TEXT_KEY)
-                jsonText.edit(from, max(to, jsonText.toString().length), content)
+                jsonText.edit(from, to, content.toString())
             }.await()
         }
     }
 
     override fun onCleared() {
-        coroutineScope.launch {
+        viewModelScope.launch {
             client.detachAsync(document).await()
             client.deactivateAsync().await()
         }

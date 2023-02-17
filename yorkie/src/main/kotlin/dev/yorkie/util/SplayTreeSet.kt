@@ -115,8 +115,8 @@ internal class SplayTreeSet<V>(
         newNode.left = target
         target.parent = newNode
         target.right = null
-        updateWeight(target.value)
-        updateWeight(newNode.value)
+        updateWeightInternal(target)
+        updateWeightInternal(newNode)
         return
     }
 
@@ -149,7 +149,7 @@ internal class SplayTreeSet<V>(
         }
 
         node.unlink()
-        root?.let { updateWeight(it.value) }
+        root?.let { updateWeightInternal(it) }
         valueToNodes.remove(node.value)
     }
 
@@ -185,15 +185,16 @@ internal class SplayTreeSet<V>(
 
     private fun cutOffRight(node: Node<V>) {
         val nodesToFreeWeight = traversePostorder(node.right)
-        nodesToFreeWeight.forEach(Node<V>::initWeight)
-        node.right = null
+        nodesToFreeWeight.forEach {
+            it.initWeight()
+        }
         updateTreeWeight(node)
     }
 
     private fun updateTreeWeight(node: Node<V>?) {
         var target = node
         while (target != null) {
-            updateWeight(target.value)
+            updateWeightInternal(target)
             target = target.parent
         }
     }
@@ -257,7 +258,7 @@ internal class SplayTreeSet<V>(
                 } else if (node.isRightChild) {
                     rotateLeft(node)
                 }
-                updateWeight(node.value)
+                updateWeightInternal(node)
                 return
             }
         }
@@ -267,7 +268,10 @@ internal class SplayTreeSet<V>(
      * Recalculates weight of node.
      */
     fun updateWeight(target: V) {
-        val node = valueToNodes[target] ?: return
+        updateWeightInternal(valueToNodes[target] ?: return)
+    }
+
+    private fun updateWeightInternal(node: Node<V>) {
         node.initWeight()
         node.increaseWeight(node.leftWeight)
         node.increaseWeight(node.rightWeight)
@@ -292,8 +296,8 @@ internal class SplayTreeSet<V>(
         pivot.left = root
         pivot.left?.parent = pivot
 
-        updateWeight(root.value)
-        updateWeight(pivot.value)
+        updateWeightInternal(root)
+        updateWeightInternal(pivot)
     }
 
     private fun rotateRight(pivot: Node<V>?) {
@@ -315,8 +319,8 @@ internal class SplayTreeSet<V>(
         pivot.right = root
         pivot.right?.parent = pivot
 
-        updateWeight(root.value)
-        updateWeight(pivot.value)
+        updateWeightInternal(root)
+        updateWeightInternal(pivot)
     }
 
     private val Node<V>?.isLeftChild

@@ -19,8 +19,9 @@ internal typealias RgaTreeSplitNodeRange = Pair<RgaTreeSplitNodePos, RgaTreeSpli
 internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNode<T>> {
     @Suppress("UNCHECKED_CAST")
     val head = RgaTreeSplitNode(InitialNodeID, InitialNodeValue) as RgaTreeSplitNode<T>
-    private val treeByIndex =
-        SplayTreeSet<RgaTreeSplitNode<T>> { it.contentLength }.apply { insert(head) }
+    private val treeByIndex = SplayTreeSet<RgaTreeSplitNode<T>> {
+        if (it.isRemoved) 0 else it.contentLength
+    }.apply { insert(head) }
     private val treeByID = TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>().apply {
         put(head.id, head)
     }
@@ -171,7 +172,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         fromNode: RgaTreeSplitNode<T>?,
         toNode: RgaTreeSplitNode<T>?,
     ): List<RgaTreeSplitNode<T>> {
-        var current: RgaTreeSplitNode<T>? = fromNode
+        var current = fromNode
         return buildList {
             while (current != toNode) {
                 add(current ?: break)
@@ -237,12 +238,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
 
         candidates.forEach { node ->
             val actorID = node.createdAt.actorID
-            val latestCreatedAt =
-                if (isRemote) {
-                    latestCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
-                } else {
-                    MaxTimeTicket
-                }
+            val latestCreatedAt = if (isRemote) {
+                latestCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+            } else {
+                MaxTimeTicket
+            }
             if (node.canDelete(executedAt, latestCreatedAt)) {
                 nodesToDelete.add(node)
             } else {
@@ -273,7 +273,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     ): List<ContentChange> {
         return buildList {
             var (fromIndex, toIndex) = 0 to 0
-            for (index in 0..boundaries.size - 2) {
+            for (index in 0 until boundaries.lastIndex) {
                 val leftBoundary = boundaries[index]
                 val rightBoundary = boundaries[index + 1]
                 if (leftBoundary?.next == rightBoundary) continue

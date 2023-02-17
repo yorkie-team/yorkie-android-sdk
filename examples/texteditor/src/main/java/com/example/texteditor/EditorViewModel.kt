@@ -7,6 +7,9 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.TextChange
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.json.JsonText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
@@ -71,7 +74,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     }
 
     override fun onCleared() {
-        viewModelScope.launch {
+        TerminationScope.launch {
             client.detachAsync(document).await()
             client.deactivateAsync().await()
         }
@@ -81,5 +84,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     companion object {
         private const val DOCUMENT_KEY = "document-key"
         private const val TEXT_KEY = "text-key"
+
+        private val TerminationScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     }
 }

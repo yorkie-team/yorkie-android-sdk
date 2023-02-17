@@ -45,6 +45,76 @@ class JsonTextTest {
     }
 
     @Test
+    fun `should handle text edit operations of Hangul`() {
+        target.edit(0, 0, "ㅎ")
+        target.edit(0, 1, "하")
+        target.edit(0, 1, "한")
+        target.edit(0, 1, "하")
+        target.edit(1, 1, "느")
+        target.edit(1, 2, "늘")
+        assertEquals("하늘", target.toString())
+    }
+
+    @Test
+    fun `should handle deletion of nested nodes`() {
+        var text = ""
+        listOf(
+            Triple(0, 0, "ABC"),
+            Triple(3, 3, "DEF"),
+            Triple(2, 4, "1"),
+            Triple(1, 4, "2"),
+        ).forEach { command ->
+            text = text.replaceRange(command.first, command.second, command.third)
+            target.edit(command.first, command.second, command.third)
+            assertEquals(text, target.toString())
+        }
+    }
+
+    @Test
+    fun `should handle deletion of last nodes`() {
+        var text = ""
+        listOf(
+            Triple(0, 0, "A"),
+            Triple(1, 1, "B"),
+            Triple(2, 2, "C"),
+            Triple(3, 3, "DE"),
+            Triple(5, 5, "F"),
+            Triple(6, 6, "GHI"),
+            Triple(9, 9, ""), // delete no last node
+            Triple(8, 9, ""), // delete one last node with split
+            Triple(6, 8, ""), // delete one last node without split
+            Triple(4, 6, ""), // delete last nodes with split
+            Triple(2, 4, ""), // delete last nodes without split
+            Triple(0, 2, ""), // delete last nodes containing the first
+        ).forEach { command ->
+            text = text.replaceRange(command.first, command.second, command.third)
+            target.edit(command.first, command.second, command.third)
+            assertEquals(text, target.toString())
+        }
+    }
+
+    @Test
+    fun `should handle deletion with boundary nodes already removed`() {
+        var text = ""
+        listOf(
+            Triple(0, 0, "1A1BCXEF1"),
+            Triple(8, 9, ""),
+            Triple(2, 3, ""),
+            Triple(0, 1, ""), // ABCXEF
+            Triple(0, 1, ""), // delete A with two removed boundaries
+            Triple(0, 1, ""), // delete B with removed left boundary
+            Triple(3, 4, ""), // delete F with removed right boundary
+            Triple(1, 2, ""),
+            Triple(0, 2, ""), // delete CE with removed inner node X
+        ).forEach { command ->
+            println(command)
+            text = text.replaceRange(command.first, command.second, command.third)
+            target.edit(command.first, command.second, command.third)
+            assertEquals(text, target.toString())
+        }
+    }
+
+    @Test
     fun `should handle style operations`() {
         target.edit(0, 0, "Hello World")
         assertEquals("""[{"val":"Hello World"}]""", target.toJson())

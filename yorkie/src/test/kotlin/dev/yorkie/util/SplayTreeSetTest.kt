@@ -5,33 +5,35 @@ import org.junit.Before
 import org.junit.Test
 
 class SplayTreeSetTest {
-    private lateinit var target: SplayTreeSet<String>
+    private lateinit var target: SplayTreeSet<Node>
 
     @Before
     fun setUp() {
-        target = SplayTreeSet(String::length)
+        target = SplayTreeSet {
+            if (it.isRemoved) 0 else it.value.length
+        }
     }
 
     @Test
     fun `should conform to specs when insertions and splaying occur`() {
         assertEquals(0, target.length)
 
-        target.insert("A2")
+        target.insert(Node("A2"))
         assertEquals("[2,2]A2", target.getStructureAsString())
-        target.insert("B23")
+        target.insert(Node("B23"))
         assertEquals("[2,2]A2[5,3]B23", target.getStructureAsString())
-        target.insert("C234")
+        target.insert(Node("C234"))
         assertEquals("[2,2]A2[5,3]B23[9,4]C234", target.getStructureAsString())
-        target.insert("D2345")
+        target.insert(Node("D2345"))
         assertEquals("[2,2]A2[5,3]B23[9,4]C234[14,5]D2345", target.getStructureAsString())
 
-        target.splay("B23")
+        target.splay(Node("B23"))
         assertEquals("[2,2]A2[14,3]B23[9,4]C234[5,5]D2345", target.getStructureAsString())
 
-        assertEquals(0, target.indexOf("A2"))
-        assertEquals(2, target.indexOf("B23"))
-        assertEquals(5, target.indexOf("C234"))
-        assertEquals(9, target.indexOf("D2345"))
+        assertEquals(0, target.indexOf(Node("A2")))
+        assertEquals(2, target.indexOf(Node("B23")))
+        assertEquals(5, target.indexOf(Node("C234")))
+        assertEquals(9, target.indexOf(Node("D2345")))
 
         assertEquals(SplayTreeSet.ValueToOffset.Empty, target.find(-1))
         assertEquals(14, target.length)
@@ -39,43 +41,46 @@ class SplayTreeSetTest {
 
     @Test
     fun `should conform to specs when deletions occur`() {
-        target.insert("H")
+        target.insert(Node("H"))
         assertEquals("[1,1]H", target.getStructureAsString())
-        target.insert("E")
+        target.insert(Node("E"))
         assertEquals("[1,1]H[2,1]E", target.getStructureAsString())
-        target.insert("LL")
+        target.insert(Node("LL"))
         assertEquals("[1,1]H[2,1]E[4,2]LL", target.getStructureAsString())
-        target.insert("O")
+        target.insert(Node("O"))
         assertEquals("[1,1]H[2,1]E[4,2]LL[5,1]O", target.getStructureAsString())
 
-        target.delete("E")
+        target.valueToNodes[Node("E")]?.value?.isRemoved = true
+        target.delete(Node("E"))
         assertEquals("[4,1]H[3,2]LL[1,1]O", target.getStructureAsString())
 
-        assertEquals(target.indexOf("H"), 0)
-        assertEquals(target.indexOf("EE"), -1)
-        assertEquals(target.indexOf("LL"), 1)
-        assertEquals(target.indexOf("O"), 3)
+        assertEquals(target.indexOf(Node("H")), 0)
+        assertEquals(target.indexOf(Node("EE")), -1)
+        assertEquals(target.indexOf(Node("LL")), 1)
+        assertEquals(target.indexOf(Node("O")), 3)
     }
 
     @Test
     fun `should delete nodes in range when deleteRange is invoked with no right boundary`() {
         val nodes = buildSampleTree()
-        target.deleteRange(nodes[6])
+        nodes.removeRange(7..nodes.lastIndex)
+        target.cutOffRange(nodes[6])
         assertEquals(nodes[6], target.root?.value)
         assertEquals(22, target.root?.weight)
-        assertIfRangeRemoved(nodes, 7..8)
+        assertIfRangeCutOff(nodes, 7..8)
     }
 
     // FIXME(skhugh): need clarification for test name.
     @Test
     fun `should delete nodes with case 1`() {
         val nodes = buildSampleTree()
-        target.deleteRange(nodes[2], nodes[7])
+        nodes.removeRange(3..6)
+        target.cutOffRange(nodes[2], nodes[7])
         assertEquals(nodes[7], target.root?.value)
         assertEquals(nodes[2], target.root?.left?.value)
         assertEquals(9, target.root?.weight)
         assertEquals(6, target.root?.left?.weight)
-        assertIfRangeRemoved(nodes, 3..6)
+        assertIfRangeCutOff(nodes, 3..6)
     }
 
     // FIXME(skhugh): need clarification for test name.
@@ -85,18 +90,22 @@ class SplayTreeSetTest {
         target.splay(nodes[6])
         target.splay(nodes[2])
         // check the case 2 of rangeDelete
-        target.deleteRange(nodes[2], nodes[8])
+        nodes.removeRange(3..7)
+        target.cutOffRange(nodes[2], nodes[8])
         assertEquals(nodes[8], target.root?.value)
         assertEquals(nodes[2], target.root?.left?.value)
         assertEquals(7, target.root?.weight)
         assertEquals(6, target.root?.left?.weight)
-        assertIfRangeRemoved(nodes, 3..7)
+        assertIfRangeCutOff(nodes, 3..7)
     }
 
-    private fun assertIfRangeRemoved(nodes: List<String>, targetRange: IntRange) {
-        targetRange.forEach {
-            assertEquals(-1, target.indexOf(nodes[it]))
-        }
+    private fun assertIfRangeCutOff(nodes: List<Node>, targetRange: IntRange) {
+        assertEquals(
+            0,
+            targetRange.sumOf {
+                target.valueToNodes[nodes[it]]?.weight ?: 0
+            },
+        )
     }
 
     private fun <V> SplayTreeSet<V>.getStructureAsString(): String {
@@ -106,9 +115,21 @@ class SplayTreeSetTest {
         }
     }
 
-    private fun buildSampleTree(): List<String> {
-        val nodes = listOf("A", "BB", "CCC", "DDDD", "EEEEE", "FFFF", "GGG", "HH", "I")
+    private fun buildSampleTree(): List<Node> {
+        val nodes = listOf("A", "BB", "CCC", "DDDD", "EEEEE", "FFFF", "GGG", "HH", "I").map(::Node)
         nodes.forEach(target::insert)
         return nodes
+    }
+
+    private fun List<Node>.removeRange(range: IntRange) {
+        subList(range.first, range.last + 1).forEach {
+            target.valueToNodes[it]?.value?.isRemoved = true
+        }
+    }
+
+    data class Node(val value: String) {
+        var isRemoved = false
+
+        override fun toString(): String = value
     }
 }

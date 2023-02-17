@@ -13,7 +13,8 @@ internal class SplayTreeSet<V>(
     private val lengthCalculator: LengthCalculator<V> =
         LengthCalculator.DEFAULT as LengthCalculator<V>,
 ) {
-    private val valueToNodes = mutableMapOf<V, Node<V>>()
+    @VisibleForTesting
+    internal val valueToNodes = mutableMapOf<V, Node<V>>()
 
     @VisibleForTesting
     var root: Node<V>? = null
@@ -161,15 +162,15 @@ internal class SplayTreeSet<V>(
      *
      * Boundary range are exclusive.
      */
-    fun deleteRange(leftBoundary: V, rightBoundary: V? = null) {
-        deleteRangeInternal(
+    fun cutOffRange(leftBoundary: V, rightBoundary: V? = null) {
+        cutOffRangeInternal(
             valueToNodes[leftBoundary]
                 ?: throw IllegalArgumentException("leftBoundary cannot be null"),
             valueToNodes[rightBoundary],
         )
     }
 
-    private fun deleteRangeInternal(leftBoundary: Node<V>, rightBoundary: Node<V>?) {
+    private fun cutOffRangeInternal(leftBoundary: Node<V>, rightBoundary: Node<V>?) {
         splayInternal(leftBoundary)
         if (rightBoundary == null) {
             cutOffRight(leftBoundary)
@@ -184,10 +185,7 @@ internal class SplayTreeSet<V>(
 
     private fun cutOffRight(node: Node<V>) {
         val nodesToFreeWeight = traversePostorder(node.right)
-        nodesToFreeWeight.forEach {
-            it.unlink()
-            valueToNodes.remove(it.value)
-        }
+        nodesToFreeWeight.forEach(Node<V>::initWeight)
         node.right = null
         updateTreeWeight(node)
     }

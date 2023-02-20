@@ -107,7 +107,6 @@ class JsonTextTest {
             Triple(1, 2, ""),
             Triple(0, 2, ""), // delete CE with removed inner node X
         ).forEach { command ->
-            println(command)
             text = text.replaceRange(command.first, command.second, command.third)
             target.edit(command.first, command.second, command.third)
             assertEquals(text, target.toString())

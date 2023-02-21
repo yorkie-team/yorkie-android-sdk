@@ -5,7 +5,7 @@ import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
-import dev.yorkie.document.crdt.RhtPQMap
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.time.TimeTicket
@@ -69,7 +69,7 @@ public class JsonArray internal constructor(
     }
 
     public fun putNewObject(): JsonObject {
-        val obj = CrdtObject(context.issueTimeTicket(), rht = RhtPQMap())
+        val obj = CrdtObject(context.issueTimeTicket(), rht = ElementRht())
         putCrdtElement(obj)
         return obj.toJsonElement(context)
     }

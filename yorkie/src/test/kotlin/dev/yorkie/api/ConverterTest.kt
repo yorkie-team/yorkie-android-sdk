@@ -18,7 +18,7 @@ import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
-import dev.yorkie.document.crdt.RhtPQMap
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.IncreaseOperation
@@ -263,7 +263,7 @@ class ConverterTest {
     @Test
     fun `should convert CrdtObject`() {
         val crdtObject =
-            CrdtObject(InitialTimeTicket, InitialTimeTicket, InitialTimeTicket, RhtPQMap())
+            CrdtObject(InitialTimeTicket, InitialTimeTicket, InitialTimeTicket, ElementRht())
         val converted = crdtObject.toPBJsonObject().toCrdtElement()
 
         assertEquals(crdtObject.toJson(), converted.toJson())
@@ -346,7 +346,7 @@ class ConverterTest {
 
     @Test
     fun `should convert ElementSimple`() {
-        val crdtObject = CrdtObject(InitialTimeTicket, rht = RhtPQMap())
+        val crdtObject = CrdtObject(InitialTimeTicket, rht = ElementRht())
         val crdtArray = CrdtArray(InitialTimeTicket)
         val primitive = CrdtPrimitive("str", InitialTimeTicket)
         val crdtCounter = CrdtCounter(1, InitialTimeTicket)

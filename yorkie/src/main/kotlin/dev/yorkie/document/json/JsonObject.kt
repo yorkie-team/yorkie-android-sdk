@@ -9,7 +9,7 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplit
-import dev.yorkie.document.crdt.RhtPQMap
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket
@@ -75,7 +75,7 @@ public class JsonObject internal constructor(
      * TODO(skhugh): we need to find a better way to handle this
      */
     public fun setNewObject(key: String): JsonObject {
-        val crdtObject = CrdtObject(context.issueTimeTicket(), rht = RhtPQMap())
+        val crdtObject = CrdtObject(context.issueTimeTicket(), rht = ElementRht())
         setAndRegister(key, crdtObject)
         return crdtObject.toJsonElement(context)
     }
@@ -127,7 +127,7 @@ public class JsonObject internal constructor(
     public operator fun get(key: String): JsonElement {
         return try {
             target[key].toJsonElement(context)
-        } catch (e: IllegalStateException) {
+        } catch (e: NoSuchElementException) {
             throw NoSuchElementException("element with key: $key does not exist")
         }
     }
@@ -144,7 +144,7 @@ public class JsonObject internal constructor(
     public inline fun <reified T : JsonElement> getAs(key: String): T {
         return try {
             target[key].toJsonElement(context)
-        } catch (e: IllegalStateException) {
+        } catch (e: NoSuchElementException) {
             throw NoSuchElementException("element with key: $key does not exist")
         }
     }

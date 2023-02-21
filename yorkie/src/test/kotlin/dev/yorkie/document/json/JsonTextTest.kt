@@ -5,8 +5,8 @@ import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
-import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Before

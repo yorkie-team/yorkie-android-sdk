@@ -8,8 +8,8 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
-import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket

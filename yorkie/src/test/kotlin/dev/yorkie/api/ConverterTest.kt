@@ -14,11 +14,11 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
-import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.IncreaseOperation

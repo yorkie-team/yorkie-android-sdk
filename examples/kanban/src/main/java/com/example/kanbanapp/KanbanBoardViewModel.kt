@@ -1,6 +1,5 @@
 package com.example.kanbanapp
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.yorkie.core.Client
@@ -17,14 +16,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class KanbanBoardViewModel : ViewModel() {
+class KanbanBoardViewModel(private val client: Client) : ViewModel() {
     private val document = Document(Key(DOCUMENT_KEY))
 
     private val _list = MutableStateFlow<ImmutableList<KanbanColumn>>(persistentListOf())
     val list: StateFlow<ImmutableList<KanbanColumn>> = _list.asStateFlow()
 
-    fun init(context: Context) {
-        val client = Client(context, "api.yorkie.dev", 443)
+    init {
         viewModelScope.launch {
             if (client.activateAsync().await()) {
                 client.attachAsync(document).await()

@@ -166,7 +166,7 @@ public class JsonObject internal constructor(
             target.removeByKey(key, executedAt)
         } catch (e: NoSuchElementException) {
             return
-        }
+        } ?: return
         context.push(
             RemoveOperation(
                 createdAt = removed.createdAt,

@@ -52,7 +52,7 @@ internal data class CrdtObject(
     /**
      * Removes the element of the given key and execution time.
      */
-    fun removeByKey(key: String, executedAt: TimeTicket): CrdtElement {
+    fun removeByKey(key: String, executedAt: TimeTicket): CrdtElement? {
         return rht.removeByKey(key, executedAt)
     }
 

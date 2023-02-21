@@ -52,11 +52,10 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
      *
      * @throws NoSuchElementException if [Node] doesn't exist.
      */
-    fun removeByKey(key: String, removedAt: TimeTicket): T {
+    fun removeByKey(key: String, removedAt: TimeTicket): T? {
         val node = nodeMapByKey[key]
             ?: throw NoSuchElementException("$key doesn't exist in nodeMapByKey")
-        node.remove(removedAt)
-        return node.value
+        return if (node.remove(removedAt)) node.value else null
     }
 
     /**

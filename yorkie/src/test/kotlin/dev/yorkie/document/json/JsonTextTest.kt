@@ -5,8 +5,8 @@ import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeSplit
-import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Before
@@ -20,7 +20,7 @@ class JsonTextTest {
 
     @Before
     fun setUp() {
-        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap())
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
         val text = CrdtText(RgaTreeSplit(), TimeTicket.InitialTimeTicket)
         target = JsonText(
             ChangeContext(

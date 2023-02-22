@@ -23,7 +23,7 @@ class CrdtObjectTest {
 
     @Before
     fun setUp() {
-        target = CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap())
+        target = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
     }
 
     @Test
@@ -88,7 +88,7 @@ class CrdtObjectTest {
         assertEquals("B1C2D3E4", getStructureAsString())
         target.removeByKey(actorIDs[2], timeTickets[1])
         assertEquals("B1C2D3E4", getStructureAsString())
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(NoSuchElementException::class.java) {
             target.removeByKey("F", TimeTicket.InitialTimeTicket)
         }
     }

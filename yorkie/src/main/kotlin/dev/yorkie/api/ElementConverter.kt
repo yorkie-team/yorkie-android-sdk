@@ -25,12 +25,12 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNode
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
-import dev.yorkie.document.crdt.RhtPQMap
 import dev.yorkie.document.crdt.TextValue
 
 internal typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
@@ -74,7 +74,7 @@ internal fun PBJsonElement.toCrdtElement(): CrdtElement {
 }
 
 internal fun PBJsonObject.toCrdtObject(): CrdtObject {
-    val rht = RhtPQMap<CrdtElement>()
+    val rht = ElementRht<CrdtElement>()
     nodesList.forEach { node ->
         rht[node.key] = node.element.toCrdtElement()
     }
@@ -191,7 +191,7 @@ internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
     }
 }
 
-internal fun List<RhtPQMap.Node<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
+internal fun List<ElementRht.Node<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
     return map {
         rHTNode {
             key = it.strKey
@@ -331,7 +331,10 @@ private fun CounterType.toPBCounterType(): PBValueType {
 
 internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
     return when (type) {
-        PBValueType.VALUE_TYPE_JSON_OBJECT -> CrdtObject(createdAt.toTimeTicket(), rht = RhtPQMap())
+        PBValueType.VALUE_TYPE_JSON_OBJECT -> CrdtObject(
+            createdAt.toTimeTicket(),
+            rht = ElementRht(),
+        )
         PBValueType.VALUE_TYPE_JSON_ARRAY -> CrdtArray(createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_TEXT -> CrdtText(RgaTreeSplit(), createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_NULL,

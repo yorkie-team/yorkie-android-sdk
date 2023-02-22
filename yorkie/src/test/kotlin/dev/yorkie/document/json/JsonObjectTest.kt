@@ -4,7 +4,7 @@ import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
-import dev.yorkie.document.crdt.RhtPQMap
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -18,7 +18,7 @@ class JsonObjectTest {
 
     @Before
     fun setUp() {
-        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = RhtPQMap())
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
         target = JsonObject(
             ChangeContext(
                 ChangeID.InitialChangeID,

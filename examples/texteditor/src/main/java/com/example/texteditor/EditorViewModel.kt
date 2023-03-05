@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import dev.yorkie.core.Client
 import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.TextChange
-import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.json.JsonText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,24 +22,26 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _textChanges = MutableSharedFlow<TextChange>()
     val textChanges = _textChanges.asSharedFlow()
 
-    private val changeEventHandler: ((List<TextChange>) -> Unit) = { changes ->
+    private val remoteChangeEventHandler: ((List<TextChange>) -> Unit) = { changes ->
         val clientID = client.requireClientId()
-        changes.filter { it.type == TextChangeType.Content && it.actor != clientID }
-            .forEach {
-                viewModelScope.launch {
-                    _textChanges.emit(it)
-                }
+        changes.filterNot { it.actor == clientID }.forEach {
+            viewModelScope.launch {
+                _textChanges.emit(it)
             }
+        }
     }
+
+    var configurationChanged = false
 
     init {
         viewModelScope.launch {
             if (client.activateAsync().await()) {
                 client.attachAsync(document).await()
-                document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)?.onChanges(changeEventHandler)
+                document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
+                    ?.onChanges(remoteChangeEventHandler)
                     ?: run {
                         document.updateAsync {
-                            it.setNewText(TEXT_KEY).onChanges(changeEventHandler)
+                            it.setNewText(TEXT_KEY).onChanges(remoteChangeEventHandler)
                         }.await()
                     }
                 client.syncAsync().await()
@@ -65,10 +66,24 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     }
 
     override fun handleEditEvent(from: Int, to: Int, content: CharSequence) {
+        if (configurationChanged) {
+            configurationChanged = false
+            return
+        }
+
         viewModelScope.launch {
             document.updateAsync {
                 val jsonText = it.getAs<JsonText>(TEXT_KEY)
                 jsonText.edit(from, to, content.toString())
+            }.await()
+        }
+    }
+
+    override fun handleSelectEvent(from: Int, to: Int) {
+        viewModelScope.launch {
+            document.updateAsync {
+                val jsonText = it.getAs<JsonText>(TEXT_KEY)
+                jsonText.select(from, to)
             }.await()
         }
     }

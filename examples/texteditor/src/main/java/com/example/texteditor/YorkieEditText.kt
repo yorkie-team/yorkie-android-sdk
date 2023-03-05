@@ -43,8 +43,15 @@ class YorkieEditText @JvmOverloads constructor(
         action.invoke(this)
     }
 
+    override fun onSelectionChanged(selStart: Int, selEnd: Int) {
+        textEventHandler?.handleSelectEvent(selStart, selEnd)
+        super.onSelectionChanged(selStart, selEnd)
+    }
+
     interface TextEventHandler {
 
         fun handleEditEvent(from: Int, to: Int, content: CharSequence)
+
+        fun handleSelectEvent(from: Int, to: Int)
     }
 }

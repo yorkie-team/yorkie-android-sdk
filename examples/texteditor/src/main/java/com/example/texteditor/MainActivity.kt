@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.textEditor.textEventHandler = viewModel
+        viewModel.configurationChanged = savedInstanceState != null
 
         lifecycleScope.launch {
             launch {

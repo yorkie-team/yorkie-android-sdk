@@ -1,6 +1,8 @@
 package com.example.texteditor
 
+import androidx.annotation.ColorInt
+
 data class PeerSelectionInfo(
-    val color: Int,
+    @ColorInt val color: Int,
     val prevSelection: Pair<Int, Int>? = null,
 )

@@ -80,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         if (editable.removePrevSpan(actor) && from == to) {
             val peerSelectionInfo = peerSelectionInfos[actor] ?: return
             peerSelectionInfos[actor] = peerSelectionInfo.copy(prevSelection = null)
-        } else {
+        } else if (from < to) {
             editable.setSpan(
                 BackgroundColorSpan(getPeerSelectionColor(actor)),
                 from,

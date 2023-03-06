@@ -58,6 +58,18 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            launch {
+                viewModel.client.peerStatus.collect {
+                    val peers = it.map { peer -> peer.actorId }
+                    peerSelectionInfos.keys.forEach { actorID ->
+                        if (actorID !in peers) {
+                            binding.textEditor.text?.removePrevSpan(actorID)
+                            peerSelectionInfos.remove(actorID)
+                        }
+                    }
+                }
+            }
         }
     }
 

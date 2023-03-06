@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
-class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
+class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
     private val document = Document(Document.Key(DOCUMENT_KEY))
 
     private val _content = MutableSharedFlow<String>()

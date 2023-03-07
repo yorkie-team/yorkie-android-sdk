@@ -18,7 +18,7 @@ import dev.yorkie.document.crdt.TextChange
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.time.ActorID
 import kotlinx.coroutines.launch
-import java.util.Random
+import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
@@ -38,7 +38,6 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.textEditor.textEventHandler = viewModel
-        viewModel.configurationChanged = savedInstanceState != null
 
         lifecycleScope.launch {
             launch {
@@ -117,11 +116,10 @@ class MainActivity : AppCompatActivity() {
     @ColorInt
     private fun getPeerSelectionColor(actorID: ActorID): Int {
         return peerSelectionInfos[actorID]?.color ?: run {
-            with(Random()) {
-                val newColor = Color.argb(51, nextInt(256), nextInt(256), nextInt(256))
-                peerSelectionInfos[actorID] = PeerSelectionInfo(newColor)
-                newColor
-            }
+            val newColor =
+                Color.argb(51, Random.nextInt(256), Random.nextInt(256), Random.nextInt(256))
+            peerSelectionInfos[actorID] = PeerSelectionInfo(newColor)
+            newColor
         }
     }
 }

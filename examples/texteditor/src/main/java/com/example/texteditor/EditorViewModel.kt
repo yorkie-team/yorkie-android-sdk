@@ -31,8 +31,6 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
         }
     }
 
-    var configurationChanged = false
-
     init {
         viewModelScope.launch {
             if (client.activateAsync().await()) {
@@ -66,15 +64,9 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
     }
 
     override fun handleEditEvent(from: Int, to: Int, content: CharSequence) {
-        if (configurationChanged) {
-            configurationChanged = false
-            return
-        }
-
         viewModelScope.launch {
             document.updateAsync {
-                val jsonText = it.getAs<JsonText>(TEXT_KEY)
-                jsonText.edit(from, to, content.toString())
+                it.getAs<JsonText>(TEXT_KEY).edit(from, to, content.toString())
             }.await()
         }
     }
@@ -82,8 +74,7 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
     override fun handleSelectEvent(from: Int, to: Int) {
         viewModelScope.launch {
             document.updateAsync {
-                val jsonText = it.getAs<JsonText>(TEXT_KEY)
-                jsonText.select(from, to)
+                it.getAs<JsonText>(TEXT_KEY).select(from, to)
             }.await()
         }
     }

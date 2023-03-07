@@ -1,12 +1,10 @@
 package com.example.texteditor
 
-import android.graphics.Color
 import android.os.Bundle
 import android.text.Editable
 import android.text.Spannable
 import android.text.style.BackgroundColorSpan
 import androidx.activity.viewModels
-import androidx.annotation.ColorInt
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.text.getSpans
 import androidx.lifecycle.lifecycleScope
@@ -18,7 +16,6 @@ import dev.yorkie.document.crdt.TextChange
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.time.ActorID
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
@@ -31,7 +28,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-    private val peerSelectionInfos = mutableMapOf<ActorID, PeerSelectionInfo>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,10 +57,10 @@ class MainActivity : AppCompatActivity() {
             launch {
                 viewModel.client.peerStatus.collect {
                     val peers = it.map { peer -> peer.actorId }
-                    peerSelectionInfos.keys.forEach { actorID ->
+                    viewModel.peerSelectionInfos.keys.forEach { actorID ->
                         if (actorID !in peers) {
                             binding.textEditor.text?.removePrevSpan(actorID)
-                            peerSelectionInfos.remove(actorID)
+                            viewModel.removeDetachedPeerSelectionInfo(actorID)
                         }
                     }
                 }
@@ -90,36 +86,24 @@ class MainActivity : AppCompatActivity() {
         val editable = binding.textEditor.text ?: return
 
         if (editable.removePrevSpan(actor) && from == to) {
-            val peerSelectionInfo = peerSelectionInfos[actor] ?: return
-            peerSelectionInfos[actor] = peerSelectionInfo.copy(prevSelection = null)
+            viewModel.updatePeerPrevSelection(actor, null)
         } else if (from < to) {
             editable.setSpan(
-                BackgroundColorSpan(getPeerSelectionColor(actor)),
+                BackgroundColorSpan(viewModel.getPeerSelectionColor(actor)),
                 from,
                 to,
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
             )
-            val peerSelectionInfo = peerSelectionInfos[actor] ?: return
-            peerSelectionInfos[actor] = peerSelectionInfo.copy(prevSelection = from to to)
+            viewModel.updatePeerPrevSelection(actor, from to to)
         }
     }
 
     private fun Editable.removePrevSpan(actorID: ActorID): Boolean {
-        val (start, end) = peerSelectionInfos[actorID]?.prevSelection ?: return false
+        val (start, end) = viewModel.peerSelectionInfos[actorID]?.prevSelection ?: return false
         val backgroundSpan = getSpans<BackgroundColorSpan>(start, end).firstOrNull {
-            it.backgroundColor == peerSelectionInfos[actorID]?.color
+            it.backgroundColor == viewModel.peerSelectionInfos[actorID]?.color
         }
         backgroundSpan?.let(::removeSpan)
         return true
-    }
-
-    @ColorInt
-    private fun getPeerSelectionColor(actorID: ActorID): Int {
-        return peerSelectionInfos[actorID]?.color ?: run {
-            val newColor =
-                Color.argb(51, Random.nextInt(256), Random.nextInt(256), Random.nextInt(256))
-            peerSelectionInfos[actorID] = PeerSelectionInfo(newColor)
-            newColor
-        }
     }
 }

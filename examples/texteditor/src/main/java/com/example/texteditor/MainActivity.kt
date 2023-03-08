@@ -36,10 +36,14 @@ class MainActivity : AppCompatActivity() {
         binding.textEditor.textEventHandler = viewModel
 
         lifecycleScope.launch {
+            viewModel.syncText()
             launch {
                 viewModel.content.collect { content ->
                     binding.textEditor.withRemoteChange {
                         it.setText(content)
+                    }
+                    savedInstanceState?.let {
+                        binding.textEditor.setSelection(it.getInt(SELECTION_END))
                     }
                 }
             }
@@ -105,5 +109,14 @@ class MainActivity : AppCompatActivity() {
         }
         backgroundSpan?.let(::removeSpan)
         return true
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt(SELECTION_END, binding.textEditor.selectionEnd)
+        super.onSaveInstanceState(outState)
+    }
+
+    companion object {
+        private const val SELECTION_END = "selection end"
     }
 }

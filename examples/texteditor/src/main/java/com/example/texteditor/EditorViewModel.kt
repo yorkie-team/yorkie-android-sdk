@@ -51,7 +51,6 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
                         }.await()
                     }
                 client.syncAsync().await()
-                syncText()
             }
         }
 
@@ -64,7 +63,7 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
         }
     }
 
-    private fun syncText() {
+    fun syncText() {
         viewModelScope.launch {
             val content = document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
             _content.emit(content?.toString().orEmpty())

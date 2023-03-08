@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -26,8 +27,10 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
     private val _textChanges = MutableSharedFlow<TextChange>()
     val textChanges = _textChanges.asSharedFlow()
 
-    private val _removedPeers = MutableSharedFlow<List<ActorID>>()
-    val removedPeers = _removedPeers.asSharedFlow()
+    val removedPeers = client.peerStatus.map { peerStatus ->
+        val peers = peerStatus.map { it.actorId }
+        peerSelectionInfos.keys.filterNot { it in peers }
+    }
 
     private val _peerSelectionInfos = mutableMapOf<ActorID, PeerSelectionInfo>()
     val peerSelectionInfos: Map<ActorID, PeerSelectionInfo>
@@ -62,13 +65,6 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
                 if (it is Document.Event.Snapshot) {
                     syncText()
                 }
-            }
-        }
-
-        viewModelScope.launch {
-            client.peerStatus.collect { peerStatus ->
-                val peers = peerStatus.map { it.actorId }
-                _removedPeers.emit(peerSelectionInfos.keys.filterNot { it in peers })
             }
         }
     }

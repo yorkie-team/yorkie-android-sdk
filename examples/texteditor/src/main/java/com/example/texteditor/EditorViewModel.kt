@@ -68,7 +68,9 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
         viewModelScope.launch {
             client.peerStatus.collect { peerStatus ->
                 val peers = peerStatus.map { it.actorId }
-                _removedPeers.emit(peerSelectionInfos.keys.filterNot { actorID -> actorID in peers })
+                _removedPeers.emit(
+                    peerSelectionInfos.keys.filterNot { actorID -> actorID in peers },
+                )
             }
         }
     }

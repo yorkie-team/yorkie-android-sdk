@@ -16,8 +16,6 @@ class YorkieEditText @JvmOverloads constructor(
 
     private var applyingRemoteChange = false
 
-    private var hasSelectedBlock = false
-
     init {
         doOnTextChanged { text, start, before, count ->
             if (applyingRemoteChange) {
@@ -46,9 +44,7 @@ class YorkieEditText @JvmOverloads constructor(
     }
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
-        if (selStart == selEnd && !hasSelectedBlock) return
         textEventHandler?.handleSelectEvent(selStart, selEnd)
-        hasSelectedBlock = selStart < selEnd
         super.onSelectionChanged(selStart, selEnd)
     }
 

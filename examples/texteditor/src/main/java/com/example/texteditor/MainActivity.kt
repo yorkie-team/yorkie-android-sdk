@@ -59,13 +59,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             launch {
-                viewModel.client.peerStatus.collect {
-                    val peers = it.map { peer -> peer.actorId }
-                    viewModel.peerSelectionInfos.keys.forEach { actorID ->
-                        if (actorID !in peers) {
-                            binding.textEditor.text?.removePrevSpan(actorID)
-                            viewModel.removeDetachedPeerSelectionInfo(actorID)
-                        }
+                viewModel.removedPeers.collect { peers ->
+                    peers.forEach {
+                        binding.textEditor.text?.removePrevSpan(it)
+                        viewModel.removeDetachedPeerSelectionInfo(it)
                     }
                 }
             }

@@ -26,6 +26,9 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
     private val _textChanges = MutableSharedFlow<TextChange>()
     val textChanges = _textChanges.asSharedFlow()
 
+    private val _removedPeers = MutableSharedFlow<List<ActorID>>()
+    val removedPeers = _removedPeers.asSharedFlow()
+
     private val _peerSelectionInfos = mutableMapOf<ActorID, PeerSelectionInfo>()
     val peerSelectionInfos: Map<ActorID, PeerSelectionInfo>
         get() = _peerSelectionInfos
@@ -59,6 +62,13 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
                 if (it is Document.Event.Snapshot) {
                     syncText()
                 }
+            }
+        }
+
+        viewModelScope.launch {
+            client.peerStatus.collect { peerStatus ->
+                val peers = peerStatus.map { it.actorId }
+                _removedPeers.emit(peerSelectionInfos.keys.filterNot { actorID -> actorID in peers })
             }
         }
     }

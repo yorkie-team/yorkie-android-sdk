@@ -149,7 +149,11 @@ class ClientTest {
             assertEquals(1, document2.clone?.getGarbageLength())
 
             client1.updatePresenceAsync("k2", "v2").await()
-            peerStatus = client2.peerStatusByDoc(documentKey).dropWhile { it == peerStatus }.drop(1).first()
+            peerStatus = client2.peerStatusByDoc(documentKey)
+                .dropWhile {
+                    it == peerStatus
+                }.drop(1).first()
+
             val status = peerStatus.entries.first { it.key == client1.requireClientId() }
             assertEquals(mapOf("k2" to "v2"), status.value.data)
             assertTrue(

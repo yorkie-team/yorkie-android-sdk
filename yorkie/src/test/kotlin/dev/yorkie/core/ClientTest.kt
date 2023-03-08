@@ -333,7 +333,9 @@ class ClientTest {
             delay(100)
             assertTrue(slowAttach.isCompleted)
             assertTrue(target.peerStatus.value[Key(NORMAL_DOCUMENT_KEY)]!!.isNotEmpty())
-            assertTrue(target.peerStatus.value[Key(SLOW_INITIALIZATION_DOCUMENT_KEY)]!!.isNotEmpty())
+            assertTrue(
+                target.peerStatus.value[Key(SLOW_INITIALIZATION_DOCUMENT_KEY)]!!.isNotEmpty(),
+            )
             target.deactivateAsync().await()
         }
     }

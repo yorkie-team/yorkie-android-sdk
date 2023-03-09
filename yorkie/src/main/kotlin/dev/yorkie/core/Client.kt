@@ -49,7 +49,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -587,7 +586,7 @@ public class Client @VisibleForTesting internal constructor(
 
     /**
      * Represents the type of the events that the client can emit.
-     * It can be delivered using [Client.collect].
+     * It can be delivered by [Client.events].
      */
     public interface Event {
         /**

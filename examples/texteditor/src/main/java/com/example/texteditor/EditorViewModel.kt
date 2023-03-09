@@ -28,7 +28,7 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
     val textChanges = _textChanges.asSharedFlow()
 
     val removedPeers = client.peerStatus.map { peerStatus ->
-        val peers = peerStatus.map { it.actorId }
+        val peers = peerStatus.flatMap { it.value.keys }
         peerSelectionInfos.keys.filterNot { it in peers }
     }
 

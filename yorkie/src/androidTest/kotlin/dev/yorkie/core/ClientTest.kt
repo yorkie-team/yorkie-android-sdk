@@ -37,7 +37,7 @@ class ClientTest {
         runBlocking {
             val client1 = createClient()
             val client2 = createClient()
-            val documentKey = UUID.randomUUID().toString()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
             val document1 = createDocument(documentKey)
             val document2 = createDocument(documentKey)
 
@@ -170,7 +170,7 @@ class ClientTest {
         runBlocking {
             val client1 = createClient()
             val client2 = createClient()
-            val documentKey = UUID.randomUUID().toString()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
             val document1 = createDocument(documentKey)
             val document2 = createDocument(documentKey)
 
@@ -217,4 +217,9 @@ class ClientTest {
     )
 
     private fun createDocument(key: String) = Document(Document.Key(key))
+
+    private fun String.toDocKey(): String {
+        return lowercase().replace("[^a-z0-9-]".toRegex(), "-")
+            .substring(0, length.coerceAtMost(120))
+    }
 }

@@ -129,7 +129,7 @@ class DocumentTest {
         runTest {
             val events = mutableListOf<Document.Event>()
             val collectJob = launch(UnconfinedTestDispatcher()) {
-                target.collect(events::add)
+                target.events.collect(events::add)
             }
 
             assertFalse(target.hasLocalChanges)

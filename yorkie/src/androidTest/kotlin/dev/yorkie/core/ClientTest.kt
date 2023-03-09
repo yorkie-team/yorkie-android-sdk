@@ -19,7 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -218,8 +218,8 @@ class ClientTest {
         }
     }
 
-    private fun Client.peerStatusByDoc(key: Document.Key) = peerStatus.map {
-        requireNotNull(it[key])
+    private fun Client.peerStatusByDoc(key: Document.Key) = peerStatus.mapNotNull {
+        it[key]
     }
 
     private fun createClient() = Client(

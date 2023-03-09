@@ -158,7 +158,8 @@ class ClientTest {
             client1.updatePresenceAsync("k2", "v2").await()
             peerStatus = client2.peerStatusByDoc(documentKey)
                 .first {
-                    it[client1.requireClientId()]?.data?.get("k2") == "v2"
+                    it[client1.requireClientId()]?.data?.get("k2") == "v2" &&
+                        it.containsKey(client2.requireClientId())
                 }
 
             val status = peerStatus.entries.first { it.key == client1.requireClientId() }

@@ -16,6 +16,11 @@ import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.Event.DocumentsChanged
+import dev.yorkie.core.Client.Event.PeersChanged
+import dev.yorkie.core.Client.PeersChangedResult.Initialized
+import dev.yorkie.core.Client.PeersChangedResult.PresenceChanged
+import dev.yorkie.core.Client.PeersChangedResult.Unwatched
+import dev.yorkie.core.Client.PeersChangedResult.Watched
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
@@ -37,6 +42,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
@@ -143,12 +149,12 @@ class ClientTest {
             target.activateAsync().await()
 
             val eventAsync = async(UnconfinedTestDispatcher()) {
-                target.take(2).toList()
+                target.take(3).toList()
             }
             val watchRequestCaptor = argumentCaptor<WatchDocumentsRequest>()
             target.attachAsync(document).await()
             val events = eventAsync.await()
-            val changeEvent = assertIs<DocumentsChanged>(events.first())
+            val changeEvent = assertIs<DocumentsChanged>(events[1])
             verify(service).watchDocuments(watchRequestCaptor.capture())
             assertIsTestActorID(watchRequestCaptor.firstValue.client.id)
             assertEquals(1, changeEvent.documentKeys.size)
@@ -270,14 +276,9 @@ class ClientTest {
                 listOf("k1" to "v2"),
                 target.presenceInfo.data.map { it.key to it.value },
             )
-
             assertEquals(
-                PeerStatus(
-                    Key(NORMAL_DOCUMENT_KEY),
-                    target.requireClientId(),
-                    PresenceInfo(1, mapOf("k1" to "v2")),
-                ),
-                target.peerStatus.value.first(),
+                target.requireClientId() to PresenceInfo(1, mapOf("k1" to "v2")),
+                target.peerStatus.value[Key(NORMAL_DOCUMENT_KEY)]?.entries?.first()?.toPair(),
             )
 
             target.detachAsync(document).await()
@@ -308,12 +309,10 @@ class ClientTest {
             target.attachAsync(document).await()
 
             assertEquals(
-                PeerStatus(
-                    Key(NORMAL_DOCUMENT_KEY),
-                    target.requireClientId(),
-                    PresenceInfo(1, mapOf("k1" to "v1")),
-                ),
-                target.peerStatus.filter { it != initialStatus }.first().first(),
+                target.requireClientId() to PresenceInfo(1, mapOf("k1" to "v1")),
+                target.peerStatus.filter {
+                    it != initialStatus
+                }.first()[Key(NORMAL_DOCUMENT_KEY)]?.entries?.first()?.toPair(),
             )
 
             target.detachAsync(document).await()
@@ -333,15 +332,9 @@ class ClientTest {
             target.attachAsync(document1).await()
             delay(100)
             assertTrue(slowAttach.isCompleted)
+            assertTrue(target.peerStatus.value[Key(NORMAL_DOCUMENT_KEY)]!!.isNotEmpty())
             assertTrue(
-                target.peerStatus.value.any {
-                    it.documentKey == Key(NORMAL_DOCUMENT_KEY)
-                },
-            )
-            assertTrue(
-                target.peerStatus.value.any {
-                    it.documentKey == Key(SLOW_INITIALIZATION_DOCUMENT_KEY)
-                },
+                target.peerStatus.value[Key(SLOW_INITIALIZATION_DOCUMENT_KEY)]!!.isNotEmpty(),
             )
             target.deactivateAsync().await()
         }
@@ -351,6 +344,9 @@ class ClientTest {
     fun `should properly emit peer status on changes`() {
         runTest {
             val document = Document(Key(NORMAL_DOCUMENT_KEY))
+            val peerChangesAsync = async(UnconfinedTestDispatcher()) {
+                target.filterIsInstance<PeersChanged>().take(4).toList()
+            }
             val peerStatusHistoryAsync = async(UnconfinedTestDispatcher()) {
                 target.peerStatus.take(5).toList()
             }
@@ -358,38 +354,50 @@ class ClientTest {
             target.activateAsync().await()
             target.attachAsync(document).await()
 
+            val peerChanges = peerChangesAsync.await()
             val peerStatusHistory = peerStatusHistoryAsync.await()
-            val initialStatus = PeerStatus(
-                document.key,
-                TEST_ACTOR_ID,
-                PresenceInfo(1, mapOf("k1" to "v1")),
-            )
+            val initialStatus = TEST_ACTOR_ID to PresenceInfo(1, mapOf("k1" to "v1"))
 
             assertTrue(peerStatusHistory.first().isEmpty())
-            assertContentEquals(listOf(initialStatus), peerStatusHistory[1])
+
+            val peerInitialized = assertIs<Initialized>(peerChanges.first().result)
             assertContentEquals(
-                listOf(
-                    initialStatus,
-                    PeerStatus(
-                        document.key,
-                        ActorID.MAX_ACTOR_ID,
-                        PresenceInfo(2, mapOf("k1" to "v1")),
-                    ),
-                ),
-                peerStatusHistory[2],
+                listOf(initialStatus),
+                peerInitialized.changedPeers[document.key]?.toList(),
+            )
+            assertContentEquals(listOf(initialStatus), peerStatusHistory[1][document.key]?.toList())
+
+            val peerWatched = assertIs<Watched>(peerChanges[1].result)
+            val watchedStatus = ActorID.MAX_ACTOR_ID to PresenceInfo(2, mapOf("k1" to "v1"))
+            assertContentEquals(
+                listOf(watchedStatus),
+                peerWatched.changedPeers[document.key]?.toList(),
             )
             assertContentEquals(
-                listOf(
-                    initialStatus,
-                    PeerStatus(
-                        document.key,
-                        ActorID.MAX_ACTOR_ID,
-                        PresenceInfo(3, mapOf("k1" to "v2")),
-                    ),
-                ),
-                peerStatusHistory[3],
+                listOf(initialStatus, watchedStatus),
+                peerStatusHistory[2][document.key]?.toList(),
             )
-            assertContentEquals(listOf(initialStatus), peerStatusHistory.last())
+
+            val presenceChanged = assertIs<PresenceChanged>(peerChanges[2].result)
+            val changedStatus = ActorID.MAX_ACTOR_ID to PresenceInfo(3, mapOf("k1" to "v2"))
+            assertContentEquals(
+                listOf(changedStatus),
+                presenceChanged.changedPeers[document.key]?.toList(),
+            )
+            assertContentEquals(
+                listOf(initialStatus, changedStatus),
+                peerStatusHistory[3][document.key]?.toList(),
+            )
+
+            val peerUnwatched = assertIs<Unwatched>(peerChanges.last().result)
+            assertContentEquals(
+                listOf(changedStatus),
+                peerUnwatched.changedPeers[document.key]?.toList(),
+            )
+            assertContentEquals(
+                listOf(initialStatus),
+                peerStatusHistory.last()[document.key]?.toList(),
+            )
 
             target.detachAsync(document).await()
             target.deactivateAsync().await()

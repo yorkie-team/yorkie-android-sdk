@@ -22,6 +22,12 @@ import dev.yorkie.core.Attachment.Companion.UninitializedPresences
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
 import dev.yorkie.core.Client.Event.DocumentSynced
+import dev.yorkie.core.Client.Event.PeersChanged
+import dev.yorkie.core.Client.PeersChangedResult.Initialized
+import dev.yorkie.core.Client.PeersChangedResult.PresenceChanged
+import dev.yorkie.core.Client.PeersChangedResult.Unwatched
+import dev.yorkie.core.Client.PeersChangedResult.Watched
+import dev.yorkie.core.Peers.Companion.asPeers
 import dev.yorkie.document.Document
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieLogger
@@ -81,7 +87,7 @@ public class Client @VisibleForTesting internal constructor(
     private val _streamConnectionStatus = MutableStateFlow(StreamConnectionStatus.Disconnected)
     public val streamConnectionStatus = _streamConnectionStatus.asStateFlow()
 
-    private val _peerStatus = MutableStateFlow(emptyList<PeerStatus>())
+    private val _peerStatus = MutableStateFlow(emptyMap<Document.Key, Peers>())
     public val peerStatus = _peerStatus.asStateFlow()
 
     public var presenceInfo = options.presence ?: PresenceInfo(0, emptyMap())
@@ -237,55 +243,71 @@ public class Client @VisibleForTesting internal constructor(
     private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
         if (response.hasInitialization()) {
             response.initialization.peersMapByDocMap.forEach { (documentKey, peers) ->
-                var attachment = attachments.value[Document.Key(documentKey)] ?: return@forEach
+                val key = Document.Key(documentKey)
+                val attachment = attachments.value[key] ?: return@forEach
                 if (attachment.peerPresences == UninitializedPresences) {
-                    attachment = attachment.copy(peerPresences = mutableMapOf())
-                    attachments.value += Document.Key(documentKey) to attachment
+                    attachments.value += key to attachment.copy(peerPresences = Peers())
                 }
                 peers.clientsList.forEach { peer ->
-                    attachment.peerPresences[peer.id.toActorID()] = peer.presence.toPresence()
+                    val peerPair = peer.id.toActorID() to peer.presence.toPresence()
+                    val newAttachment = attachments.value
+                        .getValue(key)
+                        .copy(peerPresences = peerPair.asPeers())
+                    attachments.value += key to newAttachment
                 }
             }
+            val changedPeers = response.initialization.peersMapByDocMap.keys.map(Document::Key)
+                .associateWith { attachments.value[it]?.peerPresences.orEmpty().asPeers() }
+            eventStream.emit(PeersChanged(Initialized(changedPeers)))
             emitPeerStatus()
             return
         }
         val watchEvent = response.event
         val eventType = checkNotNull(watchEvent.type)
-        val documentKeys = watchEvent.documentKeysList
+        // only single key will be received since 0.3.1 server.
+        val documentKey = watchEvent.documentKeysList.firstOrNull()?.let(Document::Key) ?: return
+        val attachment = attachments.value[documentKey] ?: return
         val publisher = watchEvent.publisher.id.toActorID()
         val presence = watchEvent.publisher.presence.toPresence()
-        documentKeys.forEach { key ->
-            val attachment = attachments.value[Document.Key(key)] ?: return@forEach
-            val presences = attachment.peerPresences
-            when (eventType) {
-                DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
-                    presences[publisher] = presence
-                }
-                DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
-                    presences.remove(publisher)
-                }
-                DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
-                    attachment.remoteChangeEventReceived = true
-                }
-                DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {
-                    if ((presences[publisher]?.clock ?: -1) < presence.clock) {
-                        presences[publisher] = presence
-                    }
-                }
-                DocEventType.UNRECOGNIZED -> {
-                    // nothing to do
-                }
-            }
-        }
-
+        val presences = attachment.peerPresences
         when (eventType) {
-            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
-                eventStream.emit(Event.DocumentsChanged(documentKeys.map(Document::Key)))
+            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
+                val newPeers = presences + (publisher to presence)
+                attachments.value += documentKey to attachment.copy(peerPresences = newPeers)
+                eventStream.emit(
+                    PeersChanged(
+                        Watched(documentKey to newPeers.filterKeys { it == publisher }.asPeers()),
+                    ),
+                )
+                emitPeerStatus()
             }
-            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED,
-            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED,
-            DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED,
-            -> {
+            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
+                val removedPresence = presences[publisher]
+                removedPresence?.let {
+                    val newPeers = presences - publisher
+                    attachments.value += documentKey to attachment.copy(peerPresences = newPeers)
+                    eventStream.emit(
+                        PeersChanged(
+                            Unwatched(documentKey to (publisher to it).asPeers()),
+                        ),
+                    )
+                }
+                emitPeerStatus()
+            }
+            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
+                attachment.remoteChangeEventReceived = true
+                eventStream.emit(Event.DocumentsChanged(listOf(documentKey)))
+            }
+            DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {
+                if ((presences[publisher]?.clock ?: -1) < presence.clock) {
+                    val newPeers = presences + (publisher to presence)
+                    attachments.value += documentKey to attachment.copy(peerPresences = newPeers)
+                }
+                eventStream.emit(
+                    PeersChanged(
+                        PresenceChanged(documentKey to (publisher to presence).asPeers()),
+                    ),
+                )
                 emitPeerStatus()
             }
             DocEventType.UNRECOGNIZED -> {
@@ -296,10 +318,8 @@ public class Client @VisibleForTesting internal constructor(
 
     private suspend fun emitPeerStatus() {
         _peerStatus.emit(
-            attachments.value.flatMap { (documentKey, attachment) ->
-                attachment.peerPresences.map { (actorID, presenceInfo) ->
-                    PeerStatus(documentKey, actorID, presenceInfo)
-                }
+            attachments.value.toList().associate { (documentKey, attachment) ->
+                documentKey to attachment.peerPresences.asPeers()
             },
         )
     }
@@ -313,8 +333,9 @@ public class Client @VisibleForTesting internal constructor(
                 return@async false
             }
 
-            val realTimeAttachments = attachments.value.filter { it.value.isRealTimeSync }
-            realTimeAttachments.forEach {
+            fun realTimeAttachments() = attachments.value.filter { it.value.isRealTimeSync }
+
+            realTimeAttachments().forEach {
                 waitForInitialization(it.key)
             }
 
@@ -323,8 +344,9 @@ public class Client @VisibleForTesting internal constructor(
                 data = presenceInfo.data + (key to value),
             )
 
-            val documentKeys = realTimeAttachments.map { (key, attachment) ->
-                attachment.peerPresences[requireClientId()] = presenceInfo
+            val documentKeys = realTimeAttachments().map { (key, attachment) ->
+                val newPeers = attachment.peerPresences + (requireClientId() to presenceInfo)
+                attachments.value += key to attachment.copy(peerPresences = newPeers)
                 key.value
             }.takeIf {
                 it.isNotEmpty()
@@ -493,6 +515,36 @@ public class Client @VisibleForTesting internal constructor(
         ) : DocumentSyncResult(document)
     }
 
+    public sealed class PeersChangedResult(
+        public val changedPeers: Map<Document.Key, Peers>,
+    ) {
+
+        public class Initialized(
+            changedPeers: Map<Document.Key, Peers>,
+        ) : PeersChangedResult(changedPeers)
+
+        public class PresenceChanged(
+            changedPeers: Map<Document.Key, Peers>,
+        ) : PeersChangedResult(changedPeers) {
+
+            public constructor(changedPeer: Pair<Document.Key, Peers>) : this(mapOf(changedPeer))
+        }
+
+        public class Watched(
+            changedPeers: Map<Document.Key, Peers>,
+        ) : PeersChangedResult(changedPeers) {
+
+            public constructor(changedPeer: Pair<Document.Key, Peers>) : this(mapOf(changedPeer))
+        }
+
+        public class Unwatched(
+            changedPeers: Map<Document.Key, Peers>,
+        ) : PeersChangedResult(changedPeers) {
+
+            public constructor(changedPeer: Pair<Document.Key, Peers>) : this(mapOf(changedPeer))
+        }
+    }
+
     /**
      * User-settable options used when defining [Client].
      */
@@ -544,5 +596,10 @@ public class Client @VisibleForTesting internal constructor(
          * Means that the document has synced with the server.
          */
         public class DocumentSynced(public val result: DocumentSyncResult) : Event
+
+        /**
+         * Means that there is a change in peers.
+         */
+        public class PeersChanged(public val result: PeersChangedResult) : Event
     }
 }

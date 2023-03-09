@@ -17,7 +17,9 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -38,8 +40,8 @@ class ClientTest {
             val client1 = createClient()
             val client2 = createClient()
             val documentKey = UUID.randomUUID().toString().toDocKey()
-            val document1 = createDocument(documentKey)
-            val document2 = createDocument(documentKey)
+            val document1 = Document(documentKey)
+            val document2 = Document(documentKey)
 
             val client1Events = mutableListOf<Client.Event>()
             val client2Events = mutableListOf<Client.Event>()
@@ -47,10 +49,14 @@ class ClientTest {
             val document2Events = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client1.collect(client1Events::add)
+                    client1.filterNot {
+                        it is Client.Event.PeersChanged
+                    }.collect(client1Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client2.collect(client2Events::add)
+                    client2.filterNot {
+                        it is Client.Event.PeersChanged
+                    }.collect(client2Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.collect(document1Events::add)
@@ -67,15 +73,15 @@ class ClientTest {
             assertIs<Client.Status.Activated>(client2.status.value)
 
             client1.attachAsync(document1).await()
-            var peerStatus = client1.peerStatus.dropWhile { it.isEmpty() }.first()
+            var peerStatus = client1.peerStatusByDoc(documentKey).dropWhile { it.isEmpty() }.first()
             assertEquals(1, peerStatus.size)
-            assertEquals(peerStatus.first().actorId, client1.requireClientId())
+            assertEquals(peerStatus.entries.first().key, client1.requireClientId())
 
             client2.attachAsync(document2).await()
-            peerStatus = client1.peerStatus.dropWhile { it.size < 2 }.first()
+            peerStatus = client1.peerStatusByDoc(documentKey).dropWhile { it.size < 2 }.first()
             assertEquals(2, peerStatus.size)
-            assertEquals(peerStatus.first().actorId, client1.requireClientId())
-            assertEquals(peerStatus.last().actorId, client2.requireClientId())
+            assertEquals(peerStatus.entries.first().key, client1.requireClientId())
+            assertEquals(peerStatus.entries.last().key, client2.requireClientId())
 
             withTimeout(1_000) {
                 client1.streamConnectionStatus.first { it == StreamConnectionStatus.Connected }
@@ -92,7 +98,7 @@ class ClientTest {
             val changeEvent = assertIs<DocumentsChanged>(
                 client2Events.first { it is DocumentsChanged },
             )
-            assertContentEquals(listOf(Document.Key(documentKey)), changeEvent.documentKeys)
+            assertContentEquals(listOf(documentKey), changeEvent.documentKeys)
             var syncEvent = assertIs<DocumentSynced>(client2Events.first { it is DocumentSynced })
             assertIs<DocumentSyncResult.Synced>(syncEvent.result)
 
@@ -126,6 +132,9 @@ class ClientTest {
             while (client1Events.none { it is DocumentSynced }) {
                 delay(50)
             }
+            while (client2Events.isEmpty()) {
+                delay(50)
+            }
             syncEvent = assertIs(client2Events.first { it is DocumentSynced })
             assertIs<DocumentSyncResult.Synced>(syncEvent.result)
             val root1 = document1.getRoot()
@@ -147,13 +156,18 @@ class ClientTest {
             assertEquals(1, document2.clone?.getGarbageLength())
 
             client1.updatePresenceAsync("k2", "v2").await()
-            peerStatus = client2.peerStatus.dropWhile { it == peerStatus }.first()
-            val status = peerStatus.first { it.actorId == client1.requireClientId() }
-            assertEquals(mapOf("k2" to "v2"), status.presenceInfo.data)
+            peerStatus = client2.peerStatusByDoc(documentKey)
+                .first {
+                    it[client1.requireClientId()]?.data?.get("k2") == "v2" &&
+                        it.containsKey(client2.requireClientId())
+                }
+
+            val status = peerStatus.entries.first { it.key == client1.requireClientId() }
+            assertEquals(mapOf("k2" to "v2"), status.value.data)
             assertTrue(
-                peerStatus.first {
-                    it.actorId == client2.requireClientId()
-                }.presenceInfo.data.isEmpty(),
+                peerStatus.entries.first {
+                    it.key == client2.requireClientId()
+                }.value.data.isEmpty(),
             )
 
             client1.detachAsync(document1).await()
@@ -171,8 +185,8 @@ class ClientTest {
             val client1 = createClient()
             val client2 = createClient()
             val documentKey = UUID.randomUUID().toString().toDocKey()
-            val document1 = createDocument(documentKey)
-            val document2 = createDocument(documentKey)
+            val document1 = Document(documentKey)
+            val document2 = Document(documentKey)
 
             client1.activateAsync().await()
             client2.activateAsync().await()
@@ -184,21 +198,24 @@ class ClientTest {
             client2.updatePresenceAsync("name", "B").await()
 
             withTimeout(1_000) {
-                client1.peerStatus.first {
-                    it.size == 2 && it.none { peerStatus -> peerStatus.presenceInfo.data.isEmpty() }
+                client1.peerStatusByDoc(documentKey).first {
+                    it.size == 2 && it.none { peerStatus -> peerStatus.value.data.isEmpty() }
                 }
-                client2.peerStatus.first {
-                    it.size == 2 && it.none { peerStatus -> peerStatus.presenceInfo.data.isEmpty() }
+                client2.peerStatusByDoc(documentKey).first {
+                    it.size == 2 && it.none { peerStatus -> peerStatus.value.data.isEmpty() }
                 }
             }
-            listOf(client1.peerStatus.first(), client2.peerStatus.first()).forEach { status ->
+            listOf(
+                client1.peerStatusByDoc(documentKey).first(),
+                client2.peerStatusByDoc(documentKey).first(),
+            ).forEach { status ->
                 assertEquals(
                     mapOf("name" to "A"),
-                    status.first { it.actorId == client1.requireClientId() }.presenceInfo.data,
+                    status.entries.first { it.key == client1.requireClientId() }.value.data,
                 )
                 assertEquals(
                     mapOf("name" to "B"),
-                    status.first { it.actorId == client2.requireClientId() }.presenceInfo.data,
+                    status.entries.first { it.key == client2.requireClientId() }.value.data,
                 )
             }
 
@@ -209,6 +226,10 @@ class ClientTest {
         }
     }
 
+    private fun Client.peerStatusByDoc(key: Document.Key) = peerStatus.mapNotNull {
+        it[key]
+    }
+
     private fun createClient() = Client(
         InstrumentationRegistry.getInstrumentation().targetContext,
         "10.0.2.2",
@@ -216,10 +237,10 @@ class ClientTest {
         usePlainText = true,
     )
 
-    private fun createDocument(key: String) = Document(Document.Key(key))
-
-    private fun String.toDocKey(): String {
-        return lowercase().replace("[^a-z0-9-]".toRegex(), "-")
-            .substring(0, length.coerceAtMost(120))
+    private fun String.toDocKey(): Document.Key {
+        return Document.Key(
+            lowercase().replace("[^a-z\\d-]".toRegex(), "-")
+                .substring(0, length.coerceAtMost(120)),
+        )
     }
 }

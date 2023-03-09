@@ -8,13 +8,13 @@ public class Peers private constructor(
 
     internal constructor() : this(emptyMap())
 
-    operator fun plus(peer: Pair<ActorID, PresenceInfo>): Peers {
-        return (map + peer).asPeers()
-    }
+    public operator fun plus(peer: Pair<ActorID, PresenceInfo>): Peers = (map + peer).asPeers()
 
-    operator fun minus(actorID: ActorID): Peers {
-        return (map - actorID).asPeers()
-    }
+    public operator fun minus(actorID: ActorID): Peers = (map - actorID).asPeers()
+
+    override fun hashCode(): Int = map.hashCode()
+
+    override fun equals(other: Any?): Boolean = map == other
 
     companion object {
         public fun Map<ActorID, PresenceInfo>.asPeers() = Peers(toMap())

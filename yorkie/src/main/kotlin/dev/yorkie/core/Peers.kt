@@ -14,7 +14,7 @@ public class Peers private constructor(
 
     override fun hashCode(): Int = map.hashCode()
 
-    override fun equals(other: Any?): Boolean = map == other
+    override fun equals(other: Any?): Boolean = map == (other as? Peers)?.map
 
     companion object {
         public fun Map<ActorID, PresenceInfo>.asPeers() = Peers(toMap())

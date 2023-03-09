@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
@@ -49,10 +50,14 @@ class ClientTest {
             val document2Events = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client1.collect(client1Events::add)
+                    client1.filterNot {
+                        it is Client.Event.PeersChanged
+                    }.collect(client1Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client2.collect(client2Events::add)
+                    client2.filterNot {
+                        it is Client.Event.PeersChanged
+                    }.collect(client2Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.collect(document1Events::add)

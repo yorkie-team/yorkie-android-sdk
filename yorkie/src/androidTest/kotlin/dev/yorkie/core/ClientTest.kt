@@ -16,7 +16,6 @@ import dev.yorkie.document.operation.SetOperation
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
@@ -158,9 +157,9 @@ class ClientTest {
 
             client1.updatePresenceAsync("k2", "v2").await()
             peerStatus = client2.peerStatusByDoc(documentKey)
-                .dropWhile {
-                    it == peerStatus
-                }.drop(1).first()
+                .first {
+                    it[client1.requireClientId()]?.data?.get("k2") == "v2"
+                }
 
             val status = peerStatus.entries.first { it.key == client1.requireClientId() }
             assertEquals(mapOf("k2" to "v2"), status.value.data)

@@ -121,8 +121,8 @@ android {
 }
 
 object Versions {
-    const val protobuf = "3.21.12"
-    const val grpc = "1.52.1"
+    const val protobuf = "3.22.0"
+    const val grpc = "1.53.0"
     const val grpcKotlin = "1.3.0"
     const val coroutines = "1.6.4"
 }

@@ -10,7 +10,7 @@ internal data class CrdtObject(
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket? = null,
     override var _removedAt: TimeTicket? = null,
-    private val rht: RhtPQMap<CrdtElement> = RhtPQMap(),
+    private val rht: ElementRht<CrdtElement> = ElementRht(),
 ) : CrdtContainer(), Iterable<Pair<String, CrdtElement>> {
     val memberNodes
         get() = rht.toList()
@@ -52,7 +52,7 @@ internal data class CrdtObject(
     /**
      * Removes the element of the given key and execution time.
      */
-    fun removeByKey(key: String, executedAt: TimeTicket): CrdtElement {
+    fun removeByKey(key: String, executedAt: TimeTicket): CrdtElement? {
         return rht.removeByKey(key, executedAt)
     }
 
@@ -74,7 +74,7 @@ internal data class CrdtObject(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {
-        val rhtClone = RhtPQMap<CrdtElement>().apply {
+        val rhtClone = ElementRht<CrdtElement>().apply {
             rht.forEach { (strKey, value) ->
                 set(strKey, value.deepCopy())
             }

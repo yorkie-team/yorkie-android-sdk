@@ -13,6 +13,7 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/examples" />
             <option value="$PROJECT_DIR$/examples/kanban" />
+            <option value="$PROJECT_DIR$/examples/texteditor" />
             <option value="$PROJECT_DIR$/microbenchmark" />
             <option value="$PROJECT_DIR$/yorkie" />
             <option value="$PROJECT_DIR$/yorkie/proto" />

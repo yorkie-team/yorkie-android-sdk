@@ -350,7 +350,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
      */
     fun deleteTextNodesWithGarbage(ticket: TimeTicket): Int {
         var count = 0
-        removedNodeMap.forEach {
+        removedNodeMap.toMap().forEach {
             val node = it.value
             if (node.isRemoved && node.removedAt <= ticket) {
                 treeByIndex.delete(node)
@@ -472,7 +472,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
         get() = id.createdAt
 
     val length: Int
-        get() = _removedAt?.let { contentLength } ?: 0
+        get() = if (isRemoved) 0 else contentLength
 
     val contentLength: Int
         get() = _value.length

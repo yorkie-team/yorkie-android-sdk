@@ -41,7 +41,7 @@ import dev.yorkie.api.v1.watchDocumentsResponse
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
-import dev.yorkie.document.crdt.RhtPQMap
+import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import io.grpc.Status
@@ -78,7 +78,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                 documentKey = request.changePack.documentKey
                 snapshot = CrdtObject(
                     InitialTimeTicket,
-                    rht = RhtPQMap<CrdtElement>().apply {
+                    rht = ElementRht<CrdtElement>().apply {
                         set(
                             "k1",
                             CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),

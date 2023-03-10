@@ -55,7 +55,7 @@
   <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.core</a><span class="delimiter">/</span><span class="current">Client</span></div>
   <div class="cover ">
     <h1 class="cover"><span><span>Client</span></span></h1>
-    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">Client</a> : <span data-unresolved-link="kotlinx.coroutines.flow/Flow///PointingToDeclaration/">Flow</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="-event/index.html">Client.Event</a><span class="token operator">&gt; </span></div><p class="paragraph">Client that can communicate with the server. It has <a href="../../dev.yorkie.document/-document/index.html">Document</a>s and sends changes of the documents in local to the server to synchronize with other replicas in remote.</p></div></div>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">Client</a></div><p class="paragraph">Client that can communicate with the server. It has <a href="../../dev.yorkie.document/-document/index.html">Document</a>s and sends changes of the documents in local to the server to synchronize with other replicas in remote.</p></div></div>
   </div>
   <div class="tabbedcontent">
     <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="Types">Types</button><button class="section-tab" data-togglable="Constructors">Constructors</button><button class="section-tab" data-togglable="Functions">Functions</button><button class="section-tab" data-togglable="Properties">Properties</button></div>
@@ -103,7 +103,7 @@
                 </span></span></div>
             <div>
               <div class="title">
-                <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-event/index.html">Event</a></div><div class="brief "><p class="paragraph">Represents the type of the events that the client can emit. It can be delivered using <span data-unresolved-link="dev.yorkie.core/Client/collect/#kotlinx.coroutines.flow.FlowCollector[dev.yorkie.core.Client.Event]/PointingToDeclaration/">Client.collect</span>.</p></div></div></div>
+                <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-event/index.html">Event</a></div><div class="brief "><p class="paragraph">Represents the type of the events that the client can emit. It can be delivered by <a href="events.html">Client.events</a>.</p></div></div></div>
               </div>
             </div>
           </div>
@@ -200,21 +200,6 @@
             </div>
           </div>
         </div>
-<a data-name="-845873198%2FFunctions%2F-1590045667" anchor-label="collect" id="-845873198%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="index.html#-845873198%2FFunctions%2F-1590045667"><span><span>collect</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-845873198%2FFunctions%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div>
-              <div class="title">
-                <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="index.html#-845873198%2FFunctions%2F-1590045667"><span class="token function">collect</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">collector<span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines.flow/FlowCollector///PointingToDeclaration/">FlowCollector</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="-event/index.html">Client.Event</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span></div></div></div>
-              </div>
-            </div>
-          </div>
-        </div>
 <a data-name="1463251987%2FFunctions%2F-1590045667" anchor-label="deactivateAsync" id="1463251987%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
         <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
           <div class="main-subrow keyValue ">
@@ -292,7 +277,22 @@
         </div>
       </div>
       <h2 class="">Properties</h2>
-      <div class="table" data-togglable="Properties"><a data-name="-2065604369%2FProperties%2F-1590045667" anchor-label="isActive" id="-2065604369%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+      <div class="table" data-togglable="Properties"><a data-name="-1133920954%2FProperties%2F-1590045667" anchor-label="events" id="-1133920954%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+          <div class="main-subrow keyValue ">
+            <div class=""><span class="inline-flex">
+                <div><a href="events.html"><span><span>events</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1133920954%2FProperties%2F-1590045667"></span>
+                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                </span></span></div>
+            <div>
+              <div class="title">
+                <div class="platform-hinted " data-platform-hinted="data-platform-hinted" data-togglable="Properties"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><a data-name="-1133920954%2FProperties%2F-1590045667" anchor-label="events" id="-1133920954%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">val </span><a href="events.html">events</a><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines.flow/SharedFlow///PointingToDeclaration/">SharedFlow</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="-event/index.html">Client.Event</a><span class="token operator">&gt;</span></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+<a data-name="-2065604369%2FProperties%2F-1590045667" anchor-label="isActive" id="-2065604369%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
         <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
           <div class="main-subrow keyValue ">
             <div class=""><span class="inline-flex">

@@ -49,20 +49,20 @@ class ClientTest {
             val document2Events = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client1.filterNot {
+                    client1.events.filterNot {
                         it is Client.Event.PeersChanged
                     }.collect(client1Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client2.filterNot {
+                    client2.events.filterNot {
                         it is Client.Event.PeersChanged
                     }.collect(client2Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document1.collect(document1Events::add)
+                    document1.events.collect(document1Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document2.collect(document2Events::add)
+                    document2.events.collect(document2Events::add)
                 },
             )
 

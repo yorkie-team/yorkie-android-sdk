@@ -22,8 +22,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import org.apache.commons.collections4.trie.PatriciaTrie
 
@@ -31,13 +31,13 @@ import org.apache.commons.collections4.trie.PatriciaTrie
  * A CRDT-based data type.
  * We can represent the model of the application and edit it even while offline.
  */
-public class Document private constructor(
-    public val key: Key,
-    private val eventStream: MutableSharedFlow<Event>,
-) : Flow<Document.Event> by eventStream {
+public class Document(public val key: Key) {
     private val dispatcher = createSingleThreadDispatcher("Document($key)")
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
+
+    private val eventStream = MutableSharedFlow<Event>()
+    val events = eventStream.asSharedFlow()
 
     @Volatile
     private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = ElementRht()))
@@ -52,8 +52,6 @@ public class Document private constructor(
 
     internal val hasLocalChanges: Boolean
         get() = localChanges.isNotEmpty()
-
-    public constructor(key: Key) : this(key, MutableSharedFlow())
 
     /**
      * Executes the given [updater] to update this document.

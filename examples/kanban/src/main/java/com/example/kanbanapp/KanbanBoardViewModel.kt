@@ -31,7 +31,7 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
         }
 
         viewModelScope.launch {
-            client.collect {
+            client.events.collect {
                 if (it is Client.Event.DocumentSynced) {
                     try {
                         updateDocument(it.result.document.getRoot().getAs(DOCUMENT_LIST_KEY))

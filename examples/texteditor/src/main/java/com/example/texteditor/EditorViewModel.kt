@@ -5,6 +5,8 @@ import androidx.annotation.ColorInt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.yorkie.core.Client
+import dev.yorkie.core.Client.Event
+import dev.yorkie.core.Client.PeersChangedResult.Unwatched
 import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.TextChange
 import dev.yorkie.document.json.JsonText
@@ -14,11 +16,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
-class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
+class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
     private val document = Document(Document.Key(DOCUMENT_KEY))
 
     private val _content = MutableSharedFlow<String>()
@@ -27,10 +32,11 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
     private val _textChanges = MutableSharedFlow<TextChange>()
     val textChanges = _textChanges.asSharedFlow()
 
-    val removedPeers = client.peerStatus.map { peerStatus ->
-        val peers = peerStatus.flatMap { it.value.keys }
-        peerSelectionInfos.keys.filterNot { it in peers }
-    }
+    val removedPeers = client.events.filterIsInstance<Event.PeersChanged>()
+        .map { it.result }
+        .filterIsInstance<Unwatched>()
+        .mapNotNull { it.changedPeers[document.key]?.keys }
+        .filterNot { it.isEmpty() }
 
     private val _peerSelectionInfos = mutableMapOf<ActorID, PeerSelectionInfo>()
     val peerSelectionInfos: Map<ActorID, PeerSelectionInfo>
@@ -61,7 +67,7 @@ class EditorViewModel(val client: Client) : ViewModel(), YorkieEditText.TextEven
         }
 
         viewModelScope.launch {
-            document.collect {
+            document.events.collect {
                 if (it is Document.Event.Snapshot) {
                     syncText()
                 }

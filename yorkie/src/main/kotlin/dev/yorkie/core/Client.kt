@@ -47,8 +47,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -68,13 +68,15 @@ import kotlin.time.Duration.Companion.milliseconds
 public class Client @VisibleForTesting internal constructor(
     private val channel: Channel,
     private val options: Options = Options(),
-    private val eventStream: MutableSharedFlow<Event> = MutableSharedFlow(),
-) : Flow<Client.Event> by eventStream {
+) {
     private val scope = CoroutineScope(
         SupervisorJob() +
             createSingleThreadDispatcher("Client(${options.key})"),
     )
     private val activationJob = SupervisorJob()
+
+    private val eventStream = MutableSharedFlow<Event>()
+    val events = eventStream.asSharedFlow()
 
     private val attachments = MutableStateFlow<Map<Document.Key, Attachment>>(emptyMap())
 
@@ -584,7 +586,7 @@ public class Client @VisibleForTesting internal constructor(
 
     /**
      * Represents the type of the events that the client can emit.
-     * It can be delivered using [Client.collect].
+     * It can be delivered by [Client.events].
      */
     public interface Event {
         /**

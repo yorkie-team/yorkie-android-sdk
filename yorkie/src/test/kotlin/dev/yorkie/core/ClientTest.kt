@@ -149,7 +149,7 @@ class ClientTest {
             target.activateAsync().await()
 
             val eventAsync = async(UnconfinedTestDispatcher()) {
-                target.take(3).toList()
+                target.events.take(3).toList()
             }
             val watchRequestCaptor = argumentCaptor<WatchDocumentsRequest>()
             target.attachAsync(document).await()
@@ -193,7 +193,7 @@ class ClientTest {
             document.updateAsync {
                 it["k1"] = 1
             }.await()
-            val syncEvent = assertIs<DocumentSynced>(target.first())
+            val syncEvent = assertIs<DocumentSynced>(target.events.first())
             val failed = assertIs<Client.DocumentSyncResult.SyncFailed>(syncEvent.result)
             assertEquals(document, failed.document)
 
@@ -345,7 +345,7 @@ class ClientTest {
         runTest {
             val document = Document(Key(NORMAL_DOCUMENT_KEY))
             val peerChangesAsync = async(UnconfinedTestDispatcher()) {
-                target.filterIsInstance<PeersChanged>().take(4).toList()
+                target.events.filterIsInstance<PeersChanged>().take(4).toList()
             }
             val peerStatusHistoryAsync = async(UnconfinedTestDispatcher()) {
                 target.peerStatus.take(5).toList()

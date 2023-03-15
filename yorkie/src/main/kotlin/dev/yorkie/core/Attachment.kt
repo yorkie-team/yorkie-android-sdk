@@ -4,7 +4,7 @@ import dev.yorkie.document.Document
 
 internal data class Attachment(
     val document: Document,
-    val isRealTimeSync: Boolean,
+    var isRealTimeSync: Boolean,
     val peerPresences: Peers = UninitializedPresences,
     var remoteChangeEventReceived: Boolean = false,
 ) {

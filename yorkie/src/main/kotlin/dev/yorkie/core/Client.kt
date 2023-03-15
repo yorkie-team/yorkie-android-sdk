@@ -377,7 +377,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun attachAsync(
         document: Document,
-        isManualSync: Boolean = false,
+        isRealSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
             require(isActive) {
@@ -397,7 +397,7 @@ public class Client @VisibleForTesting internal constructor(
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
-            attachments.value += document.key to Attachment(document, !isManualSync)
+            attachments.value += document.key to Attachment(document, isRealSync)
             waitForInitialization(document.key)
             true
         }
@@ -467,6 +467,27 @@ public class Client @VisibleForTesting internal constructor(
                 this == null || !isRealTimeSync || peerPresences != UninitializedPresences
             }
         }
+    }
+
+    /**
+     * Pauses the realtime synchronization of the given [document].
+     */
+    public fun pause(document: Document) {
+        changeRealTimeSetting(document, false)
+    }
+
+    /**
+     * Resumes the realtime synchronization of the given [document].
+     */
+    public fun resume(document: Document) {
+        changeRealTimeSetting(document, true)
+    }
+
+    private fun changeRealTimeSetting(document: Document, isRealTimeSync: Boolean) {
+        require(isActive) {
+            "client is not active"
+        }
+        attachments.value[document.key]?.isRealTimeSync = isRealTimeSync
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)

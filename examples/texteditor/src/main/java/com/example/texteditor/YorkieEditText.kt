@@ -67,7 +67,7 @@ class YorkieEditText @JvmOverloads constructor(
     }
 
     private fun CharSequence.isHangulComposing(): Boolean {
-        return isNotEmpty() && last() !in hangulVowels && last() in hangulConsonants + hangulSyllables
+        return lastOrNull() !in hangulVowels && lastOrNull() in hangulConsonants + hangulSyllables
     }
 
     fun withRemoteChange(action: (EditText) -> Unit) {

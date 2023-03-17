@@ -244,19 +244,19 @@ public class Client @VisibleForTesting internal constructor(
 
     private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
         if (response.hasInitialization()) {
-            response.initialization.peersMapByDocMap.forEach { (documentKey, peers) ->
+            response.initialization.peersMapByDocMap.forEach { (documentKey, pbPeers) ->
                 val key = Document.Key(documentKey)
                 val attachment = attachments.value[key] ?: return@forEach
                 if (attachment.peerPresences == UninitializedPresences) {
                     attachments.value += key to attachment.copy(peerPresences = Peers())
                 }
-                peers.clientsList.forEach { peer ->
-                    val peerPair = peer.id.toActorID() to peer.presence.toPresence()
-                    val newAttachment = attachments.value
-                        .getValue(key)
-                        .copy(peerPresences = peerPair.asPeers())
-                    attachments.value += key to newAttachment
-                }
+                val peers = pbPeers.clientsList.associate { peer ->
+                    peer.id.toActorID() to peer.presence.toPresence()
+                }.asPeers()
+                val newAttachment = attachments.value
+                    .getValue(key)
+                    .copy(peerPresences = peers)
+                attachments.value += key to newAttachment
             }
             val changedPeers = response.initialization.peersMapByDocMap.keys.map(Document::Key)
                 .associateWith { attachments.value[it]?.peerPresences.orEmpty().asPeers() }

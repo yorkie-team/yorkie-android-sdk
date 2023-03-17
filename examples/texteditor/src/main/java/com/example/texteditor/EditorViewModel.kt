@@ -101,8 +101,12 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     @ColorInt
     fun getPeerSelectionColor(actorID: ActorID): Int {
         return _peerSelectionInfos[actorID]?.color ?: run {
-            val newColor =
-                Color.argb(51, Random.nextInt(256), Random.nextInt(256), Random.nextInt(256))
+            val newColor = Color.argb(
+                51,
+                Random.nextInt(256),
+                Random.nextInt(256),
+                Random.nextInt(256),
+            )
             _peerSelectionInfos[actorID] = PeerSelectionInfo(newColor)
             newColor
         }

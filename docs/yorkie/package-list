@@ -57,9 +57,11 @@ $dokka.location:dev.yorkie.core/Client/deactivateAsync/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.core/Client/detachAsync/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/detach-async.html
 $dokka.location:dev.yorkie.core/Client/events/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/events.html
 $dokka.location:dev.yorkie.core/Client/isActive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/is-active.html
+$dokka.location:dev.yorkie.core/Client/pause/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/pause.html
 $dokka.location:dev.yorkie.core/Client/peerStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/peer-status.html
 $dokka.location:dev.yorkie.core/Client/presenceInfo/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/presence-info.html
 $dokka.location:dev.yorkie.core/Client/requireClientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-client-id.html
+$dokka.location:dev.yorkie.core/Client/resume/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/resume.html
 $dokka.location:dev.yorkie.core/Client/status/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/status.html
 $dokka.location:dev.yorkie.core/Client/streamConnectionStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/stream-connection-status.html
 $dokka.location:dev.yorkie.core/Client/syncAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/sync-async.html

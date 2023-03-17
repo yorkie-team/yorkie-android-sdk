@@ -297,7 +297,9 @@ public class Client @VisibleForTesting internal constructor(
                 emitPeerStatus()
             }
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
-                attachments.value += documentKey to attachment.copy(remoteChangeEventReceived = true)
+                attachments.value += documentKey to attachment.copy(
+                    remoteChangeEventReceived = true,
+                )
                 eventStream.emit(Event.DocumentsChanged(listOf(documentKey)))
             }
             DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {

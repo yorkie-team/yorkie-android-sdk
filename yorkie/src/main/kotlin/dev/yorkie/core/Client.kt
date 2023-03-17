@@ -168,8 +168,8 @@ public class Client @VisibleForTesting internal constructor(
     private fun filterRealTimeSyncNeeded() = attachments.value.filterValues { attachment ->
         attachment.isRealTimeSync &&
             (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
-    }.map { (_, attachment) ->
-        attachment.remoteChangeEventReceived = false
+    }.map { (key, attachment) ->
+        attachments.value += key to attachment.copy(remoteChangeEventReceived = false)
         attachment.document
     }
 
@@ -297,7 +297,7 @@ public class Client @VisibleForTesting internal constructor(
                 emitPeerStatus()
             }
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
-                attachment.remoteChangeEventReceived = true
+                attachments.value += documentKey to attachment.copy(remoteChangeEventReceived = true)
                 eventStream.emit(Event.DocumentsChanged(listOf(documentKey)))
             }
             DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {
@@ -487,7 +487,8 @@ public class Client @VisibleForTesting internal constructor(
         require(isActive) {
             "client is not active"
         }
-        attachments.value[document.key]?.isRealTimeSync = isRealTimeSync
+        val attachment = attachments.value[document.key] ?: return
+        attachments.value += document.key to attachment.copy(isRealTimeSync = isRealTimeSync)
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)

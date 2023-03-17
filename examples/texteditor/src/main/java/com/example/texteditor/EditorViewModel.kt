@@ -117,6 +117,14 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
         _peerSelectionInfos.remove(actorID)
     }
 
+    override fun handleHangulCompositionStart() {
+        client.pause(document)
+    }
+
+    override fun handleHangulCompositionEnd() {
+        client.resume(document)
+    }
+
     override fun onCleared() {
         TerminationScope.launch {
             client.detachAsync(document).await()

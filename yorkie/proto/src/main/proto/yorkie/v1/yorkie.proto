@@ -26,82 +26,98 @@ option java_package = "dev.yorkie.api.v1";
 
 // Yorkie is a service that provides a API for SDKs.
 service YorkieService {
-    rpc ActivateClient (ActivateClientRequest) returns (ActivateClientResponse) {}
-    rpc DeactivateClient (DeactivateClientRequest) returns (DeactivateClientResponse) {}
-    rpc UpdatePresence (UpdatePresenceRequest) returns (UpdatePresenceResponse) {}
+  rpc ActivateClient (ActivateClientRequest) returns (ActivateClientResponse) {}
+  rpc DeactivateClient (DeactivateClientRequest) returns (DeactivateClientResponse) {}
+  rpc UpdatePresence (UpdatePresenceRequest) returns (UpdatePresenceResponse) {}
 
-    rpc AttachDocument (AttachDocumentRequest) returns (AttachDocumentResponse) {}
-    rpc DetachDocument (DetachDocumentRequest) returns (DetachDocumentResponse) {}
-    rpc WatchDocuments (WatchDocumentsRequest) returns (stream WatchDocumentsResponse) {}
-    rpc PushPull (PushPullRequest) returns (PushPullResponse) {}
+  rpc AttachDocument (AttachDocumentRequest) returns (AttachDocumentResponse) {}
+  rpc DetachDocument (DetachDocumentRequest) returns (DetachDocumentResponse) {}
+  rpc RemoveDocument (RemoveDocumentRequest) returns (RemoveDocumentResponse) {}
+  rpc PushPullChanges (PushPullChangesRequest) returns (PushPullChangesResponse) {}
+
+  rpc WatchDocuments (WatchDocumentsRequest) returns (stream WatchDocumentsResponse) {}
 }
 
 message ActivateClientRequest {
-    string client_key = 1;
+  string client_key = 1;
 }
 
 message ActivateClientResponse {
-    string client_key = 1;
-    bytes client_id = 2;
+  string client_key = 1;
+  bytes client_id = 2;
 }
 
 message DeactivateClientRequest {
-    bytes client_id = 1;
+  bytes client_id = 1;
 }
 
 message DeactivateClientResponse {
-    bytes client_id = 1;
+  bytes client_id = 1;
 }
 
 message AttachDocumentRequest {
-    bytes client_id = 1;
-    ChangePack change_pack = 2;
+  bytes client_id = 1;
+  ChangePack change_pack = 2;
 }
 
 message AttachDocumentResponse {
-    bytes client_id = 1;
-    ChangePack change_pack = 2;
+  bytes client_id = 1;
+  string document_id = 2;
+  ChangePack change_pack = 3;
 }
 
 message DetachDocumentRequest {
-    bytes client_id = 1;
-    ChangePack change_pack = 2;
+  bytes client_id = 1;
+  string document_id = 2;
+  ChangePack change_pack = 3;
 }
 
 message DetachDocumentResponse {
-    string client_key = 1;
-    ChangePack change_pack = 2;
+  string client_key = 1;
+  ChangePack change_pack = 2;
 }
 
 message WatchDocumentsRequest {
-    Client client = 1;
-    repeated string document_keys = 2;
+  Client client = 1;
+  repeated string document_keys = 2;
 }
 
 message WatchDocumentsResponse {
-    message Initialization {
-        map<string, Clients> peers_map_by_doc = 1;
-    }
+  message Initialization {
+    map<string, Clients> peers_map_by_doc = 1;
+  }
 
-    oneof body {
-        Initialization initialization = 1;
-        DocEvent event = 2;
-    }
+  oneof body {
+    Initialization initialization = 1;
+    DocEvent event = 2;
+  }
 }
 
-message PushPullRequest {
-    bytes client_id = 1;
-    ChangePack change_pack = 2;
+message RemoveDocumentRequest {
+  bytes client_id = 1;
+  string document_id = 2;
+  ChangePack change_pack = 3;
 }
 
-message PushPullResponse {
-    bytes client_id = 1;
-    ChangePack change_pack = 2;
+message RemoveDocumentResponse {
+  string client_key = 1;
+  ChangePack change_pack = 2;
+}
+
+message PushPullChangesRequest {
+  bytes client_id = 1;
+  string document_id = 2;
+  ChangePack change_pack = 3;
+}
+
+message PushPullChangesResponse {
+  bytes client_id = 1;
+  ChangePack change_pack = 2;
 }
 
 message UpdatePresenceRequest {
-    Client client = 1;
-    repeated string document_keys = 2;
+  Client client = 1;
+  repeated string document_keys = 2;
 }
 
 message UpdatePresenceResponse {}

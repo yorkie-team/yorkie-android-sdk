@@ -15,8 +15,8 @@ import dev.yorkie.api.v1.DetachDocumentResponse
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
-import dev.yorkie.api.v1.PushPullRequest
-import dev.yorkie.api.v1.PushPullResponse
+import dev.yorkie.api.v1.PushPullChangesRequest
+import dev.yorkie.api.v1.PushPullChangesResponse
 import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.UpdatePresenceResponse
 import dev.yorkie.api.v1.ValueType
@@ -36,7 +36,7 @@ import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.presence
-import dev.yorkie.api.v1.pushPullResponse
+import dev.yorkie.api.v1.pushPullChangesResponse
 import dev.yorkie.api.v1.watchDocumentsResponse
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
@@ -99,11 +99,11 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         }
     }
 
-    override suspend fun pushPull(request: PushPullRequest): PushPullResponse {
+    override suspend fun pushPullChanges(request: PushPullChangesRequest): PushPullChangesResponse {
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
             throw StatusException(Status.UNAVAILABLE)
         }
-        return pushPullResponse {
+        return pushPullChangesResponse {
             clientId = request.clientId
             changePack = changePack {
                 minSyncedTicket = InitialTimeTicket.toPBTimeTicket()

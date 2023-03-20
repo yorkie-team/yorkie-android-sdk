@@ -18,6 +18,7 @@ internal data class ChangePack(
     val changes: List<Change>,
     val snapshot: ByteString?,
     val minSyncedTicket: TimeTicket?,
+    val isRemoved: Boolean,
 ) {
 
     /**

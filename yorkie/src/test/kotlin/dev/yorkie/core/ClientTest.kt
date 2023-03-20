@@ -9,7 +9,7 @@ import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.AttachDocumentRequest
 import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DetachDocumentRequest
-import dev.yorkie.api.v1.PushPullRequest
+import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.WatchDocumentsRequest
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
@@ -126,9 +126,9 @@ class ClientTest {
             assertIsEmptyChangePack(attachRequestCaptor.firstValue.changePack)
             assertJsonContentEquals("""{"k1": 4}""", document.toJson())
 
-            val syncRequestCaptor = argumentCaptor<PushPullRequest>()
+            val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
             target.syncAsync().await()
-            verify(service).pushPull(syncRequestCaptor.capture())
+            verify(service).pushPullChanges(syncRequestCaptor.capture())
             assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
             assertIsEmptyChangePack(syncRequestCaptor.firstValue.changePack)
             assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
@@ -160,9 +160,9 @@ class ClientTest {
             assertEquals(1, changeEvent.documentKeys.size)
             assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.documentKeys.first().value)
 
-            val syncRequestCaptor = argumentCaptor<PushPullRequest>()
+            val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
             val syncEvent = assertIs<DocumentSynced>(events.last())
-            verify(service).pushPull(syncRequestCaptor.capture())
+            verify(service).pushPullChanges(syncRequestCaptor.capture())
             assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
             val synced = assertIs<Client.DocumentSyncResult.Synced>(syncEvent.result)
             assertEquals(document, synced.document)
@@ -430,6 +430,7 @@ class ClientTest {
             emptyList(),
             null,
             null,
+            false,
         )
     }
 }

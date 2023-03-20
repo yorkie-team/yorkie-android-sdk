@@ -75,6 +75,7 @@ internal fun PBChangePack.toChangePack(): ChangePack {
         changes = changesList.toChanges(),
         snapshot = snapshot.takeUnless { it.isEmpty },
         minSyncedTicket = minSyncedTicketOrNull?.toTimeTicket(),
+        isRemoved = isRemoved,
     )
 }
 
@@ -90,5 +91,6 @@ internal fun ChangePack.toPBChangePack(): PBChangePack {
         } else {
             clearMinSyncedTicket()
         }
+        isRemoved = changePack.isRemoved
     }
 }

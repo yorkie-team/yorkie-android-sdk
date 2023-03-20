@@ -15,7 +15,8 @@ import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachDocumentRequest
-import dev.yorkie.api.v1.pushPullRequest
+import dev.yorkie.api.v1.pushPullChangesRequest
+import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.updatePresenceRequest
 import dev.yorkie.api.v1.watchDocumentsRequest
 import dev.yorkie.core.Attachment.Companion.UninitializedPresences
@@ -29,6 +30,7 @@ import dev.yorkie.core.Client.PeersChangedResult.Unwatched
 import dev.yorkie.core.Client.PeersChangedResult.Watched
 import dev.yorkie.core.Peers.Companion.asPeers
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.DocumentStatus
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -202,13 +204,16 @@ public class Client @VisibleForTesting internal constructor(
                 SyncResult(
                     document,
                     runCatching {
-                        val request = pushPullRequest {
+                        val request = pushPullChangesRequest {
                             clientId = requireClientId().toByteString()
                             changePack = document.createChangePack().toPBChangePack()
                         }
-                        val response = service.pushPull(request)
+                        val response = service.pushPullChanges(request)
                         val responsePack = response.changePack.toChangePack()
                         document.applyChangePack(responsePack)
+                        if (document.status == DocumentStatus.Removed) {
+                            attachments.value -= document.key
+                        }
                     },
                 )
             }
@@ -383,6 +388,10 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
+            if (document.status == DocumentStatus.Detached) {
+                YorkieLogger.e("Client.attach", "document is not detached")
+                return@async false
+            }
             document.setActor(requireClientId())
 
             val request = attachDocumentRequest {
@@ -397,28 +406,43 @@ public class Client @VisibleForTesting internal constructor(
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
-            attachments.value += document.key to Attachment(document, !isManualSync)
+
+            if (document.status == DocumentStatus.Removed) {
+                return@async true
+            }
+
+            document.setStatus(DocumentStatus.Attached)
+            attachments.value += document.key to Attachment(
+                document,
+                response.documentId,
+                !isManualSync,
+            )
             waitForInitialization(document.key)
             true
         }
     }
 
     /**
-     * Detaches the given [doc] from this [Client]. It tells the
+     * Detaches the given [document] from this [Client]. It tells the
      * server that this client will no longer synchronize the given [Document].
      *
      * To collect garbage things like CRDT tombstones left on the [Document], all
      * the changes should be applied to other replicas before GC time. For this,
-     * if the [doc] is no longer used by this [Client], it should be detached.
+     * if the [document] is no longer used by this [Client], it should be detached.
      */
-    public fun detachAsync(doc: Document): Deferred<Boolean> {
+    public fun detachAsync(document: Document): Deferred<Boolean> {
         return scope.async {
             require(isActive) {
                 "client is not active"
             }
+            val attachment = attachments.value[document.key] ?: run {
+                YorkieLogger.e("Client.detach", "document is not attached")
+                return@async false
+            }
             val request = detachDocumentRequest {
                 clientId = requireClientId().toByteString()
-                changePack = doc.createChangePack().toPBChangePack()
+                changePack = document.createChangePack().toPBChangePack()
+                documentId = attachment.documentID
             }
             val response = try {
                 service.detachDocument(request)
@@ -427,8 +451,11 @@ public class Client @VisibleForTesting internal constructor(
                 return@async false
             }
             val pack = response.changePack.toChangePack()
-            doc.applyChangePack(pack)
-            attachments.value -= doc.key
+            document.applyChangePack(pack)
+            if (document.status != DocumentStatus.Removed) {
+                document.setStatus(DocumentStatus.Detached)
+            }
+            attachments.value -= document.key
             true
         }
     }
@@ -455,6 +482,38 @@ public class Client @VisibleForTesting internal constructor(
                 return@async false
             }
             _status.emit(Status.Deactivated)
+            true
+        }
+    }
+
+    /**
+     * Removes the given [document].
+     */
+    public fun removeAsync(document: Document): Deferred<Boolean> {
+        return scope.async {
+            require(isActive) {
+                "client is not active"
+            }
+            val attachment = attachments.value[document.key] ?: run {
+                YorkieLogger.e("Client.remove", "document is not attached")
+                return@async false
+            }
+
+            document.setStatus(DocumentStatus.Removed)
+            val request = removeDocumentRequest {
+                clientId = requireClientId().toByteString()
+                changePack = document.createChangePack().toPBChangePack()
+                documentId = attachment.documentID
+            }
+            val response = try {
+                service.removeDocument(request)
+            } catch (e: StatusException) {
+                YorkieLogger.e("Client.remove", e.stackTraceToString())
+                return@async false
+            }
+            val pack = response.changePack.toChangePack()
+            document.applyChangePack(pack)
+            attachments.value -= document.key
             true
         }
     }

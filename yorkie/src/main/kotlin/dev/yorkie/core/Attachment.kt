@@ -7,7 +7,7 @@ internal data class Attachment(
     val documentID: String,
     val isRealTimeSync: Boolean,
     val peerPresences: Peers = UninitializedPresences,
-    var remoteChangeEventReceived: Boolean = false,
+    val remoteChangeEventReceived: Boolean = false,
 ) {
 
     companion object {

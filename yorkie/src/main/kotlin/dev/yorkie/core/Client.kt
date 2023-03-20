@@ -170,8 +170,8 @@ public class Client @VisibleForTesting internal constructor(
     private fun filterRealTimeSyncNeeded() = attachments.value.filterValues { attachment ->
         attachment.isRealTimeSync &&
             (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
-    }.map { (_, attachment) ->
-        attachment.remoteChangeEventReceived = false
+    }.map { (key, attachment) ->
+        attachments.value += key to attachment.copy(remoteChangeEventReceived = false)
         attachment.document
     }
 
@@ -249,19 +249,19 @@ public class Client @VisibleForTesting internal constructor(
 
     private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
         if (response.hasInitialization()) {
-            response.initialization.peersMapByDocMap.forEach { (documentKey, peers) ->
+            response.initialization.peersMapByDocMap.forEach { (documentKey, pbPeers) ->
                 val key = Document.Key(documentKey)
                 val attachment = attachments.value[key] ?: return@forEach
                 if (attachment.peerPresences == UninitializedPresences) {
                     attachments.value += key to attachment.copy(peerPresences = Peers())
                 }
-                peers.clientsList.forEach { peer ->
-                    val peerPair = peer.id.toActorID() to peer.presence.toPresence()
-                    val newAttachment = attachments.value
-                        .getValue(key)
-                        .copy(peerPresences = peerPair.asPeers())
-                    attachments.value += key to newAttachment
-                }
+                val peers = pbPeers.clientsList.associate { peer ->
+                    peer.id.toActorID() to peer.presence.toPresence()
+                }.asPeers()
+                val newAttachment = attachments.value
+                    .getValue(key)
+                    .copy(peerPresences = peers)
+                attachments.value += key to newAttachment
             }
             val changedPeers = response.initialization.peersMapByDocMap.keys.map(Document::Key)
                 .associateWith { attachments.value[it]?.peerPresences.orEmpty().asPeers() }
@@ -302,7 +302,9 @@ public class Client @VisibleForTesting internal constructor(
                 emitPeerStatus()
             }
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
-                attachment.remoteChangeEventReceived = true
+                attachments.value += documentKey to attachment.copy(
+                    remoteChangeEventReceived = true,
+                )
                 eventStream.emit(Event.DocumentsChanged(listOf(documentKey)))
             }
             DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {
@@ -382,7 +384,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun attachAsync(
         document: Document,
-        isManualSync: Boolean = false,
+        isRealSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
             require(isActive) {
@@ -415,7 +417,7 @@ public class Client @VisibleForTesting internal constructor(
             attachments.value += document.key to Attachment(
                 document,
                 response.documentId,
-                !isManualSync,
+                isRealSync,
             )
             waitForInitialization(document.key)
             true
@@ -526,6 +528,28 @@ public class Client @VisibleForTesting internal constructor(
                 this == null || !isRealTimeSync || peerPresences != UninitializedPresences
             }
         }
+    }
+
+    /**
+     * Pauses the realtime synchronization of the given [document].
+     */
+    public fun pause(document: Document) {
+        changeRealTimeSetting(document, false)
+    }
+
+    /**
+     * Resumes the realtime synchronization of the given [document].
+     */
+    public fun resume(document: Document) {
+        changeRealTimeSetting(document, true)
+    }
+
+    private fun changeRealTimeSetting(document: Document, isRealTimeSync: Boolean) {
+        require(isActive) {
+            "client is not active"
+        }
+        val attachment = attachments.value[document.key] ?: return
+        attachments.value += document.key to attachment.copy(isRealTimeSync = isRealTimeSync)
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)

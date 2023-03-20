@@ -64,8 +64,9 @@ public class Document(public val key: Key) {
         updater: (root: JsonObject) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
-            require(status != DocumentStatus.Removed) {
-                "document is removed"
+            if (status == DocumentStatus.Removed) {
+                YorkieLogger.e("Document.update", "document is removed")
+                return@async false
             }
 
             val clone = ensureClone()

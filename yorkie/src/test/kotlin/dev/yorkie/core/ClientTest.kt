@@ -120,7 +120,7 @@ class ClientTest {
             target.activateAsync().await()
 
             val attachRequestCaptor = argumentCaptor<AttachDocumentRequest>()
-            target.attachAsync(document, true).await()
+            target.attachAsync(document, false).await()
             verify(service).attachDocument(attachRequestCaptor.capture())
             assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
             assertIsEmptyChangePack(attachRequestCaptor.firstValue.changePack)

@@ -390,7 +390,7 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
-            if (document.status == DocumentStatus.Detached) {
+            if (document.status != DocumentStatus.Detached) {
                 YorkieLogger.e("Client.attach", "document is not detached")
                 return@async false
             }

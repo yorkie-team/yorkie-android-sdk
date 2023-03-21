@@ -20,7 +20,9 @@ fun String.toDocKey(): Document.Key {
     )
 }
 
-fun withTwoClientsAndDocuments(callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit) {
+fun withTwoClientsAndDocuments(
+    callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
+) {
     runBlocking {
         val client1 = createClient()
         val client2 = createClient()

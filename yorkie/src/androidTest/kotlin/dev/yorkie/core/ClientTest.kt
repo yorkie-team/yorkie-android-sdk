@@ -1,7 +1,6 @@
 package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import dev.yorkie.core.Client.DocumentSyncResult
 import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.Event.DocumentsChanged

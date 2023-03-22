@@ -390,9 +390,8 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
-            if (document.status != DocumentStatus.Detached) {
-                YorkieLogger.e("Client.attach", "document is not detached")
-                return@async false
+            require(document.status == DocumentStatus.Detached) {
+                "document is not detached"
             }
             document.setActor(requireClientId())
 
@@ -437,10 +436,8 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
-            val attachment = attachments.value[document.key] ?: run {
-                YorkieLogger.e("Client.detach", "document is not attached")
-                return@async false
-            }
+            val attachment = attachments.value[document.key]
+                ?: throw IllegalArgumentException("document is not attached")
             val request = detachDocumentRequest {
                 clientId = requireClientId().toByteString()
                 changePack = document.createChangePack().toPBChangePack()
@@ -496,10 +493,8 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
-            val attachment = attachments.value[document.key] ?: run {
-                YorkieLogger.e("Client.remove", "document is not attached")
-                return@async false
-            }
+            val attachment = attachments.value[document.key]
+                ?: throw IllegalArgumentException("document is not attached")
 
             val request = removeDocumentRequest {
                 clientId = requireClientId().toByteString()

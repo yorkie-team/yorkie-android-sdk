@@ -4,11 +4,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -23,15 +23,15 @@ class DocumentTest {
             val document = Document(documentKey)
 
             // 01. client is not activated.
-            assertThrows(IllegalArgumentException::class.java) {
-                runBlocking {
-                    client.removeAsync(document).await()
-                }
+            assertFailsWith(IllegalArgumentException::class) {
+                client.removeAsync(document).await()
             }
 
             // 02. document is not attached.
             client.activateAsync().await()
-            assertFalse(client.removeAsync(document).await())
+            assertFailsWith(IllegalArgumentException::class) {
+                client.removeAsync(document).await()
+            }
 
             // 03. document is attached.
             client.attachAsync(document).await()
@@ -39,10 +39,14 @@ class DocumentTest {
             assertEquals(DocumentStatus.Removed, document.status)
 
             // 04. try to update a removed document.
-            assertFalse(document.updateAsync { it["key"] = 0 }.await())
+            assertFailsWith(IllegalArgumentException::class) {
+                document.updateAsync { it["key"] = 0 }.await()
+            }
 
             // 05. try to attach a removed document.
-            assertFalse(client.attachAsync(document).await())
+            assertFailsWith(IllegalArgumentException::class) {
+                client.attachAsync(document).await()
+            }
 
             client.detachAsync(document).await()
             client.deactivateAsync().await()
@@ -130,19 +134,29 @@ class DocumentTest {
             client.activateAsync().await()
 
             // 01. abnormal behavior on detached state
-            assertFalse(client.detachAsync(document).await())
+            assertFailsWith(IllegalArgumentException::class) {
+                client.detachAsync(document).await()
+            }
             assertFalse(client.syncAsync().await())
-            assertFalse(client.removeAsync(document).await())
+            assertFailsWith(IllegalArgumentException::class) {
+                client.removeAsync(document).await()
+            }
 
             // 02. abnormal behavior on attached state
             client.attachAsync(document).await()
-            assertFalse(client.attachAsync(document).await())
+            assertFailsWith(IllegalArgumentException::class) {
+                client.attachAsync(document).await()
+            }
 
             // 03. abnormal behavior on removed state
             client.removeAsync(document).await()
-            assertFalse(client.removeAsync(document).await())
+            assertFailsWith(IllegalArgumentException::class) {
+                client.removeAsync(document).await()
+            }
             assertFalse(client.syncAsync().await())
-            assertFalse(client.detachAsync(document).await())
+            assertFailsWith(IllegalArgumentException::class) {
+                client.detachAsync(document).await()
+            }
 
             client.detachAsync(document).await()
             client.deactivateAsync().await()

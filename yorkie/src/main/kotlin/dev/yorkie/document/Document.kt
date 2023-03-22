@@ -53,8 +53,8 @@ public class Document(public val key: Key) {
     internal val hasLocalChanges: Boolean
         get() = localChanges.isNotEmpty()
 
-    public var status = DocumentStatus.Detached
-        private set
+    @Volatile
+    internal var status = DocumentStatus.Detached
 
     /**
      * Executes the given [updater] to update this document.
@@ -124,7 +124,7 @@ public class Document(public val key: Key) {
         pack.minSyncedTicket?.let(::garbageCollect)
 
         if (pack.isRemoved) {
-            setStatus(DocumentStatus.Removed)
+            status = DocumentStatus.Removed
         }
     }
 
@@ -199,13 +199,6 @@ public class Document(public val key: Key) {
     private fun garbageCollect(ticket: TimeTicket): Int {
         clone?.garbageCollect(ticket)
         return root.garbageCollect(ticket)
-    }
-
-    /**
-     * Updates the status of this [Document].
-     */
-    public fun setStatus(status: DocumentStatus) {
-        this.status = status
     }
 
     private fun Change.createPaths(): List<String> {

@@ -171,7 +171,7 @@ public class Client @VisibleForTesting internal constructor(
             (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
     }.map { (key, attachment) ->
         attachments.value += key to attachment.copy(remoteChangeEventReceived = false)
-        attachment.document
+        attachment
     }
 
     /**
@@ -181,9 +181,8 @@ public class Client @VisibleForTesting internal constructor(
     public fun syncAsync(): Deferred<Boolean> {
         return scope.async {
             var isAllSuccess = true
-            attachments.value.map { (_, attachment) ->
-                attachment.document
-            }.asSyncFlow().collect { (document, result) ->
+            val attachments: List<Attachment> = attachments.value.values.toList()
+            attachments.asSyncFlow().collect { (document, result) ->
                 eventStream.emit(
                     if (result.isSuccess) {
                         DocumentSynced(Synced(document))
@@ -197,15 +196,17 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private suspend fun List<Document>.asSyncFlow(): Flow<SyncResult> {
+    private suspend fun List<Attachment>.asSyncFlow(): Flow<SyncResult> {
         return asFlow()
-            .map { document ->
+            .map { attachment ->
+                val document = attachment.document
                 SyncResult(
                     document,
                     runCatching {
                         val request = pushPullChangesRequest {
                             clientId = requireClientId().toByteString()
                             changePack = document.createChangePack().toPBChangePack()
+                            documentId = attachment.documentID
                         }
                         val response = service.pushPullChanges(request)
                         val responsePack = response.changePack.toChangePack()
@@ -414,7 +415,7 @@ public class Client @VisibleForTesting internal constructor(
                 return@async true
             }
 
-            document.setStatus(DocumentStatus.Attached)
+            document.status = DocumentStatus.Attached
             attachments.value += document.key to Attachment(
                 document,
                 response.documentId,
@@ -440,7 +441,7 @@ public class Client @VisibleForTesting internal constructor(
                 "client is not active"
             }
             val attachment = attachments.value[document.key]
-                ?: throw NoSuchElementException("document is not attached")
+                ?: throw IllegalArgumentException("document is not attached")
             val request = detachDocumentRequest {
                 clientId = requireClientId().toByteString()
                 changePack = document.createChangePack().toPBChangePack()
@@ -455,7 +456,7 @@ public class Client @VisibleForTesting internal constructor(
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
             if (document.status != DocumentStatus.Removed) {
-                document.setStatus(DocumentStatus.Detached)
+                document.status = DocumentStatus.Detached
             }
             cancelWatchJob(document.key)
             true
@@ -497,9 +498,8 @@ public class Client @VisibleForTesting internal constructor(
                 "client is not active"
             }
             val attachment = attachments.value[document.key]
-                ?: throw NoSuchElementException("document is not attached")
+                ?: throw IllegalArgumentException("document is not attached")
 
-            document.setStatus(DocumentStatus.Removed)
             val request = removeDocumentRequest {
                 clientId = requireClientId().toByteString()
                 changePack = document.createChangePack().toPBChangePack()

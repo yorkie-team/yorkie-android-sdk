@@ -172,7 +172,7 @@ public class Client @VisibleForTesting internal constructor(
             (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
     }.map { (key, attachment) ->
         attachments.value += key to attachment.copy(remoteChangeEventReceived = false)
-        attachment.document
+        attachment
     }
 
     /**
@@ -182,9 +182,8 @@ public class Client @VisibleForTesting internal constructor(
     public fun syncAsync(): Deferred<Boolean> {
         return scope.async {
             var isAllSuccess = true
-            attachments.value.map { (_, attachment) ->
-                attachment.document
-            }.asSyncFlow().collect { (document, result) ->
+            val attachments: List<Attachment> = attachments.value.values.toList()
+            attachments.asSyncFlow().collect { (document, result) ->
                 eventStream.emit(
                     if (result.isSuccess) {
                         DocumentSynced(Synced(document))
@@ -198,15 +197,17 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private suspend fun List<Document>.asSyncFlow(): Flow<SyncResult> {
+    private suspend fun List<Attachment>.asSyncFlow(): Flow<SyncResult> {
         return asFlow()
-            .map { document ->
+            .map { attachment ->
+                val document = attachment.document
                 SyncResult(
                     document,
                     runCatching {
                         val request = pushPullChangesRequest {
                             clientId = requireClientId().toByteString()
                             changePack = document.createChangePack().toPBChangePack()
+                            documentId = attachment.documentID
                         }
                         val response = service.pushPullChanges(request)
                         val responsePack = response.changePack.toChangePack()

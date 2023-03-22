@@ -9,7 +9,7 @@ import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.toPBClient
 import dev.yorkie.api.toPresence
 import dev.yorkie.api.v1.DocEventType
-import dev.yorkie.api.v1.WatchDocumentsResponse
+import dev.yorkie.api.v1.WatchDocumentResponse
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
@@ -18,7 +18,7 @@ import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.updatePresenceRequest
-import dev.yorkie.api.v1.watchDocumentsRequest
+import dev.yorkie.api.v1.watchDocumentRequest
 import dev.yorkie.core.Attachment.Companion.UninitializedPresences
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
@@ -145,7 +145,6 @@ public class Client @VisibleForTesting internal constructor(
                 ),
             )
             runSyncLoop()
-            runWatchLoop()
             true
         }
     }
@@ -212,7 +211,7 @@ public class Client @VisibleForTesting internal constructor(
                         val responsePack = response.changePack.toChangePack()
                         document.applyChangePack(responsePack)
                         if (document.status == DocumentStatus.Removed) {
-                            attachments.value -= document.key
+                            cancelWatchJob(document.key)
                         }
                     },
                 )
@@ -220,51 +219,59 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private fun runWatchLoop() {
-        scope.launch(activationJob) {
+    private fun runWatchLoop(documentKey: Document.Key) {
+        val attachment = attachments.value[documentKey]
+            ?: throw IllegalArgumentException("document ${documentKey.value} is not attached")
+        scope.launch(attachment.watchJob) {
+            require(isActive) {
+                "client is not active"
+            }
             attachments.map { it.filterValues { attachment -> attachment.isRealTimeSync } }
                 .map { it.keys }
                 .distinctUntilChanged()
                 .map {
                     if (it.isNotEmpty()) {
-                        watchDocumentsRequest {
+                        watchDocumentRequest {
                             client = toPBClient()
-                            documentKeys.addAll(it.map(Document.Key::value))
+                            documentId = attachment.documentID
                         }
                     } else {
                         null
                     }
                 }.flatMapLatest {
-                    it?.let(service::watchDocuments) ?: emptyFlow()
+                    it?.let(service::watchDocument) ?: emptyFlow()
                 }.retry {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
                     delay(options.reconnectStreamDelay.inWholeMilliseconds)
                     true
                 }.collect {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                    handleWatchDocumentsResponse(it)
+                    handleWatchDocumentsResponse(documentKey, it)
                 }
         }
     }
 
-    private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
+    private suspend fun handleWatchDocumentsResponse(
+        documentKey: Document.Key,
+        response: WatchDocumentResponse,
+    ) {
         if (response.hasInitialization()) {
-            response.initialization.peersMapByDocMap.forEach { (documentKey, pbPeers) ->
-                val key = Document.Key(documentKey)
-                val attachment = attachments.value[key] ?: return@forEach
-                if (attachment.peerPresences == UninitializedPresences) {
-                    attachments.value += key to attachment.copy(peerPresences = Peers())
-                }
-                val peers = pbPeers.clientsList.associate { peer ->
-                    peer.id.toActorID() to peer.presence.toPresence()
-                }.asPeers()
-                val newAttachment = attachments.value
-                    .getValue(key)
-                    .copy(peerPresences = peers)
-                attachments.value += key to newAttachment
+            val pbPeers = response.initialization.peersList
+            val attachment = attachments.value[documentKey] ?: return
+            if (attachment.peerPresences == UninitializedPresences) {
+                attachments.value += documentKey to attachment.copy(peerPresences = Peers())
             }
-            val changedPeers = response.initialization.peersMapByDocMap.keys.map(Document::Key)
-                .associateWith { attachments.value[it]?.peerPresences.orEmpty().asPeers() }
+            val peers = pbPeers.associate { peer ->
+                peer.id.toActorID() to peer.presence.toPresence()
+            }.asPeers()
+            val newAttachment = attachments.value
+                .getValue(documentKey)
+                .copy(peerPresences = peers)
+            attachments.value += documentKey to newAttachment
+
+            val changedPeers = mapOf(
+                documentKey to attachments.value[documentKey]?.peerPresences.orEmpty().asPeers(),
+            )
             eventStream.emit(PeersChanged(Initialized(changedPeers)))
             emitPeerStatus()
             return
@@ -272,7 +279,6 @@ public class Client @VisibleForTesting internal constructor(
         val watchEvent = response.event
         val eventType = checkNotNull(watchEvent.type)
         // only single key will be received since 0.3.1 server.
-        val documentKey = watchEvent.documentKeysList.firstOrNull()?.let(Document::Key) ?: return
         val attachment = attachments.value[documentKey] ?: return
         val publisher = watchEvent.publisher.id.toActorID()
         val presence = watchEvent.publisher.presence.toPresence()
@@ -353,28 +359,24 @@ public class Client @VisibleForTesting internal constructor(
                 data = presenceInfo.data + (key to value),
             )
 
-            val documentKeys = realTimeAttachments().map { (key, attachment) ->
-                val newPeers = attachment.peerPresences + (requireClientId() to presenceInfo)
-                attachments.value += key to attachment.copy(peerPresences = newPeers)
-                key.value
-            }.takeIf {
-                it.isNotEmpty()
-            } ?: return@async true
-
+            realTimeAttachments().takeUnless { it.isNotEmpty() }
+                ?.forEach { (key, attachment) ->
+                    try {
+                        service.updatePresence(
+                            updatePresenceRequest {
+                                client = toPBClient()
+                                documentId = attachment.documentID
+                            },
+                        )
+                    } catch (e: StatusException) {
+                        YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
+                        return@async false
+                    }
+                    val newPeers = attachment.peerPresences + (requireClientId() to presenceInfo)
+                    attachments.value += key to attachment.copy(peerPresences = newPeers)
+                } ?: return@async true
             emitPeerStatus()
-
-            try {
-                service.updatePresence(
-                    updatePresenceRequest {
-                        client = toPBClient()
-                        this.documentKeys.addAll(documentKeys)
-                    },
-                )
-                true
-            } catch (e: StatusException) {
-                YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
-                false
-            }
+            true
         }
     }
 
@@ -390,9 +392,8 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
-            if (document.status != DocumentStatus.Detached) {
-                YorkieLogger.e("Client.attach", "document is not detached")
-                return@async false
+            require(document.status == DocumentStatus.Detached) {
+                "document is not detached"
             }
             document.setActor(requireClientId())
 
@@ -420,6 +421,7 @@ public class Client @VisibleForTesting internal constructor(
                 isRealSync,
             )
             waitForInitialization(document.key)
+            runWatchLoop(document.key)
             true
         }
     }
@@ -437,10 +439,8 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
-            val attachment = attachments.value[document.key] ?: run {
-                YorkieLogger.e("Client.detach", "document is not attached")
-                return@async false
-            }
+            val attachment = attachments.value[document.key]
+                ?: throw NoSuchElementException("document is not attached")
             val request = detachDocumentRequest {
                 clientId = requireClientId().toByteString()
                 changePack = document.createChangePack().toPBChangePack()
@@ -457,7 +457,7 @@ public class Client @VisibleForTesting internal constructor(
             if (document.status != DocumentStatus.Removed) {
                 document.setStatus(DocumentStatus.Detached)
             }
-            attachments.value -= document.key
+            cancelWatchJob(document.key)
             true
         }
     }
@@ -470,7 +470,7 @@ public class Client @VisibleForTesting internal constructor(
             if (!isActive) {
                 return@async true
             }
-            activationJob.cancelChildren()
+            attachments.value.keys.forEach(::cancelWatchJob)
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 
             try {
@@ -496,10 +496,8 @@ public class Client @VisibleForTesting internal constructor(
             require(isActive) {
                 "client is not active"
             }
-            val attachment = attachments.value[document.key] ?: run {
-                YorkieLogger.e("Client.remove", "document is not attached")
-                return@async false
-            }
+            val attachment = attachments.value[document.key]
+                ?: throw NoSuchElementException("document is not attached")
 
             document.setStatus(DocumentStatus.Removed)
             val request = removeDocumentRequest {
@@ -515,7 +513,7 @@ public class Client @VisibleForTesting internal constructor(
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
-            attachments.value -= document.key
+            cancelWatchJob(document.key)
             true
         }
     }
@@ -528,6 +526,13 @@ public class Client @VisibleForTesting internal constructor(
                 this == null || !isRealTimeSync || peerPresences != UninitializedPresences
             }
         }
+    }
+
+    private fun cancelWatchJob(documentKey: Document.Key) {
+        val attachment = attachments.value[documentKey]
+            ?: throw IllegalArgumentException("document ${documentKey.value} is not attached")
+        attachment.watchJob.cancelChildren()
+        attachments.value -= documentKey
     }
 
     /**

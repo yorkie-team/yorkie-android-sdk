@@ -20,7 +20,7 @@ public class JsonText internal constructor(
     public val id: TimeTicket
         get() = target.id
 
-    internal val values
+    public val values: LinkedHashMap<String, Map<String, String>>
         get() = target.values
 
     public val length: Int

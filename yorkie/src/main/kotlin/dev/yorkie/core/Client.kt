@@ -476,6 +476,7 @@ public class Client @VisibleForTesting internal constructor(
             if (!isActive) {
                 return@async true
             }
+            activationJob.cancel()
             attachments.value.keys.forEach(::cancelWatchJob)
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 

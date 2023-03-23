@@ -17,8 +17,6 @@ import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.PushPullChangesResponse
-import dev.yorkie.api.v1.RemoveDocumentRequest
-import dev.yorkie.api.v1.RemoveDocumentResponse
 import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.UpdatePresenceResponse
 import dev.yorkie.api.v1.ValueType

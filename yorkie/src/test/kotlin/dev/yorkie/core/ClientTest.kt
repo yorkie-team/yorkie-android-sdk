@@ -11,7 +11,7 @@ import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.UpdatePresenceRequest
-import dev.yorkie.api.v1.WatchDocumentsRequest
+import dev.yorkie.api.v1.WatchDocumentRequest
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.Event.DocumentSynced
@@ -151,11 +151,11 @@ class ClientTest {
             val eventAsync = async(UnconfinedTestDispatcher()) {
                 target.events.take(3).toList()
             }
-            val watchRequestCaptor = argumentCaptor<WatchDocumentsRequest>()
+            val watchRequestCaptor = argumentCaptor<WatchDocumentRequest>()
             target.attachAsync(document).await()
             val events = eventAsync.await()
             val changeEvent = assertIs<DocumentsChanged>(events[1])
-            verify(service).watchDocuments(watchRequestCaptor.capture())
+            verify(service).watchDocument(watchRequestCaptor.capture())
             assertIsTestActorID(watchRequestCaptor.firstValue.client.id)
             assertEquals(1, changeEvent.documentKeys.size)
             assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.documentKeys.first().value)
@@ -331,7 +331,7 @@ class ClientTest {
             assertTrue(slowAttach.isActive)
             target.attachAsync(document1).await()
             delay(100)
-            assertTrue(slowAttach.isCompleted)
+            assertTrue(slowAttach.await())
             assertTrue(target.peerStatus.value[Key(NORMAL_DOCUMENT_KEY)]!!.isNotEmpty())
             assertTrue(
                 target.peerStatus.value[Key(SLOW_INITIALIZATION_DOCUMENT_KEY)]!!.isNotEmpty(),

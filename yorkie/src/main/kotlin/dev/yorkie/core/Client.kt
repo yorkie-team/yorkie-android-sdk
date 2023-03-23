@@ -178,10 +178,15 @@ public class Client @VisibleForTesting internal constructor(
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
      */
-    public fun syncAsync(): Deferred<Boolean> {
+    public fun syncAsync(document: Document? = null): Deferred<Boolean> {
         return scope.async {
             var isAllSuccess = true
-            val attachments: List<Attachment> = attachments.value.values.toList()
+            val attachments = document?.let {
+                listOf(
+                    attachments.value[it.key]
+                        ?: throw IllegalArgumentException("document is not attached"),
+                )
+            } ?: attachments.value.values
             attachments.asSyncFlow().collect { (document, result) ->
                 eventStream.emit(
                     if (result.isSuccess) {
@@ -196,7 +201,7 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private suspend fun List<Attachment>.asSyncFlow(): Flow<SyncResult> {
+    private suspend fun Collection<Attachment>.asSyncFlow(): Flow<SyncResult> {
         return asFlow()
             .map { attachment ->
                 val document = attachment.document
@@ -222,7 +227,7 @@ public class Client @VisibleForTesting internal constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun runWatchLoop(documentKey: Document.Key) {
         val attachment = attachments.value[documentKey]
-            ?: throw IllegalArgumentException("document ${documentKey.value} is not attached")
+            ?: throw IllegalArgumentException("document is not attached")
         scope.launch(attachment.watchJob) {
             require(isActive) {
                 "client is not active"
@@ -360,7 +365,7 @@ public class Client @VisibleForTesting internal constructor(
                 data = presenceInfo.data + (key to value),
             )
 
-            realTimeAttachments().takeUnless { it.isNotEmpty() }
+            realTimeAttachments().takeUnless { it.isEmpty() }
                 ?.forEach { (key, attachment) ->
                     try {
                         service.updatePresence(
@@ -421,8 +426,8 @@ public class Client @VisibleForTesting internal constructor(
                 response.documentId,
                 isRealSync,
             )
-            waitForInitialization(document.key)
             runWatchLoop(document.key)
+            waitForInitialization(document.key)
             true
         }
     }
@@ -457,8 +462,8 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             if (document.status != DocumentStatus.Removed) {
                 document.status = DocumentStatus.Detached
+                cancelWatchJob(document.key)
             }
-            cancelWatchJob(document.key)
             true
         }
     }
@@ -502,7 +507,7 @@ public class Client @VisibleForTesting internal constructor(
 
             val request = removeDocumentRequest {
                 clientId = requireClientId().toByteString()
-                changePack = document.createChangePack().toPBChangePack()
+                changePack = document.createChangePack().copy(isRemoved = true).toPBChangePack()
                 documentId = attachment.documentID
             }
             val response = try {
@@ -530,7 +535,7 @@ public class Client @VisibleForTesting internal constructor(
 
     private fun cancelWatchJob(documentKey: Document.Key) {
         val attachment = attachments.value[documentKey]
-            ?: throw IllegalArgumentException("document ${documentKey.value} is not attached")
+            ?: throw IllegalArgumentException("document is not attached")
         attachment.watchJob.cancelChildren()
         attachments.value -= documentKey
     }

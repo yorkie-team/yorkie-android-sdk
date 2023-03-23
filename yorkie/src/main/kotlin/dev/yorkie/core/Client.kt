@@ -10,7 +10,7 @@ import dev.yorkie.api.toPBClient
 import dev.yorkie.api.toPresence
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchDocumentsResponse
-import dev.yorkie.api.v1.YorkieServiceGrpcKt
+import dev.yorkie.api.v1.YorkieServiceGrpcKt.YorkieServiceCoroutineStub
 import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.deactivateClientRequest
@@ -96,10 +96,12 @@ public class Client @VisibleForTesting internal constructor(
         private set
 
     private val service by lazy {
-        YorkieServiceGrpcKt.YorkieServiceCoroutineStub(channel, CallOptions.DEFAULT).run {
-            val authInterceptor = options.authInterceptor()
-            if (authInterceptor == null) this else withInterceptors(authInterceptor)
-        }
+        YorkieServiceCoroutineStub(channel, CallOptions.DEFAULT).withInterceptors(
+            *listOfNotNull(
+                UserAgentInterceptor,
+                options.authInterceptor(),
+            ).toTypedArray(),
+        )
     }
 
     public constructor(

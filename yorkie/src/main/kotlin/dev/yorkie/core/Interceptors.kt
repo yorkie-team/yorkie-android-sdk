@@ -1,8 +1,15 @@
 package dev.yorkie.core
 
+import dev.yorkie.BuildConfig
 import io.grpc.ClientInterceptor
 import io.grpc.Metadata
 import io.grpc.stub.MetadataUtils
+
+internal val UserAgentInterceptor = MetadataUtils.newAttachHeadersInterceptor(
+    Metadata().apply {
+        put("x-yorkie-user-agent".asMetadataKey(), "yorkie-android-sdk/${BuildConfig.VERSION_NAME}")
+    },
+)
 
 internal fun Client.Options.authInterceptor(): ClientInterceptor? {
     if (apiKey == null && token == null) {

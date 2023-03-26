@@ -75,3 +75,12 @@ internal data class TextValue(
         return content
     }
 }
+
+@JvmInline
+public value class TextWithAttributes(private val value: Pair<String, Map<String, String>>) {
+    val text: String
+        get() = value.first
+
+    val attributes: Map<String, String>
+        get() = value.second
+}

@@ -95,6 +95,10 @@ $dokka.location:dev.yorkie.document.crdt/TextChangeType.Style///PointingToDeclar
 $dokka.location:dev.yorkie.document.crdt/TextChangeType///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change-type/index.html
 $dokka.location:dev.yorkie.document.crdt/TextChangeType/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change-type/value-of.html
 $dokka.location:dev.yorkie.document.crdt/TextChangeType/values/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change-type/values.html
+$dokka.location:dev.yorkie.document.crdt/TextWithAttributes///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/index.html
+$dokka.location:dev.yorkie.document.crdt/TextWithAttributes/TextWithAttributes/#kotlin.Pair[kotlin.String,kotlin.collections.Map[kotlin.String,kotlin.String]]/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/-text-with-attributes.html
+$dokka.location:dev.yorkie.document.crdt/TextWithAttributes/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/attributes.html
+$dokka.location:dev.yorkie.document.crdt/TextWithAttributes/text/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/text.html
 $dokka.location:dev.yorkie.document.json////PointingToDeclaration/yorkie/dev.yorkie.document.json/index.html
 $dokka.location:dev.yorkie.document.json/JsonArray///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/index.html
 $dokka.location:dev.yorkie.document.json/JsonArray/contains/#dev.yorkie.document.json.JsonElement/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/contains.html

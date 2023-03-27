@@ -3,6 +3,7 @@ package dev.yorkie.document.json
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.TextChange
+import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.StyleOperation
@@ -20,7 +21,7 @@ public class JsonText internal constructor(
     public val id: TimeTicket
         get() = target.id
 
-    public val values: LinkedHashMap<String, Map<String, String>>
+    public val values: List<TextWithAttributes>
         get() = target.values
 
     public val length: Int

@@ -518,7 +518,7 @@ public class Client @VisibleForTesting internal constructor(
 
             val request = removeDocumentRequest {
                 clientId = requireClientId().toByteString()
-                changePack = document.createChangePack().copy(isRemoved = true).toPBChangePack()
+                changePack = document.createChangePack(forceRemove = true).toPBChangePack()
                 documentId = attachment.documentID
             }
             val response = try {

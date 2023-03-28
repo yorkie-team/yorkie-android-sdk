@@ -10,6 +10,7 @@ import dev.yorkie.api.v1.AttachDocumentRequest
 import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.PushPullChangesRequest
+import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.WatchDocumentRequest
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
@@ -24,6 +25,7 @@ import dev.yorkie.core.Client.PeersChangedResult.Watched
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.SLOW_INITIALIZATION_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
@@ -412,6 +414,40 @@ class ClientTest {
             delay(500)
             assertTrue(target.deactivateAsync().await())
             assertTrue(target.deactivateAsync().await())
+        }
+    }
+
+    @Test
+    fun `should remove document`() {
+        runTest {
+            val document = Document(Key(NORMAL_DOCUMENT_KEY))
+            target.activateAsync().await()
+            target.attachAsync(document).await()
+
+            val removeDocumentRequestCaptor = argumentCaptor<RemoveDocumentRequest>()
+            target.removeAsync(document).await()
+            verify(service).removeDocument(removeDocumentRequestCaptor.capture())
+            assertIsTestActorID(removeDocumentRequestCaptor.firstValue.clientId)
+            assertEquals(
+                InitialEmptyChangePack.copy(isRemoved = true),
+                removeDocumentRequestCaptor.firstValue.changePack.toChangePack(),
+            )
+
+            target.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun `should return false on remove document error without exceptions`() {
+        runTest {
+            val document = Document(Key(REMOVE_ERROR_DOCUMENT_KEY))
+            target.activateAsync().await()
+            target.attachAsync(document).await()
+
+            assertFalse(target.removeAsync(document).await())
+
+            target.detachAsync(document).await()
+            target.deactivateAsync().await()
         }
     }
 

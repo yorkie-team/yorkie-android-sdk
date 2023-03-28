@@ -17,6 +17,8 @@ import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.PushPullChangesResponse
+import dev.yorkie.api.v1.RemoveDocumentRequest
+import dev.yorkie.api.v1.RemoveDocumentResponse
 import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.UpdatePresenceResponse
 import dev.yorkie.api.v1.ValueType
@@ -36,6 +38,7 @@ import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.pushPullChangesResponse
+import dev.yorkie.api.v1.removeDocumentResponse
 import dev.yorkie.api.v1.watchDocumentResponse
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
@@ -243,6 +246,25 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         return UpdatePresenceResponse.getDefaultInstance()
     }
 
+    override suspend fun removeDocument(request: RemoveDocumentRequest): RemoveDocumentResponse {
+        if (request.documentId == REMOVE_ERROR_DOCUMENT_KEY) {
+            throw StatusException(Status.UNAVAILABLE)
+        }
+        return removeDocumentResponse {
+            clientKey = TEST_KEY
+            changePack = changePack {
+                minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
+                changes.add(
+                    change {
+                        operations.add(createSetOperation())
+                        operations.add(createRemoveOperation())
+                    },
+                )
+                isRemoved = true
+            }
+        }
+    }
+
     companion object {
         internal const val TEST_KEY = "TEST"
         internal const val NORMAL_DOCUMENT_KEY = "NORMAL_DOCUMENT_KEY"
@@ -251,6 +273,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val UPDATE_PRESENCE_ERROR_DOCUMENT_KEY = "UPDATE_PRESENCE_ERROR_DOCUMENT_KEY"
         internal const val SLOW_INITIALIZATION_DOCUMENT_KEY = "SLOW_INITIALIZATION_DOCUMENT_KEY"
+        internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000ffff0000000000")
     }
 }

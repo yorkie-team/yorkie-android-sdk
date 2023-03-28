@@ -41,6 +41,7 @@ import io.grpc.android.AndroidChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
@@ -56,6 +57,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -81,6 +83,8 @@ public class Client @VisibleForTesting internal constructor(
     val events = eventStream.asSharedFlow()
 
     private val attachments = MutableStateFlow<Map<Document.Key, Attachment>>(emptyMap())
+
+    private val watchJobs = mutableMapOf<Document.Key, Job>()
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()
@@ -217,7 +221,7 @@ public class Client @VisibleForTesting internal constructor(
                         val responsePack = response.changePack.toChangePack()
                         document.applyChangePack(responsePack)
                         if (document.status == DocumentStatus.Removed) {
-                            cancelWatchJob(document.key)
+                            attachments.value -= document.key
                         }
                     },
                 )
@@ -228,13 +232,13 @@ public class Client @VisibleForTesting internal constructor(
     private fun runWatchLoop(documentKey: Document.Key) {
         val attachment = attachments.value[documentKey]
             ?: throw IllegalArgumentException("document is not attached")
-        scope.launch(attachment.watchJob) {
+        scope.launch(watchJobs[documentKey] ?: return) {
             require(isActive) {
                 "client is not active"
             }
-            attachments.map { it.filterValues { attachment -> attachment.isRealTimeSync } }
-                .map { it.keys }
+            attachments.map { it.filterValues { attachment -> attachment.isRealTimeSync }.keys }
                 .distinctUntilChanged()
+                .onEach { (watchJobs.keys - it).forEach(::cancelWatchJob) }
                 .map {
                     if (it.isNotEmpty()) {
                         watchDocumentRequest {
@@ -255,6 +259,11 @@ public class Client @VisibleForTesting internal constructor(
                     handleWatchDocumentsResponse(documentKey, it)
                 }
         }
+    }
+
+    private fun cancelWatchJob(documentKey: Document.Key) {
+        watchJobs[documentKey]?.cancel()
+        watchJobs -= documentKey
     }
 
     private suspend fun handleWatchDocumentsResponse(
@@ -392,7 +401,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun attachAsync(
         document: Document,
-        isRealSync: Boolean = true,
+        isRealTimeSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
             require(isActive) {
@@ -424,8 +433,9 @@ public class Client @VisibleForTesting internal constructor(
             attachments.value += document.key to Attachment(
                 document,
                 response.documentId,
-                isRealSync,
+                isRealTimeSync,
             )
+            watchJobs[document.key] = SupervisorJob()
             runWatchLoop(document.key)
             waitForInitialization(document.key)
             true
@@ -462,7 +472,7 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             if (document.status != DocumentStatus.Removed) {
                 document.status = DocumentStatus.Detached
-                cancelWatchJob(document.key)
+                attachments.value -= document.key
             }
             true
         }
@@ -476,8 +486,8 @@ public class Client @VisibleForTesting internal constructor(
             if (!isActive) {
                 return@async true
             }
-            activationJob.cancel()
-            attachments.value.keys.forEach(::cancelWatchJob)
+            activationJob.cancelChildren()
+            watchJobs.values.forEach(Job::cancel)
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 
             try {
@@ -519,7 +529,7 @@ public class Client @VisibleForTesting internal constructor(
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
-            cancelWatchJob(document.key)
+            attachments.value -= document.key
             true
         }
     }
@@ -534,28 +544,21 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private fun cancelWatchJob(documentKey: Document.Key) {
-        val attachment = attachments.value[documentKey]
-            ?: throw IllegalArgumentException("document is not attached")
-        attachment.watchJob.cancelChildren()
-        attachments.value -= documentKey
-    }
-
     /**
      * Pauses the realtime synchronization of the given [document].
      */
     public fun pause(document: Document) {
-        changeRealTimeSetting(document, false)
+        changeRealTimeSyncSetting(document, false)
     }
 
     /**
      * Resumes the realtime synchronization of the given [document].
      */
     public fun resume(document: Document) {
-        changeRealTimeSetting(document, true)
+        changeRealTimeSyncSetting(document, true)
     }
 
-    private fun changeRealTimeSetting(document: Document, isRealTimeSync: Boolean) {
+    private fun changeRealTimeSyncSetting(document: Document, isRealTimeSync: Boolean) {
         require(isActive) {
             "client is not active"
         }

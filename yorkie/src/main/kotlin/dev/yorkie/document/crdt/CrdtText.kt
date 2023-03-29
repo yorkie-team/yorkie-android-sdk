@@ -22,9 +22,12 @@ internal data class CrdtText(
     val removedNodesLength: Int
         get() = rgaTreeSplit.removedNodesLength
 
-    val values
-        get() = rgaTreeSplit.filterNot { it.isRemoved }
-            .map { it.value.content to it.value.attributes }
+    val values: List<TextWithAttributes>
+        get() = rgaTreeSplit.filterNot {
+            it.isRemoved
+        }.map {
+            TextWithAttributes(it.value.content to it.value.attributes)
+        }
 
     val length: Int
         get() = rgaTreeSplit.length

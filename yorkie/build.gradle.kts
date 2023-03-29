@@ -40,6 +40,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+
+        buildConfigField("String", "VERSION_NAME", """"$version"""")
     }
     buildTypes {
         debug {
@@ -121,8 +123,8 @@ android {
 }
 
 object Versions {
-    const val protobuf = "3.22.0"
-    const val grpc = "1.53.0"
+    const val protobuf = "3.22.2"
+    const val grpc = "1.54.0"
     const val grpcKotlin = "1.3.0"
     const val coroutines = "1.6.4"
 }

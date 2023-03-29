@@ -40,7 +40,6 @@ import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -52,12 +51,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -149,6 +145,7 @@ public class Client @VisibleForTesting internal constructor(
                 ),
             )
             runSyncLoop()
+            runWatchLoop()
             true
         }
     }
@@ -228,42 +225,43 @@ public class Client @VisibleForTesting internal constructor(
             }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private fun runWatchLoop(documentKey: Document.Key) {
-        val attachment = attachments.value[documentKey]
-            ?: throw IllegalArgumentException("document is not attached")
-        scope.launch(watchJobs[documentKey] ?: return) {
-            require(isActive) {
-                "client is not active"
-            }
-            attachments.map { it.filterValues { attachment -> attachment.isRealTimeSync }.keys }
-                .distinctUntilChanged()
-                .onEach { (watchJobs.keys - it).forEach(::cancelWatchJob) }
-                .map {
-                    if (it.isNotEmpty()) {
-                        watchDocumentRequest {
-                            client = toPBClient()
-                            documentId = attachment.documentID
-                        }
-                    } else {
-                        null
-                    }
-                }.flatMapLatest {
-                    it?.let(service::watchDocument) ?: emptyFlow()
-                }.retry {
-                    _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
-                    delay(options.reconnectStreamDelay.inWholeMilliseconds)
-                    true
-                }.collect {
-                    _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                    handleWatchDocumentsResponse(documentKey, it)
+    private fun runWatchLoop() {
+        scope.launch(activationJob) {
+            attachments.map {
+                it.filterValues(Attachment::isRealTimeSync)
+            }.fold(emptyMap<Document.Key, WatchJobHolder>()) { accumulator, attachments ->
+                (accumulator.keys - attachments.keys).forEach {
+                    accumulator.getValue(it).job.cancel()
                 }
+                attachments.entries.associate { (key, attachment) ->
+                    val previous = accumulator[key]
+                    key to if (previous?.documentID == attachment.documentID && previous.job.isActive) {
+                        previous
+                    } else {
+                        previous?.job?.cancel()
+                        WatchJobHolder(attachment.documentID, createWatchJob(attachment))
+                    }
+                }
+            }
         }
     }
 
-    private fun cancelWatchJob(documentKey: Document.Key) {
-        watchJobs[documentKey]?.cancel()
-        watchJobs -= documentKey
+    private fun createWatchJob(attachment: Attachment): Job {
+        return scope.launch {
+            service.watchDocument(
+                watchDocumentRequest {
+                    client = toPBClient()
+                    documentId = attachment.documentID
+                },
+            ).retry {
+                _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+                delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                true
+            }.collect {
+                _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
+                handleWatchDocumentsResponse(attachment.document.key, it)
+            }
+        }
     }
 
     private suspend fun handleWatchDocumentsResponse(
@@ -435,8 +433,6 @@ public class Client @VisibleForTesting internal constructor(
                 response.documentId,
                 isRealTimeSync,
             )
-            watchJobs[document.key] = SupervisorJob()
-            runWatchLoop(document.key)
             waitForInitialization(document.key)
             true
         }
@@ -567,6 +563,8 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
+
+    private class WatchJobHolder(val documentID: String, val job: Job)
 
     /**
      * Represents the status of the client.

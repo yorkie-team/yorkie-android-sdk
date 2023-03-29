@@ -235,7 +235,9 @@ public class Client @VisibleForTesting internal constructor(
                 }
                 attachments.entries.associate { (key, attachment) ->
                     val previous = accumulator[key]
-                    key to if (previous?.documentID == attachment.documentID && previous.job.isActive) {
+                    key to if (previous?.documentID == attachment.documentID &&
+                        previous.job.isActive
+                    ) {
                         previous
                     } else {
                         previous?.job?.cancel()

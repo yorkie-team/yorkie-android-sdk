@@ -182,7 +182,7 @@ class ClientTest {
 
     @Test
     fun test_peer_presence_consistency() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, _, _, key ->
             client1.updatePresenceAsync("name", "A").await()
             client2.updatePresenceAsync("name", "B").await()
 

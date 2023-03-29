@@ -162,7 +162,7 @@ public class Document(public val key: Key) {
     /**
      * Create [ChangePack] of [localChanges] to send to the remote server.
      */
-    internal suspend fun createChangePack() = withContext(dispatcher) {
+    internal suspend fun createChangePack(forceRemove: Boolean = false) = withContext(dispatcher) {
         val checkPoint = checkPoint.increaseClientSeq(localChanges.size)
         ChangePack(
             key.value,
@@ -170,7 +170,7 @@ public class Document(public val key: Key) {
             localChanges,
             null,
             null,
-            status == DocumentStatus.Removed,
+            forceRemove || status == DocumentStatus.Removed,
         )
     }
 

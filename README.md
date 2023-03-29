@@ -15,6 +15,8 @@ Read the [full documentation](https://yorkie.dev/docs) for all details.
 
 ## Developing the SDK
 
+To work on this project, make sure you have Android Studio version `Electric Eel | 2022.1.1` or later installed.
+
 For developers with MAC, you should add `protoc_platform=osx-x86_64` to your `local.properties`.
 
 ## Testing yorkie-android-sdk with Envoy, Yorkie and MongoDB.

@@ -9,7 +9,7 @@ import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.toPBClient
 import dev.yorkie.api.toPresence
 import dev.yorkie.api.v1.DocEventType
-import dev.yorkie.api.v1.WatchDocumentsResponse
+import dev.yorkie.api.v1.WatchDocumentResponse
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
@@ -18,7 +18,7 @@ import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.updatePresenceRequest
-import dev.yorkie.api.v1.watchDocumentsRequest
+import dev.yorkie.api.v1.watchDocumentRequest
 import dev.yorkie.core.Attachment.Companion.UninitializedPresences
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
@@ -40,7 +40,7 @@ import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
@@ -51,13 +51,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -179,10 +178,15 @@ public class Client @VisibleForTesting internal constructor(
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
      */
-    public fun syncAsync(): Deferred<Boolean> {
+    public fun syncAsync(document: Document? = null): Deferred<Boolean> {
         return scope.async {
             var isAllSuccess = true
-            val attachments: List<Attachment> = attachments.value.values.toList()
+            val attachments = document?.let {
+                listOf(
+                    attachments.value[it.key]
+                        ?: throw IllegalArgumentException("document is not attached"),
+                )
+            } ?: attachments.value.values
             attachments.asSyncFlow().collect { (document, result) ->
                 eventStream.emit(
                     if (result.isSuccess) {
@@ -197,7 +201,7 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private suspend fun List<Attachment>.asSyncFlow(): Flow<SyncResult> {
+    private suspend fun Collection<Attachment>.asSyncFlow(): Flow<SyncResult> {
         return asFlow()
             .map { attachment ->
                 val document = attachment.document
@@ -220,52 +224,70 @@ public class Client @VisibleForTesting internal constructor(
             }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     private fun runWatchLoop() {
         scope.launch(activationJob) {
-            attachments.map { it.filterValues { attachment -> attachment.isRealTimeSync } }
-                .map { it.keys }
-                .distinctUntilChanged()
-                .map {
-                    if (it.isNotEmpty()) {
-                        watchDocumentsRequest {
-                            client = toPBClient()
-                            documentKeys.addAll(it.map(Document.Key::value))
-                        }
+            attachments.map {
+                it.filterValues(Attachment::isRealTimeSync)
+            }.fold(emptyMap<Document.Key, WatchJobHolder>()) { accumulator, attachments ->
+                (accumulator.keys - attachments.keys).forEach {
+                    accumulator.getValue(it).job.cancel()
+                }
+                attachments.entries.associate { (key, attachment) ->
+                    val previous = accumulator[key]
+                    key to if (previous?.documentID == attachment.documentID &&
+                        previous.job.isActive
+                    ) {
+                        previous
                     } else {
-                        null
+                        previous?.job?.cancel()
+                        WatchJobHolder(attachment.documentID, createWatchJob(attachment))
                     }
-                }.flatMapLatest {
-                    it?.let(service::watchDocuments) ?: emptyFlow()
-                }.retry {
+                }
+            }
+        }
+    }
+
+    private suspend fun createWatchJob(attachment: Attachment): Job {
+        return supervisorScope {
+            launch {
+                service.watchDocument(
+                    watchDocumentRequest {
+                        client = toPBClient()
+                        documentId = attachment.documentID
+                    },
+                ).retry {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
                     delay(options.reconnectStreamDelay.inWholeMilliseconds)
                     true
                 }.collect {
                     _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                    handleWatchDocumentsResponse(it)
+                    handleWatchDocumentsResponse(attachment.document.key, it)
                 }
+            }
         }
     }
 
-    private suspend fun handleWatchDocumentsResponse(response: WatchDocumentsResponse) {
+    private suspend fun handleWatchDocumentsResponse(
+        documentKey: Document.Key,
+        response: WatchDocumentResponse,
+    ) {
         if (response.hasInitialization()) {
-            response.initialization.peersMapByDocMap.forEach { (documentKey, pbPeers) ->
-                val key = Document.Key(documentKey)
-                val attachment = attachments.value[key] ?: return@forEach
-                if (attachment.peerPresences == UninitializedPresences) {
-                    attachments.value += key to attachment.copy(peerPresences = Peers())
-                }
-                val peers = pbPeers.clientsList.associate { peer ->
-                    peer.id.toActorID() to peer.presence.toPresence()
-                }.asPeers()
-                val newAttachment = attachments.value
-                    .getValue(key)
-                    .copy(peerPresences = peers)
-                attachments.value += key to newAttachment
+            val pbPeers = response.initialization.peersList
+            val attachment = attachments.value[documentKey] ?: return
+            if (attachment.peerPresences == UninitializedPresences) {
+                attachments.value += documentKey to attachment.copy(peerPresences = Peers())
             }
-            val changedPeers = response.initialization.peersMapByDocMap.keys.map(Document::Key)
-                .associateWith { attachments.value[it]?.peerPresences.orEmpty().asPeers() }
+            val peers = pbPeers.associate { peer ->
+                peer.id.toActorID() to peer.presence.toPresence()
+            }.asPeers()
+            val newAttachment = attachments.value
+                .getValue(documentKey)
+                .copy(peerPresences = peers)
+            attachments.value += documentKey to newAttachment
+
+            val changedPeers = mapOf(
+                documentKey to attachments.value[documentKey]?.peerPresences.orEmpty().asPeers(),
+            )
             eventStream.emit(PeersChanged(Initialized(changedPeers)))
             emitPeerStatus()
             return
@@ -273,7 +295,6 @@ public class Client @VisibleForTesting internal constructor(
         val watchEvent = response.event
         val eventType = checkNotNull(watchEvent.type)
         // only single key will be received since 0.3.1 server.
-        val documentKey = watchEvent.documentKeysList.firstOrNull()?.let(Document::Key) ?: return
         val attachment = attachments.value[documentKey] ?: return
         val publisher = watchEvent.publisher.id.toActorID()
         val presence = watchEvent.publisher.presence.toPresence()
@@ -354,28 +375,24 @@ public class Client @VisibleForTesting internal constructor(
                 data = presenceInfo.data + (key to value),
             )
 
-            val documentKeys = realTimeAttachments().map { (key, attachment) ->
-                val newPeers = attachment.peerPresences + (requireClientId() to presenceInfo)
-                attachments.value += key to attachment.copy(peerPresences = newPeers)
-                key.value
-            }.takeIf {
-                it.isNotEmpty()
-            } ?: return@async true
-
+            realTimeAttachments().takeUnless { it.isEmpty() }
+                ?.forEach { (key, attachment) ->
+                    try {
+                        service.updatePresence(
+                            updatePresenceRequest {
+                                client = toPBClient()
+                                documentId = attachment.documentID
+                            },
+                        )
+                    } catch (e: StatusException) {
+                        YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
+                        return@async false
+                    }
+                    val newPeers = attachment.peerPresences + (requireClientId() to presenceInfo)
+                    attachments.value += key to attachment.copy(peerPresences = newPeers)
+                } ?: return@async true
             emitPeerStatus()
-
-            try {
-                service.updatePresence(
-                    updatePresenceRequest {
-                        client = toPBClient()
-                        this.documentKeys.addAll(documentKeys)
-                    },
-                )
-                true
-            } catch (e: StatusException) {
-                YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
-                false
-            }
+            true
         }
     }
 
@@ -385,7 +402,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun attachAsync(
         document: Document,
-        isRealSync: Boolean = true,
+        isRealTimeSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
             require(isActive) {
@@ -417,7 +434,7 @@ public class Client @VisibleForTesting internal constructor(
             attachments.value += document.key to Attachment(
                 document,
                 response.documentId,
-                isRealSync,
+                isRealTimeSync,
             )
             waitForInitialization(document.key)
             true
@@ -454,8 +471,8 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             if (document.status != DocumentStatus.Removed) {
                 document.status = DocumentStatus.Detached
+                attachments.value -= document.key
             }
-            attachments.value -= document.key
             true
         }
     }
@@ -499,7 +516,7 @@ public class Client @VisibleForTesting internal constructor(
 
             val request = removeDocumentRequest {
                 clientId = requireClientId().toByteString()
-                changePack = document.createChangePack().toPBChangePack()
+                changePack = document.createChangePack(forceRemove = true).toPBChangePack()
                 documentId = attachment.documentID
             }
             val response = try {
@@ -529,17 +546,17 @@ public class Client @VisibleForTesting internal constructor(
      * Pauses the realtime synchronization of the given [document].
      */
     public fun pause(document: Document) {
-        changeRealTimeSetting(document, false)
+        changeRealTimeSyncSetting(document, false)
     }
 
     /**
      * Resumes the realtime synchronization of the given [document].
      */
     public fun resume(document: Document) {
-        changeRealTimeSetting(document, true)
+        changeRealTimeSyncSetting(document, true)
     }
 
-    private fun changeRealTimeSetting(document: Document, isRealTimeSync: Boolean) {
+    private fun changeRealTimeSyncSetting(document: Document, isRealTimeSync: Boolean) {
         require(isActive) {
             "client is not active"
         }
@@ -548,6 +565,8 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
+
+    private class WatchJobHolder(val documentID: String, val job: Job)
 
     /**
      * Represents the status of the client.

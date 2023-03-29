@@ -21,6 +21,7 @@ fun String.toDocKey(): Document.Key {
 }
 
 fun withTwoClientsAndDocuments(
+    detachDocuments: Boolean = true,
     callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
 ) {
     runBlocking {
@@ -38,8 +39,10 @@ fun withTwoClientsAndDocuments(
 
         callback.invoke(this, client1, client2, document1, document2, documentKey)
 
-        client1.detachAsync(document1).await()
-        client2.detachAsync(document2).await()
+        if (detachDocuments) {
+            client1.detachAsync(document1).await()
+            client2.detachAsync(document2).await()
+        }
         client1.deactivateAsync().await()
         client2.deactivateAsync().await()
     }

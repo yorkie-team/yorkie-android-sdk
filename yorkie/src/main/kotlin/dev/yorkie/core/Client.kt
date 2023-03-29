@@ -56,6 +56,7 @@ import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -246,20 +247,22 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private fun createWatchJob(attachment: Attachment): Job {
-        return scope.launch {
-            service.watchDocument(
-                watchDocumentRequest {
-                    client = toPBClient()
-                    documentId = attachment.documentID
-                },
-            ).retry {
-                _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
-                delay(options.reconnectStreamDelay.inWholeMilliseconds)
-                true
-            }.collect {
-                _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                handleWatchDocumentsResponse(attachment.document.key, it)
+    private suspend fun createWatchJob(attachment: Attachment): Job {
+        return supervisorScope {
+            launch {
+                service.watchDocument(
+                    watchDocumentRequest {
+                        client = toPBClient()
+                        documentId = attachment.documentID
+                    },
+                ).retry {
+                    _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+                    delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                    true
+                }.collect {
+                    _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
+                    handleWatchDocumentsResponse(attachment.document.key, it)
+                }
             }
         }
     }

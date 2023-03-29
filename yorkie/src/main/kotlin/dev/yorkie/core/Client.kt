@@ -80,8 +80,6 @@ public class Client @VisibleForTesting internal constructor(
 
     private val attachments = MutableStateFlow<Map<Document.Key, Attachment>>(emptyMap())
 
-    private val watchJobs = mutableMapOf<Document.Key, Job>()
-
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()
 
@@ -485,7 +483,6 @@ public class Client @VisibleForTesting internal constructor(
                 return@async true
             }
             activationJob.cancelChildren()
-            watchJobs.values.forEach(Job::cancel)
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 
             try {

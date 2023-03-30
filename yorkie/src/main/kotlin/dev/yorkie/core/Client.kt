@@ -10,7 +10,7 @@ import dev.yorkie.api.toPBClient
 import dev.yorkie.api.toPresence
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchDocumentResponse
-import dev.yorkie.api.v1.YorkieServiceGrpcKt
+import dev.yorkie.api.v1.YorkieServiceGrpcKt.YorkieServiceCoroutineStub
 import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.deactivateClientRequest
@@ -56,7 +56,6 @@ import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -250,21 +249,19 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private suspend fun createWatchJob(attachment: Attachment): Job {
-        return supervisorScope {
-            launch {
-                service.watchDocument(
-                    watchDocumentRequest {
-                        client = toPBClient()
-                        documentId = attachment.documentID
-                    },
-                ).retry {
-                    _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
-                    delay(options.reconnectStreamDelay.inWholeMilliseconds)
-                    true
-                }.collect {
-                    _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                    handleWatchDocumentsResponse(attachment.document.key, it)
-                }
+        return scope.launch(activationJob) {
+            service.watchDocument(
+                watchDocumentRequest {
+                    client = toPBClient()
+                    documentId = attachment.documentID
+                },
+            ).retry {
+                _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+                delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                true
+            }.collect {
+                _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
+                handleWatchDocumentsResponse(attachment.document.key, it)
             }
         }
     }

@@ -60,11 +60,12 @@ $dokka.location:dev.yorkie.core/Client/isActive/#/PointingToDeclaration/yorkie/
 $dokka.location:dev.yorkie.core/Client/pause/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/pause.html
 $dokka.location:dev.yorkie.core/Client/peerStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/peer-status.html
 $dokka.location:dev.yorkie.core/Client/presenceInfo/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/presence-info.html
+$dokka.location:dev.yorkie.core/Client/removeAsync/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/remove-async.html
 $dokka.location:dev.yorkie.core/Client/requireClientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-client-id.html
 $dokka.location:dev.yorkie.core/Client/resume/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/resume.html
 $dokka.location:dev.yorkie.core/Client/status/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/status.html
 $dokka.location:dev.yorkie.core/Client/streamConnectionStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/stream-connection-status.html
-$dokka.location:dev.yorkie.core/Client/syncAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/sync-async.html
+$dokka.location:dev.yorkie.core/Client/syncAsync/#dev.yorkie.document.Document?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/sync-async.html
 $dokka.location:dev.yorkie.core/Client/updatePresenceAsync/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/update-presence-async.html
 $dokka.location:dev.yorkie.core/Peers.Companion///PointingToDeclaration/yorkie/dev.yorkie.core/-peers/-companion/index.html
 $dokka.location:dev.yorkie.core/Peers.Companion/asPeers/kotlin.Pair[dev.yorkie.document.time.ActorID,dev.yorkie.core.PresenceInfo]#/PointingToDeclaration/yorkie/dev.yorkie.core/-peers/-companion/as-peers.html
@@ -198,6 +199,12 @@ $dokka.location:dev.yorkie.document.time/TimeTicket/compareTo/#dev.yorkie.docume
 $dokka.location:dev.yorkie.document.time/TimeTicket/delimiter/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/delimiter.html
 $dokka.location:dev.yorkie.document.time/TimeTicket/lamport/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/lamport.html
 $dokka.location:dev.yorkie.document////PointingToDeclaration/yorkie/dev.yorkie.document/index.html
+$dokka.location:dev.yorkie.document/Document.DocumentStatus.Attached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-document-status/-attached/index.html
+$dokka.location:dev.yorkie.document/Document.DocumentStatus.Detached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-document-status/-detached/index.html
+$dokka.location:dev.yorkie.document/Document.DocumentStatus.Removed///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-document-status/-removed/index.html
+$dokka.location:dev.yorkie.document/Document.DocumentStatus///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/index.html
+$dokka.location:dev.yorkie.document/Document.DocumentStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/value-of.html
+$dokka.location:dev.yorkie.document/Document.DocumentStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/values.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/index.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/ChangeInfo/#dev.yorkie.document.change.Change#kotlin.collections.List[kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/-change-info.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/change/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/change.html
@@ -217,6 +224,7 @@ $dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Docum
 $dokka.location:dev.yorkie.document/Document/events/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
+$dokka.location:dev.yorkie.document/Document/status/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/status.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html
 $dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.Function1[dev.yorkie.document.json.JsonObject,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
 dev.yorkie.core

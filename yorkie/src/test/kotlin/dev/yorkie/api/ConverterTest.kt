@@ -124,6 +124,7 @@ class ConverterTest {
             listOf(change),
             null,
             null,
+            isRemoved = false,
         )
         val converted = changePack.toPBChangePack().toChangePack()
 
@@ -149,6 +150,7 @@ class ConverterTest {
             listOf(change),
             "snapshot".toByteStringUtf8(),
             InitialTimeTicket,
+            isRemoved = false,
         )
         val converted = changePack.toPBChangePack().toChangePack()
 

@@ -53,8 +53,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
     init {
         viewModelScope.launch {
-            if (client.activateAsync().await()) {
-                client.attachAsync(document).await()
+            if (client.activateAsync().await() && client.attachAsync(document).await()) {
                 document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
                     ?.onChanges(remoteChangeEventHandler)
                     ?: run {

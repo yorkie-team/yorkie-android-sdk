@@ -15,29 +15,31 @@ import dev.yorkie.api.v1.DetachDocumentResponse
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
-import dev.yorkie.api.v1.PushPullRequest
-import dev.yorkie.api.v1.PushPullResponse
+import dev.yorkie.api.v1.PushPullChangesRequest
+import dev.yorkie.api.v1.PushPullChangesResponse
+import dev.yorkie.api.v1.RemoveDocumentRequest
+import dev.yorkie.api.v1.RemoveDocumentResponse
 import dev.yorkie.api.v1.UpdatePresenceRequest
 import dev.yorkie.api.v1.UpdatePresenceResponse
 import dev.yorkie.api.v1.ValueType
-import dev.yorkie.api.v1.WatchDocumentsRequest
-import dev.yorkie.api.v1.WatchDocumentsResponse
-import dev.yorkie.api.v1.WatchDocumentsResponseKt.initialization
+import dev.yorkie.api.v1.WatchDocumentRequest
+import dev.yorkie.api.v1.WatchDocumentResponse
+import dev.yorkie.api.v1.WatchDocumentResponseKt.initialization
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.api.v1.activateClientResponse
 import dev.yorkie.api.v1.attachDocumentResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.client
-import dev.yorkie.api.v1.clients
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachDocumentResponse
 import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.presence
-import dev.yorkie.api.v1.pushPullResponse
-import dev.yorkie.api.v1.watchDocumentsResponse
+import dev.yorkie.api.v1.pushPullChangesResponse
+import dev.yorkie.api.v1.removeDocumentResponse
+import dev.yorkie.api.v1.watchDocumentResponse
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
@@ -87,6 +89,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                 ).toByteString()
                 minSyncedTicket = PBTimeTicket.getDefaultInstance()
             }
+            documentId = changePack.documentKey
         }
     }
 
@@ -99,11 +102,11 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         }
     }
 
-    override suspend fun pushPull(request: PushPullRequest): PushPullResponse {
+    override suspend fun pushPullChanges(request: PushPullChangesRequest): PushPullChangesResponse {
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
             throw StatusException(Status.UNAVAILABLE)
         }
-        return pushPullResponse {
+        return pushPullChangesResponse {
             clientId = request.clientId
             changePack = changePack {
                 minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
@@ -139,65 +142,59 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         }
     }
 
-    override fun watchDocuments(request: WatchDocumentsRequest): Flow<WatchDocumentsResponse> {
-        val keys = request.documentKeysList
+    override fun watchDocument(request: WatchDocumentRequest): Flow<WatchDocumentResponse> {
+        val key = request.documentId
         return flow {
-            if (keys.size == 1 && keys.contains(SLOW_INITIALIZATION_DOCUMENT_KEY)) {
+            if (key == SLOW_INITIALIZATION_DOCUMENT_KEY) {
                 delay(5_000)
                 emit(
-                    watchDocumentsResponse {
+                    watchDocumentResponse {
                         initialization = initialization {
-                            peersMapByDoc[SLOW_INITIALIZATION_DOCUMENT_KEY] = clients {
-                                clients.add(
-                                    client {
-                                        id = request.client.id
-                                        presence = presence {
-                                            clock = 1
-                                            data["k1"] = "v1"
-                                        }
-                                    },
-                                )
-                            }
+                            peers.add(
+                                client {
+                                    id = request.client.id
+                                    presence = presence {
+                                        clock = 1
+                                        data["k1"] = "v1"
+                                    }
+                                },
+                            )
                         }
                     },
                 )
             } else {
                 emit(
-                    watchDocumentsResponse {
+                    watchDocumentResponse {
                         initialization = initialization {
-                            keys.forEach {
-                                peersMapByDoc[it] = clients {
-                                    clients.add(
-                                        client {
-                                            id = request.client.id
-                                            presence = presence {
-                                                clock = 1
-                                                data["k1"] = "v1"
-                                            }
-                                        },
-                                    )
-                                }
-                            }
+                            peers.add(
+                                client {
+                                    id = request.client.id
+                                    presence = presence {
+                                        clock = 1
+                                        data["k1"] = "v1"
+                                    }
+                                },
+                            )
                         }
                     },
                 )
             }
             delay(1_000)
-            if (keys.contains(WATCH_SYNC_ERROR_DOCUMENT_KEY)) {
+            if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
                 throw StatusException(Status.UNAVAILABLE)
             }
             emit(
-                watchDocumentsResponse {
+                watchDocumentResponse {
                     event = docEvent {
                         type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
                         publisher = request.client
-                        documentKeys.addAll(keys)
+                        documentId = key
                     }
                 },
             )
             delay(1_000)
             emit(
-                watchDocumentsResponse {
+                watchDocumentResponse {
                     event = docEvent {
                         type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED
                         publisher = client {
@@ -207,13 +204,13 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                                 data["k1"] = "v1"
                             }
                         }
-                        documentKeys.addAll(keys)
+                        documentId = key
                     }
                 },
             )
             delay(3_000)
             emit(
-                watchDocumentsResponse {
+                watchDocumentResponse {
                     event = docEvent {
                         type = DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED
                         publisher = client {
@@ -223,19 +220,19 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                                 data["k1"] = "v2"
                             }
                         }
-                        documentKeys.addAll(keys)
+                        documentId = key
                     }
                 },
             )
             delay(2_000)
             emit(
-                watchDocumentsResponse {
+                watchDocumentResponse {
                     event = docEvent {
                         type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED
                         publisher = client {
                             id = ActorID.MAX_ACTOR_ID.toByteString()
                         }
-                        documentKeys.addAll(keys)
+                        documentId = key
                     }
                 },
             )
@@ -243,10 +240,29 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
     }
 
     override suspend fun updatePresence(request: UpdatePresenceRequest): UpdatePresenceResponse {
-        if (request.documentKeysList.contains(UPDATE_PRESENCE_ERROR_DOCUMENT_KEY)) {
+        if (request.documentId == UPDATE_PRESENCE_ERROR_DOCUMENT_KEY) {
             throw StatusException(Status.UNAVAILABLE)
         }
         return UpdatePresenceResponse.getDefaultInstance()
+    }
+
+    override suspend fun removeDocument(request: RemoveDocumentRequest): RemoveDocumentResponse {
+        if (request.documentId == REMOVE_ERROR_DOCUMENT_KEY) {
+            throw StatusException(Status.UNAVAILABLE)
+        }
+        return removeDocumentResponse {
+            clientKey = TEST_KEY
+            changePack = changePack {
+                minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
+                changes.add(
+                    change {
+                        operations.add(createSetOperation())
+                        operations.add(createRemoveOperation())
+                    },
+                )
+                isRemoved = true
+            }
+        }
     }
 
     companion object {
@@ -257,6 +273,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val UPDATE_PRESENCE_ERROR_DOCUMENT_KEY = "UPDATE_PRESENCE_ERROR_DOCUMENT_KEY"
         internal const val SLOW_INITIALIZATION_DOCUMENT_KEY = "SLOW_INITIALIZATION_DOCUMENT_KEY"
+        internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000ffff0000000000")
     }
 }

@@ -37,7 +37,7 @@ public class Document(public val key: Key) {
     private val localChanges = mutableListOf<Change>()
 
     private val eventStream = MutableSharedFlow<Event>()
-    val events = eventStream.asSharedFlow()
+    public val events = eventStream.asSharedFlow()
 
     @Volatile
     private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = ElementRht()))
@@ -53,6 +53,10 @@ public class Document(public val key: Key) {
     internal val hasLocalChanges: Boolean
         get() = localChanges.isNotEmpty()
 
+    @Volatile
+    public var status = DocumentStatus.Detached
+        internal set
+
     /**
      * Executes the given [updater] to update this document.
      */
@@ -61,6 +65,10 @@ public class Document(public val key: Key) {
         updater: (root: JsonObject) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
+            require(status != DocumentStatus.Removed) {
+                "document is removed"
+            }
+
             val clone = ensureClone()
             val context = ChangeContext(
                 id = changeID.next(),
@@ -114,6 +122,10 @@ public class Document(public val key: Key) {
         checkPoint = checkPoint.forward(pack.checkPoint)
 
         pack.minSyncedTicket?.let(::garbageCollect)
+
+        if (pack.isRemoved) {
+            status = DocumentStatus.Removed
+        }
     }
 
     /**
@@ -150,9 +162,16 @@ public class Document(public val key: Key) {
     /**
      * Create [ChangePack] of [localChanges] to send to the remote server.
      */
-    internal suspend fun createChangePack() = withContext(dispatcher) {
+    internal suspend fun createChangePack(forceRemove: Boolean = false) = withContext(dispatcher) {
         val checkPoint = checkPoint.increaseClientSeq(localChanges.size)
-        ChangePack(key.value, checkPoint, localChanges, null, null)
+        ChangePack(
+            key.value,
+            checkPoint,
+            localChanges,
+            null,
+            null,
+            forceRemove || status == DocumentStatus.Removed,
+        )
     }
 
     /**
@@ -235,4 +254,27 @@ public class Document(public val key: Key) {
      */
     @JvmInline
     public value class Key(public val value: String)
+
+    /**
+     * Represents the status of the [Document].
+     */
+    public enum class DocumentStatus {
+        /**
+         * Means that this [Document] is attached to the client.
+         * The actor of the ticket is created with being assigned by the client.
+         */
+        Attached,
+
+        /**
+         * Means that this [Document] is not attached to the client.
+         * The actor of the ticket is created without being assigned.
+         */
+        Detached,
+
+        /**
+         * Means that this [Document] is removed.
+         * If the [Document] is removed, it cannot be edited.
+         */
+        Removed,
+    }
 }

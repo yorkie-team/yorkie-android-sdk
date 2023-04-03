@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.Spannable
 import android.text.style.BackgroundColorSpan
+import android.util.Log
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.text.getSpans
@@ -15,6 +16,8 @@ import dev.yorkie.core.Client
 import dev.yorkie.document.crdt.TextChange
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.Logger
+import dev.yorkie.util.YorkieLogger
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -115,5 +118,18 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SELECTION_END = "selection end"
+
+        init {
+            YorkieLogger.logger = object : Logger {
+
+                override fun d(tag: String, message: String) {
+                    Log.d(tag, message)
+                }
+
+                override fun e(tag: String, message: String) {
+                    Log.e(tag, message)
+                }
+            }
+        }
     }
 }

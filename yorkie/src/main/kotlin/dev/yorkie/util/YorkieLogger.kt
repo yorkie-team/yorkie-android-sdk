@@ -1,9 +1,9 @@
 package dev.yorkie.util
 
-internal object YorkieLogger {
+public object YorkieLogger {
     private const val TAG_PREFIX = "Yorkie."
 
-    private var logger: Logger? = null
+    public var logger: Logger? = null
 
     fun d(tag: String, message: String) {
         logger?.d("$TAG_PREFIX$tag", message)
@@ -14,7 +14,7 @@ internal object YorkieLogger {
     }
 }
 
-internal interface Logger {
+public interface Logger {
     fun d(tag: String, message: String)
 
     fun e(tag: String, message: String)

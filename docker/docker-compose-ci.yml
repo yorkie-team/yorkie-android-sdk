@@ -15,7 +15,7 @@ services:
     depends_on:
       - yorkie
   yorkie:
-    image: 'yorkieteam/yorkie:0.3.1'
+    image: 'yorkieteam/yorkie:latest'
     container_name: 'yorkie'
     command: [
       'server',
@@ -26,7 +26,6 @@ services:
     ports:
       - '11101:11101'
       - '11102:11102'
-      - '11103:11103'
     depends_on:
       - mongo
   mongo:

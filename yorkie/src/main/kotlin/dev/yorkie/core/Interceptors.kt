@@ -26,4 +26,4 @@ internal fun Client.Options.authInterceptor(): ClientInterceptor? {
     return MetadataUtils.newAttachHeadersInterceptor(metadata)
 }
 
-private fun String.asMetadataKey() = Metadata.Key.of(this, Metadata.ASCII_STRING_MARSHALLER)
+internal fun String.asMetadataKey() = Metadata.Key.of(this, Metadata.ASCII_STRING_MARSHALLER)

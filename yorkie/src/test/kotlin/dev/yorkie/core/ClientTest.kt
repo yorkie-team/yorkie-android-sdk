@@ -89,7 +89,7 @@ class ClientTest {
         channel = grpcCleanup.register(
             InProcessChannelBuilder.forName(serverName).directExecutor().build(),
         )
-        target = Client(channel, Client.Options(key = TEST_KEY))
+        target = Client(channel, Client.Options(key = TEST_KEY, apiKey = TEST_KEY))
     }
 
     @Test

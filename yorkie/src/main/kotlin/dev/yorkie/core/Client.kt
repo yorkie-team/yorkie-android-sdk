@@ -106,11 +106,11 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private val projectBasedRequestHeader = Metadata().apply {
-        put("x-shard-key".asMetadataKey(), options.apiKey)
+        put("x-shard-key".asMetadataKey(), options.apiKey.orEmpty())
     }
 
     private fun documentBasedRequestHeader(documentKey: Document.Key) = Metadata().apply {
-        put("x-shard-key".asMetadataKey(), "${options.apiKey}/${documentKey.value}")
+        put("x-shard-key".asMetadataKey(), "${options.apiKey.orEmpty()}/${documentKey.value}")
     }
 
     public constructor(

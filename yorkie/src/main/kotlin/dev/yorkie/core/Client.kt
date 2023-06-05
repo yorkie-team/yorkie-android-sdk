@@ -36,6 +36,7 @@ import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import io.grpc.CallOptions
 import io.grpc.Channel
+import io.grpc.Metadata
 import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
 import kotlinx.coroutines.CoroutineScope
@@ -104,6 +105,14 @@ public class Client @VisibleForTesting internal constructor(
         )
     }
 
+    private val projectBasedRequestHeader = Metadata().apply {
+        put("x-shard-key".asMetadataKey(), options.apiKey.orEmpty())
+    }
+
+    private fun documentBasedRequestHeader(documentKey: Document.Key) = Metadata().apply {
+        put("x-shard-key".asMetadataKey(), "${options.apiKey.orEmpty()}/${documentKey.value}")
+    }
+
     public constructor(
         context: Context,
         rpcHost: String,
@@ -133,6 +142,7 @@ public class Client @VisibleForTesting internal constructor(
                     activateClientRequest {
                         clientKey = options.key
                     },
+                    projectBasedRequestHeader,
                 )
             } catch (e: StatusException) {
                 YorkieLogger.e("Client.activate", e.stackTraceToString())
@@ -214,7 +224,10 @@ public class Client @VisibleForTesting internal constructor(
                             changePack = document.createChangePack().toPBChangePack()
                             documentId = attachment.documentID
                         }
-                        val response = service.pushPullChanges(request)
+                        val response = service.pushPullChanges(
+                            request,
+                            documentBasedRequestHeader(document.key),
+                        )
                         val responsePack = response.changePack.toChangePack()
                         document.applyChangePack(responsePack)
                         if (document.status == DocumentStatus.Removed) {
@@ -255,6 +268,7 @@ public class Client @VisibleForTesting internal constructor(
                     client = toPBClient()
                     documentId = attachment.documentID
                 },
+                documentBasedRequestHeader(attachment.document.key),
             ).retry {
                 _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
                 delay(options.reconnectStreamDelay.inWholeMilliseconds)
@@ -309,6 +323,7 @@ public class Client @VisibleForTesting internal constructor(
                 )
                 emitPeerStatus()
             }
+
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
                 val removedPresence = presences[publisher]
                 removedPresence?.let {
@@ -322,12 +337,14 @@ public class Client @VisibleForTesting internal constructor(
                 }
                 emitPeerStatus()
             }
+
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
                 attachments.value += documentKey to attachment.copy(
                     remoteChangeEventReceived = true,
                 )
                 eventStream.emit(Event.DocumentsChanged(listOf(documentKey)))
             }
+
             DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {
                 if ((presences[publisher]?.clock ?: -1) < presence.clock) {
                     val newPeers = presences + (publisher to presence)
@@ -340,6 +357,7 @@ public class Client @VisibleForTesting internal constructor(
                 )
                 emitPeerStatus()
             }
+
             DocEventType.UNRECOGNIZED -> {
                 // nothing to do
             }
@@ -382,6 +400,7 @@ public class Client @VisibleForTesting internal constructor(
                                 client = toPBClient()
                                 documentId = attachment.documentID
                             },
+                            documentBasedRequestHeader(key),
                         )
                     } catch (e: StatusException) {
                         YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
@@ -417,7 +436,10 @@ public class Client @VisibleForTesting internal constructor(
                 changePack = document.createChangePack().toPBChangePack()
             }
             val response = try {
-                service.attachDocument(request)
+                service.attachDocument(
+                    request,
+                    documentBasedRequestHeader(document.key),
+                )
             } catch (e: StatusException) {
                 YorkieLogger.e("Client.attach", e.stackTraceToString())
                 return@async false
@@ -461,7 +483,10 @@ public class Client @VisibleForTesting internal constructor(
                 documentId = attachment.documentID
             }
             val response = try {
-                service.detachDocument(request)
+                service.detachDocument(
+                    request,
+                    documentBasedRequestHeader(document.key),
+                )
             } catch (e: StatusException) {
                 YorkieLogger.e("Client.detach", e.stackTraceToString())
                 return@async false
@@ -492,6 +517,7 @@ public class Client @VisibleForTesting internal constructor(
                     deactivateClientRequest {
                         clientId = requireClientId().toByteString()
                     },
+                    projectBasedRequestHeader,
                 )
             } catch (e: StatusException) {
                 YorkieLogger.e("Client.deactivate", e.stackTraceToString())
@@ -519,7 +545,10 @@ public class Client @VisibleForTesting internal constructor(
                 documentId = attachment.documentID
             }
             val response = try {
-                service.removeDocument(request)
+                service.removeDocument(
+                    request,
+                    documentBasedRequestHeader(document.key),
+                )
             } catch (e: StatusException) {
                 YorkieLogger.e("Client.remove", e.stackTraceToString())
                 return@async false

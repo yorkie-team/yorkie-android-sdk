@@ -398,7 +398,10 @@ class ClientTest {
                 it["c2"] = 1
             }.await()
             withTimeout(1_000L) {
-                while (document1Events.size < 3 || document2Events.size < 3 || document3Events.size < 2) {
+                while (document1Events.size < 3 ||
+                    document2Events.size < 3 ||
+                    document3Events.size < 2
+                ) {
                     delay(50)
                 }
             }

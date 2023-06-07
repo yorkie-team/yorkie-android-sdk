@@ -48,7 +48,9 @@ public class Document(public val key: Key) {
         private set
 
     private var changeID = ChangeID.InitialChangeID
-    private var checkPoint = CheckPoint.InitialCheckPoint
+
+    @VisibleForTesting
+    internal var checkPoint = CheckPoint.InitialCheckPoint
 
     internal val hasLocalChanges: Boolean
         get() = localChanges.isNotEmpty()

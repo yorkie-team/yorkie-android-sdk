@@ -67,7 +67,7 @@ public class Document(public val key: Key) {
         updater: (root: JsonObject) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
-            require(status != DocumentStatus.Removed) {
+            check(status != DocumentStatus.Removed) {
                 "document is removed"
             }
 

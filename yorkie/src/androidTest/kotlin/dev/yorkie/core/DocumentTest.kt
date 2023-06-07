@@ -22,7 +22,7 @@ class DocumentTest {
             val document = Document(documentKey)
 
             // 01. client is not activated.
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(IllegalStateException::class) {
                 client.removeAsync(document).await()
             }
 
@@ -38,7 +38,7 @@ class DocumentTest {
             assertEquals(DocumentStatus.Removed, document.status)
 
             // 04. try to update a removed document.
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(IllegalStateException::class) {
                 document.updateAsync {
                     it["key"] = 0
                 }.await()

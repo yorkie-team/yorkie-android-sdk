@@ -16,6 +16,9 @@ public class JsonCounter internal constructor(
     public val id
         get() = target.id
 
+    public val value
+        get() = target.value
+
     public fun increase(value: Int): JsonCounter {
         return increaseInternal(value)
     }
@@ -27,6 +30,7 @@ public class JsonCounter internal constructor(
     private fun increaseInternal(value: CounterValue): JsonCounter {
         val ticket = context.issueTimeTicket()
         val counterValue = CrdtPrimitive(value, ticket)
+        target.increase(counterValue)
         context.push(
             IncreaseOperation(
                 value = counterValue,

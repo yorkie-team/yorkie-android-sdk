@@ -1,6 +1,7 @@
 package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.DocumentSyncResult
 import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.Event.DocumentsChanged
@@ -8,7 +9,9 @@ import dev.yorkie.core.Client.StreamConnectionStatus
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
+import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
@@ -28,6 +31,7 @@ import java.util.UUID
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 @RunWith(AndroidJUnit4::class)
@@ -207,6 +211,272 @@ class ClientTest {
                     status.entries.first { it.key == client2.requireClientId() }.value.data,
                 )
             }
+        }
+    }
+
+    @Test
+    fun test_change_realtime_sync() {
+        runBlocking {
+            val client1 = createClient()
+            val client2 = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val document1 = Document(documentKey)
+            val document2 = Document(documentKey)
+
+            client1.activateAsync().await()
+            client2.activateAsync().await()
+
+            // 01. c1 and c2 attach the doc with manual sync mode.
+            //     c1 updates the doc, but c2 doesn't get until call sync manually.
+            client1.attachAsync(document1, false).await()
+            client2.attachAsync(document2, false).await()
+
+            document1.updateAsync {
+                it["version"] = "v1"
+            }.await()
+            assertNotEquals(document1.toJson(), document2.toJson())
+            client1.syncAsync().await()
+            client2.syncAsync().await()
+            assertEquals(document1.toJson(), document2.toJson())
+
+            // 02. c2 changes the sync mode to realtime sync mode.
+            val client2Events = mutableListOf<Client.Event>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                client2.events.filterNot {
+                    it is Client.Event.PeersChanged
+                }.collect(client2Events::add)
+            }
+            client2.resume(document2)
+            document1.updateAsync {
+                it["version"] = "v2"
+            }.await()
+            client1.syncAsync().await()
+            withTimeout(1_000) {
+                while (client2Events.size < 2) {
+                    delay(50)
+                }
+            }
+            assertIs<DocumentSynced>(client2Events.last())
+            assertEquals(document1.toJson(), document2.toJson())
+            collectJob.cancel()
+
+            // 03. c2 changes the sync mode to manual sync mode again.
+            client2.pause(document2)
+            document1.updateAsync {
+                it["version"] = "v3"
+            }.await()
+            assertNotEquals(document1.toJson(), document2.toJson())
+            client1.syncAsync().await()
+            client2.syncAsync().await()
+            assertEquals(document1.toJson(), document2.toJson())
+
+            client1.detachAsync(document1).await()
+            client2.detachAsync(document2).await()
+            client1.deactivateAsync().await()
+            client2.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun test_change_sync_mode_in_manual_sync() {
+        runBlocking {
+            val client1 = createClient()
+            val client2 = createClient()
+            val client3 = createClient()
+
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val document1 = Document(documentKey)
+            val document2 = Document(documentKey)
+            val document3 = Document(documentKey)
+
+            client1.activateAsync().await()
+            client2.activateAsync().await()
+            client3.activateAsync().await()
+
+            // 01. client2, client2, client3 attach to the same document
+            client1.attachAsync(document1, false).await()
+            client2.attachAsync(document2, false).await()
+            client3.attachAsync(document3, false).await()
+
+            // 02. client1 and client2 sync with push-pull mode.
+            document1.updateAsync {
+                it["c1"] = 0
+            }.await()
+            document2.updateAsync {
+                it["c2"] = 0
+            }.await()
+
+            client1.syncAsync().await()
+            client2.syncAsync().await()
+            client1.syncAsync().await()
+            assertJsonContentEquals("""{"c1":0,"c2":0}""", document1.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":0}""", document2.toJson())
+
+            // 03. client1 and client2 sync with push-only mode.
+            // So, the changes of client1 and client2 are not reflected to each other.
+            // But, client3 can get the changes of client1 and client2,
+            // because client3 sync with push-pull mode.
+            document1.updateAsync {
+                it["c1"] = 1
+            }.await()
+            document2.updateAsync {
+                it["c2"] = 1
+            }.await()
+
+            client1.syncAsync(document1, Client.SyncMode.PushOnly).await()
+            client2.syncAsync(document2, Client.SyncMode.PushOnly).await()
+            client3.syncAsync().await()
+            assertJsonContentEquals("""{"c1":1,"c2":0}""", document1.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":1}""", document2.toJson())
+            assertJsonContentEquals("""{"c1":1,"c2":1}""", document3.toJson())
+
+            // 04. client1 and client2 sync with push-pull mode.
+            client1.syncAsync().await()
+            client2.syncAsync().await()
+            assertJsonContentEquals("""{"c1":1,"c2":1}""", document1.toJson())
+            assertJsonContentEquals("""{"c1":1,"c2":1}""", document2.toJson())
+
+            client1.detachAsync(document1).await()
+            client2.detachAsync(document2).await()
+            client3.detachAsync(document3).await()
+            client1.deactivateAsync().await()
+            client2.deactivateAsync().await()
+            client3.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun test_change_sync_mode_in_realtime_sync() {
+        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+            val client3 = createClient()
+            client3.activateAsync().await()
+
+            // 01. c1, c2, c3 attach to the same document in realtime sync.
+            val document3 = Document(key)
+            client3.attachAsync(document3).await()
+
+            val document1Events = mutableListOf<Document.Event>()
+            val document2Events = mutableListOf<Document.Event>()
+            val document3Events = mutableListOf<Document.Event>()
+            val collectJobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    document1.events.collect(document1Events::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    document2.events.collect(document2Events::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    document3.events.collect(document3Events::add)
+                },
+            )
+
+            // 02. c1, c2 sync in realtime.
+            document1.updateAsync {
+                it["c1"] = 0
+            }.await()
+            document2.updateAsync {
+                it["c2"] = 0
+            }.await()
+            withTimeout(1_000L) {
+                // size should be 2 since it has local-change and remote-change
+                while (document1Events.size < 2 || document2Events.size < 2) {
+                    delay(50)
+                }
+            }
+            assertJsonContentEquals("""{"c1":0,"c2":0}""", document1.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":0}""", document2.toJson())
+
+            // 03. c1 and c2 sync with push-only mode. So, the changes of c1 and c2
+            // are not reflected to each other.
+            // But, c3 can get the changes of c1 and c2, because c3 sync with pull-pull mode.
+            client1.pauseRemoteChange(document1)
+            client2.pauseRemoteChange(document2)
+            document1.updateAsync {
+                it["c1"] = 1
+            }.await()
+            document2.updateAsync {
+                it["c2"] = 1
+            }.await()
+            withTimeout(1_000L) {
+                while (document1Events.size < 3 ||
+                    document2Events.size < 3 ||
+                    document3Events.size < 2
+                ) {
+                    delay(50)
+                }
+            }
+            assertJsonContentEquals("""{"c1":1,"c2":0}""", document1.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":1}""", document2.toJson())
+            assertJsonContentEquals("""{"c1":1,"c2":1}""", document3.toJson())
+
+            // 04. c1 and c2 sync with push-pull mode.
+            client1.resumeRemoteChanges(document1)
+            client2.resumeRemoteChanges(document2)
+            withTimeout(1_000L) {
+                while (document1Events.size < 4 || document2Events.size < 4) {
+                    delay(50)
+                }
+            }
+            assertJsonContentEquals("""{"c1":1,"c2":1}""", document1.toJson())
+            assertJsonContentEquals("""{"c1":1,"c2":1}""", document2.toJson())
+
+            client3.detachAsync(document3).await()
+            client3.deactivateAsync().await()
+            collectJobs.forEach(Job::cancel)
+        }
+    }
+
+    @Test
+    fun test_sync_option_with_mixed_mode() {
+        runBlocking {
+            val client = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val document = Document(documentKey)
+
+            // 01. cli attach to the document having counter.
+            client.activateAsync().await()
+            client.attachAsync(document, false).await()
+
+            // 02. cli update the document with creating a counter
+            //     and sync with push-pull mode: CP(0, 0) -> CP(1, 1)
+            document.updateAsync {
+                it.setNewCounter("counter", 0)
+            }.await()
+
+            assertEquals(CheckPoint(0, 0), document.checkPoint)
+            client.syncAsync().await()
+            assertEquals(CheckPoint(1, 1), document.checkPoint)
+
+            // 03. cli update the document with increasing the counter(0 -> 1)
+            //     and sync with push-only mode: CP(1, 1) -> CP(2, 1)
+            document.updateAsync {
+                it.getAs<JsonCounter>("counter").increase(1)
+            }.await()
+
+            var changePack = document.createChangePack()
+            assertEquals(1, changePack.changes.size)
+
+            client.syncAsync(document, Client.SyncMode.PushOnly).await()
+            assertEquals(CheckPoint(1, 2), document.checkPoint)
+
+            // 04. cli update the document with increasing the counter(1 -> 2)
+            //     and sync with push-pull mode. CP(2, 1) -> CP(3, 3)
+            document.updateAsync {
+                it.getAs<JsonCounter>("counter").increase(1)
+            }.await()
+
+            // The previous increase(0->1) is already pushed to the server,
+            // so the ChangePack of the request only has the increase(1->2).
+            changePack = document.createChangePack()
+            assertEquals(1, changePack.changes.size)
+
+            client.syncAsync().await()
+
+            assertEquals(CheckPoint(3, 3), document.checkPoint)
+            assertEquals(2, document.getRoot().getAs<JsonCounter>("counter").value)
+
+            client.detachAsync(document).await()
+            client.deactivateAsync().await()
         }
     }
 

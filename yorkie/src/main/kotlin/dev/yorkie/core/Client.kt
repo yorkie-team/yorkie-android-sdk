@@ -189,12 +189,15 @@ public class Client @VisibleForTesting internal constructor(
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
      */
-    public fun syncAsync(document: Document? = null): Deferred<Boolean> {
+    public fun syncAsync(
+        document: Document? = null,
+        syncMode: SyncMode = SyncMode.PushPull,
+    ): Deferred<Boolean> {
         return scope.async {
             var isAllSuccess = true
             val attachments = document?.let {
                 listOf(
-                    attachments.value[it.key]
+                    attachments.value[it.key]?.copy(syncMode = syncMode)
                         ?: throw IllegalArgumentException("document is not attached"),
                 )
             } ?: attachments.value.values
@@ -215,20 +218,27 @@ public class Client @VisibleForTesting internal constructor(
     private suspend fun Collection<Attachment>.asSyncFlow(): Flow<SyncResult> {
         return asFlow()
             .map { attachment ->
-                val document = attachment.document
+                val (document, documentID, _, syncMode) = attachment
                 SyncResult(
                     document,
                     runCatching {
                         val request = pushPullChangesRequest {
                             clientId = requireClientId().toByteString()
                             changePack = document.createChangePack().toPBChangePack()
-                            documentId = attachment.documentID
+                            documentId = documentID
+                            pushOnly = syncMode == SyncMode.PushOnly
                         }
                         val response = service.pushPullChanges(
                             request,
                             documentBasedRequestHeader(document.key),
                         )
                         val responsePack = response.changePack.toChangePack()
+                        // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
+                        // PushPull, ignore the response when the syncMode is PushOnly.
+                        if (responsePack.hasChanges && syncMode == SyncMode.PushOnly) {
+                            return@runCatching
+                        }
+
                         document.applyChangePack(responsePack)
                         if (document.status == DocumentStatus.Removed) {
                             attachments.value -= document.key
@@ -423,7 +433,7 @@ public class Client @VisibleForTesting internal constructor(
         isRealTimeSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
-            require(isActive) {
+            check(isActive) {
                 "client is not active"
             }
             require(document.status == DocumentStatus.Detached) {
@@ -472,7 +482,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun detachAsync(document: Document): Deferred<Boolean> {
         return scope.async {
-            require(isActive) {
+            check(isActive) {
                 "client is not active"
             }
             val attachment = attachments.value[document.key]
@@ -533,7 +543,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun removeAsync(document: Document): Deferred<Boolean> {
         return scope.async {
-            require(isActive) {
+            check(isActive) {
                 "client is not active"
             }
             val attachment = attachments.value[document.key]
@@ -574,22 +584,55 @@ public class Client @VisibleForTesting internal constructor(
      * Pauses the realtime synchronization of the given [document].
      */
     public fun pause(document: Document) {
-        changeRealTimeSyncSetting(document, false)
+        changeRealTimeSync(document, false)
     }
 
     /**
      * Resumes the realtime synchronization of the given [document].
      */
     public fun resume(document: Document) {
-        changeRealTimeSyncSetting(document, true)
+        changeRealTimeSync(document, true)
     }
 
-    private fun changeRealTimeSyncSetting(document: Document, isRealTimeSync: Boolean) {
-        require(isActive) {
+    private fun changeRealTimeSync(document: Document, isRealTimeSync: Boolean) {
+        check(isActive) {
             "client is not active"
         }
-        val attachment = attachments.value[document.key] ?: return
+        val attachment = attachments.value[document.key]
+            ?: throw IllegalArgumentException("document is not attached")
         attachments.value += document.key to attachment.copy(isRealTimeSync = isRealTimeSync)
+    }
+
+    /**
+     * Pauses the synchronization of remote changes,
+     * allowing only local changes to be applied.
+     */
+    public fun pauseRemoteChange(document: Document) {
+        changeSyncMode(document, SyncMode.PushOnly)
+    }
+
+    /**
+     * Resumes the synchronization of remote changes,
+     * allowing both local and remote changes to be applied.
+     */
+    public fun resumeRemoteChanges(document: Document) {
+        changeSyncMode(document, SyncMode.PushPull)
+    }
+
+    /**
+     * Changes the sync mode of the [document].
+     */
+    private fun changeSyncMode(document: Document, syncMode: SyncMode) {
+        check(isActive) {
+            "client is not active"
+        }
+        val attachment = attachments.value[document.key]
+            ?: throw IllegalArgumentException("document is not attached")
+        attachments.value += document.key to if (syncMode == SyncMode.PushPull) {
+            attachment.copy(syncMode = syncMode, remoteChangeEventReceived = true)
+        } else {
+            attachment.copy(syncMode = syncMode)
+        }
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)
@@ -622,6 +665,14 @@ public class Client @VisibleForTesting internal constructor(
      */
     public enum class StreamConnectionStatus {
         Connected, Disconnected
+    }
+
+    /**
+     * [SyncMode] is the mode of synchronization. It is used to determine
+     * whether to push and pull changes in PushPullChanges API.
+     */
+    public enum class SyncMode {
+        PushPull, PushOnly
     }
 
     /**

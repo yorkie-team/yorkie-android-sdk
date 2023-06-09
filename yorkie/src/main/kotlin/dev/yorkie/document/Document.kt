@@ -48,7 +48,9 @@ public class Document(public val key: Key) {
         private set
 
     private var changeID = ChangeID.InitialChangeID
-    private var checkPoint = CheckPoint.InitialCheckPoint
+
+    @VisibleForTesting
+    internal var checkPoint = CheckPoint.InitialCheckPoint
 
     internal val hasLocalChanges: Boolean
         get() = localChanges.isNotEmpty()
@@ -65,7 +67,7 @@ public class Document(public val key: Key) {
         updater: (root: JsonObject) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
-            require(status != DocumentStatus.Removed) {
+            check(status != DocumentStatus.Removed) {
                 "document is removed"
             }
 

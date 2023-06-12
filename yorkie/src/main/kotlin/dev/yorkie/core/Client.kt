@@ -391,10 +391,10 @@ public class Client @VisibleForTesting internal constructor(
                 return@async false
             }
 
-            fun realTimeAttachments() = attachments.value.filter { it.value.isRealTimeSync }
+            fun realTimeAttachments() = attachments.value.filter { it.value.isRealTimeSync }.keys
 
             realTimeAttachments().forEach {
-                waitForInitialization(it.key)
+                waitForInitialization(it)
             }
 
             presenceInfo = presenceInfo.copy(
@@ -403,12 +403,12 @@ public class Client @VisibleForTesting internal constructor(
             )
 
             realTimeAttachments().takeUnless { it.isEmpty() }
-                ?.forEach { (key, attachment) ->
+                ?.forEach { key ->
                     try {
                         service.updatePresence(
                             updatePresenceRequest {
                                 client = toPBClient()
-                                documentId = attachment.documentID
+                                documentId = attachments.value[key]?.documentID ?: return@forEach
                             },
                             documentBasedRequestHeader(key),
                         )
@@ -416,6 +416,7 @@ public class Client @VisibleForTesting internal constructor(
                         YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
                         return@async false
                     }
+                    val attachment = attachments.value[key] ?: return@forEach
                     val newPeers = attachment.peerPresences + (requireClientId() to presenceInfo)
                     attachments.value += key to attachment.copy(peerPresences = newPeers)
                 } ?: return@async true

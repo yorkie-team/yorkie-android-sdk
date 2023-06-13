@@ -1,5 +1,6 @@
 package dev.yorkie.document.operation
 
+import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
@@ -23,14 +24,23 @@ internal data class RemoveOperation(
     /**
      * Executes this [RemoveOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot) {
+    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
-        if (parentObject is CrdtContainer) {
+        return if (parentObject is CrdtContainer) {
+            val key = parentObject.subPathOf(createdAt)
             val element = parentObject.remove(createdAt, executedAt)
             root.registerRemovedElement(element)
+            val index = if (parentObject is CrdtArray) key?.toInt() else null
+            listOf(
+                InternalOpInfo(
+                    effectedCreatedAt,
+                    OperationInfo.RemoveOpInfo(key, index),
+                ),
+            )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "only object and array can execute remove: $parentObject")
+            emptyList()
         }
     }
 

@@ -26,15 +26,17 @@ internal data class SetOperation(
     /**
      * Executes this [SetOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot) {
+    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
-        if (parentObject is CrdtObject) {
+        return if (parentObject is CrdtObject) {
             val copiedValue = value.deepCopy()
             parentObject[key] = copiedValue
             root.registerElement(copiedValue, parentObject)
+            listOf(InternalOpInfo(parentCreatedAt, OperationInfo.SetOpInfo(key)))
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only object can execute set")
+            emptyList()
         }
     }
 

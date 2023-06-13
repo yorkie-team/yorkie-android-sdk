@@ -12,12 +12,13 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.operation.InternalOpInfo
+import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
-import dev.yorkie.util.findPrefixes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
@@ -25,7 +26,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
-import org.apache.commons.collections4.trie.PatriciaTrie
 
 /**
  * A CRDT-based data type.
@@ -91,10 +91,11 @@ public class Document(public val key: Key) {
                 return@async true
             }
             val change = context.getChange()
-            change.execute(root)
+            val internalOpInfos = change.execute(root)
             localChanges += change
             changeID = change.id
-            eventStream.emit(change.asLocal())
+            val changeInfos = listOf(change.toChangeInfo(internalOpInfos))
+            eventStream.emit(Event.LocalChange(changeInfos))
             true
         }
     }
@@ -147,9 +148,9 @@ public class Document(public val key: Key) {
         val clone = ensureClone()
         val changesInfo = changes.map {
             it.execute(clone)
-            it.execute(root)
+            val internalOpInfos = it.execute(root)
             changeID = changeID.syncLamport(it.id.lamport)
-            it.toChangeInfo()
+            it.toChangeInfo(internalOpInfos)
         }
         if (changesInfo.isEmpty()) {
             return
@@ -203,19 +204,15 @@ public class Document(public val key: Key) {
         return root.garbageCollect(ticket)
     }
 
-    private fun Change.createPaths(): List<String> {
-        val pathTrie = PatriciaTrie<String>()
-        operations.forEach { operation ->
-            val createdAt = operation.effectedCreatedAt
-            val subPaths = root.createSubPaths(createdAt).drop(1)
-            subPaths.forEach { subPath -> pathTrie[subPath] = subPath }
+    private fun Change.toChangeInfo(internalOpInfos: List<InternalOpInfo>) =
+        Event.ChangeInfo(message.orEmpty(), internalOpInfos.map { it.toOperationInfo() })
+
+    private fun InternalOpInfo.toOperationInfo(): OperationInfo {
+        val path = root.createSubPaths(element).joinToString(".")
+        return operationInfo.apply {
+            this.path = path
         }
-        return pathTrie.findPrefixes().map { "." + it.joinToString(".") }
     }
-
-    private fun Change.asLocal() = Event.LocalChange(listOf(toChangeInfo()))
-
-    private fun Change.toChangeInfo() = Event.ChangeInfo(this, createPaths())
 
     public fun toJson(): String {
         return root.toJson()
@@ -243,11 +240,11 @@ public class Document(public val key: Key) {
         ) : Event
 
         /**
-         * Represents a pair of [Change] and the JsonPath of the changed element.
+         * Represents the modification made during a document update and the message passed.
          */
         public class ChangeInfo(
-            public val change: Change,
-            @Suppress("unused") public val paths: List<String>,
+            public val message: String,
+            public val operations: List<OperationInfo>,
         )
     }
 

@@ -3,6 +3,7 @@ package dev.yorkie.document.operation
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtPrimitive
+import dev.yorkie.document.crdt.CrdtPrimitive.Type
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
@@ -26,14 +27,26 @@ internal data class IncreaseOperation(
     /**
      * Executes this [IncreaseOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot) {
+    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
-        if (parentObject is CrdtCounter) {
+        return if (parentObject is CrdtCounter) {
             val copiedValue = value.deepCopy() as CrdtPrimitive
             parentObject.increase(copiedValue)
+            val increasedValue = if (copiedValue.type == Type.Integer) {
+                copiedValue.value as Int
+            } else {
+                copiedValue.value as Long
+            }
+            listOf(
+                InternalOpInfo(
+                    effectedCreatedAt,
+                    OperationInfo.IncreaseOpInfo(increasedValue),
+                ),
+            )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only Counter can execute increase")
+            emptyList()
         }
     }
 

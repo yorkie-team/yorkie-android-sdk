@@ -4,6 +4,8 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
 import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
+import dev.yorkie.document.crdt.TextChangeType
+import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
@@ -27,24 +29,39 @@ internal data class EditOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot) {
+    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
-        if (parentObject is CrdtText) {
-            parentObject.edit(
+        return if (parentObject is CrdtText) {
+            val changes = parentObject.edit(
                 RgaTreeSplitNodeRange(fromPos, toPos),
                 content,
                 executedAt,
                 attributes,
                 maxCreatedAtMapByActor,
-            )
+            ).second
             if (fromPos != toPos) {
                 root.registerTextWithGarbage(parentObject)
+            }
+            changes.map { (type, _, from, to, content, attributes) ->
+                if (type == TextChangeType.Content) {
+                    InternalOpInfo(
+                        parentCreatedAt,
+                        OperationInfo.EditOpInfo(
+                            from,
+                            to,
+                            TextWithAttributes(content.orEmpty() to attributes.orEmpty()),
+                        ),
+                    )
+                } else {
+                    InternalOpInfo(parentCreatedAt, OperationInfo.SelectOpInfo(from, to))
+                }
             }
         } else {
             if (parentObject == null) {
                 YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             }
             YorkieLogger.e(TAG, "fail to execute, only Text can execute edit")
+            emptyList()
         }
     }
 

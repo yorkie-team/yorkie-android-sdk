@@ -10,11 +10,9 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
 import dev.yorkie.document.change.CheckPoint
-import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
-import dev.yorkie.document.operation.RemoveOperation
-import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.operation.OperationInfo
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -108,20 +106,18 @@ class ClientTest {
             assertIs<DocumentSyncResult.Synced>(syncEvent.result)
 
             val localSetEvent = assertIs<LocalChange>(document1Events.first())
-            val localSetOperation = assertIs<SetOperation>(
-                localSetEvent.changeInfos.first().change.operations.first(),
+            val localSetOperation = assertIs<OperationInfo.SetOpInfo>(
+                localSetEvent.changeInfos.first().operations.first(),
             )
             assertEquals("k1", localSetOperation.key)
-            assertEquals("v1", (localSetOperation.value as CrdtPrimitive).value)
-            assertEquals(".k.1", localSetEvent.changeInfos.first().paths.first())
+            assertEquals("$", localSetEvent.changeInfos.first().operations.first().path)
             document1Events.clear()
 
             val remoteSetEvent = assertIs<RemoteChange>(document2Events.first())
-            val remoteSetOperation = assertIs<SetOperation>(
-                remoteSetEvent.changeInfos.first().change.operations.first(),
+            val remoteSetOperation = assertIs<OperationInfo.SetOpInfo>(
+                remoteSetEvent.changeInfos.first().operations.first(),
             )
             assertEquals("k1", remoteSetOperation.key)
-            assertEquals("v1", (remoteSetOperation.value as CrdtPrimitive).value)
             document2Events.clear()
 
             val root2 = document2.getRoot()
@@ -146,16 +142,16 @@ class ClientTest {
             assertTrue(root1.keys.isEmpty())
 
             val remoteRemoveEvent = assertIs<RemoteChange>(document1Events.first())
-            val remoteRemoveOperation = assertIs<RemoveOperation>(
-                remoteRemoveEvent.changeInfos.first().change.operations.first(),
+            val remoteRemoveOperation = assertIs<OperationInfo.RemoveOpInfo>(
+                remoteRemoveEvent.changeInfos.first().operations.first(),
             )
-            assertEquals(localSetOperation.effectedCreatedAt, remoteRemoveOperation.createdAt)
+            assertEquals(localSetOperation.executedAt, remoteRemoveOperation.executedAt)
 
             val localRemoveEvent = assertIs<LocalChange>(document2Events.first())
-            val localRemoveOperation = assertIs<RemoveOperation>(
-                localRemoveEvent.changeInfos.first().change.operations.first(),
+            val localRemoveOperation = assertIs<OperationInfo.RemoveOpInfo>(
+                localRemoveEvent.changeInfos.first().operations.first(),
             )
-            assertEquals(remoteSetOperation.effectedCreatedAt, localRemoveOperation.createdAt)
+            assertEquals(remoteSetOperation.executedAt, localRemoveOperation.executedAt)
 
             assertEquals(1, document1.clone?.getGarbageLength())
             assertEquals(1, document2.clone?.getGarbageLength())

@@ -24,6 +24,7 @@ import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.Operation
+import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
@@ -371,9 +372,7 @@ class ConverterTest {
         override var executedAt: TimeTicket,
         override val effectedCreatedAt: TimeTicket,
     ) : Operation() {
-        override fun execute(root: CrdtRoot) {
-            println("should throw IllegalArgumentException")
-        }
+        override fun execute(root: CrdtRoot): List<OperationInfo> = emptyList()
     }
 
     private class TestCrdtElement(

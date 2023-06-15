@@ -4,7 +4,6 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
 import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
-import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
@@ -19,20 +18,19 @@ internal data class StyleOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val changes =
                 parentObject.style(RgaTreeSplitNodeRange(fromPos, toPos), attributes, executedAt)
             changes.map {
-                InternalOpInfo(
-                    parentCreatedAt,
-                    OperationInfo.StyleOpInfo(
-                        it.from,
-                        it.to,
-                        TextWithAttributes(it.content.orEmpty() to it.attributes.orEmpty()),
-                    ),
-                )
+                OperationInfo.StyleOpInfo(
+                    it.from,
+                    it.to,
+                    it.attributes.orEmpty(),
+                ).apply {
+                    executedAt = parentCreatedAt
+                }
             }
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

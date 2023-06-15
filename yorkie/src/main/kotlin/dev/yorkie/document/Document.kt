@@ -11,8 +11,8 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
-import dev.yorkie.document.operation.InternalOpInfo
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
@@ -24,7 +24,12 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.withContext
 
 /**
@@ -38,6 +43,8 @@ public class Document(public val key: Key) {
 
     private val eventStream = MutableSharedFlow<Event>()
     public val events = eventStream.asSharedFlow()
+
+    private val targetEventStreams = mutableMapOf<String, SharedFlow<Event>>()
 
     @Volatile
     private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = ElementRht()))
@@ -91,13 +98,80 @@ public class Document(public val key: Key) {
                 return@async true
             }
             val change = context.getChange()
-            val internalOpInfos = change.execute(root)
+            val operationInfos = change.execute(root)
             localChanges += change
             changeID = change.id
-            val changeInfos = listOf(change.toChangeInfo(internalOpInfos))
+            val changeInfos = listOf(change.toChangeInfo(operationInfos))
             eventStream.emit(Event.LocalChange(changeInfos))
             true
         }
+    }
+
+    /**
+     * Subscribes to events on the document with the specific [targetPath].
+     */
+    public fun events(targetPath: String): SharedFlow<Event> {
+        return targetEventStreams.getOrElse(targetPath) {
+            events.filterNot { it is Event.Snapshot && targetPath != "&" }
+                .mapNotNull { event ->
+                    when (event) {
+                        is Event.Snapshot -> event
+                        is Event.RemoteChange -> {
+                            event.changeInfos.filterTargetChangeInfos(targetPath)
+                                .takeIf { it.isNotEmpty() }
+                                ?.let {
+                                    Event.RemoteChange(it)
+                                }
+                        }
+
+                        is Event.LocalChange -> {
+                            event.changeInfos.filterTargetChangeInfos(targetPath)
+                                .takeIf { it.isNotEmpty() }
+                                ?.let {
+                                    Event.LocalChange(it)
+                                }
+                        }
+                    }
+                }.shareIn(scope, SharingStarted.Eagerly)
+                .also {
+                    targetEventStreams[targetPath] = it
+                }
+        }
+    }
+
+    private fun List<Event.ChangeInfo>.filterTargetChangeInfos(targetPath: String) =
+        mapNotNull { (message, operations) ->
+            val targetOps = operations.filter { isSameElementOrChildOf(it.path, targetPath) }
+            if (targetOps.isEmpty()) {
+                null
+            } else {
+                Event.ChangeInfo(message, targetOps)
+            }
+        }
+
+    private fun isSameElementOrChildOf(element: String, parent: String): Boolean {
+        return if (parent == element) {
+            true
+        } else {
+            val nodePath = element.split(".")
+            val targetPath = parent.split(".")
+            targetPath.withIndex().all { (index, path) -> path == nodePath.getOrNull(index) }
+        }
+    }
+
+    /**
+     * Returns the [JsonElement] corresponding to the [path].
+     */
+    public suspend fun getValueByPath(path: String): JsonElement? {
+        require(path.startsWith("$")) {
+            "the path must start with \"$\""
+        }
+        val paths = path.split(".").drop(1)
+        var value = getRoot()
+        paths.dropLast(1).forEach { key ->
+            value = value[key] as? JsonObject ?: return null
+        }
+        return value.getOrNull(paths.last())
     }
 
     /**
@@ -148,9 +222,9 @@ public class Document(public val key: Key) {
         val clone = ensureClone()
         val changesInfo = changes.map {
             it.execute(clone)
-            val internalOpInfos = it.execute(root)
+            val operationInfos = it.execute(root)
             changeID = changeID.syncLamport(it.id.lamport)
-            it.toChangeInfo(internalOpInfos)
+            it.toChangeInfo(operationInfos)
         }
         if (changesInfo.isEmpty()) {
             return
@@ -204,21 +278,19 @@ public class Document(public val key: Key) {
         return root.garbageCollect(ticket)
     }
 
-    private fun Change.toChangeInfo(internalOpInfos: List<InternalOpInfo>) =
-        Event.ChangeInfo(message.orEmpty(), internalOpInfos.map { it.toOperationInfo() })
+    private fun Change.toChangeInfo(operationInfos: List<OperationInfo>) =
+        Event.ChangeInfo(message.orEmpty(), operationInfos.map { it.updatePath() })
 
-    private fun InternalOpInfo.toOperationInfo(): OperationInfo {
-        val path = root.createSubPaths(element).joinToString(".")
-        return operationInfo.apply {
-            this.path = path
-        }
+    private fun OperationInfo.updatePath(): OperationInfo {
+        val path = root.createSubPaths(executedAt).joinToString(".")
+        return apply { this.path = path }
     }
 
     public fun toJson(): String {
         return root.toJson()
     }
 
-    public interface Event {
+    public sealed interface Event {
 
         /**
          * An event that occurs when a snapshot is received from the server.
@@ -242,7 +314,7 @@ public class Document(public val key: Key) {
         /**
          * Represents the modification made during a document update and the message passed.
          */
-        public class ChangeInfo(
+        public data class ChangeInfo(
             public val message: String,
             public val operations: List<OperationInfo>,
         )

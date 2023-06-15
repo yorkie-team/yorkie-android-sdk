@@ -27,7 +27,7 @@ internal data class IncreaseOperation(
     /**
      * Executes this [IncreaseOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtCounter) {
             val copiedValue = value.deepCopy() as CrdtPrimitive
@@ -38,10 +38,9 @@ internal data class IncreaseOperation(
                 copiedValue.value as Long
             }
             listOf(
-                InternalOpInfo(
-                    effectedCreatedAt,
-                    OperationInfo.IncreaseOpInfo(increasedValue),
-                ),
+                OperationInfo.IncreaseOpInfo(increasedValue).apply {
+                    executedAt = effectedCreatedAt
+                },
             )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

@@ -24,7 +24,7 @@ internal data class RemoveOperation(
     /**
      * Executes this [RemoveOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtContainer) {
             val key = parentObject.subPathOf(createdAt)
@@ -32,10 +32,9 @@ internal data class RemoveOperation(
             root.registerRemovedElement(element)
             val index = if (parentObject is CrdtArray) key?.toInt() else null
             listOf(
-                InternalOpInfo(
-                    effectedCreatedAt,
-                    OperationInfo.RemoveOpInfo(key, index),
-                ),
+                OperationInfo.RemoveOpInfo(key, index).apply {
+                    executedAt = effectedCreatedAt
+                },
             )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

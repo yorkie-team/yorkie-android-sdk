@@ -11,6 +11,8 @@ public sealed class OperationInfo {
 
     public abstract var path: String
 
+    internal var executedAt: TimeTicket = TimeTicket.InitialTimeTicket
+
     public data class AddOpInfo(val index: Int, override var path: String = INITIAL_PATH) :
         OperationInfo()
 
@@ -42,7 +44,7 @@ public sealed class OperationInfo {
     public data class StyleOpInfo(
         val from: Int,
         val to: Int,
-        val value: TextWithAttributes,
+        val attributes: Map<String, String>,
         override var path: String = INITIAL_PATH,
     ) : OperationInfo()
 
@@ -53,11 +55,6 @@ public sealed class OperationInfo {
     ) : OperationInfo()
 
     companion object {
-        const val INITIAL_PATH = "initial path"
+        private const val INITIAL_PATH = "initial path"
     }
 }
-
-internal data class InternalOpInfo(
-    val element: TimeTicket,
-    val operationInfo: OperationInfo,
-)

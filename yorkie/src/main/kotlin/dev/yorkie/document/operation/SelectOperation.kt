@@ -20,16 +20,15 @@ internal data class SelectOperation(
     /**
      * Returns the created time of the effected element.
      */
-    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val change = parentObject.select(RgaTreeSplitNodeRange(fromPos, toPos), executedAt)
                 ?: return emptyList()
             listOf(
-                InternalOpInfo(
-                    parentCreatedAt,
-                    OperationInfo.SelectOpInfo(from = change.from, to = change.to),
-                ),
+                OperationInfo.SelectOpInfo(from = change.from, to = change.to).apply {
+                    executedAt = parentCreatedAt
+                },
             )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

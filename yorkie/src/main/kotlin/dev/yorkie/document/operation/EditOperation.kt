@@ -29,7 +29,7 @@ internal data class EditOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val changes = parentObject.edit(
@@ -44,16 +44,15 @@ internal data class EditOperation(
             }
             changes.map { (type, _, from, to, content, attributes) ->
                 if (type == TextChangeType.Content) {
-                    InternalOpInfo(
-                        parentCreatedAt,
-                        OperationInfo.EditOpInfo(
-                            from,
-                            to,
-                            TextWithAttributes(content.orEmpty() to attributes.orEmpty()),
-                        ),
+                    OperationInfo.EditOpInfo(
+                        from,
+                        to,
+                        TextWithAttributes(content.orEmpty() to attributes.orEmpty()),
                     )
                 } else {
-                    InternalOpInfo(parentCreatedAt, OperationInfo.SelectOpInfo(from, to))
+                    OperationInfo.SelectOpInfo(from, to)
+                }.apply {
+                    executedAt = parentCreatedAt
                 }
             }
         } else {

@@ -24,17 +24,16 @@ internal data class MoveOperation(
     /**
      * Executes this [MoveOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtArray) {
             val previousIndex = parentObject.subPathOf(createdAt).toInt()
             parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
             val index = parentObject.subPathOf(createdAt).toInt()
             listOf(
-                InternalOpInfo(
-                    parentCreatedAt,
-                    OperationInfo.MoveOpInfo(previousIndex = previousIndex, index = index),
-                ),
+                OperationInfo.MoveOpInfo(previousIndex = previousIndex, index = index).apply {
+                    executedAt = parentCreatedAt
+                },
             )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

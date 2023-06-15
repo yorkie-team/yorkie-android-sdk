@@ -25,17 +25,16 @@ internal data class AddOperation(
     /**
      * Executes this [AddOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot): List<InternalOpInfo> {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtArray) {
             val copiedValue = value.deepCopy()
             parentObject.insertAfter(prevCreatedAt, copiedValue)
             root.registerElement(copiedValue, parentObject)
             listOf(
-                InternalOpInfo(
-                    parentCreatedAt,
-                    OperationInfo.AddOpInfo(parentObject.subPathOf(effectedCreatedAt).toInt()),
-                ),
+                OperationInfo.AddOpInfo(parentObject.subPathOf(effectedCreatedAt).toInt()).apply {
+                    executedAt = parentCreatedAt
+                },
             )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

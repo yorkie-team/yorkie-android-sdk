@@ -364,7 +364,9 @@ class DocumentTest {
                 "counter" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events("$.counter").filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1CounterOps.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document1CounterOps.addAll(
+                                it.changeInfos.flatMap(ChangeInfo::operations),
+                            )
                         }
                 },
             )
@@ -508,9 +510,9 @@ class DocumentTest {
             }.await()
 
             withTimeout(1_000) {
-                while (document1Ops.size < 2
-                    || document1TodosOps.isEmpty()
-                    || document1ObjOps.isEmpty()
+                while (document1Ops.size < 2 ||
+                    document1TodosOps.isEmpty() ||
+                    document1ObjOps.isEmpty()
                 ) {
                     println(document1Ops)
                     delay(50)

@@ -13,7 +13,14 @@ import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
-import dev.yorkie.document.operation.OperationInfo.*
+import dev.yorkie.document.operation.OperationInfo.AddOpInfo
+import dev.yorkie.document.operation.OperationInfo.EditOpInfo
+import dev.yorkie.document.operation.OperationInfo.IncreaseOpInfo
+import dev.yorkie.document.operation.OperationInfo.MoveOpInfo
+import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
+import dev.yorkie.document.operation.OperationInfo.SelectOpInfo
+import dev.yorkie.document.operation.OperationInfo.SetOpInfo
+import dev.yorkie.document.operation.OperationInfo.StyleOpInfo
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay

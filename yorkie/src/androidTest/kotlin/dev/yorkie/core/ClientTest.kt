@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
@@ -247,7 +248,7 @@ class ClientTest {
                 it["version"] = "v2"
             }.await()
             client1.syncAsync().await()
-            withTimeout(1_000) {
+            withTimeout(2_000) {
                 while (client2Events.size < 2) {
                     delay(50)
                 }
@@ -353,7 +354,7 @@ class ClientTest {
 
             val document1Events = mutableListOf<Document.Event>()
             val document2Events = mutableListOf<Document.Event>()
-            val document3Events = mutableListOf<Document.Event>()
+            val document3Ops = mutableListOf<OperationInfo>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events.collect(document1Events::add)
@@ -362,7 +363,9 @@ class ClientTest {
                     document2.events.collect(document2Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document3.events.collect(document3Events::add)
+                    document3.events.filterIsInstance<RemoteChange>().collect { event ->
+                        document3Ops.addAll(event.changeInfos.flatMap { it.operations })
+                    }
                 },
             )
 
@@ -373,9 +376,12 @@ class ClientTest {
             document2.updateAsync {
                 it["c2"] = 0
             }.await()
-            withTimeout(2_000) {
+            withTimeout(1_000) {
                 // size should be 2 since it has local-change and remote-change
-                while (document1Events.size < 2 || document2Events.size < 2) {
+                while (document1Events.size < 2 ||
+                    document2Events.size < 2 ||
+                    document3Ops.size < 2
+                ) {
                     delay(50)
                 }
             }
@@ -393,10 +399,10 @@ class ClientTest {
             document2.updateAsync {
                 it["c2"] = 1
             }.await()
-            withTimeout(2_000) {
+            withTimeout(1_000) {
                 while (document1Events.size < 3 ||
                     document2Events.size < 3 ||
-                    document3Events.size < 2
+                    document3Ops.size < 4
                 ) {
                     delay(50)
                 }

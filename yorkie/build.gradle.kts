@@ -4,7 +4,7 @@ plugins {
     id("com.android.library")
     kotlin("android")
     id("com.google.protobuf")
-    id("com.dicedmelon.gradle.jacoco-android")
+    id("jacoco")
     id("maven-publish")
     id("org.jetbrains.dokka")
     id("signing")
@@ -12,6 +12,29 @@ plugins {
 
 jacoco {
     toolVersion = "0.8.8"
+}
+
+tasks.register<JacocoReport>("jacocoDebugTestReport") {
+    reports {
+        xml.required.set(true)
+        csv.required.set(false)
+        html.required.set(false)
+    }
+
+    classDirectories.setFrom(
+        fileTree("${buildDir}/tmp/kotlin-classes/debug") {
+            exclude("**/dev/yorkie/api/v1/**")
+        },
+    )
+    sourceDirectories.setFrom("${project.projectDir}/src/main/kotlin")
+    executionData.setFrom(
+        fileTree(project.buildDir) {
+            include(
+                "jacoco/testDebugUnitTest.exec",
+                "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec",
+            )
+        },
+    )
 }
 
 tasks.register<Zip>("stuffZip") {
@@ -63,12 +86,6 @@ android {
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
         freeCompilerArgs = listOf("-opt-in=kotlin.RequiresOptIn")
-    }
-    jacocoAndroidUnitTestReport {
-        excludes = excludes + "**/dev/yorkie/api/v1/**"
-        csv.enabled(false)
-        xml.enabled(true)
-        html.enabled(false)
     }
     publishing {
         singleVariant("release") {

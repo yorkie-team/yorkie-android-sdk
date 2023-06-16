@@ -35,11 +35,11 @@ jobs:
       - run: chmod +x gradlew
       - uses: gradle/gradle-build-action@v2
       - run: ./gradlew yorkie:testDebugUnitTest
-      - run: ./gradlew yorkie:jacocoTestReport
+      - run: ./gradlew yorkie:jacocoDebugTestReport
       - uses: actions/upload-artifact@v3
         with:
           name: unit-test-artifact
-          path: yorkie/build/jacoco/jacoco.xml
+          path: yorkie/build/reports/jacoco/jacocoDebugTestReport/jacocoDebugTestReport.xml
 
   instrumentation-tests:
     name: Instrumentation tests

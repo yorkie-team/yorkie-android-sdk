@@ -173,7 +173,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.mockito.kotlin)
     testImplementation(kotlin("test"))
-    testImplementation(libs.kotlinx.coroutines)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.gson)
     testImplementation(libs.grpc.testing)
 

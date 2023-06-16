@@ -1,28 +1,33 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+@Suppress("DSL_SCOPE_VIOLATION")
 plugins {
-    id("com.android.application") version "7.4.2" apply false
-    id("com.android.library") version "7.4.2" apply false
+    id("com.android.application") version libs.versions.agp apply false
+    id("com.android.library") version libs.versions.agp apply false
     id("org.jetbrains.kotlin.android") version "1.8.0" apply false
-    id("org.jetbrains.kotlin.jvm") version "1.8.0" apply true
     id("com.google.protobuf") version "0.9.1" apply false
-    id("org.jmailen.kotlinter") version "3.11.1" apply true
+    id("org.jmailen.kotlinter") version "3.15.0" apply true
     id("com.dicedmelon.gradle.jacoco-android") version "0.1.5" apply false
-    id("androidx.benchmark") version "1.2.0-alpha09" apply false
     id("org.jetbrains.dokka") version "1.7.20" apply false
+    alias(libs.plugins.androidx.benchmark) apply false
 }
 
-allprojects {
-    apply(plugin = "org.jmailen.kotlinter")
-
-    kotlinter {
-        version = "0.46.1"
-        disabledRules = emptyArray()
-    }
-}
-
-tasks.check {
+tasks.withType<KotlinCompile> {
     dependsOn("installKotlinterPrePushHook")
 }
 
-tasks.lintKotlinMain {
-    exclude("com/example/**/generated/*.kt")
+subprojects {
+    apply(plugin = "org.jmailen.kotlinter")
+
+    afterEvaluate {
+        if (tasks.names.contains("formatKotlinMain")) {
+            tasks.named<SourceTask>("formatKotlinMain") {
+                exclude("**/generated/**")
+            }
+
+            tasks.named<SourceTask>("lintKotlinMain") {
+                exclude("**/generated/**")
+            }
+        }
+    }
 }

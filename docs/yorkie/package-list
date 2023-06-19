@@ -19,7 +19,7 @@ $dokka.location:dev.yorkie.core/Client.Event.PeersChanged/PeersChanged/#dev.york
 $dokka.location:dev.yorkie.core/Client.Event.PeersChanged/result/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/-peers-changed/result.html
 $dokka.location:dev.yorkie.core/Client.Event///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-event/index.html
 $dokka.location:dev.yorkie.core/Client.Options///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/index.html
-$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#dev.yorkie.core.PresenceInfo?#kotlin.String?#kotlin.String?#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
+$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#dev.yorkie.core.Presence?#kotlin.String?#kotlin.String?#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
 $dokka.location:dev.yorkie.core/Client.Options/apiKey/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/api-key.html
 $dokka.location:dev.yorkie.core/Client.Options/key/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/key.html
 $dokka.location:dev.yorkie.core/Client.Options/presence/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/presence.html
@@ -82,9 +82,11 @@ $dokka.location:dev.yorkie.core/Peers/equals/#kotlin.Any?/PointingToDeclaration/
 $dokka.location:dev.yorkie.core/Peers/hashCode/#/PointingToDeclaration/yorkie/dev.yorkie.core/-peers/hash-code.html
 $dokka.location:dev.yorkie.core/Peers/minus/#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.core/-peers/minus.html
 $dokka.location:dev.yorkie.core/Peers/plus/#kotlin.Pair[dev.yorkie.document.time.ActorID,dev.yorkie.core.PresenceInfo]/PointingToDeclaration/yorkie/dev.yorkie.core/-peers/plus.html
+$dokka.location:dev.yorkie.core/Presence///PointingToDeclaration/yorkie/dev.yorkie.core/-presence/index.html
+$dokka.location:dev.yorkie.core/Presence/Presence/#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.core/-presence/-presence.html
+$dokka.location:dev.yorkie.core/Presence/value/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presence/value.html
 $dokka.location:dev.yorkie.core/PresenceInfo///PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/index.html
 $dokka.location:dev.yorkie.core/PresenceInfo/PresenceInfo/#kotlin.Int#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/-presence-info.html
-$dokka.location:dev.yorkie.core/PresenceInfo/clock/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/clock.html
 $dokka.location:dev.yorkie.core/PresenceInfo/data/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/data.html
 $dokka.location:dev.yorkie.document.change////PointingToDeclaration/yorkie/dev.yorkie.document.change/index.html
 $dokka.location:dev.yorkie.document.change/Change///PointingToDeclaration/yorkie/dev.yorkie.document.change/-change/index.html
@@ -117,6 +119,7 @@ $dokka.location:dev.yorkie.document.json/JsonArray/getAs/#dev.yorkie.document.ti
 $dokka.location:dev.yorkie.document.json/JsonArray/getAs/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/get-as.html
 $dokka.location:dev.yorkie.document.json/JsonArray/isEmpty/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/is-empty.html
 $dokka.location:dev.yorkie.document.json/JsonArray/iterator/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/iterator.html
+$dokka.location:dev.yorkie.document.json/JsonArray/moveAfter/#dev.yorkie.document.time.TimeTicket#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/move-after.html
 $dokka.location:dev.yorkie.document.json/JsonArray/put/#dev.yorkie.document.json.JsonPrimitive/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/put.html
 $dokka.location:dev.yorkie.document.json/JsonArray/put/#java.util.Date/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/put.html
 $dokka.location:dev.yorkie.document.json/JsonArray/put/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/put.html
@@ -189,6 +192,49 @@ $dokka.location:dev.yorkie.document.json/JsonText/select/#kotlin.Int#kotlin.Int/
 $dokka.location:dev.yorkie.document.json/JsonText/style/#kotlin.Int#kotlin.Int#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/style.html
 $dokka.location:dev.yorkie.document.json/JsonText/toString/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/to-string.html
 $dokka.location:dev.yorkie.document.json/JsonText/values/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/values.html
+$dokka.location:dev.yorkie.document.operation////PointingToDeclaration/yorkie/dev.yorkie.document.operation/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo/AddOpInfo/#kotlin.Int#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/-add-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo/index/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/--index--.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-companion/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.EditOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-edit-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.EditOpInfo/EditOpInfo/#kotlin.Int#kotlin.Int#dev.yorkie.document.crdt.TextWithAttributes#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-edit-op-info/-edit-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.EditOpInfo/from/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-edit-op-info/from.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.EditOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-edit-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.EditOpInfo/to/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-edit-op-info/to.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.EditOpInfo/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-edit-op-info/value.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.IncreaseOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-increase-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.IncreaseOpInfo/IncreaseOpInfo/#kotlin.Number#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-increase-op-info/-increase-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.IncreaseOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-increase-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.IncreaseOpInfo/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-increase-op-info/value.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.MoveOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-move-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.MoveOpInfo/MoveOpInfo/#kotlin.Int#kotlin.Int#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-move-op-info/-move-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.MoveOpInfo/index/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-move-op-info/--index--.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.MoveOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-move-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.MoveOpInfo/previousIndex/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-move-op-info/previous-index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.RemoveOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-remove-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.RemoveOpInfo/RemoveOpInfo/#kotlin.String?#kotlin.Int?#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-remove-op-info/-remove-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.RemoveOpInfo/index/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-remove-op-info/--index--.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.RemoveOpInfo/key/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-remove-op-info/key.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.RemoveOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-remove-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SelectOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-select-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SelectOpInfo/SelectOpInfo/#kotlin.Int#kotlin.Int#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-select-op-info/-select-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SelectOpInfo/from/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-select-op-info/from.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SelectOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-select-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SelectOpInfo/to/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-select-op-info/to.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SetOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-set-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SetOpInfo/SetOpInfo/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-set-op-info/-set-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SetOpInfo/key/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-set-op-info/key.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.SetOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-set-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/StyleOpInfo/#kotlin.Int#kotlin.Int#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/-style-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/attributes.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/from/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/from.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/to/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/to.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/path.html
 $dokka.location:dev.yorkie.document.time////PointingToDeclaration/yorkie/dev.yorkie.document.time/index.html
 $dokka.location:dev.yorkie.document.time/ActorID.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.time/-actor-i-d/-companion/index.html
 $dokka.location:dev.yorkie.document.time/ActorID.Companion/INITIAL_ACTOR_ID/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-actor-i-d/-companion/-i-n-i-t-i-a-l_-a-c-t-o-r_-i-d.html
@@ -214,9 +260,9 @@ $dokka.location:dev.yorkie.document/Document.DocumentStatus///PointingToDeclarat
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/value-of.html
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/values.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/index.html
-$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/ChangeInfo/#dev.yorkie.document.change.Change#kotlin.collections.List[kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/-change-info.html
-$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/change/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/change.html
-$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/paths/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/paths.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/ChangeInfo/#kotlin.String#kotlin.collections.List[dev.yorkie.document.operation.OperationInfo]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/-change-info.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/message/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/message.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/operations/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/operations.html
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/index.html
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange/changeInfos/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/change-infos.html
 $dokka.location:dev.yorkie.document/Document.Event.RemoteChange///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-remote-change/index.html
@@ -230,7 +276,9 @@ $dokka.location:dev.yorkie.document/Document.Key/value/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.document/Document///PointingToDeclaration/yorkie/dev.yorkie.document/-document/index.html
 $dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
 $dokka.location:dev.yorkie.document/Document/events/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
+$dokka.location:dev.yorkie.document/Document/events/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
+$dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
 $dokka.location:dev.yorkie.document/Document/status/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/status.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html
@@ -248,6 +296,7 @@ dev.yorkie.document
 dev.yorkie.document.change
 dev.yorkie.document.crdt
 dev.yorkie.document.json
+dev.yorkie.document.operation
 dev.yorkie.document.time
 dev.yorkie.util
 

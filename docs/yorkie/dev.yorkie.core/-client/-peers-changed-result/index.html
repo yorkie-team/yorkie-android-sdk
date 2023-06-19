@@ -42,6 +42,9 @@
     <div>
 0.3.3    </div>
     <div class="pull-right d-flex">
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
+        </div>
         <button id="theme-toggle-button"><span id="theme-toggle"></span></button>
         <div id="searchBar"></div>
     </div>
@@ -51,137 +54,95 @@
         <div id="sideMenu"></div>
     </div>
     <div id="main">
-<div class="main-content" id="content" pageIds="yorkie::dev.yorkie.core/Client.PeersChangedResult///PointingToDeclaration//-1590045667">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="yorkie::dev.yorkie.core/Client.PeersChangedResult///PointingToDeclaration//-1590045667">
   <div class="breadcrumbs"><a href="../../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../../index.html">dev.yorkie.core</a><span class="delimiter">/</span><a href="../index.html">Client</a><span class="delimiter">/</span><span class="current">PeersChangedResult</span></div>
   <div class="cover ">
     <h1 class="cover"><span>Peers</span><wbr></wbr><span>Changed</span><wbr></wbr><span><span>Result</span></span></h1>
-    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">sealed </span><span class="token keyword">class </span><a href="index.html">PeersChangedResult</a></div></div></div>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">sealed </span><span class="token keyword">class </span><a href="index.html">PeersChangedResult</a></div><h4 class="">Inheritors</h4><div class="table"><div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="-initialized/index.html">Initialized</a></div></span></div><div></div></div></div><div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="-presence-changed/index.html">PresenceChanged</a></div></span></div><div></div></div></div><div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="-watched/index.html">Watched</a></div></span></div><div></div></div></div><div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="-unwatched/index.html">Unwatched</a></div></span></div><div></div></div></div></div></div></div>
   </div>
   <div class="tabbedcontent">
-    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="Types">Types</button><button class="section-tab" data-togglable="Properties">Properties</button><button class="section-tab" data-togglable="Inheritors">Inheritors</button></div>
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
     <div class="tabs-section-body">
-      <h2 class="">Types</h2>
-      <div class="table" data-togglable="Types"><a data-name="864569998%2FClasslikes%2F-1590045667" anchor-label="Initialized" id="864569998%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-initialized/index.html"><span><span>Initialized</span></span></a></div>
+      <div data-togglable="TYPE">
+        <h2 class="">Types</h2>
+        <div class="table"><a data-name="864569998%2FClasslikes%2F-1590045667" anchor-label="Initialized" id="864569998%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-initialized/index.html"><span><span>Initialized</span></span></a></div>
 <span class="anchor-wrapper"><span class="anchor-icon" pointing-to="864569998%2FClasslikes%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div>
-              <div class="title">
-                <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-initialized/index.html">Initialized</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-initialized/index.html">Initialized</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 <a data-name="-1130569911%2FClasslikes%2F-1590045667" anchor-label="PresenceChanged" id="-1130569911%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-presence-changed/index.html"><span>Presence</span><wbr></wbr><span><span>Changed</span></span></a></div>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-presence-changed/index.html"><span>Presence</span><wbr></wbr><span><span>Changed</span></span></a></div>
 <span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1130569911%2FClasslikes%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div>
-              <div class="title">
-                <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-presence-changed/index.html">PresenceChanged</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-presence-changed/index.html">PresenceChanged</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 <a data-name="407438285%2FClasslikes%2F-1590045667" anchor-label="Unwatched" id="407438285%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-unwatched/index.html"><span><span>Unwatched</span></span></a></div>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-unwatched/index.html"><span><span>Unwatched</span></span></a></div>
 <span class="anchor-wrapper"><span class="anchor-icon" pointing-to="407438285%2FClasslikes%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div>
-              <div class="title">
-                <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-unwatched/index.html">Unwatched</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-unwatched/index.html">Unwatched</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 <a data-name="-419552908%2FClasslikes%2F-1590045667" anchor-label="Watched" id="-419552908%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-watched/index.html"><span><span>Watched</span></span></a></div>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-watched/index.html"><span><span>Watched</span></span></a></div>
 <span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-419552908%2FClasslikes%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div>
-              <div class="title">
-                <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-watched/index.html">Watched</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-watched/index.html">Watched</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>changedPeers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span> : <a href="index.html">Client.PeersChangedResult</a></div></div></div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-      <h2 class="">Properties</h2>
-      <div class="table" data-togglable="Properties"><a data-name="-1782157426%2FProperties%2F-1590045667" anchor-label="changedPeers" id="-1782157426%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="changed-peers.html"><span>changed</span><wbr></wbr><span><span>Peers</span></span></a></div>
+      <div data-togglable="PROPERTY">
+        <h2 class="">Properties</h2>
+        <div class="table"><a data-name="-1782157426%2FProperties%2F-1590045667" anchor-label="changedPeers" id="-1782157426%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="changed-peers.html"><span>changed</span><wbr></wbr><span><span>Peers</span></span></a></div>
 <span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1782157426%2FProperties%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div>
-              <div class="title">
-                <div class="platform-hinted " data-platform-hinted="data-platform-hinted" data-togglable="Properties"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><a data-name="-1782157426%2FProperties%2F-1590045667" anchor-label="changedPeers" id="-1782157426%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">val </span><a href="changed-peers.html">changedPeers</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></div></div></div>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">val </span><a href="changed-peers.html">changedPeers</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="../../../dev.yorkie.document/-document/-key/index.html">Document.Key</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../-peers/index.html">Peers</a><span class="token operator">&gt;</span></div></div></div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-      <h2 class="">Inheritors</h2>
-      <div class="table" data-togglable="Inheritors"><a data-name="864569998%2FInheritors%2F-1590045667" anchor-label="Initialized" id="864569998%2FInheritors%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-initialized/index.html">Initialized</a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="864569998%2FInheritors%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div></div>
-          </div>
-        </div>
-<a data-name="-1130569911%2FInheritors%2F-1590045667" anchor-label="PresenceChanged" id="-1130569911%2FInheritors%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-presence-changed/index.html">PresenceChanged</a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1130569911%2FInheritors%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div></div>
-          </div>
-        </div>
-<a data-name="-419552908%2FInheritors%2F-1590045667" anchor-label="Watched" id="-419552908%2FInheritors%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-watched/index.html">Watched</a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-419552908%2FInheritors%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div></div>
-          </div>
-        </div>
-<a data-name="407438285%2FInheritors%2F-1590045667" anchor-label="Unwatched" id="407438285%2FInheritors%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-        <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-          <div class="main-subrow keyValue ">
-            <div class=""><span class="inline-flex">
-                <div><a href="-unwatched/index.html">Unwatched</a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="407438285%2FInheritors%2F-1590045667"></span>
-                  <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                </span></span></div>
-            <div></div>
           </div>
         </div>
       </div>

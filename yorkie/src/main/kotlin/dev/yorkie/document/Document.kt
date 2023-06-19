@@ -23,13 +23,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.withContext
 
 /**
@@ -43,8 +41,6 @@ public class Document(public val key: Key) {
 
     private val eventStream = MutableSharedFlow<Event>()
     public val events = eventStream.asSharedFlow()
-
-    private val targetEventStreams = mutableMapOf<String, SharedFlow<Event>>()
 
     @Volatile
     private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = ElementRht()))
@@ -110,33 +106,28 @@ public class Document(public val key: Key) {
     /**
      * Subscribes to events on the document with the specific [targetPath].
      */
-    public fun events(targetPath: String): SharedFlow<Event> {
-        return targetEventStreams.getOrElse(targetPath) {
-            events.filterNot { it is Event.Snapshot && targetPath != "&" }
-                .mapNotNull { event ->
-                    when (event) {
-                        is Event.Snapshot -> event
-                        is Event.RemoteChange -> {
-                            event.changeInfos.filterTargetChangeInfos(targetPath)
-                                .takeIf { it.isNotEmpty() }
-                                ?.let {
-                                    Event.RemoteChange(it)
-                                }
-                        }
-
-                        is Event.LocalChange -> {
-                            event.changeInfos.filterTargetChangeInfos(targetPath)
-                                .takeIf { it.isNotEmpty() }
-                                ?.let {
-                                    Event.LocalChange(it)
-                                }
-                        }
+    public fun events(targetPath: String): Flow<Event> {
+        return events.filterNot { it is Event.Snapshot && targetPath != "&" }
+            .mapNotNull { event ->
+                when (event) {
+                    is Event.Snapshot -> event
+                    is Event.RemoteChange -> {
+                        event.changeInfos.filterTargetChangeInfos(targetPath)
+                            .takeIf { it.isNotEmpty() }
+                            ?.let {
+                                Event.RemoteChange(it)
+                            }
                     }
-                }.shareIn(scope, SharingStarted.Eagerly)
-                .also {
-                    targetEventStreams[targetPath] = it
+
+                    is Event.LocalChange -> {
+                        event.changeInfos.filterTargetChangeInfos(targetPath)
+                            .takeIf { it.isNotEmpty() }
+                            ?.let {
+                                Event.LocalChange(it)
+                            }
+                    }
                 }
-        }
+            }
     }
 
     private fun List<Event.ChangeInfo>.filterTargetChangeInfos(targetPath: String) =

@@ -93,7 +93,7 @@ public class Client @VisibleForTesting internal constructor(
     private val _peerStatus = MutableStateFlow(emptyMap<Document.Key, Peers>())
     public val peerStatus = _peerStatus.asStateFlow()
 
-    public var presenceInfo = options.presence ?: PresenceInfo(0, emptyMap())
+    public var presenceInfo = PresenceInfo(0, options.presence?.value.orEmpty())
         private set
 
     private val service by lazy {
@@ -737,7 +737,7 @@ public class Client @VisibleForTesting internal constructor(
          * If the [Client] attaches a [Document], the [PresenceInfo] is sent to the other peers
          * attached to the [Document].
          */
-        public val presence: PresenceInfo? = null,
+        public val presence: Presence? = null,
         /**
          * API key of the project used to identify the project.
          */

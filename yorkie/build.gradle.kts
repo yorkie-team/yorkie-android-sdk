@@ -4,7 +4,7 @@ plugins {
     id("com.android.library")
     kotlin("android")
     id("com.google.protobuf")
-    id("com.dicedmelon.gradle.jacoco-android")
+    id("jacoco")
     id("maven-publish")
     id("org.jetbrains.dokka")
     id("signing")
@@ -12,6 +12,29 @@ plugins {
 
 jacoco {
     toolVersion = "0.8.8"
+}
+
+tasks.register<JacocoReport>("jacocoDebugTestReport") {
+    reports {
+        xml.required.set(true)
+        csv.required.set(false)
+        html.required.set(false)
+    }
+
+    classDirectories.setFrom(
+        fileTree("${buildDir}/tmp/kotlin-classes/debug") {
+            exclude("**/dev/yorkie/api/v1/**")
+        },
+    )
+    sourceDirectories.setFrom("${project.projectDir}/src/main/kotlin")
+    executionData.setFrom(
+        fileTree(project.buildDir) {
+            include(
+                "jacoco/testDebugUnitTest.exec",
+                "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec",
+            )
+        },
+    )
 }
 
 tasks.register<Zip>("stuffZip") {
@@ -57,18 +80,12 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        jvmTarget = JavaVersion.VERSION_17.toString()
         freeCompilerArgs = listOf("-opt-in=kotlin.RequiresOptIn")
-    }
-    jacocoAndroidUnitTestReport {
-        excludes = excludes + "**/dev/yorkie/api/v1/**"
-        csv.enabled(false)
-        xml.enabled(true)
-        html.enabled(false)
     }
     publishing {
         singleVariant("release") {
@@ -122,28 +139,23 @@ android {
     }
 }
 
-object Versions {
-    const val protobuf = "3.22.2"
-    const val grpc = "1.54.0"
-    const val grpcKotlin = "1.3.0"
-    const val coroutines = "1.6.4"
-}
-
 protobuf {
     val protocPlatform = findProperty("protoc_platform")?.toString().orEmpty()
 
     protoc {
-        artifact = "com.google.protobuf:protoc:${Versions.protobuf}${protocPlatform}"
+        artifact = "com.google.protobuf:protoc:${libs.versions.protobuf.get()}${protocPlatform}"
     }
     plugins {
+        val protocJava =
+            "io.grpc:protoc-gen-grpc-java:${libs.versions.grpc.asProvider().get()}${protocPlatform}"
         id("java") {
-            artifact = "io.grpc:protoc-gen-grpc-java:${Versions.grpc}${protocPlatform}"
+            artifact = protocJava
         }
         id("grpc") {
-            artifact = "io.grpc:protoc-gen-grpc-java:${Versions.grpc}${protocPlatform}"
+            artifact = protocJava
         }
         id("grpckt") {
-            artifact = "io.grpc:protoc-gen-grpc-kotlin:${Versions.grpcKotlin}:jdk8@jar"
+            artifact = "io.grpc:protoc-gen-grpc-kotlin:${libs.versions.grpc.kotlin.get()}:jdk8@jar"
         }
     }
     generateProtoTasks {
@@ -171,26 +183,19 @@ protobuf {
 dependencies {
     protobuf(project(":yorkie:proto"))
 
-    implementation("io.grpc:grpc-stub:${Versions.grpc}")
-    implementation("io.grpc:grpc-protobuf-lite:${Versions.grpc}")
-    implementation("io.grpc:grpc-kotlin-stub:${Versions.grpcKotlin}")
-    implementation("com.google.protobuf:protobuf-kotlin-lite:${Versions.protobuf}")
-    implementation("io.grpc:grpc-android:${Versions.grpc}")
-    implementation("io.grpc:grpc-okhttp:${Versions.grpc}")
+    implementation(libs.bundles.grpc)
+    implementation(libs.kotlinx.coroutines)
+    implementation(libs.apache.commons.collections)
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:${Versions.coroutines}")
-
-    implementation("org.apache.commons:commons-collections4:4.4")
-
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito.kotlin:mockito-kotlin:4.0.0")
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.kotlin)
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${Versions.coroutines}")
-    testImplementation("com.google.code.gson:gson:2.10.1")
-    testImplementation("io.grpc:grpc-testing:${Versions.grpc}")
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.gson)
+    testImplementation(libs.grpc.testing)
 
-    androidTestImplementation("androidx.test.ext:junit-ktx:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation("com.google.code.gson:gson:2.9.0")
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.gson)
     androidTestImplementation(kotlin("test"))
 }

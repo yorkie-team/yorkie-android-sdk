@@ -49,11 +49,10 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         while (true) {
             val parent = pair.parent ?: break
             val currentCreatedAt = pair.element.createdAt
-            var subPath = parent.subPathOf(currentCreatedAt)
+            val subPath = parent.subPathOf(currentCreatedAt)
             if (subPath == null) {
                 YorkieLogger.e(TAG, "fail to find the given element: $currentCreatedAt")
             } else {
-                subPath = subPath.replace(Regex("/[\$.]/g"), "\\$&")
                 subPaths.add(0, subPath)
             }
             pair = elementPairMapByCreatedAt[parent.createdAt] ?: break

@@ -18,13 +18,24 @@ internal data class StyleOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot) {
+    override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
-        if (parentObject is CrdtText) {
-            parentObject.style(RgaTreeSplitNodeRange(fromPos, toPos), attributes, executedAt)
+        return if (parentObject is CrdtText) {
+            val changes =
+                parentObject.style(RgaTreeSplitNodeRange(fromPos, toPos), attributes, executedAt)
+            changes.map {
+                OperationInfo.StyleOpInfo(
+                    it.from,
+                    it.to,
+                    it.attributes.orEmpty(),
+                ).apply {
+                    executedAt = parentCreatedAt
+                }
+            }
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only Text can execute style")
+            emptyList()
         }
     }
 

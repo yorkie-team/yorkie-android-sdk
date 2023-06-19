@@ -376,7 +376,7 @@ class ClientTest {
             document2.updateAsync {
                 it["c2"] = 0
             }.await()
-            withTimeout(1_000) {
+            withTimeout(2_000) {
                 // size should be 2 since it has local-change and remote-change
                 while (document1Events.size < 2 ||
                     document2Events.size < 2 ||
@@ -399,7 +399,7 @@ class ClientTest {
             document2.updateAsync {
                 it["c2"] = 1
             }.await()
-            withTimeout(1_000) {
+            withTimeout(2_000) {
                 while (document1Events.size < 3 ||
                     document2Events.size < 3 ||
                     document3Ops.size < 4

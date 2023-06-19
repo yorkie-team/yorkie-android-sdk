@@ -6,11 +6,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import java.util.UUID
 
-fun createClient() = Client(
+fun createClient(presence: Presence? = null) = Client(
     InstrumentationRegistry.getInstrumentation().targetContext,
     "10.0.2.2",
     8080,
     usePlainText = true,
+    options = Client.Options(presence = presence),
 )
 
 fun String.toDocKey(): Document.Key {

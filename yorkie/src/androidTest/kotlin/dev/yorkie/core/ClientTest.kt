@@ -13,6 +13,7 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.gson
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -479,6 +480,60 @@ class ClientTest {
 
             client.detachAsync(document).await()
             client.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun test_access_peer_presence() {
+        runBlocking {
+            data class Cursor(val x: Int, val y: Int)
+
+            val serializedCursor = gson.toJson(Cursor(1, 1))
+
+            val client1 = createClient(presence = Presence(mapOf("name" to "a")))
+            val client2 = createClient(
+                presence = Presence(mapOf("name" to "b", "cursor" to serializedCursor)),
+            )
+            val client1Events = mutableListOf<Client.Event>()
+            val client1EventsJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                client1.events.collect(client1Events::add)
+            }
+
+            client1.activateAsync().await()
+            client2.activateAsync().await()
+
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val document1 = Document(documentKey)
+            val document2 = Document(documentKey)
+
+            client1.attachAsync(document1).await()
+            withTimeout(2_000) {
+                // initialized
+                while (client1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertEquals(
+                null,
+                client1.peerStatusByDoc(documentKey).first()[client2.requireClientId()]?.data,
+            )
+
+            client2.attachAsync(document2).await()
+            withTimeout(2_000) {
+                client1.peerStatusByDoc(documentKey).first {
+                    it[client2.requireClientId()]?.data != null
+                }
+            }
+            assertEquals(
+                mapOf("name" to "b", "cursor" to serializedCursor),
+                client1.peerStatusByDoc(documentKey).first()[client2.requireClientId()]?.data,
+            )
+
+            client1EventsJob.cancel()
+            client1.detachAsync(document1).await()
+            client2.detachAsync(document2).await()
+            client1.deactivateAsync().await()
+            client2.deactivateAsync().await()
         }
     }
 

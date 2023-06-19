@@ -24,6 +24,9 @@ public class Peers private constructor(
 }
 
 public data class PresenceInfo(
-    public val clock: Int,
+    internal val clock: Int,
     public val data: Map<String, String>,
 )
+
+@JvmInline
+public value class Presence(val value: Map<String, String>)

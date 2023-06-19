@@ -41,7 +41,7 @@ internal data class CrdtText(
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Map<ActorID, TimeTicket> {
+    ): Pair<Map<ActorID, TimeTicket>, List<TextChange>> {
         val textValue = if (value.isNotEmpty()) {
             TextValue(value).apply {
                 attributes?.forEach { setAttribute(it.key, it.value, executedAt) }
@@ -72,15 +72,12 @@ internal data class CrdtText(
         }
         selectPrev(RgaTreeSplitNodeRange(caretPos, caretPos), executedAt)?.let { changes.add(it) }
         handleChanges(changes)
-        return latestCreatedAtMap
+        return latestCreatedAtMap to changes
     }
 
     private fun selectPrev(range: RgaTreeSplitNodeRange, executedAt: TimeTicket): TextChange? {
-        val prevSelection = selectionMap[executedAt.actorID] ?: run {
-            selectionMap[executedAt.actorID] = Selection(range.first, range.second, executedAt)
-            return null
-        }
-        return if (prevSelection.executedAt < executedAt) {
+        val prevSelection = selectionMap[executedAt.actorID]
+        return if (prevSelection == null || prevSelection.executedAt < executedAt) {
             selectionMap[executedAt.actorID] = Selection(range.first, range.second, executedAt)
             val (from, to) = rgaTreeSplit.findIndexesFromRange(range)
             TextChange(TextChangeType.Selection, executedAt.actorID, from, to)
@@ -98,7 +95,7 @@ internal data class CrdtText(
         range: RgaTreeSplitNodeRange,
         attributes: Map<String, String>,
         executedAt: TimeTicket,
-    ) {
+    ): List<TextChange> {
         // 1. Split nodes with from and to.
         val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
         val fromRight = rgaTreeSplit.findNodeWithSplit(range.first, executedAt).second
@@ -120,16 +117,20 @@ internal data class CrdtText(
             }
 
         handleChanges(changes)
+        return changes
     }
 
     /**
      * Stores that the given [range] has been selected.
      */
-    fun select(range: RgaTreeSplitNodeRange, executedAt: TimeTicket) {
-        if (remoteChangeLock) return
-
-        val change = selectPrev(range, executedAt) ?: return
-        handleChanges(listOf(change))
+    fun select(range: RgaTreeSplitNodeRange, executedAt: TimeTicket): TextChange? {
+        return if (remoteChangeLock) {
+            null
+        } else {
+            selectPrev(range, executedAt)?.also {
+                handleChanges(listOf(it))
+            }
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.time.TimeTicket
 import java.util.Date
@@ -120,6 +121,19 @@ public class JsonArray internal constructor(
         )
         context.registerRemovedElement(deleted)
         return deleted.toJsonElement(context)
+    }
+
+    public fun moveAfter(prevCreatedAt: TimeTicket, createdAt: TimeTicket) {
+        val executedAt = context.issueTimeTicket()
+        target.moveAfter(prevCreatedAt, createdAt, executedAt)
+        context.push(
+            MoveOperation(
+                parentCreatedAt = target.createdAt,
+                prevCreatedAt = prevCreatedAt,
+                createdAt = createdAt,
+                executedAt = executedAt,
+            ),
+        )
     }
 
     override fun contains(element: JsonElement): Boolean {

@@ -43,7 +43,7 @@ public class JsonText internal constructor(
 
         val range = target.createRange(fromIndex, toIndex)
         val executedAt = context.issueTimeTicket()
-        val maxCreatedAtMapByActor = target.edit(range, content, executedAt, attributes)
+        val maxCreatedAtMapByActor = target.edit(range, content, executedAt, attributes).first
         context.push(
             EditOperation(
                 fromPos = range.first,

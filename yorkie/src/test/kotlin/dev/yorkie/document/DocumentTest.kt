@@ -1,11 +1,10 @@
 package dev.yorkie.document
 
 import dev.yorkie.assertJsonContentEquals
-import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonText
-import dev.yorkie.document.operation.RemoveOperation
-import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
+import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -142,17 +141,15 @@ class DocumentTest {
             assertEquals(1, events.size)
             var event = events.first()
             assertIs<Document.Event.LocalChange>(event)
-            var change = event.changeInfos.first().change
-            assertEquals(2, change.operations.size)
-            assertTrue(change.operations.all { it is SetOperation })
+            var operations = event.changeInfos.first().operations
+            assertEquals(2, operations.size)
+            assertTrue(operations.all { it is SetOpInfo })
 
-            val firstSet = change.operations.first() as SetOperation
+            val firstSet = operations.first() as SetOpInfo
             assertEquals("k1", firstSet.key)
-            assertEquals(1, (firstSet.value as CrdtPrimitive).value)
 
-            val secondSet = change.operations.last() as SetOperation
+            val secondSet = operations.last() as SetOpInfo
             assertEquals("k2", secondSet.key)
-            assertTrue((secondSet.value as CrdtPrimitive).value as Boolean)
 
             target.updateAsync {
                 it.remove("k2")
@@ -162,15 +159,15 @@ class DocumentTest {
             assertEquals(2, events.size)
             event = events.last()
             assertIs<Document.Event.LocalChange>(event)
-            change = event.changeInfos.first().change
-            assertEquals(2, change.operations.size)
-            assertTrue(change.operations.all { it is RemoveOperation })
+            operations = event.changeInfos.first().operations
+            assertEquals(2, operations.size)
+            assertTrue(operations.all { it is RemoveOpInfo })
 
-            val firstRemove = change.operations.first() as RemoveOperation
-            assertEquals(secondSet.effectedCreatedAt, firstRemove.createdAt)
+            val firstRemove = operations.first() as RemoveOpInfo
+            assertEquals(secondSet.executedAt, firstRemove.executedAt)
 
-            val secondRemove = change.operations.last() as RemoveOperation
-            assertEquals(firstSet.effectedCreatedAt, secondRemove.createdAt)
+            val secondRemove = operations.last() as RemoveOpInfo
+            assertEquals(firstSet.executedAt, secondRemove.executedAt)
 
             assertTrue(target.hasLocalChanges)
 

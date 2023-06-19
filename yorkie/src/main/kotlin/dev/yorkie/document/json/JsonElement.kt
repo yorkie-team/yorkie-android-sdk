@@ -28,7 +28,6 @@ public abstract class JsonElement {
             CrdtCounter::class.java to JsonCounter::class.java,
         )
 
-        @Suppress("UNCHECKED_CAST")
         internal inline fun <reified T : JsonElement> CrdtElement.toJsonElement(
             context: ChangeContext,
         ): T {

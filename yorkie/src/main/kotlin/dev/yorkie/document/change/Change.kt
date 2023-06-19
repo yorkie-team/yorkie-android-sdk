@@ -2,6 +2,7 @@ package dev.yorkie.document.change
 
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.operation.Operation
+import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 
 /**
@@ -20,8 +21,8 @@ public data class Change internal constructor(
         id = id.setActor(actorID)
     }
 
-    internal fun execute(root: CrdtRoot) {
-        operations.forEach {
+    internal fun execute(root: CrdtRoot): List<OperationInfo> {
+        return operations.flatMap {
             it.execute(root)
         }
     }

@@ -11,7 +11,7 @@ fun createClient(presence: Presence? = null) = Client(
     "10.0.2.2",
     8080,
     usePlainText = true,
-    options = Client.Options(presence = presence)
+    options = Client.Options(presence = presence),
 )
 
 fun String.toDocKey(): Document.Key {

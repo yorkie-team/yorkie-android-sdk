@@ -13,8 +13,6 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.operation.OperationInfo
-import dev.yorkie.document.operation.RemoveOperation
-import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.gson
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job

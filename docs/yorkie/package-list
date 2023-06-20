@@ -260,7 +260,8 @@ $dokka.location:dev.yorkie.document/Document.DocumentStatus///PointingToDeclarat
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/value-of.html
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/values.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/index.html
-$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/ChangeInfo/#kotlin.String#kotlin.collections.List[dev.yorkie.document.operation.OperationInfo]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/-change-info.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/ChangeInfo/#kotlin.String#kotlin.collections.List[dev.yorkie.document.operation.OperationInfo]#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/-change-info.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/actorID/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/actor-i-d.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/message/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/message.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/operations/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/operations.html
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/index.html

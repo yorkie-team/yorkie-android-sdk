@@ -308,7 +308,7 @@ public class Document(public val key: Key) {
         public data class ChangeInfo(
             public val message: String,
             public val operations: List<OperationInfo>,
-            public val actorID: ActorID? = null,
+            public val actorID: ActorID,
         )
     }
 

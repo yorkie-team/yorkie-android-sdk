@@ -131,12 +131,12 @@ public class Document(public val key: Key) {
     }
 
     private fun List<Event.ChangeInfo>.filterTargetChangeInfos(targetPath: String) =
-        mapNotNull { (message, operations) ->
+        mapNotNull { (message, operations, actor) ->
             val targetOps = operations.filter { isSameElementOrChildOf(it.path, targetPath) }
             if (targetOps.isEmpty()) {
                 null
             } else {
-                Event.ChangeInfo(message, targetOps)
+                Event.ChangeInfo(message, targetOps, actor)
             }
         }
 
@@ -270,7 +270,7 @@ public class Document(public val key: Key) {
     }
 
     private fun Change.toChangeInfo(operationInfos: List<OperationInfo>) =
-        Event.ChangeInfo(message.orEmpty(), operationInfos.map { it.updatePath() })
+        Event.ChangeInfo(message.orEmpty(), operationInfos.map { it.updatePath() }, id.actor)
 
     private fun OperationInfo.updatePath(): OperationInfo {
         val path = root.createSubPaths(executedAt).joinToString(".")
@@ -308,6 +308,7 @@ public class Document(public val key: Key) {
         public data class ChangeInfo(
             public val message: String,
             public val operations: List<OperationInfo>,
+            public val actorID: ActorID,
         )
     }
 

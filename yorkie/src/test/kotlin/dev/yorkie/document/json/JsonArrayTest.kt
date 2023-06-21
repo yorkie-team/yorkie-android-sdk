@@ -119,7 +119,7 @@ class JsonArrayTest {
         assertEquals("[1,2,3]", target.toJson())
 
         val firstElement = requireNotNull(target.getAs<JsonPrimitive>(0))
-        val lastElement =  requireNotNull(target.getAs<JsonPrimitive>(2))
+        val lastElement = requireNotNull(target.getAs<JsonPrimitive>(2))
         target.moveAfter(lastElement.id, firstElement.id)
         assertEquals("[2,3,1]", target.toJson())
     }
@@ -134,7 +134,7 @@ class JsonArrayTest {
         assertEquals("[1,2,3]", target.toJson())
 
         val firstElement = requireNotNull(target.getAs<JsonPrimitive>(0))
-        val lastElement =  requireNotNull(target.getAs<JsonPrimitive>(2))
+        val lastElement = requireNotNull(target.getAs<JsonPrimitive>(2))
         target.moveBefore(lastElement.id, firstElement.id)
         assertEquals("[2,1,3]", target.toJson())
     }
@@ -148,7 +148,7 @@ class JsonArrayTest {
         }
         assertEquals("[1,2,3]", target.toJson())
 
-        val lastElement =  requireNotNull(target.getAs<JsonPrimitive>(2))
+        val lastElement = requireNotNull(target.getAs<JsonPrimitive>(2))
         target.moveFront(lastElement.id)
         assertEquals("[3,1,2]", target.toJson())
     }

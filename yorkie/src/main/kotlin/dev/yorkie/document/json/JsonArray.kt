@@ -20,8 +20,6 @@ public class JsonArray internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtArray,
 ) : JsonElement(), Collection<JsonElement> {
-    internal val id
-        get() = target.createdAt
 
     override val size: Int
         get() = target.length
@@ -44,45 +42,53 @@ public class JsonArray internal constructor(
         return target[createdAt]?.toJsonElement(context)
     }
 
-    public fun put(value: Boolean) = putPrimitive(value)
+    public fun put(value: Boolean, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    public fun put(value: Int) = putPrimitive(value)
+    public fun put(value: Int, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    public fun put(value: Long) = putPrimitive(value)
+    public fun put(value: Long, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    public fun put(value: Double) = putPrimitive(value)
+    public fun put(value: Double, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    public fun put(value: String) = putPrimitive(value)
+    public fun put(value: String, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    public fun put(value: ByteArray) = putPrimitive(value)
+    public fun put(value: ByteArray, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    public fun put(value: Date) = putPrimitive(value)
+    public fun put(value: Date, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    public fun put(value: JsonPrimitive) = putPrimitive(value)
+    public fun put(value: JsonPrimitive, prevCreatedAt: TimeTicket? = null) =
+        putPrimitive(value, prevCreatedAt)
 
-    private fun putPrimitive(value: Any) {
+    private fun putPrimitive(value: Any, prevCreatedAt: TimeTicket? = null) {
         val primitive = if (value is JsonPrimitive) {
             value.target
         } else {
             CrdtPrimitive(value, context.issueTimeTicket())
         }
-        putCrdtElement(primitive)
+        putCrdtElement(primitive, prevCreatedAt)
     }
 
-    public fun putNewObject(): JsonObject {
+    public fun putNewObject(prevCreatedAt: TimeTicket? = null): JsonObject {
         val obj = CrdtObject(context.issueTimeTicket(), rht = ElementRht())
-        putCrdtElement(obj)
+        putCrdtElement(obj, prevCreatedAt)
         return obj.toJsonElement(context)
     }
 
-    public fun putNewArray(): JsonArray {
+    public fun putNewArray(prevCreatedAt: TimeTicket? = null): JsonArray {
         val array = CrdtArray(context.issueTimeTicket())
-        putCrdtElement(array)
+        putCrdtElement(array, prevCreatedAt)
         return array.toJsonElement(context)
     }
 
-    private fun putCrdtElement(value: CrdtElement) {
-        val prevCreated = target.lastCreatedAt
+    private fun putCrdtElement(value: CrdtElement, prevCreatedAt: TimeTicket? = null) {
+        val prevCreated = prevCreatedAt ?: target.lastCreatedAt
         target.insertAfter(prevCreated, value)
         context.registerElement(value, target)
         context.push(
@@ -124,6 +130,22 @@ public class JsonArray internal constructor(
     }
 
     public fun moveAfter(prevCreatedAt: TimeTicket, createdAt: TimeTicket) {
+        moveInternal(prevCreatedAt, createdAt)
+    }
+
+    public fun moveBefore(nextCreatedAt: TimeTicket, createdAt: TimeTicket) {
+        moveInternal(target.getPrevCreatedAt(nextCreatedAt), createdAt)
+    }
+
+    public fun moveFront(createdAt: TimeTicket) {
+        moveInternal(target.head.createdAt, createdAt)
+    }
+
+    public fun moveLast(createdAt: TimeTicket) {
+        moveInternal(target.lastCreatedAt, createdAt)
+    }
+
+    private fun moveInternal(prevCreatedAt: TimeTicket, createdAt: TimeTicket) {
         val executedAt = context.issueTimeTicket()
         target.moveAfter(prevCreatedAt, createdAt, executedAt)
         context.push(

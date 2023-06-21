@@ -3,12 +3,10 @@ package dev.yorkie.document.json
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.CrdtCounter.CounterType
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import kotlin.test.assertEquals
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class JsonCounterTest {
     private val document = Document(Document.Key(""))
 

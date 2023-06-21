@@ -13,10 +13,8 @@ public class JsonCounter internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtCounter,
 ) : JsonElement() {
-    public val id
-        get() = target.id
 
-    public val value
+    public val value: CounterValue
         get() = target.value
 
     public fun increase(value: Int): JsonCounter {

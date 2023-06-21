@@ -23,8 +23,6 @@ public class JsonObject internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtObject,
 ) : JsonElement() {
-    public val id
-        get() = target.createdAt
 
     public val keys: List<String>
         get() = target.keys

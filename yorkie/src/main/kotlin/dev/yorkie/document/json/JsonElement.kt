@@ -7,6 +7,7 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.time.TimeTicket
 
 /**
  * [JsonElement] is a wrapper for [CrdtElement] that provides users with an
@@ -14,6 +15,9 @@ import dev.yorkie.document.crdt.CrdtText
  */
 public abstract class JsonElement {
     internal abstract val target: CrdtElement
+
+    public val id: TimeTicket
+        get() = target.id
 
     public fun toJson() = target.toJson()
 
@@ -52,5 +56,13 @@ public abstract class JsonElement {
                 throw TypeCastException(e.message)
             }
         }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return target == (other as? JsonElement)?.target
+    }
+
+    override fun hashCode(): Int {
+        return target.hashCode()
     }
 }

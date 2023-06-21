@@ -7,7 +7,6 @@ import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.StyleOperation
-import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
 /**
@@ -17,9 +16,6 @@ public class JsonText internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtText,
 ) : JsonElement() {
-
-    public val id: TimeTicket
-        get() = target.id
 
     public val values: List<TextWithAttributes>
         get() = target.values

@@ -13,8 +13,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.texteditor.databinding.ActivityMainBinding
 import dev.yorkie.core.Client
-import dev.yorkie.document.crdt.TextChange
-import dev.yorkie.document.crdt.TextChangeType
+import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger
 import dev.yorkie.util.YorkieLogger
@@ -52,11 +51,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             launch {
-                viewModel.textChanges.collect {
-                    when (it.type) {
-                        TextChangeType.Content -> it.handleContentChange()
-                        TextChangeType.Selection -> it.handleSelectChange()
-                        else -> return@collect
+                viewModel.textChangeInfos.collect { (actor, opInfo) ->
+                    when (opInfo) {
+                        is OperationInfo.EditOpInfo -> opInfo.handleContentChange()
+                        is OperationInfo.SelectOpInfo -> opInfo.handleSelectChange(actor)
                     }
                 }
             }
@@ -72,21 +70,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun TextChange.handleContentChange() {
+    private fun OperationInfo.EditOpInfo.handleContentChange() {
         binding.textEditor.withRemoteChange {
             if (from == to) {
-                it.text.insert(from.coerceAtLeast(0), content.orEmpty())
+                it.text.insert(from.coerceAtLeast(0), value.text)
             } else {
                 it.text.replace(
                     from.coerceAtLeast(0),
                     to.coerceAtLeast(0),
-                    content.orEmpty(),
+                    value.text,
                 )
             }
         }
     }
 
-    private fun TextChange.handleSelectChange() {
+    private fun OperationInfo.SelectOpInfo.handleSelectChange(actor: ActorID) {
         val editable = binding.textEditor.text ?: return
 
         if (editable.removePrevSpan(actor) && from == to) {

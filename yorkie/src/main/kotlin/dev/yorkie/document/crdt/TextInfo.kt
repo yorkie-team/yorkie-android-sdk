@@ -4,11 +4,7 @@ import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 
-/**
- * The value passed as an argument to [CrdtText.onChanges].
- * [CrdtText.onChanges] is called when the [CrdtText] is modified.
- */
-public data class TextChange(
+internal data class TextChange(
     val type: TextChangeType,
     val actor: ActorID,
     val from: Int,
@@ -20,7 +16,7 @@ public data class TextChange(
 /**
  * The type of [TextChange].
  */
-public enum class TextChangeType {
+internal enum class TextChangeType {
     Content, Selection, Style
 }
 

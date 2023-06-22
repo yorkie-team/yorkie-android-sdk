@@ -8,8 +8,8 @@ import dev.yorkie.core.Client
 import dev.yorkie.core.Client.Event
 import dev.yorkie.core.Client.PeersChangedResult.Unwatched
 import dev.yorkie.document.Document
-import dev.yorkie.document.crdt.TextChange
 import dev.yorkie.document.json.JsonText
+import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,8 +29,8 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _content = MutableSharedFlow<String>()
     val content = _content.asSharedFlow()
 
-    private val _textChanges = MutableSharedFlow<TextChange>()
-    val textChanges = _textChanges.asSharedFlow()
+    private val _textChangeInfos = MutableSharedFlow<Pair<ActorID, OperationInfo.TextOpInfo>>()
+    val textChangeInfos = _textChangeInfos.asSharedFlow()
 
     val removedPeers = client.events.filterIsInstance<Event.PeersChanged>()
         .map { it.result }
@@ -42,36 +42,37 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     val peerSelectionInfos: Map<ActorID, PeerSelectionInfo>
         get() = _peerSelectionInfos
 
-    private val remoteChangeEventHandler: ((List<TextChange>) -> Unit) = { changes ->
-        val clientID = client.requireClientId()
-        changes.filterNot { it.actor == clientID }.forEach {
-            viewModelScope.launch {
-                _textChanges.emit(it)
-            }
-        }
-    }
-
     init {
         viewModelScope.launch {
             if (client.activateAsync().await() && client.attachAsync(document).await()) {
-                document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
-                    ?.onChanges(remoteChangeEventHandler)
-                    ?: run {
-                        document.updateAsync {
-                            it.setNewText(TEXT_KEY).onChanges(remoteChangeEventHandler)
-                        }.await()
-                    }
+                if (document.getRoot().getAsOrNull<JsonText>(TEXT_KEY) == null) {
+                    document.updateAsync {
+                        it.setNewText(TEXT_KEY)
+                    }.await()
+                }
                 client.syncAsync().await()
             }
         }
 
         viewModelScope.launch {
-            document.events.collect {
-                if (it is Document.Event.Snapshot) {
+            document.events.collect { event ->
+                if (event is Document.Event.Snapshot) {
                     syncText()
+                } else if (event is Document.Event.RemoteChange) {
+                    emitTextChanges(event.changeInfos)
                 }
             }
         }
+    }
+
+    private suspend fun emitTextChanges(changeInfos: List<Document.Event.ChangeInfo>) {
+        val clientID = client.requireClientId()
+        changeInfos.filterNot { it.actorID == clientID }
+            .flatMap { (_, ops, actor) ->
+                ops.filterIsInstance<OperationInfo.TextOpInfo>().map { op -> actor to op }
+            }.forEach {
+                _textChangeInfos.emit(it)
+            }
     }
 
     fun syncText() {

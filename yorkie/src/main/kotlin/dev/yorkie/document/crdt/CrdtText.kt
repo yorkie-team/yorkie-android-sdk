@@ -14,11 +14,6 @@ internal data class CrdtText(
 ) : CrdtElement() {
     private val selectionMap = mutableMapOf<ActorID, Selection>()
 
-    private var onChangesHandler: ((List<TextChange>) -> Unit)? = null
-
-    @Volatile
-    private var remoteChangeLock: Boolean = false
-
     val removedNodesLength: Int
         get() = rgaTreeSplit.removedNodesLength
 
@@ -71,7 +66,6 @@ internal data class CrdtText(
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
         selectPrev(RgaTreeSplitNodeRange(caretPos, caretPos), executedAt)?.let { changes.add(it) }
-        handleChanges(changes)
         return latestCreatedAtMap to changes
     }
 
@@ -101,7 +95,7 @@ internal data class CrdtText(
         val fromRight = rgaTreeSplit.findNodeWithSplit(range.first, executedAt).second
 
         // 2. Style nodes between from and to.
-        val changes = rgaTreeSplit.findBetween(fromRight, toRight)
+        return rgaTreeSplit.findBetween(fromRight, toRight)
             .filterNot { it.isRemoved }
             .map { node ->
                 val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createRange())
@@ -115,22 +109,13 @@ internal data class CrdtText(
                     attributes,
                 )
             }
-
-        handleChanges(changes)
-        return changes
     }
 
     /**
      * Stores that the given [range] has been selected.
      */
     fun select(range: RgaTreeSplitNodeRange, executedAt: TimeTicket): TextChange? {
-        return if (remoteChangeLock) {
-            null
-        } else {
-            selectPrev(range, executedAt)?.also {
-                handleChanges(listOf(it))
-            }
-        }
+        return selectPrev(range, executedAt)
     }
 
     /**
@@ -153,21 +138,7 @@ internal data class CrdtText(
         return copy(rgaTreeSplit = rgaTreeSplit.deepCopy())
     }
 
-    /**
-     * Registers a handler of onChanges event.
-     */
-    fun onChanges(handler: ((List<TextChange>) -> Unit)) {
-        onChangesHandler = handler
-    }
-
     override fun toString(): String {
         return rgaTreeSplit.toString()
-    }
-
-    private fun handleChanges(changes: List<TextChange>) {
-        onChangesHandler ?: return
-        remoteChangeLock = true
-        onChangesHandler?.invoke(changes)
-        remoteChangeLock = false
     }
 }

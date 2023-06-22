@@ -32,13 +32,13 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
         viewModelScope.launch {
             client.events.collect {
                 if (it is Client.Event.DocumentSynced) {
-                    try {
-                        updateDocument(it.result.document.getRoot().getAs(DOCUMENT_LIST_KEY))
-                    } catch (e: Exception) {
-                        document.updateAsync { jsonObject ->
-                            jsonObject.setNewArray(DOCUMENT_LIST_KEY)
-                        }.await()
-                    }
+                    it.result.document.getRoot().getAsOrNull<JsonArray>(DOCUMENT_LIST_KEY)
+                        ?.let(::updateDocument)
+                        ?: run {
+                            document.updateAsync { root ->
+                                root.setNewArray(DOCUMENT_LIST_KEY)
+                            }.await()
+                        }
                 }
             }
         }

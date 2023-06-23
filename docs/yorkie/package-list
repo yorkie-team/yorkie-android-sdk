@@ -91,20 +91,6 @@ $dokka.location:dev.yorkie.core/PresenceInfo/data/#/PointingToDeclaration/yorki
 $dokka.location:dev.yorkie.document.change////PointingToDeclaration/yorkie/dev.yorkie.document.change/index.html
 $dokka.location:dev.yorkie.document.change/Change///PointingToDeclaration/yorkie/dev.yorkie.document.change/-change/index.html
 $dokka.location:dev.yorkie.document.crdt////PointingToDeclaration/yorkie/dev.yorkie.document.crdt/index.html
-$dokka.location:dev.yorkie.document.crdt/TextChange///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/index.html
-$dokka.location:dev.yorkie.document.crdt/TextChange/TextChange/#dev.yorkie.document.crdt.TextChangeType#dev.yorkie.document.time.ActorID#kotlin.Int#kotlin.Int#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]?/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/-text-change.html
-$dokka.location:dev.yorkie.document.crdt/TextChange/actor/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/actor.html
-$dokka.location:dev.yorkie.document.crdt/TextChange/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/attributes.html
-$dokka.location:dev.yorkie.document.crdt/TextChange/content/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/content.html
-$dokka.location:dev.yorkie.document.crdt/TextChange/from/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/from.html
-$dokka.location:dev.yorkie.document.crdt/TextChange/to/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/to.html
-$dokka.location:dev.yorkie.document.crdt/TextChange/type/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change/type.html
-$dokka.location:dev.yorkie.document.crdt/TextChangeType.Content///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document.crdt/-text-change-type/-content/index.html
-$dokka.location:dev.yorkie.document.crdt/TextChangeType.Selection///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document.crdt/-text-change-type/-selection/index.html
-$dokka.location:dev.yorkie.document.crdt/TextChangeType.Style///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document.crdt/-text-change-type/-style/index.html
-$dokka.location:dev.yorkie.document.crdt/TextChangeType///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change-type/index.html
-$dokka.location:dev.yorkie.document.crdt/TextChangeType/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change-type/value-of.html
-$dokka.location:dev.yorkie.document.crdt/TextChangeType/values/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-change-type/values.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/index.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/TextWithAttributes/#kotlin.Pair[kotlin.String,kotlin.collections.Map[kotlin.String,kotlin.String]]/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/-text-with-attributes.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/attributes.html
@@ -190,7 +176,6 @@ $dokka.location:dev.yorkie.document.json/JsonText/clear/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.document.json/JsonText/delete/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/delete.html
 $dokka.location:dev.yorkie.document.json/JsonText/edit/#kotlin.Int#kotlin.Int#kotlin.String#kotlin.collections.Map[kotlin.String,kotlin.String]?/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/edit.html
 $dokka.location:dev.yorkie.document.json/JsonText/length/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/length.html
-$dokka.location:dev.yorkie.document.json/JsonText/onChanges/#kotlin.Function1[kotlin.collections.List[dev.yorkie.document.crdt.TextChange],kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/on-changes.html
 $dokka.location:dev.yorkie.document.json/JsonText/select/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/select.html
 $dokka.location:dev.yorkie.document.json/JsonText/style/#kotlin.Int#kotlin.Int#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/style.html
 $dokka.location:dev.yorkie.document.json/JsonText/toString/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/to-string.html
@@ -236,6 +221,7 @@ $dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/attribut
 $dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/from/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/from.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/path.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/to/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/to.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.TextOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-text-op-info/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/path.html
 $dokka.location:dev.yorkie.document.time////PointingToDeclaration/yorkie/dev.yorkie.document.time/index.html

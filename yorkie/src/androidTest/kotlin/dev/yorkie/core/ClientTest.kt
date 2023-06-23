@@ -109,15 +109,15 @@ class ClientTest {
 
             val localSetEvent = assertIs<LocalChange>(document1Events.first())
             val localSetOperation = assertIs<OperationInfo.SetOpInfo>(
-                localSetEvent.changeInfos.first().operations.first(),
+                localSetEvent.changeInfo.operations.first(),
             )
             assertEquals("k1", localSetOperation.key)
-            assertEquals("$", localSetEvent.changeInfos.first().operations.first().path)
+            assertEquals("$", localSetEvent.changeInfo.operations.first().path)
             document1Events.clear()
 
             val remoteSetEvent = assertIs<RemoteChange>(document2Events.first())
             val remoteSetOperation = assertIs<OperationInfo.SetOpInfo>(
-                remoteSetEvent.changeInfos.first().operations.first(),
+                remoteSetEvent.changeInfo.operations.first(),
             )
             assertEquals("k1", remoteSetOperation.key)
             document2Events.clear()
@@ -145,13 +145,13 @@ class ClientTest {
 
             val remoteRemoveEvent = assertIs<RemoteChange>(document1Events.first())
             val remoteRemoveOperation = assertIs<OperationInfo.RemoveOpInfo>(
-                remoteRemoveEvent.changeInfos.first().operations.first(),
+                remoteRemoveEvent.changeInfo.operations.first(),
             )
             assertEquals(localSetOperation.executedAt, remoteRemoveOperation.executedAt)
 
             val localRemoveEvent = assertIs<LocalChange>(document2Events.first())
             val localRemoveOperation = assertIs<OperationInfo.RemoveOpInfo>(
-                localRemoveEvent.changeInfos.first().operations.first(),
+                localRemoveEvent.changeInfo.operations.first(),
             )
             assertEquals(remoteSetOperation.executedAt, localRemoveOperation.executedAt)
 
@@ -365,7 +365,7 @@ class ClientTest {
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     document3.events.filterIsInstance<RemoteChange>().collect { event ->
-                        document3Ops.addAll(event.changeInfos.flatMap { it.operations })
+                        document3Ops.addAll(event.changeInfo.operations)
                     }
                 },
             )
@@ -392,8 +392,8 @@ class ClientTest {
             // 03. c1 and c2 sync with push-only mode. So, the changes of c1 and c2
             // are not reflected to each other.
             // But, c3 can get the changes of c1 and c2, because c3 sync with pull-pull mode.
-            client1.pauseRemoteChange(document1)
-            client2.pauseRemoteChange(document2)
+            client1.pauseRemoteChanges(document1)
+            client2.pauseRemoteChanges(document2)
             document1.updateAsync {
                 it["c1"] = 1
             }.await()

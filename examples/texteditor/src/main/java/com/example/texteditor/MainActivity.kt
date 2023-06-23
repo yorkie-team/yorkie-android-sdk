@@ -51,7 +51,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             launch {
-                viewModel.textChangeInfos.collect { (actor, opInfo) ->
+                viewModel.textOpInfos.collect { (actor, opInfo) ->
                     when (opInfo) {
                         is OperationInfo.EditOpInfo -> opInfo.handleContentChange()
                         is OperationInfo.SelectOpInfo -> opInfo.handleSelectChange(actor)

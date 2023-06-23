@@ -141,7 +141,7 @@ class DocumentTest {
             assertEquals(1, events.size)
             var event = events.first()
             assertIs<Document.Event.LocalChange>(event)
-            var operations = event.changeInfos.first().operations
+            var operations = event.changeInfo.operations
             assertEquals(2, operations.size)
             assertTrue(operations.all { it is SetOpInfo })
 
@@ -159,7 +159,7 @@ class DocumentTest {
             assertEquals(2, events.size)
             event = events.last()
             assertIs<Document.Event.LocalChange>(event)
-            operations = event.changeInfos.first().operations
+            operations = event.changeInfo.operations
             assertEquals(2, operations.size)
             assertTrue(operations.all { it is RemoveOpInfo })
 

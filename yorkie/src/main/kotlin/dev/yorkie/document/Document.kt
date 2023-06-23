@@ -97,8 +97,8 @@ public class Document(public val key: Key) {
             val operationInfos = change.execute(root)
             localChanges += change
             changeID = change.id
-            val changeInfos = listOf(change.toChangeInfo(operationInfos))
-            eventStream.emit(Event.LocalChange(changeInfos))
+            val changeInfo = change.toChangeInfo(operationInfos)
+            eventStream.emit(Event.LocalChange(changeInfo))
             true
         }
     }
@@ -112,33 +112,27 @@ public class Document(public val key: Key) {
                 when (event) {
                     is Event.Snapshot -> event
                     is Event.RemoteChange -> {
-                        event.changeInfos.filterTargetChangeInfos(targetPath)
+                        event.changeInfo.operations.filterTargetOpInfos(targetPath)
                             .takeIf { it.isNotEmpty() }
                             ?.let {
-                                Event.RemoteChange(it)
+                                Event.RemoteChange(event.changeInfo.copy(operations = it))
                             }
                     }
 
                     is Event.LocalChange -> {
-                        event.changeInfos.filterTargetChangeInfos(targetPath)
+                        event.changeInfo.operations.filterTargetOpInfos(targetPath)
                             .takeIf { it.isNotEmpty() }
                             ?.let {
-                                Event.LocalChange(it)
+                                Event.LocalChange(event.changeInfo.copy(operations = it))
                             }
                     }
                 }
             }
     }
 
-    private fun List<Event.ChangeInfo>.filterTargetChangeInfos(targetPath: String) =
-        mapNotNull { (message, operations, actor) ->
-            val targetOps = operations.filter { isSameElementOrChildOf(it.path, targetPath) }
-            if (targetOps.isEmpty()) {
-                null
-            } else {
-                Event.ChangeInfo(message, targetOps, actor)
-            }
-        }
+    private fun List<OperationInfo>.filterTargetOpInfos(targetPath: String): List<OperationInfo> {
+        return filter { isSameElementOrChildOf(it.path, targetPath) }
+    }
 
     private fun isSameElementOrChildOf(element: String, parent: String): Boolean {
         return if (parent == element) {
@@ -220,7 +214,9 @@ public class Document(public val key: Key) {
         if (changesInfo.isEmpty()) {
             return
         }
-        eventStream.emit(Event.RemoteChange(changesInfo))
+        changesInfo.forEach { changeInfo ->
+            eventStream.emit(Event.RemoteChange(changeInfo))
+        }
     }
 
     private suspend fun ensureClone(): CrdtRoot = withContext(dispatcher) {
@@ -292,14 +288,14 @@ public class Document(public val key: Key) {
          * An event that occurs when the document is changed by local changes.
          */
         public class LocalChange internal constructor(
-            public val changeInfos: List<ChangeInfo>,
+            public val changeInfo: ChangeInfo,
         ) : Event
 
         /**
          * An event that occurs when the document is changed by remote changes.
          */
         public class RemoteChange internal constructor(
-            public val changeInfos: List<ChangeInfo>,
+            public val changeInfo: ChangeInfo,
         ) : Event
 
         /**

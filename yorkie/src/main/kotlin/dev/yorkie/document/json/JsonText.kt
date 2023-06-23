@@ -2,7 +2,7 @@ package dev.yorkie.document.json
 
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtText
-import dev.yorkie.document.crdt.TextChange
+import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.SelectOperation
@@ -37,9 +37,27 @@ public class JsonText internal constructor(
             return false
         }
 
-        val range = target.createRange(fromIndex, toIndex)
+        val range = createRange(fromIndex, toIndex) ?: return false
+
+        YorkieLogger.d(
+            TAG,
+            "EDIT: f:$fromIndex->${range.first}, t:$toIndex->${range.second} c:$content",
+        )
+
         val executedAt = context.issueTimeTicket()
-        val maxCreatedAtMapByActor = target.edit(range, content, executedAt, attributes).first
+        val maxCreatedAtMapByActor = runCatching {
+            target.edit(range, content, executedAt, attributes).first
+        }.getOrElse {
+            when (it) {
+                is NoSuchElementException, is IllegalArgumentException -> {
+                    YorkieLogger.e(TAG, "can't style text")
+                    return false
+                }
+
+                else -> throw it
+            }
+        }
+
         context.push(
             EditOperation(
                 fromPos = range.first,
@@ -48,7 +66,7 @@ public class JsonText internal constructor(
                 content = content,
                 parentCreatedAt = target.createdAt,
                 executedAt = executedAt,
-                attributes = attributes ?: mapOf(),
+                attributes = attributes ?: emptyMap(),
             ),
         )
 
@@ -71,9 +89,26 @@ public class JsonText internal constructor(
             return false
         }
 
-        val range = target.createRange(fromIndex, toIndex)
+        val range = createRange(fromIndex, toIndex) ?: return false
+
+        YorkieLogger.d(
+            TAG,
+            "STYL: f:$fromIndex->${range.first}, t:$toIndex->${range.second} a:$attributes",
+        )
+
         val executedAt = context.issueTimeTicket()
-        target.style(range, attributes, executedAt)
+        runCatching {
+            target.style(range, attributes, executedAt)
+        }.getOrElse {
+            when (it) {
+                is NoSuchElementException, is IllegalArgumentException -> {
+                    YorkieLogger.e(TAG, "can't style text")
+                    return false
+                }
+
+                else -> throw it
+            }
+        }
 
         context.push(
             StyleOperation(
@@ -91,9 +126,26 @@ public class JsonText internal constructor(
      * Selects the given range.
      */
     public fun select(fromIndex: Int, toIndex: Int): Boolean {
-        val range = target.createRange(fromIndex, toIndex)
+        if (fromIndex > toIndex) {
+            YorkieLogger.e(TAG, "fromIndex should be less than or equal to toIndex")
+            return false
+        }
+
+        val range = createRange(fromIndex, toIndex) ?: return false
+
+        YorkieLogger.d(
+            TAG,
+            "SELT: f:$fromIndex->${range.first}, t:$toIndex->${range.second}",
+        )
+
         val executedAt = context.issueTimeTicket()
-        target.select(range, executedAt)
+        try {
+            target.select(range, executedAt)
+        } catch (e: NoSuchElementException) {
+            YorkieLogger.e(TAG, "can't select text")
+            return false
+        }
+
         context.push(
             SelectOperation(
                 parentCreatedAt = target.createdAt,
@@ -103,6 +155,21 @@ public class JsonText internal constructor(
             ),
         )
         return true
+    }
+
+    private fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitNodeRange? {
+        return runCatching {
+            target.createRange(fromIndex, toIndex)
+        }.getOrElse {
+            when (it) {
+                is NoSuchElementException, is IndexOutOfBoundsException -> {
+                    YorkieLogger.e(TAG, "can't create range")
+                    null
+                }
+
+                else -> throw it
+            }
+        }
     }
 
     /**
@@ -117,13 +184,6 @@ public class JsonText internal constructor(
      */
     public fun clear(): Boolean {
         return edit(0, target.length, "")
-    }
-
-    /**
-     * Registers a handler of onChanges event.
-     */
-    public fun onChanges(handler: ((List<TextChange>) -> Unit)) {
-        return target.onChanges(handler)
     }
 
     override fun toString(): String {

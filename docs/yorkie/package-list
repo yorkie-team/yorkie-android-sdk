@@ -63,7 +63,7 @@ $dokka.location:dev.yorkie.core/Client/detachAsync/#dev.yorkie.document.Document
 $dokka.location:dev.yorkie.core/Client/events/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/events.html
 $dokka.location:dev.yorkie.core/Client/isActive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/is-active.html
 $dokka.location:dev.yorkie.core/Client/pause/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/pause.html
-$dokka.location:dev.yorkie.core/Client/pauseRemoteChange/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/pause-remote-change.html
+$dokka.location:dev.yorkie.core/Client/pauseRemoteChanges/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/pause-remote-changes.html
 $dokka.location:dev.yorkie.core/Client/peerStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/peer-status.html
 $dokka.location:dev.yorkie.core/Client/presenceInfo/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/presence-info.html
 $dokka.location:dev.yorkie.core/Client/removeAsync/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/remove-async.html
@@ -254,9 +254,9 @@ $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/actorID/#/Pointing
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/message/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/message.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/operations/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/operations.html
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/index.html
-$dokka.location:dev.yorkie.document/Document.Event.LocalChange/changeInfos/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/change-infos.html
+$dokka.location:dev.yorkie.document/Document.Event.LocalChange/changeInfo/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/change-info.html
 $dokka.location:dev.yorkie.document/Document.Event.RemoteChange///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-remote-change/index.html
-$dokka.location:dev.yorkie.document/Document.Event.RemoteChange/changeInfos/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-remote-change/change-infos.html
+$dokka.location:dev.yorkie.document/Document.Event.RemoteChange/changeInfo/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-remote-change/change-info.html
 $dokka.location:dev.yorkie.document/Document.Event.Snapshot///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-snapshot/index.html
 $dokka.location:dev.yorkie.document/Document.Event.Snapshot/data/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-snapshot/data.html
 $dokka.location:dev.yorkie.document/Document.Event///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/index.html

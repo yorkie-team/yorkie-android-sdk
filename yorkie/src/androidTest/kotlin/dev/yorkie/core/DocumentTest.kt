@@ -5,7 +5,6 @@ import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
 import dev.yorkie.document.Document.Event
-import dev.yorkie.document.Document.Event.ChangeInfo
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonCounter
@@ -232,13 +231,13 @@ class DocumentTest {
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events.filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1Ops.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document1Ops.addAll(it.changeInfo.operations)
                         }
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     document2.events.filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document2Ops.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document2Ops.addAll(it.changeInfo.operations)
                         }
                 },
             )
@@ -359,21 +358,19 @@ class DocumentTest {
                 "events" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events.filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1Ops.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document1Ops.addAll(it.changeInfo.operations)
                         }
                 },
                 "todos" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events("$.todos").filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1TodosOps.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document1TodosOps.addAll(it.changeInfo.operations)
                         }
                 },
                 "counter" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events("$.counter").filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1CounterOps.addAll(
-                                it.changeInfos.flatMap(ChangeInfo::operations),
-                            )
+                            document1CounterOps.addAll(it.changeInfo.operations)
                         }
                 },
             )
@@ -488,19 +485,19 @@ class DocumentTest {
                 "events" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events.filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1Ops.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document1Ops.addAll(it.changeInfo.operations)
                         }
                 },
                 "todos" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events("$.todos.0").filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1TodosOps.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document1TodosOps.addAll(it.changeInfo.operations)
                         }
                 },
                 "obj" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document1.events("$.obj.c1").filterIsInstance<Event.RemoteChange>()
                         .collect {
-                            document1ObjOps.addAll(it.changeInfos.flatMap(ChangeInfo::operations))
+                            document1ObjOps.addAll(it.changeInfo.operations)
                         }
                 },
             )

@@ -29,8 +29,8 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _content = MutableSharedFlow<String>()
     val content = _content.asSharedFlow()
 
-    private val _textChangeInfos = MutableSharedFlow<Pair<ActorID, OperationInfo.TextOpInfo>>()
-    val textChangeInfos = _textChangeInfos.asSharedFlow()
+    private val _textOpInfos = MutableSharedFlow<Pair<ActorID, OperationInfo.TextOpInfo>>()
+    val textOpInfos = _textOpInfos.asSharedFlow()
 
     val removedPeers = client.events.filterIsInstance<Event.PeersChanged>()
         .map { it.result }
@@ -59,19 +59,18 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
                 if (event is Document.Event.Snapshot) {
                     syncText()
                 } else if (event is Document.Event.RemoteChange) {
-                    emitTextChanges(event.changeInfos)
+                    emitTextOpInfos(event.changeInfo)
                 }
             }
         }
     }
 
-    private suspend fun emitTextChanges(changeInfos: List<Document.Event.ChangeInfo>) {
-        val clientID = client.requireClientId()
-        changeInfos.filterNot { it.actorID == clientID }
-            .flatMap { (_, ops, actor) ->
-                ops.filterIsInstance<OperationInfo.TextOpInfo>().map { op -> actor to op }
-            }.forEach {
-                _textChangeInfos.emit(it)
+    private suspend fun emitTextOpInfos(changeInfo: Document.Event.ChangeInfo) {
+        if (changeInfo.actorID == client.requireClientId()) return
+
+        changeInfo.operations.filterIsInstance<OperationInfo.TextOpInfo>()
+            .forEach { opInfo ->
+                _textOpInfos.emit(changeInfo.actorID to opInfo)
             }
     }
 

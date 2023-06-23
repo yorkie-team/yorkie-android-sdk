@@ -608,7 +608,7 @@ public class Client @VisibleForTesting internal constructor(
      * Pauses the synchronization of remote changes,
      * allowing only local changes to be applied.
      */
-    public fun pauseRemoteChange(document: Document) {
+    public fun pauseRemoteChanges(document: Document) {
         changeSyncMode(document, SyncMode.PushOnly)
     }
 

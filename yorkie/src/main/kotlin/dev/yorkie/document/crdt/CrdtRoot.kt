@@ -141,7 +141,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             val pair = elementPairMapByCreatedAt[createdAt] ?: continue
             val text = pair.element as CrdtText
 
-            val removedNodeCount = text.deleteTextNodesWithGarbage(executedAt)
+            val removedNodeCount = text.deleteRemovedNodesBefore(executedAt)
             if (removedNodeCount > 0) {
                 textGarbageIterator.remove()
             }

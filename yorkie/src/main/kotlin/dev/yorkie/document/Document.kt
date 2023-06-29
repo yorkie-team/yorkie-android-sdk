@@ -54,6 +54,7 @@ public class Document(public val key: Key) {
 
     @VisibleForTesting
     internal var checkPoint = CheckPoint.InitialCheckPoint
+        private set
 
     internal val hasLocalChanges: Boolean
         get() = localChanges.isNotEmpty()

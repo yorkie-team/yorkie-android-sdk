@@ -11,10 +11,10 @@ internal data class CrdtText(
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket? = null,
     override var _removedAt: TimeTicket? = null,
-) : CrdtElement() {
+) : CrdtGCElement() {
     private val selectionMap = mutableMapOf<ActorID, Selection>()
 
-    val removedNodesLength: Int
+    override val removedNodesLength: Int
         get() = rgaTreeSplit.removedNodesLength
 
     val values: List<TextWithAttributes>
@@ -130,7 +130,7 @@ internal data class CrdtText(
         }
     }
 
-    fun deleteTextNodesWithGarbage(executedAt: TimeTicket): Int {
+    override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
         return rgaTreeSplit.deleteTextNodesWithGarbage(executedAt)
     }
 

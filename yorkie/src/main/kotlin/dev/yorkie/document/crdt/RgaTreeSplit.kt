@@ -574,11 +574,7 @@ internal data class RgaTreeSplitNodeID(
     }
 
     override fun compareTo(other: RgaTreeSplitNodeID): Int {
-        return if (createdAt != other.createdAt) {
-            createdAt.compareTo(other.createdAt)
-        } else {
-            offset.compareTo(other.offset)
-        }
+        return compareValuesBy(this, other, { it.createdAt }, { it.offset })
     }
 }
 

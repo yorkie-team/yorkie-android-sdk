@@ -7,6 +7,8 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.CrdtTree
+import dev.yorkie.document.crdt.toJson
 import java.util.Date
 
 internal object JsonStringifier {
@@ -29,9 +31,11 @@ internal object JsonStringifier {
                     },
                 )
             }
+
             is CrdtCounter -> {
                 buffer.append("$value")
             }
+
             is CrdtArray -> {
                 buffer.append("[")
                 forEach {
@@ -42,6 +46,7 @@ internal object JsonStringifier {
                 }
                 buffer.append("]")
             }
+
             is CrdtObject -> {
                 buffer.append("{")
                 forEach { (key, value) ->
@@ -53,6 +58,7 @@ internal object JsonStringifier {
                 }
                 buffer.append("}")
             }
+
             is CrdtText -> {
                 buffer.append(
                     "[${
@@ -60,6 +66,10 @@ internal object JsonStringifier {
                             .joinToString(",") { it.value.toJson() }
                     }]",
                 )
+            }
+
+            is CrdtTree -> {
+                buffer.append(toJson(this.root))
             }
         }
     }

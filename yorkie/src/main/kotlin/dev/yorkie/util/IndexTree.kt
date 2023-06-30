@@ -126,6 +126,24 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     }
 
     /**
+     * Traverses the whole tree (including tombstones) with postorder traversal.
+     */
+    fun traverseAll(action: ((T, Int) -> Unit)) {
+        traverseAllInternal(root, 0, action)
+    }
+
+    private fun traverseAllInternal(
+        node: T,
+        depth: Int = 0,
+        action: ((T, Int) -> Unit),
+    ) {
+        node.allChildren.forEach { child ->
+            traverseAllInternal(child, depth + 1, action)
+        }
+        action.invoke(node, depth)
+    }
+
+    /**
      * Splits the node at the given [index].
      */
     fun split(index: Int, depth: Int = 1): TreePos<T> {
@@ -418,6 +436,12 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
      */
     val children: List<T>
         get() = _children.filterNot { it.isRemoved }
+
+    /**
+     * Returns the children of the node including tombstones.
+     */
+    val allChildren: List<T>
+        get() = _children.toList()
 
     val hasTextChild: Boolean
         get() = children.any { it.isText }

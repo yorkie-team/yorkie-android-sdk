@@ -333,7 +333,7 @@ internal class CrdtTree(
             node.removedAt != null && node.removedAt <= executedAt
         }.values.toMutableSet()
 
-        indexTree.traverse { node, _ ->
+        indexTree.traverseAll { node, _ ->
             if (node in nodesToRemoved) {
                 node.parent?.removeChild(node) ?: nodesToRemoved.remove(node)
             }

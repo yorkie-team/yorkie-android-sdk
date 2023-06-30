@@ -14,10 +14,23 @@ import dev.yorkie.util.YorkieLogger
  * a particular element.
  */
 internal class CrdtRoot(val rootObject: CrdtObject) {
+    /**
+     * A hash table that maps the creation time of an element to the element itself and its parent.
+     */
     private val elementPairMapByCreatedAt =
         mutableMapOf(rootObject.createdAt to CrdtElementPair(rootObject))
+
+    /**
+     * A hash set that contains the creation time of the removed element.
+     * It is used to find the removed element when executing garbage collection.
+     */
     private val removedElementSetByCreatedAt = mutableSetOf<TimeTicket>()
-    private val textWithGarbageSetByCreatedAt = mutableSetOf<TimeTicket>()
+
+    /**
+     * A hash set that contains the creation time of the element that has removed nodes.
+     * It is used to find the element that has removed nodes when executing garbage collection.
+     */
+    private val elementHasRemovedNodesSetByCreatedAt = mutableSetOf<TimeTicket>()
 
     val elementMapSize
         get() = elementPairMapByCreatedAt.size
@@ -84,10 +97,10 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     }
 
     /**
-     * Registers the given [text] to the hast set.
+     * Registers the given [element] to the hast set.
      */
-    fun registerTextWithGarbage(text: CrdtText) {
-        textWithGarbageSetByCreatedAt.add(text.createdAt)
+    fun registerElementHasRemovedNodes(element: CrdtGCElement) {
+        elementHasRemovedNodesSetByCreatedAt.add(element.createdAt)
     }
 
     /**
@@ -106,10 +119,10 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             }
         }
 
-        textWithGarbageSetByCreatedAt.forEach { createdAt ->
+        elementHasRemovedNodesSetByCreatedAt.forEach { createdAt ->
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
-            val text = pair.element as CrdtText
-            count += text.removedNodesLength
+            val element = pair.element as CrdtGCElement
+            count += element.removedNodesLength
         }
 
         return count
@@ -135,15 +148,15 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             }
         }
 
-        val textGarbageIterator = textWithGarbageSetByCreatedAt.iterator()
-        while (textGarbageIterator.hasNext()) {
-            val createdAt = textGarbageIterator.next()
+        val elementGarbageIterator = elementHasRemovedNodesSetByCreatedAt.iterator()
+        while (elementGarbageIterator.hasNext()) {
+            val createdAt = elementGarbageIterator.next()
             val pair = elementPairMapByCreatedAt[createdAt] ?: continue
-            val text = pair.element as CrdtText
+            val element = pair.element as CrdtGCElement
 
-            val removedNodeCount = text.deleteRemovedNodesBefore(executedAt)
+            val removedNodeCount = element.deleteRemovedNodesBefore(executedAt)
             if (removedNodeCount > 0) {
-                textGarbageIterator.remove()
+                elementGarbageIterator.remove()
             }
             count += removedNodeCount
         }

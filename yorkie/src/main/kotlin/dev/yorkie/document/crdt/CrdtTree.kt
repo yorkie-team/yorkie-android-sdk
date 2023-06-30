@@ -156,7 +156,7 @@ internal class CrdtTree(
                 fromPath = indexTree.treePosToPath(fromPos),
                 toPath = indexTree.treePosToPath(toPos),
                 actorID = executedAt.actorID,
-                value = content?.let(::toJson),
+                value = content?.toJson(),
             ),
         )
 
@@ -419,7 +419,7 @@ internal class CrdtTree(
      * Returns the XML encoding of this tree.
      */
     fun toXml(): String {
-        return toXml(indexTree.root)
+        return indexTree.root.toXml()
     }
 
     /**
@@ -515,6 +515,7 @@ internal class CrdtTreeNode(
 
     init {
         optsList?.let(_children::addAll)
+        opts?.let { value = it }
     }
 
     val attributes: Map<String, String>
@@ -534,13 +535,13 @@ internal class CrdtTreeNode(
 
     override var value: String = opts.orEmpty()
         get() {
-            check(!isText) {
+            check(isText) {
                 "cannot set value of element node: $type"
             }
             return field
         }
         set(value) {
-            check(!isText) {
+            check(isText) {
                 "cannot set value of element node: $type"
             }
             field = value

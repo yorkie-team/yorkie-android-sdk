@@ -403,8 +403,8 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
     val isText = type == DEFAULT_TEXT_TYPE
 
     init {
-        check(!(isText && _children.isNotEmpty())) {
-            "Text node cannot have children"
+        if (isText && _children.isNotEmpty()) {
+            throw IllegalArgumentException("Text node cannot have children")
         }
     }
 
@@ -677,7 +677,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
          * [DEFAULT_TEXT_TYPE] is the default type of the text node.
          * It it used when the type of the text node is not specified.
          */
-        private const val DEFAULT_TEXT_TYPE = "text"
+        internal const val DEFAULT_TEXT_TYPE = "text"
 
         /**
          * [DEFAULT_ROOT_TYPE] is the default type of the root node.

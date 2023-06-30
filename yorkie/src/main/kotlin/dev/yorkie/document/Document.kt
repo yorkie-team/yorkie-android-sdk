@@ -254,7 +254,7 @@ public class Document(public val key: Key) {
 
     public suspend fun getRoot(): JsonObject = withContext(dispatcher) {
         val clone = ensureClone()
-        val context = ChangeContext(changeID.next(), clone, null)
+        val context = ChangeContext(changeID.next(), clone)
         JsonObject(context, clone.rootObject)
     }
 

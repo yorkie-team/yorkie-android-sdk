@@ -15,7 +15,7 @@ import dev.yorkie.document.time.TimeTicket
 internal data class ChangeContext(
     val id: ChangeID,
     val root: CrdtRoot,
-    val message: String?,
+    val message: String? = null,
     private val _operations: MutableList<Operation> = mutableListOf(),
     var delimiter: Int = TimeTicket.INITIAL_DELIMITER,
 ) {

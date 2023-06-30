@@ -9,7 +9,7 @@ import dev.yorkie.util.TreePos
 import dev.yorkie.util.traverse
 import java.util.TreeMap
 
-internal typealias TreeRange = Pair<CrdtTreePos, CrdtTreePos>
+public typealias TreeRange = Pair<CrdtTreePos, CrdtTreePos>
 
 internal class CrdtTree(
     val root: CrdtTreeNode,
@@ -20,7 +20,7 @@ internal class CrdtTree(
 
     private val head = CrdtTreeNode(CrdtTreePos.InitialCrdtTreePos, INITIAL_NODE_TYPE)
 
-    private val indexTree = IndexTree(root)
+    internal val indexTree = IndexTree(root)
 
     init {
         var previous = head
@@ -602,7 +602,7 @@ internal class CrdtTreeNode(
  * location in the tree, so whether the node is splitted or not, we can find
  * the adjacent node to pos by calling `map.floorEntry()`.
  */
-internal data class CrdtTreePos(
+public data class CrdtTreePos(
     /**
      * Creation time of the node.
      */

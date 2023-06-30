@@ -2,6 +2,7 @@ package dev.yorkie.document.change
 
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
+import dev.yorkie.document.crdt.CrdtGCElement
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.operation.Operation
@@ -29,6 +30,12 @@ internal data class ChangeContext(
         get() = operations.isNotEmpty()
 
     /**
+     *  Returns the last time ticket issued in this context.
+     */
+    val lastTimeTicket: TimeTicket
+        get() = id.createTimeTicket(delimiter)
+
+    /**
      * Pushes the given operation to this context.
      */
     fun push(operation: Operation) {
@@ -54,6 +61,13 @@ internal data class ChangeContext(
      */
     fun registerRemovedNodeTextElement(text: CrdtText) {
         root.registerTextWithGarbage(text)
+    }
+
+    /**
+     * Registers GC element has removed node for garbage collection.
+     */
+    fun registerElementHasRemovedNodes(elem: CrdtGCElement) {
+        this.root.registerElementHasRemovedNodes(elem);
     }
 
     /**

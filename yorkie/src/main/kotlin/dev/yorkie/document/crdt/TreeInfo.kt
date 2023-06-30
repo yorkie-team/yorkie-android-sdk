@@ -6,7 +6,7 @@ import dev.yorkie.document.time.ActorID
  * [TreeNode] represents the JSON representation of a node in the tree.
  * It is used to serialize and deserialize the tree.
  */
-internal data class TreeNode(
+public data class TreeNode(
     val type: String,
     val children: List<TreeNode>? = null,
     val value: String? = null,

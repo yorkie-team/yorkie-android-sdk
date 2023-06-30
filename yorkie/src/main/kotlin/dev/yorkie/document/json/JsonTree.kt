@@ -7,6 +7,8 @@ import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TreeRange
 import dev.yorkie.document.json.JsonTree.TreeNode
+import dev.yorkie.document.operation.TreeEditOperation
+import dev.yorkie.document.operation.TreeStyleOperation
 
 /**
  * [JsonTree] is a CRDT-based tree structure that is used to represent the document
@@ -49,11 +51,7 @@ public class JsonTree internal constructor(
         }
 
         val treeRange = target.pathToPosRange(path)
-        val ticket = context.issueTimeTicket()
-        target.style(treeRange, attributes, ticket)
-
-        // TODO: create operations
-        // context.push()
+        styleByRange(treeRange, attributes)
     }
 
     /**
@@ -66,10 +64,25 @@ public class JsonTree internal constructor(
 
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
-        val ticket = context.issueTimeTicket()
+        styleByRange(fromPos to toPos, attributes)
+    }
 
-        target.style(fromPos to toPos, attributes, ticket)
-        // TODO: create operations
+    private fun styleByRange(
+        range: TreeRange,
+        attributes: Map<String, String>,
+    ) {
+        val ticket = context.issueTimeTicket()
+        target.style(range, attributes, ticket)
+
+        context.push(
+            TreeStyleOperation(
+                target.createdAt,
+                range.first,
+                range.second,
+                attributes.toMap(),
+                ticket,
+            ),
+        )
     }
 
     /**
@@ -106,7 +119,15 @@ public class JsonTree internal constructor(
         val ticket = context.lastTimeTicket
         target.edit(fromPos to toPos, crdtNode?.deepcopy(), ticket)
 
-        // TODO create operation
+        context.push(
+            TreeEditOperation(
+                target.createdAt,
+                fromPos,
+                toPos,
+                crdtNode,
+                ticket,
+            ),
+        )
 
         if (fromPos.createdAt != toPos.createdAt || fromPos.offset != toPos.offset) {
             context.registerElementHasRemovedNodes(target)

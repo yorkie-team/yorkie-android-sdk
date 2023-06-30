@@ -67,7 +67,7 @@ internal data class ChangeContext(
      * Registers GC element has removed node for garbage collection.
      */
     fun registerElementHasRemovedNodes(elem: CrdtGCElement) {
-        this.root.registerElementHasRemovedNodes(elem);
+        root.registerElementHasRemovedNodes(elem)
     }
 
     /**

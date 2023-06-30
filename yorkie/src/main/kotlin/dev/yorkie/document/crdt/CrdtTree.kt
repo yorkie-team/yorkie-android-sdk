@@ -59,24 +59,6 @@ internal class CrdtTree(
         return indexTree.findPostorderRight(pos)
     }
 
-    private fun toTreePos(pos: CrdtTreePos): TreePos<CrdtTreeNode>? {
-        val (key, value) = nodeMapByPos.floorEntry(pos) ?: return null
-        return if (key?.createdAt == pos.createdAt) {
-            val node =
-                // Choose the left node if the position is on the boundary of the split nodes.
-                if (pos.offset > 0 && pos.offset == value.pos.offset &&
-                    value.insertionPrev != null
-                ) {
-                    value.insertionPrev
-                } else {
-                    value
-                }
-            TreePos(requireNotNull(node), pos.offset - node.pos.offset)
-        } else {
-            null
-        }
-    }
-
     /**
      * Applies the given [attributes] of the given [range].
      */
@@ -94,7 +76,7 @@ internal class CrdtTree(
                 from = toIndex(range.first),
                 to = toIndex(range.second),
                 fromPath = indexTree.indexToPath(posToStartIndex(range.first)),
-                toPath = indexTree.indexToPath(posToStartIndex(range.second)),
+                toPath = indexTree.indexToPath(posToStartIndex(range.first)),
                 actorID = executedAt.actorID,
                 attributes = attributes,
             ),
@@ -133,6 +115,24 @@ internal class CrdtTree(
         return current to right
     }
 
+    private fun toTreePos(pos: CrdtTreePos): TreePos<CrdtTreeNode>? {
+        val (key, value) = nodeMapByPos.floorEntry(pos) ?: return null
+        return if (key?.createdAt == pos.createdAt) {
+            val node =
+                // Choose the left node if the position is on the boundary of the split nodes.
+                if (pos.offset > 0 && pos.offset == value.pos.offset &&
+                    value.insertionPrev != null
+                ) {
+                    value.insertionPrev
+                } else {
+                    value
+                }
+            TreePos(requireNotNull(node), pos.offset - node.pos.offset)
+        } else {
+            null
+        }
+    }
+
     /**
      * Edits the tree with the given [range] and [content].
      * If the [content] is null, the [range] will be removed.
@@ -146,7 +146,7 @@ internal class CrdtTree(
         val (toPos, toRight) = findTreePosWithSplitText(range.second, executedAt)
         val (fromPos, fromRight) = findTreePosWithSplitText(range.first, executedAt)
 
-        // NOTE(hackerwins): If concurrent deletion happens, we need to seperate the
+        // NOTE(hackerwins): If concurrent deletion happens, we need to separate the
         // range(from, to) into multiple ranges.
         val changes = listOf(
             TreeChange(
@@ -156,7 +156,7 @@ internal class CrdtTree(
                 fromPath = indexTree.treePosToPath(fromPos),
                 toPath = indexTree.treePosToPath(toPos),
                 actorID = executedAt.actorID,
-                content = content?.let(::toJson),
+                value = content?.let(::toJson),
             ),
         )
 
@@ -168,33 +168,33 @@ internal class CrdtTree(
                     toBeRemoved.add(node)
                 }
             }
-        }
 
-        val isRangeOnSameBranch = toPos.node.isAncestorOf(fromPos.node)
-        toBeRemoved.forEach { node ->
-            node.remove(executedAt)
-            if (node.isRemoved) {
-                removedNodeMap[node.createdAt] = node
-            }
-        }
-
-        // move the alive children of the removed element node
-        if (isRangeOnSameBranch) {
-            val removedElementNode = when {
-                fromPos.node.parent?.isRemoved == true -> fromPos.node.parent
-                !fromPos.node.isText && fromPos.node.isRemoved -> fromPos.node
-                else -> null
-            }
-            removedElementNode?.let { removedNode ->
-                val elementNode = toPos.node
-                val offset = elementNode.findBranchOffset(removedNode)
-                removedNode.children.reversed().forEach { node ->
-                    elementNode.insertAt(offset, node)
+            val isRangeOnSameBranch = toPos.node.isAncestorOf(fromPos.node)
+            toBeRemoved.forEach { node ->
+                node.remove(executedAt)
+                if (node.isRemoved) {
+                    removedNodeMap[node.createdAt] = node
                 }
             }
-        } else if (fromPos.node.parent?.isRemoved == true) {
-            val parent = requireNotNull(fromPos.node.parent)
-            toPos.node.parent?.prepend(*parent.children.toTypedArray())
+
+            // move the alive children of the removed element node
+            if (isRangeOnSameBranch) {
+                val removedElementNode = when {
+                    fromPos.node.parent?.isRemoved == true -> fromPos.node.parent
+                    !fromPos.node.isText && fromPos.node.isRemoved -> fromPos.node
+                    else -> null
+                }
+                removedElementNode?.let { removedNode ->
+                    val elementNode = toPos.node
+                    val offset = elementNode.findBranchOffset(removedNode)
+                    removedNode.children.reversed().forEach { node ->
+                        elementNode.insertAt(offset, node)
+                    }
+                }
+            } else if (fromPos.node.parent?.isRemoved == true) {
+                val parent = requireNotNull(fromPos.node.parent)
+                toPos.node.parent?.prepend(*parent.children.toTypedArray())
+            }
         }
 
         // 03. insert the given node at the given position.
@@ -308,7 +308,7 @@ internal class CrdtTree(
     }
 
     /**
-     * Splits the node at the given [inde].
+     * Splits the node at the given [index].
      */
     fun split(index: Int, depth: Int = 1): TreePos<CrdtTreeNode> {
         TODO("Implement after JS SDK's implementation")
@@ -331,7 +331,7 @@ internal class CrdtTree(
     override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
         val nodesToRemoved = removedNodeMap.filterValues { node ->
             node.removedAt != null && node.removedAt <= executedAt
-        }.values.toMutableList()
+        }.values.toMutableSet()
 
         indexTree.traverse { node, _ ->
             if (node in nodesToRemoved) {
@@ -464,10 +464,6 @@ internal class CrdtTree(
         return fromPath to toPath
     }
 
-    companion object {
-        private const val INITIAL_NODE_TYPE = "dummy"
-    }
-
     override fun isEmpty() = indexTree.size == 0
 
     override fun iterator(): Iterator<CrdtTreeNode> {
@@ -498,6 +494,10 @@ internal class CrdtTree(
 
     override fun contains(element: CrdtTreeNode): Boolean {
         return indexTree.root.children.contains(element)
+    }
+
+    companion object {
+        private const val INITIAL_NODE_TYPE = "dummy"
     }
 }
 

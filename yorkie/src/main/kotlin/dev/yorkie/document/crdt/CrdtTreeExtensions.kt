@@ -3,7 +3,6 @@ package dev.yorkie.document.crdt
 /**
  * Converts the given [node] to XML.
  */
-
 internal fun toXml(node: CrdtTreeNode): String {
     return if (node.isText) {
         node.value

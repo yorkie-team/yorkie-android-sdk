@@ -88,7 +88,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
             throw IllegalArgumentException("from is out of range: $from > ${root.size}")
         }
         if (to > root.size) {
-            throw IllegalArgumentException("from is out of range: $to > ${root.size}")
+            throw IllegalArgumentException("to is out of range: $to > ${root.size}")
         }
         if (from == to) return
 
@@ -174,10 +174,10 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         var offset = 0
         var pos = 0
         node.children.forEach { child ->
-            // The pos is in bothsides of the text node, we should traverse
+            // The pos is in both sides of the text node, we should traverse
             // inside of the text node if preferText is true.
             if (preferText && child.isText && child.size >= index - pos) {
-                return findTreePosInternal(child, index - pos, preferText)
+                return findTreePosInternal(child, index - pos)
             }
 
             // The position is in left side of the element node.
@@ -227,12 +227,8 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
 
         while (node.parent != null) {
             val parent = node.parent ?: break
-            val offset = parent.findOffset(node)
-            if (offset == -1) {
-                throw IllegalArgumentException("invalid treePos: $treePos")
-            }
-
-            path.add(offset)
+            parent.findOffset(node).takeUnless { it == -1 }?.let(path::add)
+                ?: throw IllegalArgumentException("invalid treePos: $treePos")
             node = parent
         }
 
@@ -302,7 +298,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     fun findPostorderRight(treePos: TreePos<T>): T? {
         val (node, offset) = treePos
         return when {
-            node.isText -> if (node.size == offset) node.nextSibling() ?: node.parent else node
+            node.isText -> if (node.size == offset) node.nextSibling ?: node.parent else node
             node.children.size == offset -> node
             else -> findLeftMost(node.children[offset])
         }
@@ -382,7 +378,7 @@ internal data class TreePos<T : IndexTreeNode<T>>(
  */
 @Suppress("UNCHECKED_CAST")
 internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
-    val type: String = "",
+    val type: String,
     protected val _children: MutableList<T> = mutableListOf(),
 ) {
 
@@ -407,6 +403,12 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
 
     val paddedSize: Int
         get() = size + if (isText) 0 else ELEMENT_PADDING_SIZE
+
+    val nextSibling: T?
+        get() {
+            val offset = parent?.findOffset(this as T) ?: return null
+            return parent?.children?.getOrNull(offset + 1)
+        }
 
     /**
      * Returns the children of the node.
@@ -451,19 +453,11 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
         return false
     }
 
-    /**
-     * Returns the next sibling of the node.
-     */
-    fun nextSibling(): T? {
-        val offset = parent?.findOffset(this as T) ?: return null
-        return parent?._children?.getOrNull(offset + 1)
-    }
-
     fun findOffset(node: T): Int {
         check(!isText) {
             "Text node cannot have children"
         }
-        return _children.indexOf(node)
+        return children.indexOf(node)
     }
 
     /**
@@ -660,5 +654,11 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
          * It it used when the type of the text node is not specified.
          */
         private const val DEFAULT_TEXT_TYPE = "text"
+
+        /**
+         * [DEFAULT_ROOT_TYPE] is the default type of the root node.
+         * It is used when the type of the root node is not specified.
+         */
+        internal const val DEFAULT_ROOT_TYPE = "root"
     }
 }

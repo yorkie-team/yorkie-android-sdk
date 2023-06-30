@@ -1,25 +1,25 @@
 package dev.yorkie.document.crdt
 
 /**
- * Converts the given [node] to XML.
+ * Converts the given node to XML.
  */
-internal fun toXml(node: CrdtTreeNode): String {
-    return if (node.isText) {
-        node.value
+internal fun CrdtTreeNode.toXml(): String {
+    return if (isText) {
+        value
     } else {
-        val attrs = node.attributesToXml
-        val children = node.children.joinToString("") { toXml(it) }
-        "<${node.type}$attrs>$children</${node.type}>"
+        val attrs = attributesToXml
+        val children = children.joinToString("") { it.toXml() }
+        "<$type$attrs>$children</$type>"
     }
 }
 
 /**
- * Converts the given [node] to JSON.
+ * Converts the given node to JSON.
  */
-internal fun toJson(node: CrdtTreeNode): TreeNode {
-    return if (node.isText) {
-        TreeNode(node.type, value = node.value)
+internal fun CrdtTreeNode.toJson(): TreeNode {
+    return if (isText) {
+        TreeNode(type, value = value)
     } else {
-        TreeNode(node.type, node.children.map(::toJson), attributes = node.attributes)
+        TreeNode(type, children.map { it.toJson() }, attributes = attributes)
     }
 }

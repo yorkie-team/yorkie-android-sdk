@@ -26,11 +26,7 @@ class JsonArrayTest {
         val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
         val array = CrdtArray(TimeTicket.InitialTimeTicket)
         target = JsonArray(
-            ChangeContext(
-                ChangeID.InitialChangeID,
-                CrdtRoot(obj),
-                null,
-            ),
+            ChangeContext(ChangeID.InitialChangeID, CrdtRoot(obj)),
             array,
         )
     }

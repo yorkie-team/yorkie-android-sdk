@@ -13,7 +13,7 @@ class CrdtRootTest {
     @Test
     fun `basic test`() {
         val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht()))
-        val cc = ChangeContext(ChangeID.InitialChangeID, root, null)
+        val cc = ChangeContext(ChangeID.InitialChangeID, root)
         assertNull(root.findByCreatedAt(TimeTicket.MaxTimeTicket))
         assertEquals("", root.createPath(TimeTicket.MaxTimeTicket))
 

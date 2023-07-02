@@ -131,7 +131,7 @@ internal data class CrdtText(
     }
 
     override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
-        return rgaTreeSplit.deleteTextNodesWithGarbage(executedAt)
+        return rgaTreeSplit.deleteRemovedNodesBefore(executedAt)
     }
 
     override fun deepCopy(): CrdtElement {

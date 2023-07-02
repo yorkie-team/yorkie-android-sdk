@@ -40,7 +40,7 @@ internal data class EditOperation(
                 maxCreatedAtMapByActor,
             ).second
             if (fromPos != toPos) {
-                root.registerTextWithGarbage(parentObject)
+                root.registerElementHasRemovedNodes(parentObject)
             }
             changes.map { (type, _, from, to, content, attributes) ->
                 if (type == TextChangeType.Content) {

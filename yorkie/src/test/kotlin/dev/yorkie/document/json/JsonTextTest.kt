@@ -23,11 +23,7 @@ class JsonTextTest {
         val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
         val text = CrdtText(RgaTreeSplit(), TimeTicket.InitialTimeTicket)
         target = JsonText(
-            ChangeContext(
-                ChangeID.InitialChangeID,
-                CrdtRoot(obj),
-                null,
-            ),
+            ChangeContext(ChangeID.InitialChangeID, CrdtRoot(obj)),
             text,
         )
     }

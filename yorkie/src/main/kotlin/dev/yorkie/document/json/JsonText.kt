@@ -71,7 +71,7 @@ public class JsonText internal constructor(
         )
 
         if (range.first != range.second) {
-            context.registerRemovedNodeTextElement(target)
+            context.registerElementHasRemovedNodes(target)
         }
         return true
     }

@@ -2,8 +2,8 @@ package dev.yorkie.document.change
 
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
+import dev.yorkie.document.crdt.CrdtGCElement
 import dev.yorkie.document.crdt.CrdtRoot
-import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.time.TimeTicket
 
@@ -15,7 +15,7 @@ import dev.yorkie.document.time.TimeTicket
 internal data class ChangeContext(
     val id: ChangeID,
     val root: CrdtRoot,
-    val message: String?,
+    val message: String? = null,
     private val _operations: MutableList<Operation> = mutableListOf(),
     var delimiter: Int = TimeTicket.INITIAL_DELIMITER,
 ) {
@@ -50,10 +50,10 @@ internal data class ChangeContext(
     }
 
     /**
-     * Registers text element that has removed nodes for garbage collection.
+     * Registers GC element that has removed nodes for garbage collection.
      */
-    fun registerRemovedNodeTextElement(text: CrdtText) {
-        root.registerTextWithGarbage(text)
+    fun registerElementHasRemovedNodes(element: CrdtGCElement) {
+        root.registerElementHasRemovedNodes(element)
     }
 
     /**

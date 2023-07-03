@@ -39,6 +39,15 @@ internal class Rht : Iterable<Rht.Node> {
         return rht
     }
 
+    /**
+     * Converts the given [Rht] to XML String.
+     */
+    fun toXml(): String {
+        return nodeKeyValueMap.entries.joinToString(" ") { (key, value) ->
+            "$key=\"$value\""
+        }
+    }
+
     override fun iterator(): Iterator<Node> {
         return nodeMapByKey.values.iterator()
     }

@@ -348,7 +348,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     /**
      * Physically deletes nodes that have been removed.
      */
-    fun deleteTextNodesWithGarbage(ticket: TimeTicket): Int {
+    fun deleteRemovedNodesBefore(ticket: TimeTicket): Int {
         var count = 0
         removedNodeMap.toMap().forEach {
             val node = it.value
@@ -574,11 +574,7 @@ internal data class RgaTreeSplitNodeID(
     }
 
     override fun compareTo(other: RgaTreeSplitNodeID): Int {
-        return if (createdAt != other.createdAt) {
-            createdAt.compareTo(other.createdAt)
-        } else {
-            offset.compareTo(other.offset)
-        }
+        return compareValuesBy(this, other, { it.createdAt }, { it.offset })
     }
 }
 

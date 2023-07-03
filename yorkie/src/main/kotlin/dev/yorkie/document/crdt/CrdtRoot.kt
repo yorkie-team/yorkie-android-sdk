@@ -32,12 +32,6 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     private val elementHasRemovedNodesSetByCreatedAt = mutableSetOf<TimeTicket>()
 
-    /**
-     * A hash set that contains the creation time of the element that has removed nodes.
-     * It is used to find the element that has removed nodes when executing garbage collection.
-     */
-    private val elementHasRemovedNodesSetByCreatedAt = mutableSetOf<TimeTicket>()
-
     val elementMapSize
         get() = elementPairMapByCreatedAt.size
 

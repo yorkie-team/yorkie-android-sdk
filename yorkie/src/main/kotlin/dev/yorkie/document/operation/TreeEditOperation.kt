@@ -41,7 +41,7 @@ internal data class TreeEditOperation(
                 it.to,
                 it.fromPath,
                 it.toPath,
-                it.content,
+                it.value,
             ).apply {
                 executedAt = parentCreatedAt
             }

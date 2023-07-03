@@ -7,16 +7,19 @@ import dev.yorkie.api.v1.JSONElementKt.jSONArray
 import dev.yorkie.api.v1.JSONElementKt.jSONObject
 import dev.yorkie.api.v1.JSONElementKt.primitive
 import dev.yorkie.api.v1.JSONElementKt.text
+import dev.yorkie.api.v1.JSONElementKt.tree
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.movedAtOrNull
+import dev.yorkie.api.v1.nodeAttr
 import dev.yorkie.api.v1.rGANode
 import dev.yorkie.api.v1.rHTNode
 import dev.yorkie.api.v1.removedAtOrNull
 import dev.yorkie.api.v1.textNode
-import dev.yorkie.api.v1.textNodeAttr
 import dev.yorkie.api.v1.textNodeID
 import dev.yorkie.api.v1.textNodePos
+import dev.yorkie.api.v1.treeNode
+import dev.yorkie.api.v1.treePos
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
@@ -25,13 +28,20 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.CrdtTree
+import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNode
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
+import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TextValue
+import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.traverse
 
 internal typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
 internal typealias PBJsonElementSimple = dev.yorkie.api.v1.JSONElementSimple
@@ -46,20 +56,28 @@ internal typealias PBRgaNode = dev.yorkie.api.v1.RGANode
 internal typealias PBTextNodeID = dev.yorkie.api.v1.TextNodeID
 internal typealias PBTextNodePos = dev.yorkie.api.v1.TextNodePos
 internal typealias PBTextNode = dev.yorkie.api.v1.TextNode
+internal typealias PBTree = dev.yorkie.api.v1.JSONElement.Tree
+internal typealias PBTreeNode = dev.yorkie.api.v1.TreeNode
+internal typealias PBTreePos = dev.yorkie.api.v1.TreePos
 
 internal fun ByteString.toCrdtObject(): CrdtObject {
     return PBJsonElement.parseFrom(this).jsonObject.toCrdtObject()
 }
 
+internal fun ByteString.toCrdtTree(): CrdtTree {
+    return PBJsonElement.parseFrom(this).tree.toCrdtTree()
+}
+
 internal fun CrdtElement.toByteString(): ByteString {
     return when (this) {
-        is CrdtObject -> toPBJsonObject().toByteString()
-        is CrdtArray -> toPBJsonArray().toByteString()
-        is CrdtText -> toPBText().toByteString()
-        is CrdtPrimitive -> toPBPrimitive().toByteString()
-        is CrdtCounter -> toPBCounter().toByteString()
+        is CrdtObject -> toPBJsonObject()
+        is CrdtArray -> toPBJsonArray()
+        is CrdtText -> toPBText()
+        is CrdtPrimitive -> toPBPrimitive()
+        is CrdtCounter -> toPBCounter()
+        is CrdtTree -> toPBTree()
         else -> throw IllegalArgumentException("unimplemented element $this")
-    }
+    }.toByteString()
 }
 
 internal fun PBJsonElement.toCrdtElement(): CrdtElement {
@@ -69,6 +87,7 @@ internal fun PBJsonElement.toCrdtElement(): CrdtElement {
         hasText() -> text.toCrdtText()
         hasPrimitive() -> primitive.toCrdtPrimitive()
         hasCounter() -> counter.toCrdtCounter()
+        hasTree() -> tree.toCrdtTree()
         else -> throw IllegalArgumentException("unimplemented element: $this")
     }
 }
@@ -168,6 +187,47 @@ private fun PBValueType.toCounterType(): CounterType {
     }
 }
 
+internal fun PBTree.toCrdtTree(): CrdtTree {
+    val root = checkNotNull(nodesList.toCrdtTreeRootNode())
+    return CrdtTree(
+        root,
+        createdAt.toTimeTicket(),
+        movedAtOrNull?.toTimeTicket(),
+        removedAtOrNull?.toTimeTicket(),
+    )
+}
+
+internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
+    if (isEmpty()) {
+        return null
+    }
+    val nodes = map { it.toCrdtTreeNode() }
+    val root = nodes.first()
+    for (i in nodes.size - 2 downTo 0) {
+        val parentIndex = ((i + 1)..nodes.lastIndex).find {
+            this[i].depth - 1 == this[it].depth
+        } ?: continue
+        nodes[parentIndex].prepend(nodes[i])
+    }
+    return CrdtTree(root, TimeTicket.InitialTimeTicket).root
+}
+
+internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
+    val pos = pos.toCrdtTreePos()
+    return CrdtTreeNode(
+        pos,
+        type,
+        _value = value.takeIf { type == IndexTreeNode.DEFAULT_TEXT_TYPE },
+        _attributes = Rht().also {
+            attributesMap.forEach { (key, value) ->
+                it.set(key, value.value, value.updatedAt.toTimeTicket())
+            }
+        },
+    )
+}
+
+internal fun PBTreePos.toCrdtTreePos(): CrdtTreePos = CrdtTreePos(createdAt.toTimeTicket(), offset)
+
 internal fun CrdtElement.toPBJsonElement(): PBJsonElement {
     return when (this) {
         is CrdtObject -> toPBJsonObject()
@@ -175,6 +235,7 @@ internal fun CrdtElement.toPBJsonElement(): PBJsonElement {
         is CrdtText -> toPBText()
         is CrdtPrimitive -> toPBPrimitive()
         is CrdtCounter -> toPBCounter()
+        is CrdtTree -> toPBTree()
         else -> throw IllegalArgumentException("unimplemented element: $this")
     }
 }
@@ -218,6 +279,41 @@ private fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
     }
 }
 
+private fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
+    return buildList {
+        traverse(this@toPBTreeNodes) { node, nodeDepth ->
+            val pbTreeNode = treeNode {
+                pos = node.pos.toPBTreePos()
+                type = node.type
+                if (node.isText) {
+                    value = node.value
+                }
+                node.removedAt?.toPBTimeTicket()?.let {
+                    removedAt = it
+                }
+                depth = nodeDepth
+                attributes.putAll(
+                    node.rhtNodes.associate {
+                        it.key to nodeAttr {
+                            value = it.value
+                            updatedAt = it.executedAt.toPBTimeTicket()
+                        }
+                    },
+                )
+            }
+            add(pbTreeNode)
+        }
+    }
+}
+
+private fun CrdtTreePos.toPBTreePos(): PBTreePos {
+    val crdtTreePos = this
+    return treePos {
+        createdAt = crdtTreePos.createdAt.toPBTimeTicket()
+        offset = crdtTreePos.offset
+    }
+}
+
 internal fun CrdtText.toPBText(): PBJsonElement {
     val crdtText = this
     return jSONElement {
@@ -237,7 +333,7 @@ private fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
             value = node.value.content
             node.removedAt?.let { removedAt = it.toPBTimeTicket() } ?: clearRemovedAt()
             node.value.attributesWithTimeTicket.forEach {
-                attributes[it.key] = textNodeAttr {
+                attributes[it.key] = nodeAttr {
                     value = it.value
                     updatedAt = it.executedAt.toPBTimeTicket()
                 }
@@ -329,12 +425,29 @@ private fun CounterType.toPBCounterType(): PBValueType {
     }
 }
 
+internal fun CrdtTree.toPBTree(): PBJsonElement {
+    val crdtTree = this
+    return jSONElement {
+        tree = tree {
+            nodes.addAll(crdtTree.root.toPBTreeNodes())
+            createdAt = crdtTree.createdAt.toPBTimeTicket()
+            crdtTree.movedAt?.toPBTimeTicket()?.let {
+                movedAt = it
+            }
+            crdtTree.removedAt?.toPBTimeTicket()?.let {
+                removedAt = it
+            }
+        }
+    }
+}
+
 internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
     return when (type) {
         PBValueType.VALUE_TYPE_JSON_OBJECT -> CrdtObject(
             createdAt.toTimeTicket(),
             rht = ElementRht(),
         )
+
         PBValueType.VALUE_TYPE_JSON_ARRAY -> CrdtArray(createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_TEXT -> CrdtText(RgaTreeSplit(), createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_NULL,
@@ -349,14 +462,19 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
             createdAt.toTimeTicket(),
         )
+
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CrdtCounter(
             value.toByteArray().asCounterValue(type.toCounterType()).toInt(),
             createdAt.toTimeTicket(),
         )
+
         PBValueType.VALUE_TYPE_LONG_CNT -> CrdtCounter(
             value.toByteArray().asCounterValue(type.toCounterType()).toLong(),
             createdAt.toTimeTicket(),
         )
+
+        PBValueType.VALUE_TYPE_TREE -> value.toCrdtTree()
+
         else -> throw IllegalArgumentException("unimplemented type $this")
     }
 }
@@ -368,18 +486,22 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
         when (element) {
             is CrdtObject -> type = PBValueType.VALUE_TYPE_JSON_OBJECT
             is CrdtArray -> type = PBValueType.VALUE_TYPE_JSON_ARRAY
-            is CrdtText -> {
-                type = PBValueType.VALUE_TYPE_TEXT
-                createdAt = element.createdAt.toPBTimeTicket()
-            }
+            is CrdtText -> type = PBValueType.VALUE_TYPE_TEXT
             is CrdtPrimitive -> {
                 type = element.type.toPBValueType()
                 value = element.toBytes()
             }
+
             is CrdtCounter -> {
                 type = element.type.toPBCounterType()
                 value = element.toBytes().toByteString()
             }
+
+            is CrdtTree -> {
+                type = PBValueType.VALUE_TYPE_TREE
+                value = element.toPBTree().toByteString()
+            }
+
             else -> throw IllegalArgumentException("unimplemented element: $element")
         }
     }

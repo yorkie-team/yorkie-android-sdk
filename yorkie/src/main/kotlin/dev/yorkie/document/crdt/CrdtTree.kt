@@ -526,10 +526,6 @@ internal class CrdtTreeNode(
     private val _attributes: Rht = Rht(),
 ) : IndexTreeNode<CrdtTreeNode>(type, _children) {
 
-    init {
-        _value?.let { value = it }
-    }
-
     val attributes: Map<String, String>
         get() = _attributes.nodeKeyValueMap
 
@@ -565,6 +561,13 @@ internal class CrdtTreeNode(
     var prev: CrdtTreeNode? = null
 
     var insertionPrev: CrdtTreeNode? = null
+
+    val rhtNodes: List<Rht.Node>
+        get() = _attributes.toList()
+
+    init {
+        _value?.let { value = it }
+    }
 
     /**
      * Clones this node with the given [offset].

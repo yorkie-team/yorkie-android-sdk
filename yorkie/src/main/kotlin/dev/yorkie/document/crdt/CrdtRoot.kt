@@ -97,7 +97,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     }
 
     /**
-     * Registers the given [element] to the hast set.
+     * Registers the given GC element to the hash set.
      */
     fun registerElementHasRemovedNodes(element: CrdtGCElement) {
         elementHasRemovedNodesSetByCreatedAt.add(element.createdAt)

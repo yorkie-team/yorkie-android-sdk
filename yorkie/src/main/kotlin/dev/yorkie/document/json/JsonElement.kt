@@ -19,7 +19,7 @@ public abstract class JsonElement {
     public val id: TimeTicket
         get() = target.id
 
-    public fun toJson() = target.toJson()
+    public fun toJson(): String = target.toJson()
 
     override fun toString() = toJson()
 

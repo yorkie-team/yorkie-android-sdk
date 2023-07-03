@@ -1,6 +1,7 @@
 package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.TextWithAttributes
+import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.time.TimeTicket
 
 /**
@@ -55,6 +56,24 @@ public sealed class OperationInfo {
         val to: Int,
         override var path: String = INITIAL_PATH,
     ) : OperationInfo(), TextOpInfo
+
+    public data class TreeEditOpInfo(
+        val from: Int,
+        val to: Int,
+        val fromPath: List<Int>,
+        val toPath: List<Int>,
+        val node: TreeNode?,
+        override var path: String = INITIAL_PATH,
+    ) : OperationInfo()
+
+    public data class TreeStyleOpInfo(
+        val from: Int,
+        val to: Int,
+        val fromPath: List<Int>,
+        val toPath: List<Int>,
+        val attributes: Map<String, String>,
+        override var path: String = INITIAL_PATH,
+    ) : OperationInfo()
 
     companion object {
         private const val INITIAL_PATH = "initial path"

@@ -29,6 +29,12 @@ internal data class ChangeContext(
         get() = operations.isNotEmpty()
 
     /**
+     *  Returns the last time ticket issued in this context.
+     */
+    val lastTimeTicket: TimeTicket
+        get() = id.createTimeTicket(delimiter)
+
+    /**
      * Pushes the given operation to this context.
      */
     fun push(operation: Operation) {

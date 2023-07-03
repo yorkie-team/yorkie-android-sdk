@@ -22,6 +22,10 @@ internal class CrdtTree(
 
     private val indexTree = IndexTree(root)
 
+    private val nodeMapByPos = TreeMap<CrdtTreePos, CrdtTreeNode>()
+
+    private val removedNodeMap = mutableMapOf<Pair<TimeTicket, Int>, CrdtTreeNode>()
+
     init {
         var previous = head
         indexTree.traverse { node, _ ->
@@ -29,10 +33,6 @@ internal class CrdtTree(
             previous = node
         }
     }
-
-    private val nodeMapByPos = TreeMap<CrdtTreePos, CrdtTreeNode>()
-
-    private val removedNodeMap = mutableMapOf<TimeTicket, CrdtTreeNode>()
 
     override val removedNodesLength: Int
         get() = removedNodeMap.size
@@ -173,7 +173,7 @@ internal class CrdtTree(
             toBeRemoved.forEach { node ->
                 node.remove(executedAt)
                 if (node.isRemoved) {
-                    removedNodeMap[node.createdAt] = node
+                    removedNodeMap[node.createdAt to node.pos.offset] = node
                 }
             }
 
@@ -231,7 +231,17 @@ internal class CrdtTree(
         pos: CrdtTreePos,
         executedAt: TimeTicket,
     ): Pair<TreePos<CrdtTreeNode>, CrdtTreeNode> {
-        val (current, right) = findTreePos(pos, executedAt)
+        val treePos = toTreePos(pos) ?: throw IllegalArgumentException("cannot find node at $pos")
+
+        // Find the appropriate position. This logic is similar to
+        // handling the insertion of the same position in RGA.
+        var current = treePos
+        while (executedAt < current.node.next?.pos?.createdAt &&
+            current.node.parent == current.node.next?.parent
+        ) {
+            val nextNode = current.node.next ?: break
+            current = TreePos(nextNode, nextNode.size)
+        }
 
         if (current.node.isText) {
             current.node.split(current.offset)?.let { split ->
@@ -240,6 +250,7 @@ internal class CrdtTree(
             }
         }
 
+        val right = requireNotNull(indexTree.findPostorderRight(treePos))
         return current to right
     }
 
@@ -342,7 +353,7 @@ internal class CrdtTree(
         nodesToRemoved.forEach { node ->
             nodeMapByPos.remove(node.pos)
             delete(node)
-            removedNodeMap.remove(node.createdAt)
+            removedNodeMap.remove(node.createdAt to node.pos.offset)
         }
 
         return nodesToRemoved.size
@@ -508,14 +519,13 @@ internal class CrdtTree(
 internal class CrdtTreeNode(
     val pos: CrdtTreePos,
     type: String,
-    opts: String? = null,
-    optsList: List<CrdtTreeNode>? = null,
+    _value: String? = null,
+    _children: MutableList<CrdtTreeNode> = mutableListOf(),
     private val _attributes: Rht = Rht(),
-) : IndexTreeNode<CrdtTreeNode>(type) {
+) : IndexTreeNode<CrdtTreeNode>(type, _children) {
 
     init {
-        optsList?.let(_children::addAll)
-        opts?.let { value = it }
+        _value?.let { value = it }
     }
 
     val attributes: Map<String, String>
@@ -533,7 +543,7 @@ internal class CrdtTreeNode(
     override val isRemoved: Boolean
         get() = removedAt != null
 
-    override var value: String = opts.orEmpty()
+    override var value: String = _value.orEmpty()
         get() {
             check(isText) {
                 "cannot set value of element node: $type"

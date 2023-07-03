@@ -113,8 +113,8 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
                 if (fromChild < 0 || toChild > child.size || child.isText) {
                     action.invoke(child)
                 }
-                pos += child.paddedSize
             }
+            pos += child.paddedSize
         }
     }
 

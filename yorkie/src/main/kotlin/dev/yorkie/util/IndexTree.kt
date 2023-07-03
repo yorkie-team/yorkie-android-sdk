@@ -660,7 +660,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
 
         val offset = _children.indexOf(targetNode).takeUnless { it == -1 }
             ?: throw NoSuchElementException("child not found")
-        insertAtInternal(offset, newNode)
+        insertAtInternal(offset + 1, newNode)
     }
 
     abstract fun clone(offset: Int): T

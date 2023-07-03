@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
@@ -391,7 +392,8 @@ internal class CrdtTree(
     /**
      * Converts the given [pos] to the index of the tree.
      */
-    private fun toIndex(pos: CrdtTreePos): Int {
+    @VisibleForTesting
+    fun toIndex(pos: CrdtTreePos): Int {
         return toTreePos(pos)?.let(indexTree::indexOf) ?: -1
     }
 

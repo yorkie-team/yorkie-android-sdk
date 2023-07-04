@@ -216,7 +216,7 @@ class CrdtTreeTest {
         var (from, to) = target.pathToPosRange(listOf(0))
         var fromIndex = target.toIndex(from)
         var toIndex = target.toIndex(to)
-        assertEquals(fromIndex to toIndex, 7 to 8)
+        assertEquals(7 to 8, fromIndex to toIndex)
 
         target.pathToPosRange(listOf(0, 0)).also {
             from = it.first
@@ -224,7 +224,7 @@ class CrdtTreeTest {
         }
         fromIndex = target.toIndex(from)
         toIndex = target.toIndex(to)
-        assertEquals(fromIndex to toIndex, 6 to 7)
+        assertEquals(6 to 7, fromIndex to toIndex)
 
         target.pathToPosRange(listOf(0, 0, 0)).also {
             from = it.first
@@ -232,7 +232,7 @@ class CrdtTreeTest {
         }
         fromIndex = target.toIndex(from)
         toIndex = target.toIndex(to)
-        assertEquals(fromIndex to toIndex, 5 to 6)
+        assertEquals(5 to 6, fromIndex to toIndex)
 
         var range = target.createRange(0, 5)
         assertEquals(0 to 5, target.rangeToIndex(range))

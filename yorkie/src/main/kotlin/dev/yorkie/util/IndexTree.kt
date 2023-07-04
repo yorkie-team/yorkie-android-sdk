@@ -268,7 +268,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     }
 
     /**
-     * Returns [TreePos] form the given [path].
+     * Returns [TreePos] from the given [path].
      */
     fun pathToTreePos(path: List<Int>): TreePos<T> {
         if (path.isEmpty()) {
@@ -299,7 +299,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         for (index in node.children.indices) {
             val child = node.children[index]
 
-            if (child.size < pathElement) {
+            if (child.size < updatedPathElement) {
                 updatedPathElement -= child.size
             } else {
                 updatedNode = child

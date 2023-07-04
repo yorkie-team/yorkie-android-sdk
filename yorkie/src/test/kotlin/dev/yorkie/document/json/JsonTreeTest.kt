@@ -175,16 +175,15 @@ class JsonTreeTest {
         target.editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), TextNode("X"))
         assertEquals("<doc><tc><p><tn>aXb</tn></p></tc></doc>", target.toXml())
 
-// TODO: add this back after pathToPos is fixed
-//        target.editByPath(listOf(0, 0, 0, 3), listOf(0, 0, 0, 3), TextNode("!"))
-//        assertEquals("<doc><tc><p><tn>aXb!</tn></p></tc></doc>", target.toXml())
+        target.editByPath(listOf(0, 0, 0, 3), listOf(0, 0, 0, 3), TextNode("!"))
+        assertEquals("<doc><tc><p><tn>aXb!</tn></p></tc></doc>", target.toXml())
 
         target.editByPath(
             listOf(0, 0, 1),
             listOf(0, 0, 1),
             ElementNode("tn", children = listOf(TextNode("cd"))),
         )
-        assertEquals("<doc><tc><p><tn>aXb</tn><tn>cd</tn></p></tc></doc>", target.toXml())
+        assertEquals("<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p></tc></doc>", target.toXml())
 
         target.editByPath(
             listOf(0, 1),
@@ -195,21 +194,21 @@ class JsonTreeTest {
             ),
         )
         assertEquals(
-            "<doc><tc><p><tn>aXb</tn><tn>cd</tn></p><p><tn>q</tn></p></tc></doc>",
+            "<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p><p><tn>q</tn></p></tc></doc>",
             target.toXml(),
         )
 
         target.editByPath(listOf(0, 1, 0, 0), listOf(0, 1, 0, 0), TextNode("a"))
         assertEquals(
-            "<doc><tc><p><tn>aXb</tn><tn>cd</tn></p><p><tn>aq</tn></p></tc></doc>",
+            "<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p><p><tn>aq</tn></p></tc></doc>",
             target.toXml(),
         )
 
-//        target.editByPath(listOf(0, 1, 0, 2), listOf(0, 1, 0, 2), TextNode("B"))
-//        assertEquals(
-//            "<doc><tc><p><tn>aXb</tn><tn>cd</tn></p><p><tn>aqB</tn></p></tc></doc>",
-//            target.toXml(),
-//        )
+        target.editByPath(listOf(0, 1, 0, 2), listOf(0, 1, 0, 2), TextNode("B"))
+        assertEquals(
+            "<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p><p><tn>aqB</tn></p></tc></doc>",
+            target.toXml(),
+        )
 
         assertThrows(IllegalArgumentException::class.java) {
             target.editByPath(listOf(0, 0, 4), listOf(0, 0, 4), ElementNode("tn"))

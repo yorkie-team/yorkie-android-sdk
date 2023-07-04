@@ -7,7 +7,7 @@ internal fun CrdtTreeNode.toXml(): String {
     return if (isText) {
         value
     } else {
-        val attrs = attributesToXml
+        val attrs = attributesToXml.let { if (it.isNotEmpty()) " $it" else it }
         val children = children.joinToString("") { it.toXml() }
         "<$type$attrs>$children</$type>"
     }

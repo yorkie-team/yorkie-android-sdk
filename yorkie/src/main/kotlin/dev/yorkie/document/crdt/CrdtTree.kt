@@ -599,7 +599,9 @@ internal class CrdtTreeNode(
         val node = this
         return clone.apply clone@{
             removedAt = node.removedAt
-            value = node.value
+            if (node.isText) {
+                value = node.value
+            }
             size = node.size
             node._children.map { child ->
                 child.deepcopy().apply {

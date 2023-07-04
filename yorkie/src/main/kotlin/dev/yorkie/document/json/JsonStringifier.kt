@@ -69,7 +69,7 @@ internal object JsonStringifier {
             }
 
             is CrdtTree -> {
-                buffer.append(this.root.toJson())
+                buffer.append(root.toJson())
             }
         }
     }

@@ -15,32 +15,12 @@ import dev.yorkie.document.operation.TreeStyleOperation
  * tree of text-based editor such as ProseMirror.
  */
 public class JsonTree internal constructor(
-    internal val initialRoot: ElementNode? = null,
     internal val context: ChangeContext,
     override val target: CrdtTree,
 ) : JsonElement(), Collection<TreeNode> {
     public override val size: Int by target::size
 
     internal val indexTree by target::indexTree
-
-    /**
-     * Returns the root node of this tree.
-     */
-    internal fun buildRoot(context: ChangeContext): CrdtTreeNode {
-        if (initialRoot == null) {
-            return CrdtTreeNode(CrdtTreePos(context.issueTimeTicket(), 0), "root")
-        }
-
-        // TODO(hackerwins): Need to use the ticket of operation of creating tree.
-        return CrdtTreeNode(
-            CrdtTreePos(context.issueTimeTicket(), 0),
-            initialRoot.type,
-        ).also { root ->
-            initialRoot.children.forEach { child ->
-                buildDescendants(child, root, context)
-            }
-        }
-    }
 
     /**
      * Sets the [attributes] to the elements of the given [path].
@@ -88,7 +68,7 @@ public class JsonTree internal constructor(
     /**
      * Edits this tree with the given node and path.
      */
-    public fun editByPath(fromPath: List<Int>, toPath: List<Int>, content: TreeNode?) {
+    public fun editByPath(fromPath: List<Int>, toPath: List<Int>, content: TreeNode? = null) {
         require(fromPath.size == toPath.size) {
             "path length should be equal"
         }
@@ -104,7 +84,7 @@ public class JsonTree internal constructor(
     /**
      * Edits this tree with the given node.
      */
-    public fun edit(fromIndex: Int, toIndex: Int, content: TreeNode?) {
+    public fun edit(fromIndex: Int, toIndex: Int, content: TreeNode? = null) {
         require(fromIndex <= toIndex) {
             "from should be less than or equal to to"
         }
@@ -216,6 +196,25 @@ public class JsonTree internal constructor(
 
     companion object {
 
+        /**
+         * Returns the root node of this tree.
+         */
+        internal fun buildRoot(initialRoot: ElementNode?, context: ChangeContext): CrdtTreeNode {
+            if (initialRoot == null) {
+                return CrdtTreeNode(CrdtTreePos(context.issueTimeTicket(), 0), "root")
+            }
+
+            // TODO(hackerwins): Need to use the ticket of operation of creating tree.
+            return CrdtTreeNode(
+                CrdtTreePos(context.issueTimeTicket(), 0),
+                initialRoot.type,
+            ).also { root ->
+                initialRoot.children.forEach { child ->
+                    buildDescendants(child, root, context)
+                }
+            }
+        }
+
         private fun buildDescendants(
             treeNode: TreeNode,
             parent: CrdtTreeNode,
@@ -287,8 +286,8 @@ public class JsonTree internal constructor(
 
     data class ElementNode(
         override val type: String,
-        val attributes: Map<String, String>,
-        val children: List<TreeNode>,
+        val attributes: Map<String, String> = emptyMap(),
+        val children: List<TreeNode> = emptyList(),
     ) : TreeNode
 
     data class TextNode(val value: String) : TreeNode {

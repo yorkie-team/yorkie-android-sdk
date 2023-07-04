@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 
 /**
  * [TreeNode] represents the JSON representation of a node in the tree.
@@ -11,7 +12,32 @@ public data class TreeNode(
     val children: List<TreeNode>? = null,
     val value: String? = null,
     val attributes: Map<String, String>? = null,
-)
+) {
+
+    override fun toString(): String {
+        return if (type == DEFAULT_TEXT_TYPE) {
+            """{"type":"$type","value":"$value"}"""
+        } else {
+            val ssb = StringBuilder(
+                """{"type":"$type","children":[${
+                    children.orEmpty().joinToString(",")
+                }]""",
+            )
+            if (attributes?.isNotEmpty() == true) {
+                ssb.append(",")
+                ssb.append(
+                    """"attributes":{${
+                        attributes.entries.joinToString(",") { (key, value) ->
+                            """"$key":"$value""""
+                        }
+                    }}""",
+                )
+            }
+            ssb.append("}")
+            ssb.toString()
+        }
+    }
+}
 
 internal data class TreeChange(
     val actorID: ActorID,

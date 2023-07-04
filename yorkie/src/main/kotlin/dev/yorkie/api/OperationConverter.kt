@@ -18,6 +18,8 @@ import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
+import dev.yorkie.document.operation.TreeEditOperation
+import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.ActorID
 
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
@@ -31,28 +33,33 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 parentCreatedAt = it.set.parentCreatedAt.toTimeTicket(),
                 executedAt = it.set.executedAt.toTimeTicket(),
             )
+
             it.hasAdd() -> AddOperation(
                 parentCreatedAt = it.add.parentCreatedAt.toTimeTicket(),
                 prevCreatedAt = it.add.prevCreatedAt.toTimeTicket(),
                 value = it.add.value.toCrdtElement(),
                 executedAt = it.add.executedAt.toTimeTicket(),
             )
+
             it.hasMove() -> MoveOperation(
                 parentCreatedAt = it.move.parentCreatedAt.toTimeTicket(),
                 prevCreatedAt = it.move.prevCreatedAt.toTimeTicket(),
                 createdAt = it.move.createdAt.toTimeTicket(),
                 executedAt = it.move.executedAt.toTimeTicket(),
             )
+
             it.hasRemove() -> RemoveOperation(
                 parentCreatedAt = it.remove.parentCreatedAt.toTimeTicket(),
                 createdAt = it.remove.createdAt.toTimeTicket(),
                 executedAt = it.remove.executedAt.toTimeTicket(),
             )
+
             it.hasIncrease() -> IncreaseOperation(
                 parentCreatedAt = it.increase.parentCreatedAt.toTimeTicket(),
                 executedAt = it.increase.executedAt.toTimeTicket(),
                 value = it.increase.value.toCrdtElement(),
             )
+
             it.hasEdit() -> EditOperation(
                 fromPos = it.edit.from.toRgaTreeSplitNodePos(),
                 toPos = it.edit.to.toRgaTreeSplitNodePos(),
@@ -67,12 +74,14 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() }
                     ?: mapOf(),
             )
+
             it.hasSelect() -> SelectOperation(
                 fromPos = it.select.from.toRgaTreeSplitNodePos(),
                 toPos = it.select.to.toRgaTreeSplitNodePos(),
                 parentCreatedAt = it.select.parentCreatedAt.toTimeTicket(),
                 executedAt = it.select.executedAt.toTimeTicket(),
             )
+
             it.hasStyle() -> StyleOperation(
                 fromPos = it.style.from.toRgaTreeSplitNodePos(),
                 toPos = it.style.to.toRgaTreeSplitNodePos(),
@@ -80,6 +89,23 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 parentCreatedAt = it.style.parentCreatedAt.toTimeTicket(),
                 executedAt = it.style.executedAt.toTimeTicket(),
             )
+
+            it.hasTreeEdit() -> TreeEditOperation(
+                parentCreatedAt = it.treeEdit.parentCreatedAt.toTimeTicket(),
+                fromPos = it.treeEdit.from.toCrdtTreePos(),
+                toPos = it.treeEdit.to.toCrdtTreePos(),
+                content = it.treeEdit.contentList.toCrdtTreeRootNode(),
+                executedAt = it.treeEdit.executedAt.toTimeTicket(),
+            )
+
+            it.hasTreeStyle() -> TreeStyleOperation(
+                parentCreatedAt = it.treeStyle.parentCreatedAt.toTimeTicket(),
+                fromPos = it.treeStyle.from.toCrdtTreePos(),
+                toPos = it.treeStyle.to.toCrdtTreePos(),
+                attributes = it.treeStyle.attributesMap.toMap(),
+                executedAt = it.treeStyle.executedAt.toTimeTicket(),
+            )
+
             else -> throw IllegalArgumentException("unimplemented operation")
         }
     }
@@ -97,6 +123,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         is AddOperation -> {
             operation {
                 add = add {
@@ -107,6 +134,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         is MoveOperation -> {
             operation {
                 move = move {
@@ -117,6 +145,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         is RemoveOperation -> {
             operation {
                 remove = remove {
@@ -126,6 +155,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         is IncreaseOperation -> {
             operation {
                 increase = increase {
@@ -135,6 +165,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         is EditOperation -> {
             operation {
                 edit = edit {
@@ -150,6 +181,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         is SelectOperation -> {
             operation {
                 select = select {
@@ -160,6 +192,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         is StyleOperation -> {
             operation {
                 style = style {
@@ -171,6 +204,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                 }
             }
         }
+
         else -> throw IllegalArgumentException("unimplemented operation $operation")
     }
 }

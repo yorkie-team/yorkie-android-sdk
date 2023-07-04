@@ -7,6 +7,7 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.time.TimeTicket
 
 /**
@@ -47,6 +48,7 @@ public abstract class JsonElement {
                     JsonText::class.java -> JsonText(context, this as CrdtText)
                     JsonPrimitive::class.java -> JsonPrimitive(this as CrdtPrimitive)
                     JsonCounter::class.java -> JsonCounter(context, this as CrdtCounter)
+                    JsonTree::class.java -> JsonTree(context, this as CrdtTree)
                     else -> throw TypeCastException("unknown CrdtElement type: $this")
                 } as T
             } catch (e: ClassCastException) {

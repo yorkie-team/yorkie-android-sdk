@@ -1,5 +1,7 @@
 package dev.yorkie.document.json
 
+import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
@@ -7,14 +9,28 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreePos
+import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.json.JsonTree.ElementNode
 import dev.yorkie.document.json.JsonTree.TextNode
+import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
+import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class JsonTreeTest {
 
     @Suppress("ktlint:standard:max-line-length")
@@ -296,6 +312,142 @@ class JsonTreeTest {
         assertEquals(
             """{"type":"doc","children":[{"type":"tc","children":[{"type":"p","children":[{"type":"tn","children":[{"type":"text","value":""}],"attributes":{"z":"m"}}],"attributes":{"a":"b","c":"q"}}]}]}""",
             target.toJson(),
+        )
+    }
+
+    @Test
+    fun `should emit Tree edit operations accordingly when edited with index`() = runTest {
+        val document = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync {
+            it.setNewTree(
+                "t",
+                ElementNode(
+                    "doc",
+                    children = listOf(
+                        ElementNode(
+                            "p",
+                            children = listOf(TextNode("ab")),
+                        ),
+                    ),
+                ),
+            )
+        }.await()
+        assertEquals("<doc><p>ab</p></doc>", document.getRoot().tree().toXml())
+
+        val actualOperationDeferred = async(UnconfinedTestDispatcher()) {
+            document.events("$.t")
+                .filterIsInstance<LocalChange>()
+                .flatMapConcat { it.changeInfo.operations.asFlow() }
+                .filter { it is TreeEditOpInfo || it is TreeStyleOpInfo }
+                .take(2)
+                .toList()
+        }
+
+        document.updateAsync {
+            it.tree().edit(1, 1, TextNode("X"))
+            assertEquals("<doc><p>Xab</p></doc>", it.tree().toXml())
+
+            it.tree().style(0, 0, mapOf("a" to "b"))
+        }.await()
+
+        assertContentEquals(
+            listOf(
+                TreeEditOpInfo(
+                    1,
+                    1,
+                    listOf(0, 0),
+                    listOf(0, 0),
+                    TreeNode("text", value = "X"),
+                    "$.t",
+                ),
+                TreeStyleOpInfo(
+                    0,
+                    0,
+                    listOf(0, -7), // TODO: need to check if these are the actual right values???
+                    listOf(0, -7),
+                    mapOf("a" to "b"),
+                    "$.t",
+                ),
+            ),
+            actualOperationDeferred.await(),
+        )
+    }
+
+    @Test
+    fun `should emit Tree edit operations accordingly when edited with path`() = runTest {
+        val document = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync {
+            it.setNewTree(
+                "t",
+                ElementNode(
+                    "doc",
+                    children = listOf(
+                        ElementNode(
+                            "tc",
+                            children = listOf(
+                                ElementNode(
+                                    "p",
+                                    children = listOf(
+                                        ElementNode(
+                                            "tn",
+                                            children = listOf(TextNode("ab")),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }.await()
+        assertEquals(
+            """<doc><tc><p><tn>ab</tn></p></tc></doc>""",
+            document.getRoot().tree().toXml(),
+        )
+
+        val actualOperationDeferred = async(UnconfinedTestDispatcher()) {
+            document.events("$.t")
+                .filterIsInstance<LocalChange>()
+                .flatMapConcat { it.changeInfo.operations.asFlow() }
+                .filter { it is TreeEditOpInfo || it is TreeStyleOpInfo }
+                .take(2)
+                .toList()
+        }
+
+        document.updateAsync {
+            it.tree().editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), TextNode("X"))
+            assertEquals(
+                "<doc><tc><p><tn>aXb</tn></p></tc></doc>",
+                it.tree().toXml(),
+            )
+
+            it.tree().styleByPath(listOf(0, 0, 0), mapOf("a" to "b"))
+        }.await()
+
+        assertContentEquals(
+            listOf(
+                TreeEditOpInfo(
+                    4,
+                    4,
+                    listOf(0, 0, 0, 1),
+                    listOf(0, 0, 0, 1),
+                    TreeNode("text", value = "X"),
+                    "$.t",
+                ),
+                TreeStyleOpInfo(
+                    6,
+                    7, // TODO: need to check if these are the actual right values???
+                    listOf(0, 0, 0),
+                    listOf(0, 0, 0),
+                    mapOf("a" to "b"),
+                    "$.t",
+                ),
+            ),
+            actualOperationDeferred.await(),
         )
     }
 

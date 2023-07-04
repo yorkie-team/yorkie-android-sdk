@@ -8,6 +8,7 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.operation.RemoveOperation
@@ -106,6 +107,15 @@ public class JsonObject internal constructor(
         }
         setAndRegister(key, counter)
         return counter.toJsonElement(context)
+    }
+
+    public fun setNewTree(key: String, initialRoot: JsonTree.ElementNode? = null): JsonTree {
+        val tree = CrdtTree(
+            JsonTree.buildRoot(initialRoot, context),
+            context.issueTimeTicket(),
+        )
+        setAndRegister(key, tree)
+        return JsonTree(context, tree)
     }
 
     private fun setAndRegister(key: String, element: CrdtElement) {

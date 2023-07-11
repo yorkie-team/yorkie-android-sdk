@@ -8,6 +8,7 @@ import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.traverse
+import java.util.Objects
 import java.util.TreeMap
 
 public typealias TreeRange = Pair<CrdtTreePos, CrdtTreePos>
@@ -386,7 +387,7 @@ internal class CrdtTree(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {
-        return CrdtTree(root.deepcopy(), createdAt)
+        return CrdtTree(root.deepCopy(), createdAt, movedAt, removedAt)
     }
 
     /**
@@ -542,12 +543,6 @@ internal class CrdtTreeNode(
         get() = removedAt != null
 
     override var value: String = _value.orEmpty()
-        get() {
-            check(isText) {
-                "cannot set value of element node: $type"
-            }
-            return field
-        }
         set(value) {
             check(isText) {
                 "cannot set value of element node: $type"
@@ -597,21 +592,38 @@ internal class CrdtTreeNode(
     /**
      * Copies itself deeply.
      */
-    fun deepcopy(): CrdtTreeNode {
-        val clone = CrdtTreeNode(pos, type, _attributes = _attributes.deepCopy())
-        val node = this
-        return clone.apply clone@{
-            removedAt = node.removedAt
-            if (node.isText) {
-                value = node.value
+    fun deepCopy(): CrdtTreeNode {
+        return CrdtTreeNode(
+            pos,
+            type,
+            value.takeIf { isText },
+            _children.map { child ->
+                child.deepCopy()
+            }.toMutableList(),
+            _attributes.deepCopy(),
+        ).also {
+            it.size = size
+            it.removedAt = removedAt
+            it._children.forEach { child ->
+                child.parent = it
             }
-            size = node.size
-            node._children.map { child ->
-                child.deepcopy().apply {
-                    parent = this@clone
-                }
-            }.let(_children::addAll)
         }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other !is CrdtTreeNode) {
+            return false
+        }
+        if (this === other) {
+            return true
+        }
+        return pos == other.pos && type == other.type && value == other.value &&
+            attributes == other.attributes && createdAt == other.createdAt &&
+            removedAt == other.removedAt && children == other.children
+    }
+
+    override fun hashCode(): Int {
+        return Objects.hash(pos, type, value, attributes, createdAt, removedAt, children)
     }
 }
 

@@ -29,7 +29,7 @@ internal data class TreeEditOperation(
             YorkieLogger.e(TAG, "fail to execute, only Tree can execute edit")
             return emptyList()
         }
-        val changes = tree.edit(fromPos to toPos, content?.deepcopy(), executedAt)
+        val changes = tree.edit(fromPos to toPos, content?.deepCopy(), executedAt)
 
         if (fromPos.createdAt != toPos.createdAt || fromPos.offset != toPos.offset) {
             root.registerElementHasRemovedNodes(tree)

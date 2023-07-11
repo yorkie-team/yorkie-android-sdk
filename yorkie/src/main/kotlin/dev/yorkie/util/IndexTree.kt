@@ -195,7 +195,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
             // The pos is in both sides of the text node, we should traverse
             // inside of the text node if preferText is true.
             if (preferText && child.isText && child.size >= index - pos) {
-                return findTreePosInternal(child, index - pos)
+                return findTreePosInternal(child, index - pos, true)
             }
 
             // The position is in left side of the element node.
@@ -402,12 +402,6 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
 
     val isText = type == DEFAULT_TEXT_TYPE
 
-    init {
-        if (isText && _children.isNotEmpty()) {
-            throw IllegalArgumentException("Text node cannot have children")
-        }
-    }
-
     abstract val isRemoved: Boolean
 
     abstract var value: String
@@ -445,6 +439,12 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
 
     val hasTextChild: Boolean
         get() = children.any { it.isText }
+
+    init {
+        if (isText && _children.isNotEmpty()) {
+            throw IllegalArgumentException("Text node cannot have children")
+        }
+    }
 
     /**
      * Updates the size of the ancestors.

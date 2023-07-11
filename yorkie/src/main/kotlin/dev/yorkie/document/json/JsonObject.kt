@@ -110,10 +110,8 @@ public class JsonObject internal constructor(
     }
 
     public fun setNewTree(key: String, initialRoot: JsonTree.ElementNode? = null): JsonTree {
-        val tree = CrdtTree(
-            JsonTree.buildRoot(initialRoot, context),
-            context.issueTimeTicket(),
-        )
+        val ticket = context.issueTimeTicket()
+        val tree = CrdtTree(JsonTree.buildRoot(initialRoot, context), ticket)
         setAndRegister(key, tree)
         return JsonTree(context, tree)
     }

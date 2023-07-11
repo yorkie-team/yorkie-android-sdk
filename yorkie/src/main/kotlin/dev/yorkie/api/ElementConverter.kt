@@ -39,7 +39,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitNodePos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TextValue
-import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.traverse
 
@@ -105,7 +105,7 @@ internal fun PBJsonObject.toCrdtObject(): CrdtObject {
     )
 }
 
-private fun PBJsonArray.toCrdtArray(): CrdtArray {
+internal fun PBJsonArray.toCrdtArray(): CrdtArray {
     val rgaTreeList = RgaTreeList()
     nodesList.forEach { node ->
         rgaTreeList.insert(node.element.toCrdtElement())
@@ -137,7 +137,7 @@ internal fun PBText.toCrdtText(): CrdtText {
     )
 }
 
-private fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
+internal fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
     return CrdtPrimitive(
         value = CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
         createdAt = createdAt.toTimeTicket(),
@@ -146,7 +146,7 @@ private fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
     )
 }
 
-private fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
+internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
     return when (this) {
         PBValueType.VALUE_TYPE_NULL -> CrdtPrimitive.Type.Null
         PBValueType.VALUE_TYPE_BOOLEAN -> CrdtPrimitive.Type.Boolean
@@ -160,7 +160,7 @@ private fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
     }
 }
 
-private fun PBCounter.toCrdtCounter(): CrdtCounter {
+internal fun PBCounter.toCrdtCounter(): CrdtCounter {
     val type = type.toCounterType()
     return if (type == CounterType.IntegerCnt) {
         CrdtCounter(
@@ -179,7 +179,7 @@ private fun PBCounter.toCrdtCounter(): CrdtCounter {
     }
 }
 
-private fun PBValueType.toCounterType(): CounterType {
+internal fun PBValueType.toCounterType(): CounterType {
     return when (this) {
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.IntegerCnt
         PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.LongCnt
@@ -202,14 +202,14 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
         return null
     }
     val nodes = map { it.toCrdtTreeNode() }
-    val root = nodes.first()
+    val root = nodes.last()
     for (i in nodes.size - 2 downTo 0) {
         val parentIndex = ((i + 1)..nodes.lastIndex).find {
             this[i].depth - 1 == this[it].depth
         } ?: continue
         nodes[parentIndex].prepend(nodes[i])
     }
-    return CrdtTree(root, TimeTicket.InitialTimeTicket).root
+    return CrdtTree(root, InitialTimeTicket).root
 }
 
 internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
@@ -273,13 +273,13 @@ internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
     }
 }
 
-private fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
+internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
     return map {
         rGANode { element = it.value.toPBJsonElement() }
     }
 }
 
-private fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
+internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
     return buildList {
         traverse(this@toPBTreeNodes) { node, nodeDepth ->
             val pbTreeNode = treeNode {
@@ -306,7 +306,7 @@ private fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
     }
 }
 
-private fun CrdtTreePos.toPBTreePos(): PBTreePos {
+internal fun CrdtTreePos.toPBTreePos(): PBTreePos {
     val crdtTreePos = this
     return treePos {
         createdAt = crdtTreePos.createdAt.toPBTimeTicket()
@@ -326,7 +326,7 @@ internal fun CrdtText.toPBText(): PBJsonElement {
     }
 }
 
-private fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
+internal fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
     return this@toPBTextNodes.map { node ->
         textNode {
             id = node.id.toPBTextNodeID()
@@ -357,18 +357,18 @@ internal fun PBTextNodePos.toRgaTreeSplitNodePos(): RgaTreeSplitNodePos {
     )
 }
 
-private fun RgaTreeSplitNodeID.toPBTextNodeID(): PBTextNodeID {
+internal fun RgaTreeSplitNodeID.toPBTextNodeID(): PBTextNodeID {
     return textNodeID {
         createdAt = this@toPBTextNodeID.createdAt.toPBTimeTicket()
         offset = this@toPBTextNodeID.offset
     }
 }
 
-private fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
+internal fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
     return RgaTreeSplitNodeID(createdAt.toTimeTicket(), offset)
 }
 
-private fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
+internal fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
     val textValue = TextValue(value).apply {
         attributesMap.forEach { (key, attr) ->
             setAttribute(key, attr.value, attr.updatedAt.toTimeTicket())
@@ -392,7 +392,7 @@ internal fun CrdtPrimitive.toPBPrimitive(): PBJsonElement {
     }
 }
 
-private fun CrdtPrimitive.Type.toPBValueType(): PBValueType {
+internal fun CrdtPrimitive.Type.toPBValueType(): PBValueType {
     return when (this) {
         CrdtPrimitive.Type.Null -> PBValueType.VALUE_TYPE_NULL
         CrdtPrimitive.Type.Boolean -> PBValueType.VALUE_TYPE_BOOLEAN
@@ -418,7 +418,7 @@ internal fun CrdtCounter.toPBCounter(): PBJsonElement {
     }
 }
 
-private fun CounterType.toPBCounterType(): PBValueType {
+internal fun CounterType.toPBCounterType(): PBValueType {
     return when (this) {
         CounterType.IntegerCnt -> PBValueType.VALUE_TYPE_INTEGER_CNT
         CounterType.LongCnt -> PBValueType.VALUE_TYPE_LONG_CNT

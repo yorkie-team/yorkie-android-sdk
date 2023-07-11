@@ -97,7 +97,7 @@ public class JsonTree internal constructor(
     private fun editByPos(fromPos: CrdtTreePos, toPos: CrdtTreePos, content: TreeNode?) {
         val crdtNode = content?.let { createCrdtTreeNode(context, content) }
         val ticket = context.lastTimeTicket
-        target.edit(fromPos to toPos, crdtNode?.deepcopy(), ticket)
+        target.edit(fromPos to toPos, crdtNode?.deepCopy(), ticket)
 
         context.push(
             TreeEditOperation(

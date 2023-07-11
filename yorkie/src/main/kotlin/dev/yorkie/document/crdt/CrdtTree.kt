@@ -617,8 +617,8 @@ internal class CrdtTreeNode(
         if (this === other) {
             return true
         }
-        return pos == other.pos && type == other.type && value == other.value &&
-            attributes == other.attributes && createdAt == other.createdAt &&
+        return pos == other.pos && type == other.type &&
+            value == other.value && attributes == other.attributes &&
             removedAt == other.removedAt && children == other.children
     }
 

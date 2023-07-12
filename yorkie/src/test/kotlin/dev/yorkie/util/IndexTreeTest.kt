@@ -1,6 +1,8 @@
 package dev.yorkie.util
 
 import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreePos.Companion.InitialCrdtTreePos
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -404,11 +406,11 @@ class IndexTreeTest {
 
     companion object {
         private fun createElementNode(type: String, vararg childNode: CrdtTreeNode): CrdtTreeNode {
-            return CrdtTreeNode(InitialCrdtTreePos, type, _children = childNode.toMutableList())
+            return CrdtTreeElement(InitialCrdtTreePos, type, childNode.toList())
         }
 
         private fun createTextNode(value: String) =
-            CrdtTreeNode(InitialCrdtTreePos, "text", _value = value)
+            CrdtTreeText(InitialCrdtTreePos, value)
 
         private val DefaultRootNode = createElementNode(
             "root",

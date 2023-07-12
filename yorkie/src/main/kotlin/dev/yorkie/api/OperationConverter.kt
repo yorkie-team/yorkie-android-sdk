@@ -8,6 +8,8 @@ import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.select
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.OperationKt.style
+import dev.yorkie.api.v1.OperationKt.treeEdit
+import dev.yorkie.api.v1.OperationKt.treeStyle
 import dev.yorkie.api.v1.operation
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.EditOperation
@@ -201,6 +203,32 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTextNodePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
+                }
+            }
+        }
+
+        is TreeEditOperation -> {
+            operation {
+                treeEdit = treeEdit {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    from = operation.fromPos.toPBTreePos()
+                    to = operation.toPos.toPBTreePos()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                    content.addAll(operation.content?.toPBTreeNodes().orEmpty())
+                }
+            }
+        }
+
+        is TreeStyleOperation -> {
+            operation {
+                treeStyle = treeStyle {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    from = operation.fromPos.toPBTreePos()
+                    to = operation.toPos.toPBTreePos()
+                    executedAt = operation.executedAt.toPBTimeTicket()
+                    operation.attributes.forEach { (key, value) ->
+                        attributes[key] = value
+                    }
                 }
             }
         }

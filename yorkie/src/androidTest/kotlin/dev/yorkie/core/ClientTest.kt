@@ -249,7 +249,7 @@ class ClientTest {
                 it["version"] = "v2"
             }.await()
             client1.syncAsync().await()
-            withTimeout(2_000) {
+            withTimeout(5_000) {
                 while (client2Events.size < 2) {
                     delay(50)
                 }

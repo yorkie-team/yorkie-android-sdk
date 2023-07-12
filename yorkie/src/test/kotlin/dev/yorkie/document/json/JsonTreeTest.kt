@@ -11,8 +11,6 @@ import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.TreeNode
-import dev.yorkie.document.json.JsonTree.ElementNode
-import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -39,28 +37,28 @@ class JsonTreeTest {
     @Test
     fun `should be able to create from scratch and edit`() {
         val target = JsonTree(DummyContext, rootCrdtTree)
-        target.edit(0, 0, ElementNode("p"))
+        target.edit(0, 0, element("p"))
         assertEquals("<root><p></p></root>", target.toXml())
         assertEquals(
             """{"type":"root","children":[{"type":"p","children":[]}]}""",
             target.toJson(),
         )
 
-        target.edit(1, 1, TextNode("AB"))
+        target.edit(1, 1, text { "AB" })
         assertEquals("<root><p>AB</p></root>", target.toXml())
         assertEquals(
             """{"type":"root","children":[{"type":"p","children":[{"type":"text","value":"AB"}]}]}""",
             target.toJson(),
         )
 
-        target.edit(3, 3, TextNode("CD"))
+        target.edit(3, 3, text { "CD" })
         assertEquals("<root><p>ABCD</p></root>", target.toXml())
         assertEquals(
             """{"type":"root","children":[{"type":"p","children":[{"type":"text","value":"AB"},{"type":"text","value":"CD"}]}]}""",
             target.toJson(),
         )
 
-        target.edit(1, 5, TextNode("Yorkie"))
+        target.edit(1, 5, text { "Yorkie" })
         assertEquals("<root><p>Yorkie</p></root>", target.toXml())
         assertEquals(
             """{"type":"root","children":[{"type":"p","children":[{"type":"text","value":"Yorkie"}]}]}""",
@@ -70,24 +68,22 @@ class JsonTreeTest {
 
     @Test
     fun `should be able to create with existing tree`() {
-        val root = ElementNode(
-            "doc",
-            children = listOf(
-                ElementNode("p", children = listOf(TextNode("ab"))),
-                ElementNode(
-                    "ng",
-                    emptyMap(),
-                    listOf(
-                        ElementNode("note", children = listOf(TextNode("cd"))),
-                        ElementNode("note", children = listOf(TextNode("ef"))),
-                    ),
-                ),
-                ElementNode(
-                    "bp",
-                    children = listOf(TextNode("gh")),
-                ),
-            ),
-        )
+        val root = element("doc") {
+            element("p") {
+                text { "ab" }
+            }
+            element("ng") {
+                element("note") {
+                    text { "cd" }
+                }
+                element("note") {
+                    text { "ef" }
+                }
+            }
+            element("bp") {
+                text { "gh" }
+            }
+        }
         val target = JsonTree(
             DummyContext,
             CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
@@ -99,24 +95,30 @@ class JsonTreeTest {
         assertEquals(18, target.size)
         assertContentEquals(
             listOf(
-                TextNode("ab"),
-                ElementNode("p", children = listOf(TextNode("ab"))),
-                TextNode("cd"),
-                ElementNode("note", children = listOf(TextNode("cd"))),
-                TextNode("ef"),
-                ElementNode("note", children = listOf(TextNode("ef"))),
-                ElementNode(
-                    "ng",
-                    children = listOf(
-                        ElementNode("note", emptyMap(), listOf(TextNode("cd"))),
-                        ElementNode("note", emptyMap(), listOf(TextNode("ef"))),
-                    ),
-                ),
-                TextNode("gh"),
-                ElementNode(
-                    "bp",
-                    children = listOf(TextNode("gh")),
-                ),
+                text { "ab" },
+                element("p") {
+                    text { "ab" }
+                },
+                text { "cd" },
+                element("note") {
+                    text { "cd" }
+                },
+                text { "ef" },
+                element("note") {
+                    text { "ef" }
+                },
+                element("ng") {
+                    element("note") {
+                        text { "cd" }
+                    }
+                    element("note") {
+                        text { "ef" }
+                    }
+                },
+                text { "gh" },
+                element("bp") {
+                    text { "gh" }
+                },
                 root,
             ),
             target.toList(),
@@ -125,35 +127,30 @@ class JsonTreeTest {
 
     @Test
     fun `should be able to edit`() {
-        val root = ElementNode(
-            "doc",
-            children = listOf(
-                ElementNode(
-                    "p",
-                    emptyMap(),
-                    listOf(TextNode("ab")),
-                ),
-            ),
-        )
+        val root = element("doc") {
+            element("p") {
+                text { "ab" }
+            }
+        }
         val target = JsonTree(
             DummyContext,
             CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
         )
         assertEquals("<doc><p>ab</p></doc>", target.toXml())
 
-        target.edit(1, 1, TextNode("X"))
+        target.edit(1, 1, text { "X" })
         assertEquals("<doc><p>Xab</p></doc>", target.toXml())
 
         target.edit(1, 2)
         assertEquals("<doc><p>ab</p></doc>", target.toXml())
 
-        target.edit(2, 2, TextNode("X"))
+        target.edit(2, 2, text { "X" })
         assertEquals("<doc><p>aXb</p></doc>", target.toXml())
 
         target.edit(2, 3)
         assertEquals("<doc><p>ab</p></doc>", target.toXml())
 
-        target.edit(3, 3, TextNode("X"))
+        target.edit(3, 3, text { "X" })
         assertEquals("<doc><p>abX</p></doc>", target.toXml())
 
         target.edit(3, 4)
@@ -165,96 +162,87 @@ class JsonTreeTest {
 
     @Test
     fun `should be able to edit with path`() {
-        val root = ElementNode(
-            "doc",
-            children = listOf(
-                ElementNode(
-                    "tc",
-                    children = listOf(
-                        ElementNode(
-                            "p",
-                            children = listOf(
-                                ElementNode(
-                                    "tn",
-                                    children = listOf(TextNode("ab")),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        )
+        val root = element("doc") {
+            element("tc") {
+                element("p") {
+                    element("tn") {
+                        text { "ab" }
+                    }
+                }
+            }
+        }
         val target = JsonTree(
             DummyContext,
             CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
         )
         assertEquals("<doc><tc><p><tn>ab</tn></p></tc></doc>", target.toXml())
 
-        target.editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), TextNode("X"))
+        target.editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), text { "X" })
         assertEquals("<doc><tc><p><tn>aXb</tn></p></tc></doc>", target.toXml())
 
-        target.editByPath(listOf(0, 0, 0, 3), listOf(0, 0, 0, 3), TextNode("!"))
+        target.editByPath(listOf(0, 0, 0, 3), listOf(0, 0, 0, 3), text { "!" })
         assertEquals("<doc><tc><p><tn>aXb!</tn></p></tc></doc>", target.toXml())
 
         target.editByPath(
             listOf(0, 0, 1),
             listOf(0, 0, 1),
-            ElementNode("tn", children = listOf(TextNode("cd"))),
+            element("tn") {
+                text { "cd" }
+            },
         )
         assertEquals("<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p></tc></doc>", target.toXml())
 
         target.editByPath(
             listOf(0, 1),
             listOf(0, 1),
-            ElementNode(
-                "p",
-                children = listOf(ElementNode("tn", children = listOf(TextNode("q")))),
-            ),
+            element("p") {
+                element("tn") {
+                    text { "q" }
+                }
+            },
         )
         assertEquals(
             "<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p><p><tn>q</tn></p></tc></doc>",
             target.toXml(),
         )
 
-        target.editByPath(listOf(0, 1, 0, 0), listOf(0, 1, 0, 0), TextNode("a"))
+        target.editByPath(listOf(0, 1, 0, 0), listOf(0, 1, 0, 0), text { "a" })
         assertEquals(
             "<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p><p><tn>aq</tn></p></tc></doc>",
             target.toXml(),
         )
 
-        target.editByPath(listOf(0, 1, 0, 2), listOf(0, 1, 0, 2), TextNode("B"))
+        target.editByPath(listOf(0, 1, 0, 2), listOf(0, 1, 0, 2), text { "B" })
         assertEquals(
             "<doc><tc><p><tn>aXb!</tn><tn>cd</tn></p><p><tn>aqB</tn></p></tc></doc>",
             target.toXml(),
         )
 
         assertThrows(IllegalArgumentException::class.java) {
-            target.editByPath(listOf(0, 0, 4), listOf(0, 0, 4), ElementNode("tn"))
+            target.editByPath(listOf(0, 0, 4), listOf(0, 0, 4), element("tn"))
         }
     }
 
     @Test
     fun `should be able to init with attributes`() {
-        val root = ElementNode(
-            "doc",
-            children = listOf(
-                ElementNode(
-                    "p",
-                    children = listOf(
-                        ElementNode(
-                            "span",
-                            mapOf("bold" to "true"),
-                            children = listOf(TextNode("hello")),
-                        ),
-                    ),
-                ),
-            ),
-        )
+        val root = element("doc") {
+            element("p") {
+                element("span") {
+                    attrs {
+                        mapOf("bold" to true, "italic" to false)
+                    }
+                    text { "hello" }
+                }
+            }
+        }
         val target = JsonTree(
             DummyContext,
             CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
         )
-        assertEquals("""<doc><p><span bold="true">hello</span></p></doc>""", target.toXml())
+        assertEquals(
+            """<doc><p><span bold="true" italic="false">hello</span></p></doc>""",
+            target.toXml(),
+        )
     }
 
     @Test
@@ -325,15 +313,11 @@ class JsonTreeTest {
         document.updateAsync {
             it.setNewTree(
                 "t",
-                ElementNode(
-                    "doc",
-                    children = listOf(
-                        ElementNode(
-                            "p",
-                            children = listOf(TextNode("ab")),
-                        ),
-                    ),
-                ),
+                element("doc") {
+                    element("p") {
+                        text { "ab" }
+                    }
+                },
             )
         }.await()
         assertEquals("<doc><p>ab</p></doc>", document.getRoot().tree().toXml())
@@ -348,7 +332,7 @@ class JsonTreeTest {
         }
 
         document.updateAsync {
-            it.tree().edit(1, 1, TextNode("X"))
+            it.tree().edit(1, 1, text { "X" })
             assertEquals("<doc><p>Xab</p></doc>", it.tree().toXml())
 
             it.tree().style(0, 0, mapOf("a" to "b"))
@@ -385,25 +369,15 @@ class JsonTreeTest {
         document.updateAsync {
             it.setNewTree(
                 "t",
-                ElementNode(
-                    "doc",
-                    children = listOf(
-                        ElementNode(
-                            "tc",
-                            children = listOf(
-                                ElementNode(
-                                    "p",
-                                    children = listOf(
-                                        ElementNode(
-                                            "tn",
-                                            children = listOf(TextNode("ab")),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
+                element("doc") {
+                    element("tc") {
+                        element("p") {
+                            element("tn") {
+                                text { "ab" }
+                            }
+                        }
+                    }
+                },
             )
         }.await()
         assertEquals(
@@ -421,7 +395,7 @@ class JsonTreeTest {
         }
 
         document.updateAsync {
-            it.tree().editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), TextNode("X"))
+            it.tree().editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), text { "X" })
             assertEquals(
                 "<doc><tc><p><tn>aXb</tn></p></tc></doc>",
                 it.tree().toXml(),
@@ -466,26 +440,16 @@ class JsonTreeTest {
             get() = CrdtTreeElement(CrdtTreePos(InitialTimeTicket, 0), DEFAULT_ROOT_TYPE)
 
         private fun createTreeWithStyle(): JsonTree {
-            val root = ElementNode(
-                "doc",
-                children = listOf(
-                    ElementNode(
-                        "tc",
-                        children = listOf(
-                            ElementNode(
-                                "p",
-                                children = listOf(
-                                    ElementNode(
-                                        "tn",
-                                        children = listOf(TextNode("")),
-                                    ),
-                                ),
-                                attributes = mapOf("a" to "b"),
-                            ),
-                        ),
-                    ),
-                ),
-            )
+            val root = element("doc") {
+                element("tc") {
+                    element("p") {
+                        element("tn") {
+                            text { "" }
+                        }
+                        attr { "a" to "b" }
+                    }
+                }
+            }
             return JsonTree(
                 DummyContext,
                 CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),

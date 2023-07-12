@@ -11,6 +11,8 @@ import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.TreeNode
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket

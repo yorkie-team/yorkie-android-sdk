@@ -281,17 +281,17 @@ public class JsonTree internal constructor(
         }
     }
 
-    sealed interface TreeNode {
-        val type: String
+    public sealed interface TreeNode {
+        public val type: String
     }
 
-    data class ElementNode(
-        override val type: String,
-        val attributes: Map<String, String> = emptyMap(),
-        val children: List<TreeNode> = emptyList(),
+    public data class ElementNode(
+        public override val type: String,
+        public val attributes: Map<String, String> = emptyMap(),
+        public val children: List<TreeNode> = emptyList(),
     ) : TreeNode
 
-    data class TextNode(val value: String) : TreeNode {
-        override val type: String = DEFAULT_TEXT_TYPE
+    public data class TextNode(val value: String) : TreeNode {
+        public override val type: String = DEFAULT_TEXT_TYPE
     }
 }

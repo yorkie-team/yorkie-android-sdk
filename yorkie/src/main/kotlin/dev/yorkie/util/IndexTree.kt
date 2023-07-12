@@ -395,12 +395,13 @@ internal data class TreePos<T : IndexTreeNode<T>>(
  * document of text-based editors.
  */
 @Suppress("UNCHECKED_CAST")
-internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(
-    val type: String,
-    protected val _children: MutableList<T> = mutableListOf(),
-) {
+internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableList<T>) {
+    abstract val type: String
 
-    val isText = type == DEFAULT_TEXT_TYPE
+    protected val _children: MutableList<T> = children
+
+    val isText
+        get() = type == DEFAULT_TEXT_TYPE
 
     abstract val isRemoved: Boolean
 

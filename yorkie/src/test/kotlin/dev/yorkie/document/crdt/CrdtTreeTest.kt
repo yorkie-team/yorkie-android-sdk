@@ -2,6 +2,8 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 import org.junit.Assert.assertEquals
@@ -17,14 +19,14 @@ class CrdtTreeTest {
 
     @Before
     fun setUp() {
-        target = CrdtTree(CrdtTreeNode(issuePos(), "root"), issueTime())
+        target = CrdtTree(CrdtTreeElement(issuePos(), "root"), issueTime())
     }
 
     @Test
     fun `should create CrdtTreeNode`() {
-        val node = CrdtTreeNode(ITP, TEXT, "hello")
+        val node = CrdtTreeText(ITP, "hello")
         assertEquals(ITP, node.pos)
-        assertEquals(TEXT, node.type)
+        assertEquals(DEFAULT_TEXT_TYPE, node.type)
         assertEquals("hello", node.value)
         assertEquals(5, node.size)
         assertTrue(node.isText)
@@ -33,8 +35,8 @@ class CrdtTreeTest {
 
     @Test
     fun `should split CrdtTreeNode`() {
-        val para = CrdtTreeNode(ITP, "p")
-        para.append(CrdtTreeNode(ITP, TEXT, "helloyorkie"))
+        val para = CrdtTreeElement(ITP, "p")
+        para.append(CrdtTreeText(ITP, "helloyorkie"))
         assertEquals("<p>helloyorkie</p>", para.toXml())
         assertEquals(11, para.size)
         assertFalse(para.isText)
@@ -59,22 +61,22 @@ class CrdtTreeTest {
 
         //           1
         // <root> <p> </p> </root>
-        target.editByIndex(0 to 0, CrdtTreeNode(issuePos(), "p"), issueTime())
+        target.editByIndex(0 to 0, CrdtTreeElement(issuePos(), "p"), issueTime())
         assertEquals("<root><p></p></root>", target.toXml())
         assertEquals(listOf("p", "root"), target.toList())
         assertEquals(2, target.root.size)
 
         //           1
         // <root> <p> h e l l o </p> </root>
-        target.editByIndex(1 to 1, CrdtTreeNode(issuePos(), TEXT, "hello"), issueTime())
+        target.editByIndex(1 to 1, CrdtTreeText(issuePos(), "hello"), issueTime())
         assertEquals("<root><p>hello</p></root>", target.toXml())
         assertEquals(listOf("text.hello", "p", "root"), target.toList())
         assertEquals(7, target.root.size)
 
         //       0   1 2 3 4 5 6    7   8 9  10 11 12 13    14
         // <root> <p> h e l l o </p> <p> w  o  r  l  d  </p>  </root>
-        val p = CrdtTreeNode(issuePos(), "p").apply {
-            insertAt(0, CrdtTreeNode(issuePos(), TEXT, "world"))
+        val p = CrdtTreeElement(issuePos(), "p").apply {
+            insertAt(0, CrdtTreeText(issuePos(), "world"))
         }
         target.editByIndex(7 to 7, p, issueTime())
         assertEquals("<root><p>hello</p><p>world</p></root>", target.toXml())
@@ -83,7 +85,7 @@ class CrdtTreeTest {
 
         //       0   1 2 3 4 5 6 7    8   9 10 11 12 13 14    15
         // <root> <p> h e l l o ! </p> <p> w  o  r  l  d  </p>  </root>
-        target.editByIndex(6 to 6, CrdtTreeNode(issuePos(), TEXT, "!"), issueTime())
+        target.editByIndex(6 to 6, CrdtTreeText(issuePos(), "!"), issueTime())
         assertEquals("<root><p>hello!</p><p>world</p></root>", target.toXml())
         assertEquals(
             listOf("text.hello", "text.!", "p", "text.world", "p", "root"),
@@ -91,7 +93,7 @@ class CrdtTreeTest {
         )
         assertEquals(15, target.root.size)
 
-        target.editByIndex(6 to 6, CrdtTreeNode(issuePos(), TEXT, "~"), issueTime())
+        target.editByIndex(6 to 6, CrdtTreeText(issuePos(), "~"), issueTime())
         assertEquals("<root><p>hello~!</p><p>world</p></root>", target.toXml())
         assertEquals(
             listOf("text.hello", "text.~", "text.!", "p", "text.world", "p", "root"),
@@ -105,10 +107,10 @@ class CrdtTreeTest {
         // 01. Create a tree with 2 paragraphs.
         //       0   1 2 3    4   5 6 7    8
         // <root> <p> a b </p> <p> c d </p> </root>
-        target.editByIndex(0 to 0, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(1 to 1, CrdtTreeNode(issuePos(), TEXT, "ab"), issueTime())
-        target.editByIndex(4 to 4, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(5 to 5, CrdtTreeNode(issuePos(), TEXT, "cd"), issueTime())
+        target.editByIndex(0 to 0, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(1 to 1, CrdtTreeText(issuePos(), "ab"), issueTime())
+        target.editByIndex(4 to 4, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(5 to 5, CrdtTreeText(issuePos(), "cd"), issueTime())
         assertEquals("<root><p>ab</p><p>cd</p></root>", target.toXml())
         assertEquals(listOf("text.ab", "p", "text.cd", "p", "root"), target.toList())
         assertEquals(8, target.root.size)
@@ -127,21 +129,21 @@ class CrdtTreeTest {
         // 01. Create a tree with 2 paragraphs.
         //       0   1 2 3    4   5 6 7    8
         // <root> <p> a b </p> <p> c d </p> </root>
-        target.editByIndex(0 to 0, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(1 to 1, CrdtTreeNode(issuePos(), TEXT, "ab"), issueTime())
-        target.editByIndex(4 to 4, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(5 to 5, CrdtTreeNode(issuePos(), TEXT, "cd"), issueTime())
+        target.editByIndex(0 to 0, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(1 to 1, CrdtTreeText(issuePos(), "ab"), issueTime())
+        target.editByIndex(4 to 4, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(5 to 5, CrdtTreeText(issuePos(), "cd"), issueTime())
         assertEquals("<root><p>ab</p><p>cd</p></root>", target.toXml())
         assertEquals(listOf("text.ab", "p", "text.cd", "p", "root"), target.toList())
 
         // 02. delete b, c and first paragraph.
         //       0   1 2 3    4
         // <root> <p> a d </p> </root>
-        target.editByIndex(2 to 6, CrdtTreeNode(issuePos(), TEXT), issueTime())
+        target.editByIndex(2 to 6, CrdtTreeText(issuePos()), issueTime())
         assertEquals("<root><p>ad</p></root>", target.toXml())
 
         // 03. insert a new text node at the start of the first paragraph.
-        target.editByIndex(1 to 1, CrdtTreeNode(issuePos(), TEXT, "@"), issueTime())
+        target.editByIndex(1 to 1, CrdtTreeText(issuePos(), "@"), issueTime())
         assertEquals("<root><p>@ad</p></root>", target.toXml())
     }
 
@@ -149,10 +151,10 @@ class CrdtTreeTest {
     fun `should merge and edit different levels with editByIndex`() {
         fun initializeTree() {
             setUp()
-            target.editByIndex(0 to 0, CrdtTreeNode(issuePos(), "p"), issueTime())
-            target.editByIndex(1 to 1, CrdtTreeNode(issuePos(), "b"), issueTime())
-            target.editByIndex(2 to 2, CrdtTreeNode(issuePos(), "i"), issueTime())
-            target.editByIndex(3 to 3, CrdtTreeNode(issuePos(), TEXT, "ab"), issueTime())
+            target.editByIndex(0 to 0, CrdtTreeElement(issuePos(), "p"), issueTime())
+            target.editByIndex(1 to 1, CrdtTreeElement(issuePos(), "b"), issueTime())
+            target.editByIndex(2 to 2, CrdtTreeElement(issuePos(), "i"), issueTime())
+            target.editByIndex(3 to 3, CrdtTreeText(issuePos(), "ab"), issueTime())
             assertEquals("<root><p><b><i>ab</i></b></p></root>", target.toXml())
         }
 
@@ -190,13 +192,13 @@ class CrdtTreeTest {
 
         // 07. edit between text and element node in same hierarchy.
         setUp()
-        target.editByIndex(0 to 0, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(1 to 1, CrdtTreeNode(issuePos(), TEXT, "ab"), issueTime())
-        target.editByIndex(4 to 4, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(5 to 5, CrdtTreeNode(issuePos(), "b"), issueTime())
-        target.editByIndex(6 to 6, CrdtTreeNode(issuePos(), TEXT, "cd"), issueTime())
-        target.editByIndex(10 to 10, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(11 to 11, CrdtTreeNode(issuePos(), TEXT, "ef"), issueTime())
+        target.editByIndex(0 to 0, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(1 to 1, CrdtTreeText(issuePos(), "ab"), issueTime())
+        target.editByIndex(4 to 4, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(5 to 5, CrdtTreeElement(issuePos(), "b"), issueTime())
+        target.editByIndex(6 to 6, CrdtTreeText(issuePos(), "cd"), issueTime())
+        target.editByIndex(10 to 10, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(11 to 11, CrdtTreeText(issuePos(), "ef"), issueTime())
         assertEquals("<root><p>ab</p><p><b>cd</b></p><p>ef</p></root>", target.toXml())
 
         target.editByIndex(9 to 10, null, issueTime())
@@ -207,10 +209,10 @@ class CrdtTreeTest {
     fun `should get correct index from CrdtTreePos`() {
         //     0  1  2   3 4 5    6   7   8
         // <root><p><b><i> a b </i></b></p></root>
-        target.editByIndex(0 to 0, CrdtTreeNode(issuePos(), "p"), issueTime())
-        target.editByIndex(1 to 1, CrdtTreeNode(issuePos(), "b"), issueTime())
-        target.editByIndex(2 to 2, CrdtTreeNode(issuePos(), "i"), issueTime())
-        target.editByIndex(3 to 3, CrdtTreeNode(issuePos(), TEXT, "ab"), issueTime())
+        target.editByIndex(0 to 0, CrdtTreeElement(issuePos(), "p"), issueTime())
+        target.editByIndex(1 to 1, CrdtTreeElement(issuePos(), "b"), issueTime())
+        target.editByIndex(2 to 2, CrdtTreeElement(issuePos(), "i"), issueTime())
+        target.editByIndex(3 to 3, CrdtTreeText(issuePos(), "ab"), issueTime())
         assertEquals("<root><p><b><i>ab</i></b></p></root>", target.toXml())
 
         var (from, to) = target.pathToPosRange(listOf(0))
@@ -254,7 +256,6 @@ class CrdtTreeTest {
     }
 
     companion object {
-        private const val TEXT = DEFAULT_TEXT_TYPE
 
         private val DummyContext = ChangeContext(
             ChangeID.InitialChangeID,

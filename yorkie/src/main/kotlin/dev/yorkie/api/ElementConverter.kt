@@ -30,6 +30,8 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeList
@@ -214,16 +216,19 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
 
 internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
     val pos = pos.toCrdtTreePos()
-    return CrdtTreeNode(
-        pos,
-        type,
-        _value = value.takeIf { type == IndexTreeNode.DEFAULT_TEXT_TYPE },
-        _attributes = Rht().also {
-            attributesMap.forEach { (key, value) ->
-                it.set(key, value.value, value.updatedAt.toTimeTicket())
-            }
-        },
-    )
+    return if (type == IndexTreeNode.DEFAULT_TEXT_TYPE) {
+        CrdtTreeText(pos, value)
+    } else {
+        CrdtTreeElement(
+            pos,
+            type,
+            attributes = Rht().also {
+                attributesMap.forEach { (key, value) ->
+                    it.set(key, value.value, value.updatedAt.toTimeTicket())
+                }
+            },
+        )
+    }
 }
 
 internal fun PBTreePos.toCrdtTreePos(): CrdtTreePos = CrdtTreePos(createdAt.toTimeTicket(), offset)

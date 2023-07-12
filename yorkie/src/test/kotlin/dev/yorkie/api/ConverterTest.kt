@@ -14,6 +14,10 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.CrdtTree
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
+import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
@@ -29,13 +33,16 @@ import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
+import dev.yorkie.document.operation.TreeEditOperation
+import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import org.junit.Assert.assertEquals
+import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.util.Date
+import kotlin.test.assertEquals
 
 class ConverterTest {
     private val defaultPrimitive = CrdtPrimitive("default", InitialTimeTicket)
@@ -227,6 +234,20 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
+        val treeEditOperation = TreeEditOperation(
+            InitialTimeTicket,
+            CrdtTreePos(InitialTimeTicket, 5),
+            CrdtTreePos(InitialTimeTicket, 10),
+            CrdtTreeText(CrdtTreePos(InitialTimeTicket, 0), "hi"),
+            InitialTimeTicket,
+        )
+        val treeStyleOperation = TreeStyleOperation(
+            InitialTimeTicket,
+            CrdtTreePos(InitialTimeTicket, 5),
+            CrdtTreePos(InitialTimeTicket, 10),
+            mapOf("a" to "b"),
+            InitialTimeTicket,
+        )
         val converted = listOf(
             addOperation.toPBOperation(),
             setOperation.toPBOperation(),
@@ -237,6 +258,8 @@ class ConverterTest {
             editOperationWithAttrs.toPBOperation(),
             selectOperation.toPBOperation(),
             styleOperation.toPBOperation(),
+            treeEditOperation.toPBOperation(),
+            treeStyleOperation.toPBOperation(),
         ).toOperations()
 
         assertEquals(addOperation, converted[0])
@@ -248,6 +271,8 @@ class ConverterTest {
         assertEquals(editOperationWithAttrs, converted[6])
         assertEquals(selectOperation, converted[7])
         assertEquals(styleOperation, converted[8])
+        assertEquals(treeEditOperation, converted[9])
+        assertEquals(treeStyleOperation, converted[10])
     }
 
     @Test
@@ -354,12 +379,17 @@ class ConverterTest {
         val primitive = CrdtPrimitive("str", InitialTimeTicket)
         val crdtCounter = CrdtCounter(1, InitialTimeTicket)
         val crdtText = CrdtText(RgaTreeSplit(), InitialTimeTicket)
+        val crdtTree = CrdtTree(
+            CrdtTreeElement(CrdtTreePos(InitialTimeTicket, 0), DEFAULT_ROOT_TYPE),
+            InitialTimeTicket,
+        )
         val crdtElements = listOf(
             crdtObject,
             crdtArray,
             primitive,
             crdtCounter,
             crdtText,
+            crdtTree,
         )
 
         crdtElements.forEach {

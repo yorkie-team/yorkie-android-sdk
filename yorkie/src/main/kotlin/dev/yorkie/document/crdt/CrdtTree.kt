@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import com.google.common.annotations.VisibleForTesting
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
@@ -8,7 +9,6 @@ import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.traverse
-import java.util.Objects
 import java.util.TreeMap
 
 public typealias TreeRange = Pair<CrdtTreePos, CrdtTreePos>
@@ -20,7 +20,7 @@ internal class CrdtTree(
     override var _removedAt: TimeTicket? = null,
 ) : CrdtGCElement(), Collection<CrdtTreeNode> {
 
-    private val head = CrdtTreeNode(CrdtTreePos.InitialCrdtTreePos, INITIAL_NODE_TYPE)
+    private val head = CrdtTreeElement(CrdtTreePos.InitialCrdtTreePos, INITIAL_NODE_TYPE)
 
     internal val indexTree = IndexTree(root)
 
@@ -519,13 +519,14 @@ internal class CrdtTree(
  * [CrdtTreeNode] is a node of [CrdtTree]. It includes the logical clock and
  * links to other nodes to resolve conflicts.
  */
-internal class CrdtTreeNode(
+@Suppress("DataClassPrivateConstructor")
+internal data class CrdtTreeNode private constructor(
     val pos: CrdtTreePos,
-    type: String,
-    _value: String? = null,
-    _children: MutableList<CrdtTreeNode> = mutableListOf(),
+    override val type: String,
+    private val _value: String? = null,
+    private val childNodes: MutableList<CrdtTreeNode> = mutableListOf(),
     private val _attributes: Rht = Rht(),
-) : IndexTreeNode<CrdtTreeNode>(type, _children) {
+) : IndexTreeNode<CrdtTreeNode>(childNodes) {
 
     val attributes: Map<String, String>
         get() = _attributes.nodeKeyValueMap
@@ -543,6 +544,12 @@ internal class CrdtTreeNode(
         get() = removedAt != null
 
     override var value: String = _value.orEmpty()
+        get() {
+            check(isText) {
+                "cannot set value of element node: $type"
+            }
+            return field
+        }
         set(value) {
             check(isText) {
                 "cannot set value of element node: $type"
@@ -568,7 +575,7 @@ internal class CrdtTreeNode(
      * Clones this node with the given [offset].
      */
     override fun clone(offset: Int): CrdtTreeNode {
-        return CrdtTreeNode(CrdtTreePos(pos.createdAt, offset), type)
+        return copy(pos = CrdtTreePos(pos.createdAt, offset))
     }
 
     fun setAttribute(key: String, value: String, executedAt: TimeTicket) {
@@ -593,14 +600,12 @@ internal class CrdtTreeNode(
      * Copies itself deeply.
      */
     fun deepCopy(): CrdtTreeNode {
-        return CrdtTreeNode(
-            pos,
-            type,
-            value.takeIf { isText },
-            _children.map { child ->
+        return copy(
+            _value = _value,
+            childNodes = _children.map { child ->
                 child.deepCopy()
             }.toMutableList(),
-            _attributes.deepCopy(),
+            _attributes = _attributes.deepCopy(),
         ).also {
             it.size = size
             it.removedAt = removedAt
@@ -610,20 +615,19 @@ internal class CrdtTreeNode(
         }
     }
 
-    override fun equals(other: Any?): Boolean {
-        if (other !is CrdtTreeNode) {
-            return false
-        }
-        if (this === other) {
-            return true
-        }
-        return pos == other.pos && type == other.type &&
-            value == other.value && attributes == other.attributes &&
-            removedAt == other.removedAt && children == other.children
-    }
+    @Suppress("FunctionName")
+    companion object {
 
-    override fun hashCode(): Int {
-        return Objects.hash(pos, type, value, attributes, createdAt, removedAt, children)
+        fun CrdtTreeText(pos: CrdtTreePos, value: String? = null): CrdtTreeNode {
+            return CrdtTreeNode(pos, DEFAULT_TEXT_TYPE, value)
+        }
+
+        fun CrdtTreeElement(
+            pos: CrdtTreePos,
+            type: String,
+            children: List<CrdtTreeNode> = emptyList(),
+            attributes: Rht = Rht(),
+        ) = CrdtTreeNode(pos, type, null, children.toMutableList(), attributes)
     }
 }
 

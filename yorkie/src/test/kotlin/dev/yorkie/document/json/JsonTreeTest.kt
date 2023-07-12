@@ -8,6 +8,7 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.json.JsonTree.ElementNode
@@ -15,6 +16,7 @@ import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.asFlow
@@ -461,7 +463,7 @@ class JsonTreeTest {
             get() = CrdtTree(rootCrdtTreeNode, InitialTimeTicket)
 
         private val rootCrdtTreeNode: CrdtTreeNode
-            get() = CrdtTreeNode(CrdtTreePos(InitialTimeTicket, 0), "root")
+            get() = CrdtTreeElement(CrdtTreePos(InitialTimeTicket, 0), DEFAULT_ROOT_TYPE)
 
         private fun createTreeWithStyle(): JsonTree {
             val root = ElementNode(

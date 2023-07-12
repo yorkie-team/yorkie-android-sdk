@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import com.google.common.annotations.VisibleForTesting
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
@@ -19,7 +20,7 @@ internal class CrdtTree(
     override var _removedAt: TimeTicket? = null,
 ) : CrdtGCElement(), Collection<CrdtTreeNode> {
 
-    private val head = CrdtTreeNode(CrdtTreePos.InitialCrdtTreePos, INITIAL_NODE_TYPE)
+    private val head = CrdtTreeElement(CrdtTreePos.InitialCrdtTreePos, INITIAL_NODE_TYPE)
 
     internal val indexTree = IndexTree(root)
 
@@ -386,7 +387,7 @@ internal class CrdtTree(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {
-        return CrdtTree(root.deepcopy(), createdAt)
+        return CrdtTree(root.deepCopy(), createdAt, movedAt, removedAt)
     }
 
     /**
@@ -518,13 +519,14 @@ internal class CrdtTree(
  * [CrdtTreeNode] is a node of [CrdtTree]. It includes the logical clock and
  * links to other nodes to resolve conflicts.
  */
-internal class CrdtTreeNode(
+@Suppress("DataClassPrivateConstructor")
+internal data class CrdtTreeNode private constructor(
     val pos: CrdtTreePos,
-    type: String,
-    _value: String? = null,
-    _children: MutableList<CrdtTreeNode> = mutableListOf(),
+    override val type: String,
+    private val _value: String? = null,
+    private val childNodes: MutableList<CrdtTreeNode> = mutableListOf(),
     private val _attributes: Rht = Rht(),
-) : IndexTreeNode<CrdtTreeNode>(type, _children) {
+) : IndexTreeNode<CrdtTreeNode>(childNodes) {
 
     val attributes: Map<String, String>
         get() = _attributes.nodeKeyValueMap
@@ -573,7 +575,7 @@ internal class CrdtTreeNode(
      * Clones this node with the given [offset].
      */
     override fun clone(offset: Int): CrdtTreeNode {
-        return CrdtTreeNode(CrdtTreePos(pos.createdAt, offset), type)
+        return copy(pos = CrdtTreePos(pos.createdAt, offset))
     }
 
     fun setAttribute(key: String, value: String, executedAt: TimeTicket) {
@@ -597,21 +599,35 @@ internal class CrdtTreeNode(
     /**
      * Copies itself deeply.
      */
-    fun deepcopy(): CrdtTreeNode {
-        val clone = CrdtTreeNode(pos, type, _attributes = _attributes.deepCopy())
-        val node = this
-        return clone.apply clone@{
-            removedAt = node.removedAt
-            if (node.isText) {
-                value = node.value
+    fun deepCopy(): CrdtTreeNode {
+        return copy(
+            _value = _value,
+            childNodes = _children.map { child ->
+                child.deepCopy()
+            }.toMutableList(),
+            _attributes = _attributes.deepCopy(),
+        ).also {
+            it.size = size
+            it.removedAt = removedAt
+            it._children.forEach { child ->
+                child.parent = it
             }
-            size = node.size
-            node._children.map { child ->
-                child.deepcopy().apply {
-                    parent = this@clone
-                }
-            }.let(_children::addAll)
         }
+    }
+
+    @Suppress("FunctionName")
+    companion object {
+
+        fun CrdtTreeText(pos: CrdtTreePos, value: String? = null): CrdtTreeNode {
+            return CrdtTreeNode(pos, DEFAULT_TEXT_TYPE, value)
+        }
+
+        fun CrdtTreeElement(
+            pos: CrdtTreePos,
+            type: String,
+            children: List<CrdtTreeNode> = emptyList(),
+            attributes: Rht = Rht(),
+        ) = CrdtTreeNode(pos, type, null, children.toMutableList(), attributes)
     }
 }
 

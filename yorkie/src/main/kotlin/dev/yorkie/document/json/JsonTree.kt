@@ -3,12 +3,16 @@ package dev.yorkie.document.json
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TreeRange
 import dev.yorkie.document.json.JsonTree.TreeNode
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
+import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
+import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 
 /**
  * [JsonTree] is a CRDT-based tree structure that is used to represent the document
@@ -97,7 +101,7 @@ public class JsonTree internal constructor(
     private fun editByPos(fromPos: CrdtTreePos, toPos: CrdtTreePos, content: TreeNode?) {
         val crdtNode = content?.let { createCrdtTreeNode(context, content) }
         val ticket = context.lastTimeTicket
-        target.edit(fromPos to toPos, crdtNode?.deepcopy(), ticket)
+        target.edit(fromPos to toPos, crdtNode?.deepCopy(), ticket)
 
         context.push(
             TreeEditOperation(
@@ -200,15 +204,12 @@ public class JsonTree internal constructor(
          * Returns the root node of this tree.
          */
         internal fun buildRoot(initialRoot: ElementNode?, context: ChangeContext): CrdtTreeNode {
+            val pos = CrdtTreePos(context.issueTimeTicket(), 0)
             if (initialRoot == null) {
-                return CrdtTreeNode(CrdtTreePos(context.issueTimeTicket(), 0), "root")
+                return CrdtTreeElement(pos, DEFAULT_ROOT_TYPE)
             }
-
             // TODO(hackerwins): Need to use the ticket of operation of creating tree.
-            return CrdtTreeNode(
-                CrdtTreePos(context.issueTimeTicket(), 0),
-                initialRoot.type,
-            ).also { root ->
+            return CrdtTreeElement(pos, initialRoot.type).also { root ->
                 initialRoot.children.forEach { child ->
                     buildDescendants(child, root, context)
                 }
@@ -226,7 +227,7 @@ public class JsonTree internal constructor(
 
             when (treeNode) {
                 is TextNode -> {
-                    val textNode = CrdtTreeNode(pos, type, treeNode.value)
+                    val textNode = CrdtTreeText(pos, treeNode.value)
                     parent.append(textNode)
                     return
                 }
@@ -240,7 +241,7 @@ public class JsonTree internal constructor(
                             attrs.set(key, value, ticket)
                         }
                     }
-                    val elementNode = CrdtTreeNode(pos, type, _attributes = attrs)
+                    val elementNode = CrdtTreeElement(pos, type, attributes = attrs)
                     parent.append(elementNode)
                     treeNode.children.forEach { child ->
                         buildDescendants(child, elementNode, context)
@@ -258,14 +259,14 @@ public class JsonTree internal constructor(
 
             return when (content) {
                 is TextNode -> {
-                    CrdtTreeNode(pos, content.type, content.value)
+                    CrdtTreeText(pos, content.value)
                 }
 
                 is ElementNode -> {
-                    CrdtTreeNode(
+                    CrdtTreeElement(
                         pos,
                         content.type,
-                        _attributes = Rht().apply {
+                        attributes = Rht().apply {
                             content.attributes.forEach { (key, value) ->
                                 set(key, value, ticket)
                             }
@@ -291,6 +292,6 @@ public class JsonTree internal constructor(
     ) : TreeNode
 
     data class TextNode(val value: String) : TreeNode {
-        override val type: String = "text"
+        override val type: String = DEFAULT_TEXT_TYPE
     }
 }

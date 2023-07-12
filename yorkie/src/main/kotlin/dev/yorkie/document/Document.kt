@@ -68,7 +68,7 @@ public class Document(public val key: Key) {
      */
     public fun updateAsync(
         message: String? = null,
-        updater: (root: JsonObject) -> Unit,
+        updater: suspend (root: JsonObject) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
             check(status != DocumentStatus.Removed) {
@@ -228,6 +228,7 @@ public class Document(public val key: Key) {
      * Create [ChangePack] of [localChanges] to send to the remote server.
      */
     internal suspend fun createChangePack(forceRemove: Boolean = false) = withContext(dispatcher) {
+        val localChanges = localChanges.toList()
         val checkPoint = checkPoint.increaseClientSeq(localChanges.size)
         ChangePack(
             key.value,

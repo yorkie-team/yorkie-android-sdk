@@ -23,6 +23,7 @@ fun String.toDocKey(): Document.Key {
 
 fun withTwoClientsAndDocuments(
     detachDocuments: Boolean = true,
+    realTimeSync: Boolean = true,
     callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
 ) {
     runBlocking {
@@ -35,8 +36,8 @@ fun withTwoClientsAndDocuments(
         client1.activateAsync().await()
         client2.activateAsync().await()
 
-        client1.attachAsync(document1).await()
-        client2.attachAsync(document2).await()
+        client1.attachAsync(document1, realTimeSync).await()
+        client2.attachAsync(document2, realTimeSync).await()
 
         callback.invoke(this, client1, client2, document1, document2, documentKey)
 

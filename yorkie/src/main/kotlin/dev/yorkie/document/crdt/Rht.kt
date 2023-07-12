@@ -52,5 +52,16 @@ internal class Rht : Iterable<Rht.Node> {
         return nodeMapByKey.values.iterator()
     }
 
+    override fun equals(other: Any?): Boolean {
+        if (other !is Rht) {
+            return false
+        }
+        return nodeMapByKey == other.nodeKeyValueMap
+    }
+
+    override fun hashCode(): Int {
+        return nodeMapByKey.hashCode()
+    }
+
     data class Node(val key: String, val value: String, val executedAt: TimeTicket)
 }

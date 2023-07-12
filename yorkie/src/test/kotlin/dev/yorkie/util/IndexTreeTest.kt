@@ -3,12 +3,13 @@ package dev.yorkie.util
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreePos.Companion.InitialCrdtTreePos
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class IndexTreeTest {
 
     @Test
-    fun `should find position from the offsets`() {
+    fun `should find treePos from the offsets`() {
         //    0   1 2 3 4 5 6    7   8 9  10 11 12 13    14
         // <r> <p> h e l l o </p> <p> w  o  r  l  d  </p>  </r>
         val tree = createIndexTree(
@@ -37,6 +38,15 @@ class IndexTreeTest {
     }
 
     @Test
+    fun `should throw IllegalArgumentException when trying to find treePos with invalid index`() {
+        val tree = createIndexTree(DefaultRootNode)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            tree.findTreePos(tree.size + 1)
+        }
+    }
+
+    @Test
     fun `should find right node from the given offset in postorder traversal`() {
         //       0   1 2 3    4   5 6 7    8
         // <root> <p> a b </p> <p> c d </p> </root>
@@ -47,6 +57,8 @@ class IndexTreeTest {
                 createElementNode("p", createTextNode("cd")),
             ),
         )
+
+        // postorder traversal: "ab", <b>, "cd", <p>, <root>
         assertEquals("text", tree.findPostorderRight(tree.findTreePos(0))?.type)
         assertEquals("text", tree.findPostorderRight(tree.findTreePos(1))?.type)
         assertEquals("p", tree.findPostorderRight(tree.findTreePos(3))?.type)
@@ -54,6 +66,27 @@ class IndexTreeTest {
         assertEquals("text", tree.findPostorderRight(tree.findTreePos(5))?.type)
         assertEquals("p", tree.findPostorderRight(tree.findTreePos(7))?.type)
         assertEquals("root", tree.findPostorderRight(tree.findTreePos(8))?.type)
+    }
+
+    @Test
+    fun `should find common ancestor of two given nodes`() {
+        val tree = createIndexTree(
+            createElementNode(
+                "root",
+                createElementNode(
+                    "p",
+                    createElementNode("b", createTextNode("ab")),
+                    createElementNode("b", createTextNode("cd")),
+                ),
+            ),
+        )
+
+        val nodeAB = tree.findTreePos(3, true).node
+        val nodeCD = tree.findTreePos(7, true).node
+
+        assertEquals("text.ab", nodeAB.toDiagnostic())
+        assertEquals("text.cd", nodeCD.toDiagnostic())
+        assertEquals("p", findCommonAncestor(nodeAB, nodeCD)?.type)
     }
 
     @Test
@@ -79,7 +112,24 @@ class IndexTreeTest {
     }
 
     @Test
-    fun `should convert index to pos`() {
+    fun `should throw IllegalArgumentException when traversing nodes within invalid ranges`() {
+        val tree = createIndexTree(DefaultRootNode)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            tree.nodesBetween(tree.size, 0)
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            tree.nodesBetween(tree.size + 1, tree.size + 2)
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            tree.nodesBetween(tree.size, tree.size + 1)
+        }
+    }
+
+    @Test
+    fun `should convert index to treePos and vice versa`() {
         //       0   1 2 3 4    5   6 7 8 9 10 11 12  13  14 15 16  17 18 19 20   21
         // <root> <p> a b c </p> <p> c d e f  g  h </p> <p> i  j   k  l  m  n  </p>  </root>
         val tree = createIndexTree(
@@ -103,6 +153,72 @@ class IndexTreeTest {
         for (i in 0 until tree.root.size) {
             val pos = tree.findTreePos(i, true)
             assertEquals(i, tree.indexOf(pos))
+        }
+    }
+
+    @Test
+    fun `should find treePos from given path`() {
+        //       0   1 2 3    4   5 6 7 8    9   10 11 12   13
+        // <root> <p> a b </p> <p> c d e </p> <p>  f  g  </p>  </root>
+        val tree = createIndexTree(
+            createElementNode(
+                "root",
+                createElementNode("p", createTextNode("a"), createTextNode("b")),
+                createElementNode("p", createTextNode("cde")),
+                createElementNode("p", createTextNode("fg")),
+            ),
+        )
+
+        var pos = tree.pathToTreePos(listOf(0))
+        assertEquals("root" to 0, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(0, 0))
+        assertEquals("text.a" to 0, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(0, 1))
+        assertEquals("text.a" to 1, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(0, 2))
+        assertEquals("text.b" to 1, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(1))
+        assertEquals("root" to 1, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(1, 0))
+        assertEquals("text.cde" to 0, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(1, 1))
+        assertEquals("text.cde" to 1, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(1, 2))
+        assertEquals("text.cde" to 2, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(1, 3))
+        assertEquals("text.cde" to 3, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(2))
+        assertEquals("root" to 2, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(2, 0))
+        assertEquals("text.fg" to 0, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(2, 1))
+        assertEquals("text.fg" to 1, pos.node.toDiagnostic() to pos.offset)
+
+        pos = tree.pathToTreePos(listOf(2, 2))
+        assertEquals("text.fg" to 2, pos.node.toDiagnostic() to pos.offset)
+    }
+
+    @Test
+    fun `should throw IllegalArgumentException for unacceptable paths`() {
+        val tree = createIndexTree(DefaultRootNode)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            tree.pathToTreePos(emptyList())
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            tree.pathToTreePos(listOf(tree.size + 1))
         }
     }
 
@@ -185,7 +301,7 @@ class IndexTreeTest {
     }
 
     @Test
-    fun `should find index from given path`() {
+    fun `should find index from given path and vice versa`() {
         val tree = createIndexTree(
             createElementNode(
                 "root",
@@ -280,16 +396,24 @@ class IndexTreeTest {
         }
     }
 
-    private fun createElementNode(type: String, vararg childNode: CrdtTreeNode): CrdtTreeNode {
-        return CrdtTreeNode(InitialCrdtTreePos, type, _children = childNode.toMutableList())
-    }
-
-    private fun createTextNode(value: String) =
-        CrdtTreeNode(InitialCrdtTreePos, "text", _value = value)
-
     private fun IndexTree<CrdtTreeNode>.nodesBetween(from: Int, to: Int) = buildList {
         nodesBetween(from, to) { node ->
             add(node.toDiagnostic())
         }
+    }
+
+    companion object {
+        private fun createElementNode(type: String, vararg childNode: CrdtTreeNode): CrdtTreeNode {
+            return CrdtTreeNode(InitialCrdtTreePos, type, _children = childNode.toMutableList())
+        }
+
+        private fun createTextNode(value: String) =
+            CrdtTreeNode(InitialCrdtTreePos, "text", _value = value)
+
+        private val DefaultRootNode = createElementNode(
+            "root",
+            createElementNode("p", createTextNode("ab")),
+            createElementNode("p", createTextNode("cd")),
+        )
     }
 }

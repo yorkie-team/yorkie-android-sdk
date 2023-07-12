@@ -70,7 +70,6 @@ internal class CrdtTree(
     ): List<TreeChange> {
         val (_, toRight) = findTreePos(range.second, executedAt)
         val (_, fromRight) = findTreePos(range.first, executedAt)
-        // TODO(7hong13): need to check toPath - range.second? first?
         val changes = listOf(
             TreeChange(
                 type = TreeChangeType.Style.type,

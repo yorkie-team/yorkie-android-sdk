@@ -331,7 +331,7 @@ $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/Point
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
 $dokka.location:dev.yorkie.document/Document/status/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/status.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html
-$dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.Function1[dev.yorkie.document.json.JsonObject,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
+$dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.coroutines.SuspendFunction1[dev.yorkie.document.json.JsonObject,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
 $dokka.location:dev.yorkie.util////PointingToDeclaration/yorkie/dev.yorkie.util/index.html
 $dokka.location:dev.yorkie.util/Logger///PointingToDeclaration/yorkie/dev.yorkie.util/-logger/index.html
 $dokka.location:dev.yorkie.util/Logger/d/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-logger/d.html

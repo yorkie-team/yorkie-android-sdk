@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "dev.yorkie.microbenchmark"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -19,8 +19,7 @@ android {
     }
 
     defaultConfig {
-        minSdk = 23
-        targetSdk = 33
+        minSdk = libs.versions.minSdk.get().toInt()
 
         testInstrumentationRunner = "androidx.benchmark.junit4.AndroidBenchmarkRunner"
         testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] =

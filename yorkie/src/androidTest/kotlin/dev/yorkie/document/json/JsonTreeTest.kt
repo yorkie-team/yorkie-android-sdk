@@ -4,8 +4,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.core.Client
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
-import dev.yorkie.document.json.JsonTree.ElementNode
-import dev.yorkie.document.json.JsonTree.TextNode
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
@@ -23,15 +23,11 @@ class JsonTreeTest {
                     Updater(c1, d1) { root ->
                         root.setNewTree(
                             "t",
-                            ElementNode(
-                                "doc",
-                                children = listOf(
-                                    ElementNode(
-                                        "p",
-                                        children = listOf(TextNode("hello")),
-                                    ),
-                                ),
-                            ),
+                            element("doc") {
+                                element("p") {
+                                    text { "hello" }
+                                }
+                            },
                         )
                     },
                     Updater(c2, d2),
@@ -43,10 +39,9 @@ class JsonTreeTest {
                         root.rootTree().edit(
                             7,
                             7,
-                            ElementNode(
-                                "p",
-                                children = listOf(TextNode("yorkie")),
-                            ),
+                            element("p") {
+                                text { "yorkie" }
+                            },
                         )
                     },
                     Updater(c2, d2),
@@ -64,15 +59,11 @@ class JsonTreeTest {
                     Updater(c1, d1) { root ->
                         root.setNewTree(
                             "t",
-                            ElementNode(
-                                "r",
-                                children = listOf(
-                                    ElementNode(
-                                        "p",
-                                        children = listOf(TextNode("12")),
-                                    ),
-                                ),
-                            ),
+                            element("r") {
+                                element("p") {
+                                    text { "12" }
+                                }
+                            },
                         )
                     },
                     Updater(c2, d2),
@@ -83,10 +74,10 @@ class JsonTreeTest {
 
                 updateAndSync(
                     Updater(c1, d1) { root ->
-                        root.rootTree().edit(2, 2, TextNode("A"))
+                        root.rootTree().edit(2, 2, text { "A" })
                     },
                     Updater(c2, d2) { root ->
-                        root.rootTree().edit(2, 2, TextNode("B"))
+                        root.rootTree().edit(2, 2, text { "B" })
                     },
                 ) {
                     assertEquals("<r><p>1A2</p></r>", d1.getRoot().rootTree().toXml())
@@ -96,10 +87,10 @@ class JsonTreeTest {
 
                 updateAndSync(
                     Updater(c1, d1) { root ->
-                        root.rootTree().edit(5, 5, TextNode("C"))
+                        root.rootTree().edit(5, 5, text { "C" })
                     },
                     Updater(c2, d2) { root ->
-                        root.rootTree().edit(5, 5, TextNode("D"))
+                        root.rootTree().edit(5, 5, text { "D" })
                     },
                 ) {
                     assertEquals("<r><p>1BA2C</p></r>", d1.getRoot().rootTree().toXml())
@@ -118,16 +109,12 @@ class JsonTreeTest {
                     Updater(c1, d1) { root ->
                         root.setNewTree(
                             "t",
-                            ElementNode(
-                                "doc",
-                                children = listOf(
-                                    ElementNode(
-                                        "p",
-                                        children = listOf(TextNode("hello")),
-                                        attributes = mapOf("italic" to "true"),
-                                    ),
-                                ),
-                            ),
+                            element("doc") {
+                                element("p") {
+                                    text { "hello" }
+                                    attr { "italic" to true }
+                                }
+                            },
                         )
                     },
                     Updater(c2, d2),

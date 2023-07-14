@@ -8,7 +8,7 @@ import kotlin.math.max
  */
 internal data class CheckPoint(
     val serverSeq: Long,
-    val clientSeq: Int,
+    val clientSeq: Long,
 ) {
 
     /**

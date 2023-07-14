@@ -8,7 +8,7 @@ import dev.yorkie.document.time.TimeTicket
  * Identifies the Change.
  */
 internal data class ChangeID(
-    val clientSeq: Int,
+    val clientSeq: Long,
     val lamport: Long,
     val actor: ActorID,
 ) {
@@ -33,7 +33,7 @@ internal data class ChangeID(
     /**
      * Creates a ticket of the given delimiter.
      */
-    fun createTimeTicket(delimiter: Int): TimeTicket {
+    fun createTimeTicket(delimiter: Long): TimeTicket {
         return TimeTicket(lamport, delimiter, actor)
     }
 

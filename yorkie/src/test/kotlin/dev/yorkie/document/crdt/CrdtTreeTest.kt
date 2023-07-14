@@ -139,7 +139,7 @@ class CrdtTreeTest {
         // 02. delete b, c and first paragraph.
         //       0   1 2 3    4
         // <root> <p> a d </p> </root>
-        target.editByIndex(2 to 6, CrdtTreeText(issuePos()), issueTime())
+        target.editByIndex(2 to 6, null, issueTime())
         assertEquals("<root><p>ad</p></root>", target.toXml())
 
         // 03. insert a new text node at the start of the first paragraph.

@@ -343,7 +343,7 @@ internal class CrdtTree(
     override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
         val nodesToRemoved = removedNodeMap.filterValues { node ->
             node.removedAt != null && node.removedAt <= executedAt
-        }.values.toMutableSet()
+        }.values.toMutableList()
 
         indexTree.traverseAll { node, _ ->
             if (node in nodesToRemoved) {
@@ -617,7 +617,7 @@ internal data class CrdtTreeNode private constructor(
     @Suppress("FunctionName")
     companion object {
 
-        fun CrdtTreeText(pos: CrdtTreePos, value: String? = null): CrdtTreeNode {
+        fun CrdtTreeText(pos: CrdtTreePos, value: String): CrdtTreeNode {
             return CrdtTreeNode(pos, DEFAULT_TEXT_TYPE, value)
         }
 
@@ -632,7 +632,7 @@ internal data class CrdtTreeNode private constructor(
 
 /**
  * [CrdtTreePos] represents a position in the tree. It indicates the virtual
- * location in the tree, so whether the node is splitted or not, we can find
+ * location in the tree, so whether the node is split or not, we can find
  * the adjacent node to pos by calling `map.floorEntry()`.
  */
 public data class CrdtTreePos(

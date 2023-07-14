@@ -149,7 +149,11 @@ class GCTest {
             assertEquals(2, nodeLengthBeforeGC - nodeLengthAfterGC)
 
             document.updateAsync {
-                it.getAs<JsonTree>("t").editByPath(listOf(0, 0, 0), listOf(0, 0, 2), text { "cv" })
+                it.getAs<JsonTree>("t").editByPath(
+                    listOf(0, 0, 0),
+                    listOf(0, 0, 2),
+                    text { "cv" },
+                )
             }.await()
             assertEquals(
                 "<doc><p><tn>cv</tn><tn>cd</tn></p></doc>",
@@ -193,8 +197,8 @@ class GCTest {
 
     @Test
     fun test_gc_with_tree_for_multi_client() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
-            document1.updateAsync {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            d1.updateAsync {
                 it.setNewTree(
                     "t",
                     element("doc") {
@@ -210,57 +214,56 @@ class GCTest {
                     },
                 )
             }.await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
 
             // (0, 0) -> (1, 0): syncedseqs:(0, 0)
-            client1.syncAsync().await()
+            c1.syncAsync().await()
 
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
-            client2.syncAsync().await()
+            c2.syncAsync().await()
 
-            document2.updateAsync {
+            d2.updateAsync {
                 it.getAs<JsonTree>("t").editByPath(
                     listOf(0, 0, 0),
                     listOf(0, 0, 2),
                     text { "gh" },
                 )
             }.await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(2, document2.garbageLength)
+            assertEquals(0, d1.garbageLength)
+            assertEquals(2, d2.garbageLength)
 
             // (1, 1) -> (1, 2): syncedseqs:(0, 1)
-            client2.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(2, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(2, d2.garbageLength)
 
             // (1, 2) -> (2, 2): syncedseqs:(1, 1)
-            client1.syncAsync().await()
-            assertEquals(2, document1.garbageLength)
-            assertEquals(2, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(2, d1.garbageLength)
+            assertEquals(2, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(1, 2)
-            client2.syncAsync().await()
-            assertEquals(2, document1.garbageLength)
-            assertEquals(2, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(2, d1.garbageLength)
+            assertEquals(2, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(2, 2): meet GC condition
-            client1.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(2, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(2, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(2, 2): meet GC condition
-            client2.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
         }
     }
 
     @Test
     fun test_gc_with_container_type_for_multi_client() {
-        repeat(30) {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
-            document1.updateAsync {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            d1.updateAsync {
                 it["1"] = 1
                 it.setNewArray("2").apply {
                     put(1)
@@ -269,65 +272,65 @@ class GCTest {
                 }
                 it["3"] = 3
             }.await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
 
             // (0, 0) -> (1, 0): syncedseqs:(0, 0)
-            client1.syncAsync().await()
+            c1.syncAsync().await()
 
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
-            client2.syncAsync().await()
+            c2.syncAsync().await()
 
-            document2.updateAsync {
+            d2.updateAsync {
                 it.remove("2")
             }.await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(4, document2.garbageLength)
+            assertEquals(0, d1.garbageLength)
+            assertEquals(4, d2.garbageLength)
 
             // (1, 1) -> (1, 2): syncedseqs:(0, 1)
-            client2.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(4, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(4, d2.garbageLength)
 
             // (1, 2) -> (2, 2): syncedseqs:(1, 1)
-            client1.syncAsync().await()
-            assertEquals(4, document1.garbageLength)
-            assertEquals(4, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(4, d1.garbageLength)
+            assertEquals(4, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(1, 2)
-            client2.syncAsync().await()
-            assertEquals(4, document1.garbageLength)
-            assertEquals(4, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(4, d1.garbageLength)
+            assertEquals(4, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(2, 2): meet GC condition
-            client1.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(4, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(4, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(2, 2): meet GC condition
-            client2.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
-        }}
+            c2.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
+        }
     }
 
     @Test
     fun test_gc_with_text_for_multi_client() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
-            document1.updateAsync {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            d1.updateAsync {
                 it.setNewText("text").edit(0, 0, "Hello World")
                 it.setNewText("textWithAttr").edit(0, 0, "Hello World")
             }.await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
 
             // (0, 0) -> (1, 0): syncedseqs:(0, 0)
-            client1.syncAsync().await()
+            c1.syncAsync().await()
 
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
-            client2.syncAsync().await()
+            c2.syncAsync().await()
 
-            document2.updateAsync {
+            d2.updateAsync {
                 it.getAs<JsonText>("text").apply {
                     edit(0, 1, "a")
                     edit(1, 2, "b")
@@ -339,40 +342,43 @@ class GCTest {
                     mapOf("b" to "1"),
                 )
             }.await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(3, document2.garbageLength)
+            assertEquals(0, d1.garbageLength)
+            assertEquals(3, d2.garbageLength)
 
             // (1, 1) -> (1, 2): syncedseqs:(0, 1)
-            client2.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(3, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(3, d2.garbageLength)
 
             // (1, 2) -> (2, 2): syncedseqs:(1, 1)
-            client1.syncAsync().await()
-            assertEquals(3, document1.garbageLength)
-            assertEquals(3, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(3, d1.garbageLength)
+            assertEquals(3, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(1, 2)
-            client2.syncAsync().await()
-            assertEquals(3, document1.garbageLength)
-            assertEquals(3, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(3, d1.garbageLength)
+            assertEquals(3, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(2, 2): meet GC condition
-            client1.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(3, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(3, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(2, 2): meet GC condition
-            client2.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
         }
     }
 
     @Test
     fun test_gc_with_detached_document() {
-        withTwoClientsAndDocuments(detachDocuments = false) { client1, client2, document1, document2, _ ->
-            document1.updateAsync {
+        withTwoClientsAndDocuments(
+            detachDocuments = false,
+            realTimeSync = false,
+        ) { c1, c2, d1, d2, _ ->
+            d1.updateAsync {
                 it["1"] = 1
                 it.setNewArray("2").apply {
                     put(1)
@@ -383,16 +389,16 @@ class GCTest {
                 it.setNewText("4").edit(0, 0, "hi")
                 it.setNewText("5").edit(0, 0, "hi")
             }.await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
 
             // (0, 0) -> (1, 0): syncedseqs:(0, 0)
-            client1.syncAsync().await()
+            c1.syncAsync().await()
 
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
-            client2.syncAsync().await()
+            c2.syncAsync().await()
 
-            document1.updateAsync {
+            d1.updateAsync {
                 it.remove("2")
                 it.getAs<JsonText>("4").edit(0, 1, "h")
                 it.getAs<JsonText>("5").edit(
@@ -402,27 +408,27 @@ class GCTest {
                     mapOf("b" to "1"),
                 )
             }.await()
-            assertEquals(6, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            assertEquals(6, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
 
             // (1, 1) -> (2, 1): syncedseqs:(1, 0)
-            client1.syncAsync().await()
-            assertEquals(6, document1.garbageLength)
-            assertEquals(0, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(6, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
 
-            client2.detachAsync(document2).await()
+            c2.detachAsync(d2).await()
 
             // (2, 1) -> (2, 2): syncedseqs:(1, x)
-            client2.syncAsync().await()
-            assertEquals(6, document1.garbageLength)
-            assertEquals(6, document2.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(6, d1.garbageLength)
+            assertEquals(6, d2.garbageLength)
 
             // (2, 2) -> (2, 2): syncedseqs:(2, x): meet GC condition
-            client1.syncAsync().await()
-            assertEquals(0, document1.garbageLength)
-            assertEquals(6, document2.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+            assertEquals(6, d2.garbageLength)
 
-            client1.detachAsync(document1).await()
+            c1.detachAsync(d1).await()
         }
     }
 

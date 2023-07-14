@@ -99,7 +99,8 @@ class GCTest {
             }.await()
             assertJsonContentEquals(
                 """{"text":[{"attrs":{"b":"1"},"val":"Hi"},{"attrs":{"b":"1"},"val":" "},
-                    |{"val":"j"},{"attrs":{"b":"1"},"val":"ane"}]}""".trimMargin(),
+                    |{"val":"j"},{"attrs":{"b":"1"},"val":"ane"}]}
+                """.trimMargin(),
                 document.toJson(),
             )
             assertEquals(4, document.garbageLength)

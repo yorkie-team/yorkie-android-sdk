@@ -341,23 +341,18 @@ internal class CrdtTree(
      * Physically deletes nodes that have been removed.
      */
     override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
-        val nodesToRemoved = removedNodeMap.filterValues { node ->
+        val nodesToBeRemoved = removedNodeMap.filterValues { node ->
             node.removedAt != null && node.removedAt <= executedAt
-        }.values.toMutableList()
+        }.values.toMutableSet()
 
-        indexTree.traverseAll { node, _ ->
-            if (node in nodesToRemoved) {
-                node.parent?.removeChild(node) ?: nodesToRemoved.remove(node)
-            }
-        }
-
-        nodesToRemoved.forEach { node ->
+        nodesToBeRemoved.forEach { node ->
+            node.parent?.removeChild(node)
             nodeMapByPos.remove(node.pos)
             delete(node)
             removedNodeMap.remove(node.createdAt to node.pos.offset)
         }
 
-        return nodesToRemoved.size
+        return nodesToBeRemoved.size
     }
 
     /**

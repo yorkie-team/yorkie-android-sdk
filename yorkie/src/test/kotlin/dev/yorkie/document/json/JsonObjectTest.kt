@@ -45,6 +45,21 @@ class JsonObjectTest {
     }
 
     @Test
+    fun `should throw when setting a key containing delimiter`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            target["."] = "dot"
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            target["$..hello"] = "world"
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            target.setNewObject("")["."] = "dot"
+        }
+    }
+
+    @Test
     fun `should return null when accessing a key not added with getAsOrNull function`() {
         assertNull(target.getAsOrNull<JsonPrimitive>("k1"))
     }

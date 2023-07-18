@@ -51,7 +51,7 @@ class CrdtTextTest {
     @Test
     fun `should handle select operations`() {
         target.edit(target.createRange(0, 0), "ABCD", TimeTicket.InitialTimeTicket)
-        val executedAt = TimeTicket(1L, 1, ActorID.INITIAL_ACTOR_ID)
+        val executedAt = TimeTicket(1L, 1u, ActorID.INITIAL_ACTOR_ID)
         assertNull(target.select(target.createRange(1, 3), TimeTicket.InitialTimeTicket))
         val textChange = target.select(target.createRange(2, 4), executedAt)
         assertEquals(TextChangeType.Selection, textChange?.type)

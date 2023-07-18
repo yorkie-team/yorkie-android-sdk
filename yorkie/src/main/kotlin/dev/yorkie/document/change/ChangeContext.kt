@@ -17,7 +17,7 @@ internal data class ChangeContext(
     val root: CrdtRoot,
     val message: String? = null,
     private val _operations: MutableList<Operation> = mutableListOf(),
-    private var delimiter: Long = TimeTicket.INITIAL_DELIMITER,
+    private var delimiter: UInt = TimeTicket.INITIAL_DELIMITER,
 ) {
     val operations: List<Operation>
         get() = _operations.toList()

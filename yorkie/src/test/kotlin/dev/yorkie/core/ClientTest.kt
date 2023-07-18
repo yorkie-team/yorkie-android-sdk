@@ -462,7 +462,7 @@ class ClientTest {
     companion object {
         private val InitialEmptyChangePack = ChangePack(
             NORMAL_DOCUMENT_KEY,
-            CheckPoint(0, 0),
+            CheckPoint.InitialCheckPoint,
             emptyList(),
             null,
             null,

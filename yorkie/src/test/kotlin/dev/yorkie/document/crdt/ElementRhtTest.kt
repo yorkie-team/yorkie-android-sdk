@@ -54,19 +54,19 @@ class ElementRhtTest {
         val elementRht1 = ElementRht<CrdtPrimitive>()
         elementRht1["test1"] = CrdtPrimitive(1, generateTimeTicket(1, 1, "1"))
 
-        (2..3L).forEach { index ->
+        (2..3).forEach { index ->
             elementRht1["test1"] = CrdtPrimitive(
                 index,
-                generateTimeTicket(index, index, "2"),
+                generateTimeTicket(index.toLong(), index, "2"),
             )
         }
 
         val elementRht2 = ElementRht<CrdtPrimitive>()
         elementRht2["test1"] = CrdtPrimitive(1, generateTimeTicket(1, 1, "1"))
-        (3 downTo 2L).forEach { index ->
+        (3 downTo 2).forEach { index ->
             elementRht2["test1"] = CrdtPrimitive(
                 index,
-                generateTimeTicket(index, index, "3"),
+                generateTimeTicket(index.toLong(), index, "3"),
             )
         }
 
@@ -190,9 +190,10 @@ class ElementRhtTest {
     fun `Verity the getKeyOfQueue() using sequence`() {
         val elementRht = ElementRht<CrdtPrimitive>()
         val list = mutableListOf<String>()
-        for (i in 0..100000L) {
+        for (i in 0..100000) {
             val key = "test$i"
-            elementRht[key] = CrdtPrimitive("value$i", generateTimeTicket(i, i, "11"))
+            elementRht[key] =
+                CrdtPrimitive("value$i", generateTimeTicket(i.toLong(), i, "11"))
             list.add(key)
         }
 
@@ -207,10 +208,10 @@ class ElementRhtTest {
 
     private fun generateTimeTicket(
         lamport: Long,
-        delimiter: Long,
+        delimiter: Int,
         actorID: String,
     ): TimeTicket {
-        return TimeTicket(lamport, delimiter, ActorID(actorID))
+        return TimeTicket(lamport, delimiter.toUInt(), ActorID(actorID))
     }
 
     private fun ElementRht<CrdtPrimitive>.getStructureAsString() = buildString {

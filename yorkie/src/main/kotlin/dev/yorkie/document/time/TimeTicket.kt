@@ -8,7 +8,7 @@ import dev.yorkie.document.time.ActorID.Companion.MAX_ACTOR_ID
  */
 public data class TimeTicket(
     public val lamport: Long,
-    public val delimiter: Long,
+    public val delimiter: UInt,
     public val actorID: ActorID,
 ) : Comparable<TimeTicket> {
 
@@ -24,8 +24,8 @@ public data class TimeTicket(
     }
 
     companion object {
-        internal const val INITIAL_DELIMITER = 0L
-        internal const val MAX_DELIMITER = Long.MAX_VALUE
+        internal const val INITIAL_DELIMITER = 0u
+        internal const val MAX_DELIMITER = UInt.MAX_VALUE
         internal const val MAX_LAMPORT = Long.MAX_VALUE
 
         private val NullTimeTicket = TimeTicket(

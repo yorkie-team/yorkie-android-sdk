@@ -11,6 +11,7 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.operation.OperationInfo
@@ -156,11 +157,15 @@ public class Document(public val key: Key) {
             "the path must start with \"$\""
         }
         val paths = path.split(".").drop(1)
-        var value = getRoot()
-        paths.dropLast(1).forEach { key ->
-            value = value[key] as? JsonObject ?: return null
+        var value: JsonElement? = getRoot()
+        paths.forEach { key ->
+            value = when (value) {
+                is JsonObject -> (value as JsonObject).getOrNull(key)
+                is JsonArray -> (value as JsonArray)[key.toInt()]
+                else -> return null
+            }
         }
-        return value.getOrNull(paths.last())
+        return value
     }
 
     /**

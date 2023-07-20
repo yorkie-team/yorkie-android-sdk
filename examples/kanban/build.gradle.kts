@@ -72,5 +72,5 @@ dependencies {
     testImplementation(libs.androidx.test.monitor)
     testImplementation(libs.androidx.test.junit)
 
-    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.junit)
 }

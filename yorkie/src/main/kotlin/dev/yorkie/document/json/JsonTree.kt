@@ -72,7 +72,11 @@ public class JsonTree internal constructor(
     /**
      * Edits this tree with the given node and path.
      */
-    public fun editByPath(fromPath: List<Int>, toPath: List<Int>, content: TreeNode? = null) {
+    public fun editByPath(
+        fromPath: List<Int>,
+        toPath: List<Int>,
+        vararg contents: TreeNode,
+    ) {
         require(fromPath.size == toPath.size) {
             "path length should be equal"
         }
@@ -82,33 +86,53 @@ public class JsonTree internal constructor(
 
         val fromPos = target.pathToPos(fromPath)
         val toPos = target.pathToPos(toPath)
-        editByPos(fromPos, toPos, content)
+        editByPos(fromPos, toPos, contents.toList())
     }
 
     /**
      * Edits this tree with the given node.
      */
-    public fun edit(fromIndex: Int, toIndex: Int, content: TreeNode? = null) {
+    public fun edit(fromIndex: Int, toIndex: Int, vararg contents: TreeNode) {
         require(fromIndex <= toIndex) {
             "from should be less than or equal to to"
         }
 
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
-        editByPos(fromPos, toPos, content)
+        editByPos(fromPos, toPos, contents.toList())
     }
 
-    private fun editByPos(fromPos: CrdtTreePos, toPos: CrdtTreePos, content: TreeNode?) {
-        val crdtNode = content?.let { createCrdtTreeNode(context, content) }
+    private fun editByPos(fromPos: CrdtTreePos, toPos: CrdtTreePos, contents: List<TreeNode>) {
+        if (contents.isNotEmpty()) {
+            validateTreeNodes(contents)
+            if (contents.first().type != DEFAULT_TEXT_TYPE) {
+                val children =
+                    contents.filterIsInstance<ElementNode>().flatMap(ElementNode::children)
+                validateTreeNodes(children)
+            }
+        }
+
+        val crdtNodes = if (contents.firstOrNull()?.type == DEFAULT_TEXT_TYPE) {
+            val compVal = contents
+                .filterIsInstance<TextNode>()
+                .joinToString("") { it.value }
+            listOf(CrdtTreeText(CrdtTreePos(context.issueTimeTicket(), 0), compVal))
+        } else {
+            contents.map { createCrdtTreeNode(context, it) }
+        }
         val ticket = context.lastTimeTicket
-        target.edit(fromPos to toPos, crdtNode?.deepCopy(), ticket)
+        target.edit(
+            fromPos to toPos,
+            crdtNodes.takeIf { it.isNotEmpty() }?.map { it.deepCopy() },
+            ticket,
+        )
 
         context.push(
             TreeEditOperation(
                 target.createdAt,
                 fromPos,
                 toPos,
-                crdtNode,
+                crdtNodes.takeIf { it.isNotEmpty() },
                 ticket,
             ),
         )
@@ -116,6 +140,41 @@ public class JsonTree internal constructor(
         if (fromPos.createdAt != toPos.createdAt || fromPos.offset != toPos.offset) {
             context.registerElementHasRemovedNodes(target)
         }
+    }
+
+    /**
+     * Ensures that treeNodes consists of only one type.
+     */
+    private fun validateTreeNodes(treeNodes: List<TreeNode>) {
+        if (treeNodes.isEmpty()) return
+
+        val firstTreeNodeType = treeNodes.first().type
+        if (firstTreeNodeType == DEFAULT_TEXT_TYPE) {
+            require(treeNodes.all { it.type == DEFAULT_TEXT_TYPE }) {
+                "element node and text node cannot be passed together"
+            }
+            treeNodes.filterIsInstance<TextNode>().forEach(::validateTextNode)
+        } else {
+            require(treeNodes.none { it.type == DEFAULT_TEXT_TYPE }) {
+                "element node and text node cannot be passed together"
+            }
+        }
+    }
+
+    /**
+     * Ensures that a text node has a non-empty string value.
+     */
+    private fun validateTextNode(textNode: TextNode) {
+        require(textNode.value.isNotEmpty()) {
+            "text node cannot have empty value"
+        }
+    }
+
+    /**
+     * Returns the index of given path.
+     */
+    public fun pathToIndex(path: List<Int>): Int {
+        return target.pathToIndex(path)
     }
 
     /**

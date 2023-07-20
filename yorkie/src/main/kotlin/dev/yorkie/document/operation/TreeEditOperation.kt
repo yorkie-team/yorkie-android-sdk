@@ -14,7 +14,7 @@ internal data class TreeEditOperation(
     override val parentCreatedAt: TimeTicket,
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
-    val content: CrdtTreeNode?,
+    val contents: List<CrdtTreeNode>?,
     override var executedAt: TimeTicket,
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
@@ -29,7 +29,8 @@ internal data class TreeEditOperation(
             YorkieLogger.e(TAG, "fail to execute, only Tree can execute edit")
             return emptyList()
         }
-        val changes = tree.edit(fromPos to toPos, content?.deepCopy(), executedAt)
+        val changes =
+            tree.edit(fromPos to toPos, contents?.map(CrdtTreeNode::deepCopy), executedAt)
 
         if (fromPos.createdAt != toPos.createdAt || fromPos.offset != toPos.offset) {
             root.registerElementHasRemovedNodes(tree)

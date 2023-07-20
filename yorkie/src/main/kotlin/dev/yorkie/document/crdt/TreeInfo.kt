@@ -46,7 +46,7 @@ internal data class TreeChange(
     val to: Int,
     val fromPath: List<Int>,
     val toPath: List<Int>,
-    val value: TreeNode? = null,
+    val value: List<TreeNode>? = null,
     val attributes: Map<String, String>? = null,
 )
 

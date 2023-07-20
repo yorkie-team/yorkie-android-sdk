@@ -346,7 +346,7 @@ class JsonTreeTest {
                     1,
                     listOf(0, 0),
                     listOf(0, 0),
-                    TreeNode("text", value = "X"),
+                    listOf(TreeNode("text", value = "X")),
                     "$.t",
                 ),
                 TreeStyleOpInfo(
@@ -412,7 +412,7 @@ class JsonTreeTest {
                     4,
                     listOf(0, 0, 0, 1),
                     listOf(0, 0, 0, 1),
-                    TreeNode("text", value = "X"),
+                    listOf(TreeNode("text", value = "X")),
                     "$.t",
                 ),
                 TreeStyleOpInfo(

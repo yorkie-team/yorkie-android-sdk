@@ -96,7 +96,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 parentCreatedAt = it.treeEdit.parentCreatedAt.toTimeTicket(),
                 fromPos = it.treeEdit.from.toCrdtTreePos(),
                 toPos = it.treeEdit.to.toCrdtTreePos(),
-                content = it.treeEdit.contentList.toCrdtTreeRootNode(),
+                contents = it.treeEdit.contentsList.toCrdtTreeNodesWhenEdit(),
                 executedAt = it.treeEdit.executedAt.toTimeTicket(),
             )
 
@@ -214,7 +214,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                     from = operation.fromPos.toPBTreePos()
                     to = operation.toPos.toPBTreePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
-                    content.addAll(operation.content?.toPBTreeNodes().orEmpty())
+                    contents.addAll(operation.contents?.toPBTreeNodesWhenEdit().orEmpty())
                 }
             }
         }

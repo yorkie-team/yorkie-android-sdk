@@ -238,7 +238,7 @@ class ConverterTest {
             InitialTimeTicket,
             CrdtTreePos(InitialTimeTicket, 5),
             CrdtTreePos(InitialTimeTicket, 10),
-            CrdtTreeText(CrdtTreePos(InitialTimeTicket, 0), "hi"),
+            listOf(CrdtTreeText(CrdtTreePos(InitialTimeTicket, 0), "hi")),
             InitialTimeTicket,
         )
         val treeStyleOperation = TreeStyleOperation(

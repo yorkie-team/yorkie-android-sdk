@@ -135,12 +135,12 @@ internal class CrdtTree(
     }
 
     /**
-     * Edits the tree with the given [range] and [content].
-     * If the [content] is null, the [range] will be removed.
+     * Edits the tree with the given [range] and [contents].
+     * If the [contents] is null, the [range] will be removed.
      */
     fun edit(
         range: TreeRange,
-        content: CrdtTreeNode?,
+        contents: List<CrdtTreeNode>?,
         executedAt: TimeTicket,
     ): List<TreeChange> {
         // 01. split text nodes at the given range if needed.
@@ -157,7 +157,7 @@ internal class CrdtTree(
                 fromPath = indexTree.treePosToPath(fromPos),
                 toPath = indexTree.treePosToPath(toPos),
                 actorID = executedAt.actorID,
-                value = content?.toJson(),
+                value = contents?.map(CrdtTreeNode::toJson),
             ),
         )
 
@@ -199,24 +199,28 @@ internal class CrdtTree(
         }
 
         // 03. insert the given node at the given position.
-        content?.let {
+        if (contents?.isNotEmpty() == true) {
             // 03-1. insert the content nodes to the list.
-            var previous = fromRight.prev ?: return@let
-            traverse(content) { node, _ ->
-                insertAfter(previous, node)
-                previous = node
-            }
-
-            // 03-2. insert the content nodes to the tree.
-            if (fromPos.node.isText) {
-                if (fromPos.offset == 0) {
-                    fromPos.node.parent?.insertBefore(fromPos.node, content)
-                } else {
-                    fromPos.node.parent?.insertAfter(fromPos.node, content)
+            var previous = requireNotNull(fromRight.prev)
+            var offset = fromPos.offset
+            contents.forEach { content ->
+                traverse(content) { node, _ ->
+                    insertAfter(previous, node)
+                    previous = node
                 }
-            } else {
-                val target = fromPos.node
-                target.insertAt(fromPos.offset, content)
+
+                // 03-2. insert the content nodes to the tree.
+                val node = fromPos.node
+                if (node.isText) {
+                    if (fromPos.offset == 0) {
+                        node.parent?.insertBefore(node, content)
+                    } else {
+                        node.parent?.insertAfter(node, content)
+                    }
+                } else {
+                    node.insertAt(offset, content)
+                    offset++
+                }
             }
         }
         return changes
@@ -306,17 +310,17 @@ internal class CrdtTree(
     }
 
     /**
-     * Edits the given [range] with the given [content].
+     * Edits the given [range] with the given [contents].
      * This method uses indexes instead of a pair of [TreePos] for testing.
      */
     fun editByIndex(
         range: Pair<Int, Int>,
-        content: CrdtTreeNode?,
+        contents: List<CrdtTreeNode>?,
         executedAt: TimeTicket,
     ) {
         val fromPos = findPos(range.first)
         val toPos = findPos(range.second)
-        edit(fromPos to toPos, content, executedAt)
+        edit(fromPos to toPos, contents, executedAt)
     }
 
     /**

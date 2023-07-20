@@ -62,7 +62,7 @@ public sealed class OperationInfo {
         val to: Int,
         val fromPath: List<Int>,
         val toPath: List<Int>,
-        val node: TreeNode?,
+        val nodes: List<TreeNode>?,
         override var path: String = INITIAL_PATH,
     ) : OperationInfo()
 

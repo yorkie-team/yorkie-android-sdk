@@ -317,7 +317,7 @@ $dokka.location:dev.yorkie.document.time/TimeTicket.Companion///PointingToDeclar
 $dokka.location:dev.yorkie.document.time/TimeTicket.Companion/InitialTimeTicket/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-companion/-initial-time-ticket.html
 $dokka.location:dev.yorkie.document.time/TimeTicket.Companion/compareTo/dev.yorkie.document.time.TimeTicket?#dev.yorkie.document.time.TimeTicket?/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-companion/compare-to.html
 $dokka.location:dev.yorkie.document.time/TimeTicket///PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/index.html
-$dokka.location:dev.yorkie.document.time/TimeTicket/TimeTicket/#kotlin.Long#kotlin.Int#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-time-ticket.html
+$dokka.location:dev.yorkie.document.time/TimeTicket/TimeTicket/#kotlin.Long#kotlin.UInt#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-time-ticket.html
 $dokka.location:dev.yorkie.document.time/TimeTicket/actorID/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/actor-i-d.html
 $dokka.location:dev.yorkie.document.time/TimeTicket/compareTo/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/compare-to.html
 $dokka.location:dev.yorkie.document.time/TimeTicket/delimiter/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/delimiter.html

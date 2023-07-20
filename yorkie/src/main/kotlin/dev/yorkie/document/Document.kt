@@ -64,6 +64,9 @@ public class Document(public val key: Key) {
     public var status = DocumentStatus.Detached
         internal set
 
+    internal val garbageLength: Int
+        get() = root.getGarbageLength()
+
     /**
      * Executes the given [updater] to update this document.
      */
@@ -267,7 +270,7 @@ public class Document(public val key: Key) {
     /**
      * Deletes elements that were removed before the given time.
      */
-    private fun garbageCollect(ticket: TimeTicket): Int {
+    internal fun garbageCollect(ticket: TimeTicket): Int {
         clone?.garbageCollect(ticket)
         return root.garbageCollect(ticket)
     }

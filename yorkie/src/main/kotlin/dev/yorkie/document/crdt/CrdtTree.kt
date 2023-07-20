@@ -71,7 +71,6 @@ internal class CrdtTree(
     ): List<TreeChange> {
         val (_, toRight) = findTreePos(range.second, executedAt)
         val (_, fromRight) = findTreePos(range.first, executedAt)
-        // TODO(7hong13): need to check toPath - range.second? first?
         val changes = listOf(
             TreeChange(
                 type = TreeChangeType.Style.type,
@@ -342,23 +341,18 @@ internal class CrdtTree(
      * Physically deletes nodes that have been removed.
      */
     override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
-        val nodesToRemoved = removedNodeMap.filterValues { node ->
+        val nodesToBeRemoved = removedNodeMap.filterValues { node ->
             node.removedAt != null && node.removedAt <= executedAt
         }.values.toMutableSet()
 
-        indexTree.traverseAll { node, _ ->
-            if (node in nodesToRemoved) {
-                node.parent?.removeChild(node) ?: nodesToRemoved.remove(node)
-            }
-        }
-
-        nodesToRemoved.forEach { node ->
+        nodesToBeRemoved.forEach { node ->
+            node.parent?.removeChild(node)
             nodeMapByPos.remove(node.pos)
             delete(node)
             removedNodeMap.remove(node.createdAt to node.pos.offset)
         }
 
-        return nodesToRemoved.size
+        return nodesToBeRemoved.size
     }
 
     /**
@@ -618,7 +612,7 @@ internal data class CrdtTreeNode private constructor(
     @Suppress("FunctionName")
     companion object {
 
-        fun CrdtTreeText(pos: CrdtTreePos, value: String? = null): CrdtTreeNode {
+        fun CrdtTreeText(pos: CrdtTreePos, value: String): CrdtTreeNode {
             return CrdtTreeNode(pos, DEFAULT_TEXT_TYPE, value)
         }
 
@@ -633,7 +627,7 @@ internal data class CrdtTreeNode private constructor(
 
 /**
  * [CrdtTreePos] represents a position in the tree. It indicates the virtual
- * location in the tree, so whether the node is splitted or not, we can find
+ * location in the tree, so whether the node is split or not, we can find
  * the adjacent node to pos by calling `map.floorEntry()`.
  */
 public data class CrdtTreePos(

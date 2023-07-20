@@ -8,7 +8,7 @@ import dev.yorkie.document.time.TimeTicket
  * Identifies the Change.
  */
 internal data class ChangeID(
-    val clientSeq: Int,
+    val clientSeq: UInt,
     val lamport: Long,
     val actor: ActorID,
 ) {
@@ -16,7 +16,7 @@ internal data class ChangeID(
     /**
      * Creates a next ID of this ID.
      */
-    fun next() = copy(clientSeq = clientSeq + 1, lamport = lamport + 1)
+    fun next() = copy(clientSeq = clientSeq + 1u, lamport = lamport + 1)
 
     /**
      * Syncs lamport timestamp with the given ID.
@@ -33,7 +33,7 @@ internal data class ChangeID(
     /**
      * Creates a ticket of the given delimiter.
      */
-    fun createTimeTicket(delimiter: Int): TimeTicket {
+    fun createTimeTicket(delimiter: UInt): TimeTicket {
         return TimeTicket(lamport, delimiter, actor)
     }
 
@@ -47,6 +47,6 @@ internal data class ChangeID(
          * Represents the initial state ID.
          * Usually this is used to represent a state where nothing has been edited.
          */
-        val InitialChangeID = ChangeID(0, 0, INITIAL_ACTOR_ID)
+        val InitialChangeID = ChangeID(0u, 0, INITIAL_ACTOR_ID)
     }
 }

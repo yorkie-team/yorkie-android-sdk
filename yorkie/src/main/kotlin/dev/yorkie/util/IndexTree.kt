@@ -1,5 +1,7 @@
 package dev.yorkie.util
 
+import com.google.common.annotations.VisibleForTesting
+
 /**
  * About `index`, `path`, `size` and `TreePos` in crdt.IndexTree.
  *
@@ -123,24 +125,6 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
      */
     fun traverse(action: ((T, Int) -> Unit)) {
         traverse(root, 0, action)
-    }
-
-    /**
-     * Traverses the whole tree (including tombstones) with postorder traversal.
-     */
-    fun traverseAll(action: ((T, Int) -> Unit)) {
-        traverseAllInternal(root, 0, action)
-    }
-
-    private fun traverseAllInternal(
-        node: T,
-        depth: Int = 0,
-        action: ((T, Int) -> Unit),
-    ) {
-        node.allChildren.forEach { child ->
-            traverseAllInternal(child, depth + 1, action)
-        }
-        action.invoke(node, depth)
     }
 
     /**
@@ -435,6 +419,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
     /**
      * Returns the children of the node including tombstones.
      */
+    @VisibleForTesting
     val allChildren: List<T>
         get() = _children.toList()
 

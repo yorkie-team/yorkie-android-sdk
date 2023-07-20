@@ -12,7 +12,7 @@ internal typealias PBTimeTicket = dev.yorkie.api.v1.TimeTicket
 internal fun PBTimeTicket.toTimeTicket(): TimeTicket {
     return TimeTicket(
         lamport = lamport,
-        delimiter = delimiter,
+        delimiter = delimiter.toUInt(),
         actorID = actorId.toActorID(),
     )
 }
@@ -21,7 +21,7 @@ internal fun TimeTicket.toPBTimeTicket(): PBTimeTicket {
     val timeTicket = this
     return timeTicket {
         lamport = timeTicket.lamport
-        delimiter = timeTicket.delimiter
+        delimiter = timeTicket.delimiter.toInt()
         actorId = timeTicket.actorID.toByteString()
     }
 }

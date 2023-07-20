@@ -446,9 +446,9 @@ class ClientTest {
                 it.setNewCounter("counter", 0)
             }.await()
 
-            assertEquals(CheckPoint(0, 0), document.checkPoint)
+            assertEquals(CheckPoint(0, 0u), document.checkPoint)
             client.syncAsync().await()
-            assertEquals(CheckPoint(1, 1), document.checkPoint)
+            assertEquals(CheckPoint(1, 1u), document.checkPoint)
 
             // 03. cli update the document with increasing the counter(0 -> 1)
             //     and sync with push-only mode: CP(1, 1) -> CP(2, 1)
@@ -460,7 +460,7 @@ class ClientTest {
             assertEquals(1, changePack.changes.size)
 
             client.syncAsync(document, Client.SyncMode.PushOnly).await()
-            assertEquals(CheckPoint(1, 2), document.checkPoint)
+            assertEquals(CheckPoint(1, 2u), document.checkPoint)
 
             // 04. cli update the document with increasing the counter(1 -> 2)
             //     and sync with push-pull mode. CP(2, 1) -> CP(3, 3)
@@ -475,7 +475,7 @@ class ClientTest {
 
             client.syncAsync().await()
 
-            assertEquals(CheckPoint(3, 3), document.checkPoint)
+            assertEquals(CheckPoint(3, 3u), document.checkPoint)
             assertEquals(2, document.getRoot().getAs<JsonCounter>("counter").value)
 
             client.detachAsync(document).await()

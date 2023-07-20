@@ -41,7 +41,7 @@ internal fun List<Change>.toPBChanges(): List<PBChange> {
 
 internal fun PBChangeID.toChangeID(): ChangeID {
     return ChangeID(
-        clientSeq,
+        clientSeq.toUInt(),
         lamport,
         actorId.toActorID(),
     )
@@ -50,21 +50,21 @@ internal fun PBChangeID.toChangeID(): ChangeID {
 internal fun ChangeID.toPBChangeID(): PBChangeID {
     val changeID = this
     return changeID {
-        clientSeq = changeID.clientSeq
+        clientSeq = changeID.clientSeq.toInt()
         lamport = changeID.lamport
         actorId = changeID.actor.toByteString()
     }
 }
 
 internal fun PBCheckPoint.toCheckPoint(): CheckPoint {
-    return CheckPoint(serverSeq, clientSeq)
+    return CheckPoint(serverSeq, clientSeq.toUInt())
 }
 
 internal fun CheckPoint.toPBCheckPoint(): PBCheckPoint {
     val checkPoint = this
     return checkpoint {
         serverSeq = checkPoint.serverSeq
-        clientSeq = checkPoint.clientSeq
+        clientSeq = checkPoint.clientSeq.toInt()
     }
 }
 

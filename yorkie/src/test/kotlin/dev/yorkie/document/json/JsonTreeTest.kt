@@ -337,9 +337,8 @@ class JsonTreeTest {
             it.tree().edit(1, 1, text { "X" })
             assertEquals("<doc><p>Xab</p></doc>", it.tree().toXml())
 
-            it.tree().style(0, 0, mapOf("a" to "b"))
+            it.tree().style(4, 5, mapOf("a" to "b"))
         }.await()
-
         assertContentEquals(
             listOf(
                 TreeEditOpInfo(
@@ -351,10 +350,10 @@ class JsonTreeTest {
                     "$.t",
                 ),
                 TreeStyleOpInfo(
-                    0,
-                    0,
-                    listOf(0, -7), // TODO: need to check if these are the actual right values???
-                    listOf(0, -7),
+                    4,
+                    5,
+                    listOf(0),
+                    listOf(0),
                     mapOf("a" to "b"),
                     "$.t",
                 ),
@@ -418,7 +417,7 @@ class JsonTreeTest {
                 ),
                 TreeStyleOpInfo(
                     6,
-                    7, // TODO: need to check if these are the actual right values???
+                    7,
                     listOf(0, 0, 0),
                     listOf(0, 0, 0),
                     mapOf("a" to "b"),

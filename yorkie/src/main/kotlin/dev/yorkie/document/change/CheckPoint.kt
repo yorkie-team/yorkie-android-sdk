@@ -8,7 +8,7 @@ import kotlin.math.max
  */
 internal data class CheckPoint(
     val serverSeq: Long,
-    val clientSeq: Int,
+    val clientSeq: UInt,
 ) {
 
     /**
@@ -18,7 +18,7 @@ internal data class CheckPoint(
         return if (increase == 0) {
             this
         } else {
-            copy(clientSeq = clientSeq + increase)
+            copy(clientSeq = clientSeq + increase.toUInt())
         }
     }
 
@@ -37,6 +37,6 @@ internal data class CheckPoint(
     }
 
     companion object {
-        val InitialCheckPoint = CheckPoint(0, 0)
+        val InitialCheckPoint = CheckPoint(0, 0u)
     }
 }

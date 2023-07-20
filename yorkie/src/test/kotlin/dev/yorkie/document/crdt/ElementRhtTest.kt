@@ -70,8 +70,8 @@ class ElementRhtTest {
             )
         }
 
-        val value1 = elementRht1["test1"].value as Int
-        val value2 = elementRht2["test1"].value as Int
+        val value1 = elementRht1["test1"].value
+        val value2 = elementRht2["test1"].value
 
         assertEquals(value1, value2)
     }
@@ -192,7 +192,8 @@ class ElementRhtTest {
         val list = mutableListOf<String>()
         for (i in 0..100000) {
             val key = "test$i"
-            elementRht[key] = CrdtPrimitive("value$i", generateTimeTicket(i.toLong(), i, "11"))
+            elementRht[key] =
+                CrdtPrimitive("value$i", generateTimeTicket(i.toLong(), i, "11"))
             list.add(key)
         }
 
@@ -210,7 +211,7 @@ class ElementRhtTest {
         delimiter: Int,
         actorID: String,
     ): TimeTicket {
-        return TimeTicket(lamport, delimiter, ActorID(actorID))
+        return TimeTicket(lamport, delimiter.toUInt(), ActorID(actorID))
     }
 
     private fun ElementRht<CrdtPrimitive>.getStructureAsString() = buildString {

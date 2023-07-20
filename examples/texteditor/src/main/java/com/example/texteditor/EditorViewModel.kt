@@ -66,8 +66,6 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     }
 
     private suspend fun emitTextOpInfos(changeInfo: Document.Event.ChangeInfo) {
-        if (changeInfo.actorID == client.requireClientId()) return
-
         changeInfo.operations.filterIsInstance<OperationInfo.TextOpInfo>()
             .forEach { opInfo ->
                 _textOpInfos.emit(changeInfo.actorID to opInfo)

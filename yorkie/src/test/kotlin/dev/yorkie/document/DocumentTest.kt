@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -188,6 +189,63 @@ class DocumentTest {
                 error("error test")
             }.await()
             assertNull(target.clone)
+        }
+    }
+
+    @Test
+    fun `should throw error when trying to find value from invalid paths`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            runTest {
+                target.getValueByPath("..$")
+            }
+        }
+    }
+
+    @Suppress("ktlint:standard:max-line-length")
+    @Test
+    fun `should get value from paths`() {
+        runTest {
+            target.updateAsync {
+                it.setNewArray("todos").putNewObject().apply {
+                    set("text", "todo1")
+                    set("completed", false)
+                }
+                it.setNewObject("obj").setNewObject("c1").apply {
+                    set("name", "josh")
+                    set("age", 14)
+                }
+                it["str"] = "string"
+            }.await()
+
+            assertEquals(
+                """{"todos":[{"text":"todo1","completed":false}],"obj":{"c1":{"name":"josh","age":14}},"str":"string"}""",
+                target.getValueByPath("$")?.toJson(),
+            )
+            assertEquals(
+                """[{"text":"todo1","completed":false}]""",
+                target.getValueByPath("$.todos")?.toJson(),
+            )
+            assertEquals(
+                """{"text":"todo1","completed":false}""",
+                target.getValueByPath("$.todos.0")?.toJson(),
+            )
+            assertEquals(
+                """{"c1":{"name":"josh","age":14}}""",
+                target.getValueByPath("$.obj")?.toJson(),
+            )
+            assertEquals(
+                """{"name":"josh","age":14}""",
+                target.getValueByPath("$.obj.c1")?.toJson(),
+            )
+            assertEquals(
+                """"josh"""",
+                target.getValueByPath("$.obj.c1.name")?.toJson(),
+            )
+            assertEquals(
+                """"string"""",
+                target.getValueByPath("$.str")?.toJson(),
+            )
+            assertNull(target.getValueByPath("$..."))
         }
     }
 }

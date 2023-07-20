@@ -117,6 +117,9 @@ public class JsonObject internal constructor(
     }
 
     private fun setAndRegister(key: String, element: CrdtElement) {
+        require(!key.contains(".")) {
+            """key must not contain the "."."""
+        }
         val removed = target.set(key, element)
         context.registerElement(element, target)
         removed?.let(context::registerRemovedElement)

@@ -15,6 +15,7 @@ import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.gson
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.dropWhile
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.timeout
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -33,6 +35,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
 
 @RunWith(AndroidJUnit4::class)
 class ClientTest {
@@ -76,17 +80,21 @@ class ClientTest {
             assertIs<Client.Status.Activated>(client2.status.value)
 
             client1.attachAsync(document1).await()
-            var peerStatus = client1.peerStatusByDoc(documentKey).dropWhile { it.isEmpty() }.first()
+            var peerStatus = withTimeout(GENERAL_TIMEOUT) {
+                client1.peerStatusByDoc(documentKey).dropWhile { it.isEmpty() }.first()
+            }
             assertEquals(1, peerStatus.size)
             assertEquals(peerStatus.entries.first().key, client1.requireClientId())
 
             client2.attachAsync(document2).await()
-            peerStatus = client1.peerStatusByDoc(documentKey).dropWhile { it.size < 2 }.first()
+            peerStatus = withTimeout(GENERAL_TIMEOUT) {
+                client1.peerStatusByDoc(documentKey).dropWhile { it.size < 2 }.first()
+            }
             assertEquals(2, peerStatus.size)
             assertEquals(peerStatus.entries.first().key, client1.requireClientId())
             assertEquals(peerStatus.entries.last().key, client2.requireClientId())
 
-            withTimeout(1_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 client1.streamConnectionStatus.first { it == StreamConnectionStatus.Connected }
                 client2.streamConnectionStatus.first { it == StreamConnectionStatus.Connected }
             }
@@ -95,7 +103,7 @@ class ClientTest {
                 it["k1"] = "v1"
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (client2Events.none { it is DocumentSynced }) {
                     delay(50)
                 }
@@ -132,11 +140,13 @@ class ClientTest {
                 it.remove("k1")
             }.await()
 
-            while (client1Events.none { it is DocumentSynced }) {
-                delay(50)
-            }
-            while (client2Events.isEmpty()) {
-                delay(50)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (client1Events.none { it is DocumentSynced }) {
+                    delay(50)
+                }
+                while (client2Events.isEmpty()) {
+                    delay(50)
+                }
             }
             syncEvent = assertIs(client2Events.first { it is DocumentSynced })
             assertIs<DocumentSyncResult.Synced>(syncEvent.result)
@@ -188,7 +198,7 @@ class ClientTest {
             client1.updatePresenceAsync("name", "A").await()
             client2.updatePresenceAsync("name", "B").await()
 
-            withTimeout(1_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 client1.peerStatusByDoc(key).first {
                     it.size == 2 && it.none { peerStatus -> peerStatus.value.data.isEmpty() }
                 }
@@ -377,7 +387,7 @@ class ClientTest {
             document2.updateAsync {
                 it["c2"] = 0
             }.await()
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 // size should be 2 since it has local-change and remote-change
                 while (document1Events.size < 2 ||
                     document2Events.size < 2 ||
@@ -400,7 +410,7 @@ class ClientTest {
             document2.updateAsync {
                 it["c2"] = 1
             }.await()
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Events.size < 3 ||
                     document2Events.size < 3 ||
                     document3Ops.size < 4
@@ -415,7 +425,7 @@ class ClientTest {
             // 04. c1 and c2 sync with push-pull mode.
             client1.resumeRemoteChanges(document1)
             client2.resumeRemoteChanges(document2)
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Events.size < 4 || document2Events.size < 4) {
                     delay(50)
                 }
@@ -507,7 +517,7 @@ class ClientTest {
             val document2 = Document(documentKey)
 
             client1.attachAsync(document1).await()
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 // initialized
                 while (client1Events.isEmpty()) {
                     delay(50)
@@ -519,7 +529,7 @@ class ClientTest {
             )
 
             client2.attachAsync(document2).await()
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 client1.peerStatusByDoc(documentKey).first {
                     it[client2.requireClientId()]?.data != null
                 }
@@ -537,7 +547,8 @@ class ClientTest {
         }
     }
 
+    @OptIn(FlowPreview::class)
     private fun Client.peerStatusByDoc(key: Document.Key) = peerStatus.mapNotNull {
         it[key]
-    }
+    }.timeout(GENERAL_TIMEOUT.toDuration(DurationUnit.MILLISECONDS))
 }

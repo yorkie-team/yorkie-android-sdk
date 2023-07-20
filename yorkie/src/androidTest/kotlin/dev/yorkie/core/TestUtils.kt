@@ -6,6 +6,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import java.util.UUID
 
+const val GENERAL_TIMEOUT = 3_000L
+
 fun createClient(presence: Presence? = null) = Client(
     InstrumentationRegistry.getInstrumentation().targetContext,
     "10.0.2.2",

@@ -513,7 +513,7 @@ class DocumentTest {
                 }
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.size < 2 ||
                     document1TodosOps.isEmpty() ||
                     document1ObjOps.isEmpty()
@@ -558,7 +558,7 @@ class DocumentTest {
                 it.getAs<JsonObject>("obj").getAs<JsonObject>("c1")["name"] = "john"
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty() || document1ObjOps.isEmpty()) {
                     delay(50)
                 }
@@ -573,7 +573,7 @@ class DocumentTest {
                 it.getAs<JsonArray>("todos").getAs<JsonObject>(0)?.set("completed", true)
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty() || document1TodosOps.isEmpty()) {
                     delay(50)
                 }
@@ -592,7 +592,7 @@ class DocumentTest {
                 it.getAs<JsonArray>("todos").getAs<JsonObject>(0)?.set("text", "todo_1")
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty()) {
                     delay(50)
                 }
@@ -607,7 +607,7 @@ class DocumentTest {
                 it.getAs<JsonObject>("obj").getAs<JsonObject>("c1")["age"] = 15
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty()) {
                     delay(50)
                 }

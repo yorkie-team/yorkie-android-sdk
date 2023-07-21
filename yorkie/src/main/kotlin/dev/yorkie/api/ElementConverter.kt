@@ -322,10 +322,9 @@ internal fun List<CrdtTreeNode>.toPBTreeNodesWhenEdit(): List<PBTreeNodes> {
 }
 
 internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
-    return takeIf { it.isNotEmpty() }
-        ?.mapNotNull {
-            it.contentList.toCrdtTreeRootNode()
-        }
+    return mapNotNull {
+        it.contentList.toCrdtTreeRootNode()
+    }.ifEmpty { null }
 }
 
 internal fun CrdtTreePos.toPBTreePos(): PBTreePos {

@@ -21,10 +21,12 @@ internal fun List<PBChange>.toChanges(): List<Change> {
         Change(
             it.id.toChangeID(),
             it.operationsList.toOperations(),
+            it.takeIf { it.hasPresenceChange() }?.presenceChange?.toPresenceChange(),
             it.message.ifEmpty { null },
         )
     }
 }
+
 
 internal fun Change.toPBChange(): PBChange {
     val change = this
@@ -32,6 +34,9 @@ internal fun Change.toPBChange(): PBChange {
         id = change.id.toPBChangeID()
         message = change.message ?: ""
         operations.addAll(change.operations.toPBOperations())
+        change.presenceChange?.let {
+            presenceChange = it.toPBPresenceChange()
+        }
     }
 }
 

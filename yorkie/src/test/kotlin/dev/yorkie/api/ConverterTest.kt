@@ -3,6 +3,7 @@ package dev.yorkie.api
 import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.operation
+import dev.yorkie.core.PresenceChange
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
@@ -90,7 +91,7 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
-        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), null)
+        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), null, null)
         val converted = listOf(change.toPBChange()).toChanges().first()
 
         assertEquals(change, converted)
@@ -110,8 +111,18 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
-        val addChange = Change(ChangeID.InitialChangeID, listOf(addOperation), "add")
-        val setChange = Change(ChangeID.InitialChangeID, listOf(setOperation), "set")
+        val addChange = Change(
+            ChangeID.InitialChangeID,
+            listOf(addOperation),
+            PresenceChange.PresencePut(mapOf("a" to "b")),
+            "add",
+        )
+        val setChange = Change(
+            ChangeID.InitialChangeID,
+            listOf(setOperation),
+            PresenceChange.PresenceClear,
+            "set",
+        )
         val converted = listOf(addChange.toPBChange(), setChange.toPBChange()).toChanges()
 
         assertEquals(listOf(addChange, setChange), converted)
@@ -125,7 +136,7 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
-        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), "add")
+        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), null, "add")
         val changePack = ChangePack(
             "key",
             CheckPoint.InitialCheckPoint,
@@ -151,7 +162,7 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
-        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), "add")
+        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), null, "add")
         val changePack = ChangePack(
             "key",
             CheckPoint.InitialCheckPoint,

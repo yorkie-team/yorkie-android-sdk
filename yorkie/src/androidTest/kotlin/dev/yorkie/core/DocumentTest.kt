@@ -62,8 +62,8 @@ class DocumentTest {
 
             // 04. try to update a removed document.
             assertFailsWith(IllegalStateException::class) {
-                document.updateAsync {
-                    it["key"] = 0
+                document.updateAsync { root, _ ->
+                    root["key"] = 0
                 }.await()
             }
 
@@ -85,8 +85,8 @@ class DocumentTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document1 = Document(documentKey)
-            document1.updateAsync {
-                it["key"] = 1
+            document1.updateAsync { root, _ ->
+                root["key"] = 1
             }.await()
             client1.attachAsync(document1).await()
             assertEquals("""{"key":1}""", document1.toJson())
@@ -113,8 +113,8 @@ class DocumentTest {
     @Test
     fun test_removed_document_push_and_pull() {
         withTwoClientsAndDocuments(false) { client1, client2, document1, document2, _ ->
-            document1.updateAsync {
-                it["key"] = 1
+            document1.updateAsync { root, _ ->
+                root["key"] = 1
             }.await()
             assertEquals("""{"key":1}""", document1.toJson())
 
@@ -122,8 +122,8 @@ class DocumentTest {
             client2.syncAsync().await()
             assertEquals(document1.toJson(), document2.toJson())
 
-            document1.updateAsync {
-                it["key"] = 2
+            document1.updateAsync { root, _ ->
+                root["key"] = 2
             }.await()
             client1.removeAsync(document1).await()
             assertEquals("""{"key":2}""", document1.toJson())
@@ -138,8 +138,8 @@ class DocumentTest {
     @Test
     fun test_removed_document_detachment() {
         withTwoClientsAndDocuments(false) { client1, client2, document1, document2, _ ->
-            document1.updateAsync {
-                it["key"] = 1
+            document1.updateAsync { root, _ ->
+                root["key"] = 1
             }.await()
             assertEquals("""{"key":1}""", document1.toJson())
 
@@ -157,8 +157,8 @@ class DocumentTest {
     @Test
     fun test_removing_already_removed_document() {
         withTwoClientsAndDocuments(false) { client1, client2, document1, document2, _ ->
-            document1.updateAsync {
-                it["key"] = 1
+            document1.updateAsync { root, _ ->
+                root["key"] = 1
             }.await()
             assertEquals("""{"key":1}""", document1.toJson())
 
@@ -242,14 +242,14 @@ class DocumentTest {
                 },
             )
 
-            document1.updateAsync {
-                it.setNewCounter("counter", 100)
-                it.setNewArray("todos").apply {
+            document1.updateAsync { root, _ ->
+                root.setNewCounter("counter", 100)
+                root.setNewArray("todos").apply {
                     put("todo1")
                     put("todo2")
                     put("todo3")
                 }
-                it.setNewText("content").edit(
+                root.setNewText("content").edit(
                     0,
                     0,
                     "hello world",
@@ -257,7 +257,7 @@ class DocumentTest {
                         "italic" to "true",
                     ),
                 )
-                it.setNewObject("obj").apply {
+                root.setNewObject("obj").apply {
                     set("name", "josh")
                     set("age", 14)
                     setNewArray("food").apply {
@@ -281,15 +281,15 @@ class DocumentTest {
                 }
             }
 
-            document2.updateAsync {
-                it.getAs<JsonCounter>("counter").increase(1)
-                it.getAs<JsonArray>("todos").apply {
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonCounter>("counter").increase(1)
+                root.getAs<JsonArray>("todos").apply {
                     put("todo4")
                     val prevItem = requireNotNull(getAs<JsonPrimitive>(1))
                     val currItem = requireNotNull(getAs<JsonPrimitive>(0))
                     moveAfter(prevItem.target.id, currItem.target.id)
                 }
-                it.getAs<JsonText>("content").apply {
+                root.getAs<JsonText>("content").apply {
                     select(0, 5)
                     style(0, 5, mapOf("bold" to "true"))
                 }
@@ -375,9 +375,9 @@ class DocumentTest {
                 },
             )
 
-            document2.updateAsync {
-                it.setNewCounter("counter", 0)
-                it.setNewArray("todos").apply {
+            document2.updateAsync { root, _ ->
+                root.setNewCounter("counter", 0)
+                root.setNewArray("todos").apply {
                     put("todo1")
                     put("todo2")
                 }
@@ -409,8 +409,8 @@ class DocumentTest {
             document1Ops.clear()
             document1TodosOps.clear()
 
-            document2.updateAsync {
-                it.getAs<JsonCounter>("counter").increase(10)
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonCounter>("counter").increase(10)
             }.await()
 
             withTimeout(2_000) {
@@ -427,8 +427,8 @@ class DocumentTest {
             document1Ops.clear()
             document1CounterOps.clear()
 
-            document2.updateAsync {
-                it.getAs<JsonArray>("todos").put("todo3")
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonArray>("todos").put("todo3")
             }.await()
 
             withTimeout(2_000) {
@@ -443,8 +443,8 @@ class DocumentTest {
             document1TodosOps.clear()
 
             collectJobs["todos"]?.cancel()
-            document2.updateAsync {
-                it.getAs<JsonArray>("todos").put("todo4")
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonArray>("todos").put("todo4")
             }.await()
 
             withTimeout(2_000) {
@@ -458,8 +458,8 @@ class DocumentTest {
             document1Ops.clear()
 
             collectJobs["counter"]?.cancel()
-            document2.updateAsync {
-                it.getAs<JsonCounter>("counter").increase(10)
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonCounter>("counter").increase(10)
             }.await()
 
             withTimeout(2_000) {
@@ -502,12 +502,12 @@ class DocumentTest {
                 },
             )
 
-            document2.updateAsync {
-                it.setNewArray("todos").putNewObject().apply {
+            document2.updateAsync { root, _ ->
+                root.setNewArray("todos").putNewObject().apply {
                     set("text", "todo1")
                     set("completed", false)
                 }
-                it.setNewObject("obj").setNewObject("c1").apply {
+                root.setNewObject("obj").setNewObject("c1").apply {
                     set("name", "josh")
                     set("age", 14)
                 }
@@ -554,8 +554,8 @@ class DocumentTest {
             document1TodosOps.clear()
             document1ObjOps.clear()
 
-            document2.updateAsync {
-                it.getAs<JsonObject>("obj").getAs<JsonObject>("c1")["name"] = "john"
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonObject>("obj").getAs<JsonObject>("c1")["name"] = "john"
             }.await()
 
             withTimeout(2_000) {
@@ -569,8 +569,8 @@ class DocumentTest {
             document1Ops.clear()
             document1ObjOps.clear()
 
-            document2.updateAsync {
-                it.getAs<JsonArray>("todos").getAs<JsonObject>(0)?.set("completed", true)
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonArray>("todos").getAs<JsonObject>(0)?.set("completed", true)
             }.await()
 
             withTimeout(2_000) {
@@ -588,8 +588,8 @@ class DocumentTest {
             document1TodosOps.clear()
 
             collectJobs["todos"]?.cancel()
-            document2.updateAsync {
-                it.getAs<JsonArray>("todos").getAs<JsonObject>(0)?.set("text", "todo_1")
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonArray>("todos").getAs<JsonObject>(0)?.set("text", "todo_1")
             }.await()
 
             withTimeout(2_000) {
@@ -603,8 +603,8 @@ class DocumentTest {
             document1Ops.clear()
 
             collectJobs["obj"]?.cancel()
-            document2.updateAsync {
-                it.getAs<JsonObject>("obj").getAs<JsonObject>("c1")["age"] = 15
+            document2.updateAsync { root, _ ->
+                root.getAs<JsonObject>("obj").getAs<JsonObject>("c1")["age"] = 15
             }.await()
 
             withTimeout(2_000) {

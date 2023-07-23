@@ -19,8 +19,6 @@ import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.PushPullChangesResponse
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.RemoveDocumentResponse
-import dev.yorkie.api.v1.UpdatePresenceRequest
-import dev.yorkie.api.v1.UpdatePresenceResponse
 import dev.yorkie.api.v1.ValueType
 import dev.yorkie.api.v1.WatchDocumentRequest
 import dev.yorkie.api.v1.WatchDocumentResponse
@@ -30,13 +28,11 @@ import dev.yorkie.api.v1.activateClientResponse
 import dev.yorkie.api.v1.attachDocumentResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
-import dev.yorkie.api.v1.client
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachDocumentResponse
 import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
-import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.pushPullChangesResponse
 import dev.yorkie.api.v1.removeDocumentResponse
 import dev.yorkie.api.v1.watchDocumentResponse
@@ -150,15 +146,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                 emit(
                     watchDocumentResponse {
                         initialization = initialization {
-                            peers.add(
-                                client {
-                                    id = request.client.id
-                                    presence = presence {
-                                        clock = 1
-                                        data["k1"] = "v1"
-                                    }
-                                },
-                            )
+                            clientIds.add(TEST_ACTOR_ID.toByteString())
                         }
                     },
                 )
@@ -166,15 +154,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                 emit(
                     watchDocumentResponse {
                         initialization = initialization {
-                            peers.add(
-                                client {
-                                    id = request.client.id
-                                    presence = presence {
-                                        clock = 1
-                                        data["k1"] = "v1"
-                                    }
-                                },
-                            )
+                            clientIds.add(TEST_ACTOR_ID.toByteString())
                         }
                     },
                 )
@@ -187,8 +167,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                 watchDocumentResponse {
                     event = docEvent {
                         type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
-                        publisher = request.client
-                        documentId = key
+                        publisher = request.clientId
                     }
                 },
             )
@@ -197,30 +176,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                 watchDocumentResponse {
                     event = docEvent {
                         type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED
-                        publisher = client {
-                            id = ActorID.MAX_ACTOR_ID.toByteString()
-                            presence = presence {
-                                clock = 2
-                                data["k1"] = "v1"
-                            }
-                        }
-                        documentId = key
-                    }
-                },
-            )
-            delay(3_000)
-            emit(
-                watchDocumentResponse {
-                    event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED
-                        publisher = client {
-                            id = ActorID.MAX_ACTOR_ID.toByteString()
-                            presence = presence {
-                                clock = 3
-                                data["k1"] = "v2"
-                            }
-                        }
-                        documentId = key
+                        publisher = request.clientId
                     }
                 },
             )
@@ -229,21 +185,11 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
                 watchDocumentResponse {
                     event = docEvent {
                         type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED
-                        publisher = client {
-                            id = ActorID.MAX_ACTOR_ID.toByteString()
-                        }
-                        documentId = key
+                        publisher = request.clientId
                     }
                 },
             )
         }
-    }
-
-    override suspend fun updatePresence(request: UpdatePresenceRequest): UpdatePresenceResponse {
-        if (request.documentId == UPDATE_PRESENCE_ERROR_DOCUMENT_KEY) {
-            throw StatusException(Status.UNAVAILABLE)
-        }
-        return UpdatePresenceResponse.getDefaultInstance()
     }
 
     override suspend fun removeDocument(request: RemoveDocumentRequest): RemoveDocumentResponse {

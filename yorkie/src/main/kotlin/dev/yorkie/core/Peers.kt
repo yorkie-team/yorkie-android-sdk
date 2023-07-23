@@ -2,6 +2,8 @@ package dev.yorkie.core
 
 import dev.yorkie.document.time.ActorID
 
+public typealias PresenceInfo = Map<String, String>
+
 public class Peers private constructor(
     private val map: Map<ActorID, PresenceInfo>,
 ) : Map<ActorID, PresenceInfo> by map {
@@ -20,13 +22,7 @@ public class Peers private constructor(
         public fun Map<ActorID, PresenceInfo>.asPeers() = Peers(toMap())
 
         public fun Pair<ActorID, PresenceInfo>.asPeers() = Peers(mapOf(this))
+
+        internal val UninitializedPresences = Peers()
     }
 }
-
-public data class PresenceInfo(
-    internal val clock: Int,
-    public val data: Map<String, String>,
-)
-
-@JvmInline
-public value class Presence(val value: Map<String, String>)

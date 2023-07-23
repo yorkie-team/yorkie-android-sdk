@@ -312,8 +312,8 @@ class JsonTreeTest {
         val document = Document(Document.Key(""))
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
-        document.updateAsync {
-            it.setNewTree(
+        document.updateAsync { root, _ ->
+            root.setNewTree(
                 "t",
                 element("doc") {
                     element("p") {
@@ -333,11 +333,11 @@ class JsonTreeTest {
                 .toList()
         }
 
-        document.updateAsync {
-            it.tree().edit(1, 1, text { "X" })
-            assertEquals("<doc><p>Xab</p></doc>", it.tree().toXml())
+        document.updateAsync { root, _ ->
+            root.tree().edit(1, 1, text { "X" })
+            assertEquals("<doc><p>Xab</p></doc>", root.tree().toXml())
 
-            it.tree().style(4, 5, mapOf("a" to "b"))
+            root.tree().style(4, 5, mapOf("a" to "b"))
         }.await()
         assertContentEquals(
             listOf(
@@ -367,8 +367,8 @@ class JsonTreeTest {
         val document = Document(Document.Key(""))
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
-        document.updateAsync {
-            it.setNewTree(
+        document.updateAsync { root, _ ->
+            root.setNewTree(
                 "t",
                 element("doc") {
                     element("tc") {
@@ -395,14 +395,14 @@ class JsonTreeTest {
                 .toList()
         }
 
-        document.updateAsync {
-            it.tree().editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), text { "X" })
+        document.updateAsync { root, _ ->
+            root.tree().editByPath(listOf(0, 0, 0, 1), listOf(0, 0, 0, 1), text { "X" })
             assertEquals(
                 "<doc><tc><p><tn>aXb</tn></p></tc></doc>",
-                it.tree().toXml(),
+                root.tree().toXml(),
             )
 
-            it.tree().styleByPath(listOf(0, 0, 0), mapOf("a" to "b"))
+            root.tree().styleByPath(listOf(0, 0, 0), mapOf("a" to "b"))
         }.await()
 
         assertContentEquals(

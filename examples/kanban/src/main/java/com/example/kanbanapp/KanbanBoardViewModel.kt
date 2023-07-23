@@ -35,7 +35,7 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
                     it.result.document.getRoot().getAsOrNull<JsonArray>(DOCUMENT_LIST_KEY)
                         ?.let(::updateDocument)
                         ?: run {
-                            document.updateAsync { root ->
+                            document.updateAsync { root, _ ->
                                 root.setNewArray(DOCUMENT_LIST_KEY)
                             }.await()
                         }
@@ -46,8 +46,8 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
 
     fun addCardColumn(title: String) {
         viewModelScope.launch {
-            document.updateAsync {
-                it.getAs<JsonArray>(DOCUMENT_LIST_KEY).putNewObject().apply {
+            document.updateAsync { root, _ ->
+                root.getAs<JsonArray>(DOCUMENT_LIST_KEY).putNewObject().apply {
                     set("title", title)
                     setNewArray("cards")
                 }
@@ -57,8 +57,8 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
 
     fun addCardToColumn(cardColumn: KanbanColumn, title: String) {
         viewModelScope.launch {
-            document.updateAsync {
-                val column = it.getAs<JsonArray>(DOCUMENT_LIST_KEY).getAs<JsonObject>(cardColumn.id)
+            document.updateAsync { root, _ ->
+                val column = root.getAs<JsonArray>(DOCUMENT_LIST_KEY).getAs<JsonObject>(cardColumn.id)
                 column?.getAs<JsonArray>("cards")?.putNewObject()?.apply {
                     set("title", title)
                 }
@@ -68,8 +68,8 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
 
     fun deleteCardColumn(cardColumn: KanbanColumn) {
         viewModelScope.launch {
-            document.updateAsync {
-                it.getAs<JsonArray>(DOCUMENT_LIST_KEY).remove(cardColumn.id)
+            document.updateAsync { root, _ ->
+                root.getAs<JsonArray>(DOCUMENT_LIST_KEY).remove(cardColumn.id)
             }.await()
         }
     }

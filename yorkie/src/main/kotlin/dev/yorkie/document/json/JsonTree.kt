@@ -123,7 +123,7 @@ public class JsonTree internal constructor(
         val ticket = context.lastTimeTicket
         target.edit(
             fromPos to toPos,
-            crdtNodes.takeIf { it.isNotEmpty() }?.map { it.deepCopy() },
+            crdtNodes.map { it.deepCopy() }.ifEmpty { null },
             ticket,
         )
 
@@ -132,7 +132,7 @@ public class JsonTree internal constructor(
                 target.createdAt,
                 fromPos,
                 toPos,
-                crdtNodes.takeIf { it.isNotEmpty() },
+                crdtNodes.ifEmpty { null },
                 ticket,
             ),
         )

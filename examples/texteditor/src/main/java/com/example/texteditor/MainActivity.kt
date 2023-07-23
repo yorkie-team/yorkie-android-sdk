@@ -60,11 +60,9 @@ class MainActivity : AppCompatActivity() {
             }
 
             launch {
-                viewModel.removedPeers.collect { peers ->
-                    peers.forEach {
-                        binding.textEditor.text?.removePrevSpan(it)
-                        viewModel.removeDetachedPeerSelectionInfo(it)
-                    }
+                viewModel.removedPeers.collect {
+                    binding.textEditor.text?.removePrevSpan(it)
+                    viewModel.removeDetachedPeerSelectionInfo(it)
                 }
             }
         }

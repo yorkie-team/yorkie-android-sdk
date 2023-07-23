@@ -5,9 +5,8 @@ import androidx.annotation.ColorInt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.yorkie.core.Client
-import dev.yorkie.core.Client.Event
-import dev.yorkie.core.Client.PeersChangedResult.Unwatched
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.PeersChanged
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
@@ -17,9 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -32,11 +29,10 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _textOpInfos = MutableSharedFlow<Pair<ActorID, OperationInfo.TextOpInfo>>()
     val textOpInfos = _textOpInfos.asSharedFlow()
 
-    val removedPeers = client.events.filterIsInstance<Event.PeersChanged>()
+    val removedPeers = document.events.filterIsInstance<PeersChanged>()
         .map { it.result }
-        .filterIsInstance<Unwatched>()
-        .mapNotNull { it.changedPeers[document.key]?.keys }
-        .filterNot { it.isEmpty() }
+        .filterIsInstance<Document.PeersChangedResult.Unwatched>()
+        .map { it.changedPeer }
 
     private val _peerSelectionInfos = mutableMapOf<ActorID, PeerSelectionInfo>()
     val peerSelectionInfos: Map<ActorID, PeerSelectionInfo>
@@ -46,8 +42,8 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
         viewModelScope.launch {
             if (client.activateAsync().await() && client.attachAsync(document).await()) {
                 if (document.getRoot().getAsOrNull<JsonText>(TEXT_KEY) == null) {
-                    document.updateAsync {
-                        it.setNewText(TEXT_KEY)
+                    document.updateAsync { root, _ ->
+                        root.setNewText(TEXT_KEY)
                     }.await()
                 }
                 client.syncAsync().await()
@@ -81,16 +77,16 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
     override fun handleEditEvent(from: Int, to: Int, content: CharSequence) {
         viewModelScope.launch {
-            document.updateAsync {
-                it.getAs<JsonText>(TEXT_KEY).edit(from, to, content.toString())
+            document.updateAsync { root, _ ->
+                root.getAs<JsonText>(TEXT_KEY).edit(from, to, content.toString())
             }.await()
         }
     }
 
     override fun handleSelectEvent(from: Int, to: Int) {
         viewModelScope.launch {
-            document.updateAsync {
-                it.getAs<JsonText>(TEXT_KEY).select(from, to)
+            document.updateAsync { root, _ ->
+                root.getAs<JsonText>(TEXT_KEY).select(from, to)
             }.await()
         }
     }

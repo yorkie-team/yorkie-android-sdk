@@ -18,10 +18,10 @@ class RhtTest {
 
     @Test
     fun `should handle set operations`() {
-        assertTrue(target.getStructureAsString().isEmpty())
+        assertTrue(target.toTestString().isEmpty())
 
         target.set(TEST_KEY, TEST_VALUE, TimeTicket.InitialTimeTicket)
-        assertEquals("$TEST_KEY:$TEST_VALUE", target.getStructureAsString())
+        assertEquals("$TEST_KEY:$TEST_VALUE", target.toTestString())
     }
 
     @Test
@@ -51,7 +51,7 @@ class RhtTest {
         }
     }
 
-    private fun Rht.getStructureAsString(): String {
+    private fun Rht.toTestString(): String {
         return nodeKeyValueMap.entries.joinToString("") { "${it.key}:${it.value}" }
     }
 

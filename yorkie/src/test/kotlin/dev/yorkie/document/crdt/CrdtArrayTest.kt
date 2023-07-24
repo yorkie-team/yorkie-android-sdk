@@ -32,13 +32,13 @@ class CrdtArrayTest {
         assertEquals(crdtElements.size, target.length)
 
         target.remove(timeTickets[1], timeTickets[2])
-        assertEquals("ACDEFG", target.getStructureAsString())
+        assertEquals("ACDEFG", target.toTestString())
         target.remove(timeTickets[2], timeTickets[3])
-        assertEquals("ADEFG", target.getStructureAsString())
+        assertEquals("ADEFG", target.toTestString())
         target.remove(timeTickets[3], timeTickets[4])
-        assertEquals("AEFG", target.getStructureAsString())
+        assertEquals("AEFG", target.toTestString())
         target.remove(timeTickets[6], timeTickets[5])
-        assertEquals("AEFG", target.getStructureAsString())
+        assertEquals("AEFG", target.toTestString())
 
         assertEquals(crdtElements.size - 3, target.length)
     }
@@ -52,13 +52,13 @@ class CrdtArrayTest {
 
         target.delete(crdtElements[0])
         assertEquals(crdtElements.size - 1, target.length)
-        assertEquals("BCDEFG", target.getStructureAsString())
+        assertEquals("BCDEFG", target.toTestString())
         target.delete(crdtElements[1])
         assertEquals(crdtElements.size - 2, target.length)
-        assertEquals("CDEFG", target.getStructureAsString())
+        assertEquals("CDEFG", target.toTestString())
         target.delete(crdtElements[2])
         assertEquals(crdtElements.size - 3, target.length)
-        assertEquals("DEFG", target.getStructureAsString())
+        assertEquals("DEFG", target.toTestString())
     }
 
     @Test
@@ -69,15 +69,15 @@ class CrdtArrayTest {
         assertEquals(crdtElements.size, target.length)
 
         target.removeByIndex(0, timeTickets[2])
-        assertEquals("BCDEFG", target.getStructureAsString())
+        assertEquals("BCDEFG", target.toTestString())
         target.removeByIndex(0, timeTickets[3])
-        assertEquals("CDEFG", target.getStructureAsString())
+        assertEquals("CDEFG", target.toTestString())
         target.removeByIndex(0, timeTickets[4])
-        assertEquals("DEFG", target.getStructureAsString())
+        assertEquals("DEFG", target.toTestString())
         target.removeByIndex(0, timeTickets[5])
-        assertEquals("EFG", target.getStructureAsString())
+        assertEquals("EFG", target.toTestString())
         target.removeByIndex(crdtElements.size, timeTickets[6])
-        assertEquals("EFG", target.getStructureAsString())
+        assertEquals("EFG", target.toTestString())
 
         assertEquals(crdtElements.size - 4, target.length)
     }
@@ -90,7 +90,7 @@ class CrdtArrayTest {
         assertEquals(crdtElements.size, target.length)
 
         target.insertAfter(timeTickets[0], CrdtPrimitive(1, createTimeTicket()))
-        assertEquals("AHBCDEFG", target.getStructureAsString())
+        assertEquals("AHBCDEFG", target.toTestString())
     }
 
     @Test
@@ -101,7 +101,7 @@ class CrdtArrayTest {
         assertEquals(crdtElements.size, target.length)
 
         target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())
-        assertEquals("ABCDFEG", target.getStructureAsString())
+        assertEquals("ABCDFEG", target.toTestString())
         assertEquals(crdtElements.size, target.length)
     }
 
@@ -113,13 +113,13 @@ class CrdtArrayTest {
         val sampleTarget2 = createSampleCrdtArray().apply {
             insertAfter(last.createdAt, crdtElements[0])
         }
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
 
         sampleTarget1.insertAfter(timeTickets[0], crdtElements[1])
         sampleTarget1.insertAfter(timeTickets[0], crdtElements[2])
         sampleTarget2.insertAfter(timeTickets[0], crdtElements[2])
         sampleTarget2.insertAfter(timeTickets[0], crdtElements[1])
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
     }
 
     @Test
@@ -132,13 +132,13 @@ class CrdtArrayTest {
                 .map { CrdtPrimitive(1, it) }
                 .forEach { insertAfter(last.createdAt, it) }
         }
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
 
         sampleTarget1.moveAfter(timeTickets[3], timeTickets[1], timeTickets[1])
         sampleTarget1.moveAfter(timeTickets[3], timeTickets[2], timeTickets[2])
         sampleTarget2.moveAfter(timeTickets[3], timeTickets[2], timeTickets[2])
         sampleTarget2.moveAfter(timeTickets[3], timeTickets[1], timeTickets[1])
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
     }
 
     @Test
@@ -185,7 +185,7 @@ class CrdtArrayTest {
         return CrdtArray(TimeTicket.InitialTimeTicket)
     }
 
-    private fun CrdtArray.getStructureAsString() = buildString {
-        this@getStructureAsString.forEach { append(it.createdAt.actorID.value) }
+    private fun CrdtArray.toTestString() = buildString {
+        this@toTestString.forEach { append(it.createdAt.actorID.value) }
     }
 }

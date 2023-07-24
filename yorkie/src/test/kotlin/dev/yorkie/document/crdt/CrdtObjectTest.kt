@@ -31,15 +31,15 @@ class CrdtObjectTest {
         assertEquals(0, target.keys.size)
 
         target["A"] = CrdtPrimitive(0, timeTickets[0])
-        assertEquals("A0", getStructureAsString())
+        assertEquals("A0", getTestString())
         target["B"] = CrdtPrimitive(1, timeTickets[1])
-        assertEquals("A0B1", getStructureAsString())
+        assertEquals("A0B1", getTestString())
         target["C"] = CrdtPrimitive(2, timeTickets[2])
-        assertEquals("A0B1C2", getStructureAsString())
+        assertEquals("A0B1C2", getTestString())
         target["D"] = CrdtPrimitive(3, timeTickets[3])
-        assertEquals("A0B1C2D3", getStructureAsString())
+        assertEquals("A0B1C2D3", getTestString())
         target["E"] = CrdtPrimitive(4, timeTickets[4])
-        assertEquals("A0B1C2D3E4", getStructureAsString())
+        assertEquals("A0B1C2D3E4", getTestString())
     }
 
     @Test
@@ -59,9 +59,9 @@ class CrdtObjectTest {
         assertEquals(5, target.memberNodes.size)
 
         target.delete(crdtElements[0])
-        assertEquals("B1C2D3E4", getStructureAsString())
+        assertEquals("B1C2D3E4", getTestString())
         target.delete(crdtElements[3])
-        assertEquals("B1C2E4", getStructureAsString())
+        assertEquals("B1C2E4", getTestString())
         target.delete(CrdtPrimitive(100, TimeTicket.InitialTimeTicket))
     }
 
@@ -71,9 +71,9 @@ class CrdtObjectTest {
         assertEquals(5, target.memberNodes.size)
 
         target.remove(timeTickets[0], timeTickets[1])
-        assertEquals("B1C2D3E4", getStructureAsString())
+        assertEquals("B1C2D3E4", getTestString())
         target.remove(timeTickets[2], timeTickets[1])
-        assertEquals("B1C2D3E4", getStructureAsString())
+        assertEquals("B1C2D3E4", getTestString())
         assertThrows(NoSuchElementException::class.java) {
             target.remove(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
         }
@@ -85,9 +85,9 @@ class CrdtObjectTest {
         assertEquals(5, target.memberNodes.size)
 
         target.removeByKey(actorIDs[0], timeTickets[1])
-        assertEquals("B1C2D3E4", getStructureAsString())
+        assertEquals("B1C2D3E4", getTestString())
         target.removeByKey(actorIDs[2], timeTickets[1])
-        assertEquals("B1C2D3E4", getStructureAsString())
+        assertEquals("B1C2D3E4", getTestString())
         assertThrows(NoSuchElementException::class.java) {
             target.removeByKey("F", TimeTicket.InitialTimeTicket)
         }
@@ -125,7 +125,7 @@ class CrdtObjectTest {
         }
     }
 
-    private fun getStructureAsString() = buildString {
+    private fun getTestString() = buildString {
         target.forEach { append(it.first + (it.second as CrdtPrimitive).value) }
     }
 }

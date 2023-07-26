@@ -53,7 +53,7 @@ androidx-test-runner = { group = "androidx.test", name = "runner", version = "1.
 androidx-test-junit = { group = "androidx.test.ext", name = "junit-ktx", version = "1.1.5" }
 androidx-test-monitor = { group = "androidx.test", name = "monitor", version = "1.6.1" }
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version = "3.5.1" }
-mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version = "5.0.0" }
+mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version = "4.1.0" }
 
 [bundles]
 grpc = [

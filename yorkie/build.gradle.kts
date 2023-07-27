@@ -191,7 +191,7 @@ protobuf {
 dependencies {
     protobuf(project(":yorkie:proto"))
 
-    implementation(libs.bundles.grpc)
+    api(libs.bundles.grpc)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.apache.commons.collections)
 

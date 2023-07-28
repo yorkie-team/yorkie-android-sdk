@@ -428,6 +428,38 @@ class JsonTreeTest {
         )
     }
 
+    @Test
+    fun `should find pos range from index range and vice versa`() = runTest {
+        val document = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync {
+            it.setNewTree(
+                "t",
+                element("root") {
+                    element("p") {
+                        element("b") {
+                            element("i") {
+                                text { "ab" }
+                            }
+                        }
+                    }
+                }
+            )
+        }.await()
+        assertEquals(
+            """<root><p><b><i>ab</i></b></p></root>""",
+            document.getRoot().tree().toXml(),
+        )
+
+        val tree = document.getRoot().tree()
+        var posRange = tree.indexRangeToPosRange(0 to 5)
+        assertEquals(0 to 5, tree.posRangeToIndexRange(posRange))
+
+        posRange = tree.indexRangeToPosRange(5 to 7)
+        assertEquals(5 to 7, tree.posRangeToIndexRange(posRange))
+    }
+
     companion object {
         private val DummyContext = ChangeContext(
             ChangeID.InitialChangeID,

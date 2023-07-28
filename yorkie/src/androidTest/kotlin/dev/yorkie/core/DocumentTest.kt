@@ -17,7 +17,6 @@ import dev.yorkie.document.operation.OperationInfo.EditOpInfo
 import dev.yorkie.document.operation.OperationInfo.IncreaseOpInfo
 import dev.yorkie.document.operation.OperationInfo.MoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
-import dev.yorkie.document.operation.OperationInfo.SelectOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.StyleOpInfo
 import kotlinx.coroutines.CoroutineStart
@@ -289,10 +288,7 @@ class DocumentTest {
                     val currItem = requireNotNull(getAs<JsonPrimitive>(0))
                     moveAfter(prevItem.target.id, currItem.target.id)
                 }
-                it.getAs<JsonText>("content").apply {
-                    select(0, 5)
-                    style(0, 5, mapOf("bold" to "true"))
-                }
+                it.getAs<JsonText>("content").style(0, 5, mapOf("bold" to "true"))
             }.await()
 
             withTimeout(2_000) {
@@ -306,7 +302,6 @@ class DocumentTest {
                 IncreaseOpInfo(path = "$.counter", value = 1),
                 AddOpInfo(path = "$.todos", index = 3),
                 MoveOpInfo(path = "$.todos", index = 1, previousIndex = 0),
-                SelectOpInfo(path = "$.content", from = 0, to = 5),
                 StyleOpInfo(
                     path = "$.content",
                     from = 0,
@@ -327,7 +322,6 @@ class DocumentTest {
                     value = TextWithAttributes("hello world" to mapOf("italic" to "true")),
                     path = "$.content",
                 ),
-                SelectOpInfo(path = "$.content", from = 11, to = 11),
                 SetOpInfo(path = "$", key = "obj"),
                 SetOpInfo(path = "$.obj", key = "name"),
                 SetOpInfo(path = "$.obj", key = "age"),

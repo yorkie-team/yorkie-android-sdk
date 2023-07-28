@@ -31,12 +31,12 @@ internal data class CrdtText(
      * Edits the given [range] with the given [value] and [attributes].
      */
     fun edit(
-        range: RgaTreeSplitNodeRange,
+        range: RgaTreeSplitPosRange,
         value: String,
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Pair<Map<ActorID, TimeTicket>, List<TextChange>> {
+    ): Triple<Map<ActorID, TimeTicket>, List<TextChange>, RgaTreeSplitPosRange> {
         val textValue = if (value.isNotEmpty()) {
             TextValue(value).apply {
                 attributes?.forEach { setAttribute(it.key, it.value, executedAt) }
@@ -65,11 +65,10 @@ internal data class CrdtText(
         if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        selectPrev(RgaTreeSplitNodeRange(caretPos, caretPos), executedAt)?.let { changes.add(it) }
-        return latestCreatedAtMap to changes
+        return Triple(latestCreatedAtMap, changes, caretPos to caretPos)
     }
 
-    private fun selectPrev(range: RgaTreeSplitNodeRange, executedAt: TimeTicket): TextChange? {
+    private fun selectPrev(range: RgaTreeSplitPosRange, executedAt: TimeTicket): TextChange? {
         val prevSelection = selectionMap[executedAt.actorID]
         return if (prevSelection == null || prevSelection.executedAt < executedAt) {
             selectionMap[executedAt.actorID] = Selection(range.first, range.second, executedAt)
@@ -86,7 +85,7 @@ internal data class CrdtText(
      * 2. Style nodes between from and to.
      */
     fun style(
-        range: RgaTreeSplitNodeRange,
+        range: RgaTreeSplitPosRange,
         attributes: Map<String, String>,
         executedAt: TimeTicket,
     ): List<TextChange> {
@@ -98,7 +97,7 @@ internal data class CrdtText(
         return rgaTreeSplit.findBetween(fromRight, toRight)
             .filterNot { it.isRemoved }
             .map { node ->
-                val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createRange())
+                val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
                 attributes.forEach { node.value.setAttribute(it.key, it.value, executedAt) }
                 TextChange(
                     TextChangeType.Style,
@@ -114,20 +113,27 @@ internal data class CrdtText(
     /**
      * Stores that the given [range] has been selected.
      */
-    fun select(range: RgaTreeSplitNodeRange, executedAt: TimeTicket): TextChange? {
+    fun select(range: RgaTreeSplitPosRange, executedAt: TimeTicket): TextChange? {
         return selectPrev(range, executedAt)
     }
 
     /**
-     * Returns a pair of [RgaTreeSplitNodePos] of the given integer offsets.
+     * Returns a pair of [RgaTreeSplitPos] of the given integer offsets.
      */
-    fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitNodeRange {
-        val fromPos = rgaTreeSplit.findNodePos(fromIndex)
+    fun indexRangeToPosRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange {
+        val fromPos = rgaTreeSplit.indexToPos(fromIndex)
         return if (fromIndex == toIndex) {
-            RgaTreeSplitNodeRange(fromPos, fromPos)
+            RgaTreeSplitPosRange(fromPos, fromPos)
         } else {
-            RgaTreeSplitNodeRange(fromPos, rgaTreeSplit.findNodePos(toIndex))
+            RgaTreeSplitPosRange(fromPos, rgaTreeSplit.indexToPos(toIndex))
         }
+    }
+
+    /**
+     * Returns pair of integer offsets of the given [range].
+     */
+    fun findIndexesFromRange(range: RgaTreeSplitPosRange): Pair<Int, Int> {
+        return rgaTreeSplit.findIndexesFromRange(range)
     }
 
     override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {

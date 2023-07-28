@@ -38,7 +38,7 @@ import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNode
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
-import dev.yorkie.document.crdt.RgaTreeSplitNodePos
+import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -347,7 +347,7 @@ internal fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
     }
 }
 
-internal fun RgaTreeSplitNodePos.toPBTextNodePos(): PBTextNodePos {
+internal fun RgaTreeSplitPos.toPBTextNodePos(): PBTextNodePos {
     return textNodePos {
         createdAt = this@toPBTextNodePos.id.createdAt.toPBTimeTicket()
         offset = this@toPBTextNodePos.id.offset
@@ -355,8 +355,8 @@ internal fun RgaTreeSplitNodePos.toPBTextNodePos(): PBTextNodePos {
     }
 }
 
-internal fun PBTextNodePos.toRgaTreeSplitNodePos(): RgaTreeSplitNodePos {
-    return RgaTreeSplitNodePos(
+internal fun PBTextNodePos.toRgaTreeSplitNodePos(): RgaTreeSplitPos {
+    return RgaTreeSplitPos(
         id = RgaTreeSplitNodeID(createdAt.toTimeTicket(), offset),
         relativeOffSet = relativeOffset,
     )

@@ -444,7 +444,7 @@ class JsonTreeTest {
                             }
                         }
                     }
-                }
+                },
             )
         }.await()
         assertEquals(

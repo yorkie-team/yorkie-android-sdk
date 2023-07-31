@@ -24,8 +24,8 @@ internal enum class TextChangeType {
  * Represents the selection of text range in the editor.
  */
 internal data class Selection(
-    val from: RgaTreeSplitNodePos,
-    val to: RgaTreeSplitNodePos,
+    val from: RgaTreeSplitPos,
+    val to: RgaTreeSplitPos,
     val executedAt: TimeTicket,
 )
 

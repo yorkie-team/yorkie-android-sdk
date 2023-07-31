@@ -1,5 +1,8 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.document.JsonSerializable
+import dev.yorkie.document.RgaTreeSplitNodeIDStruct
+import dev.yorkie.document.RgaTreeSplitPosStruct
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -8,7 +11,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
 import java.util.TreeMap
 
-internal typealias RgaTreeSplitNodeRange = Pair<RgaTreeSplitNodePos, RgaTreeSplitNodePos>
+internal typealias RgaTreeSplitPosRange = Pair<RgaTreeSplitPos, RgaTreeSplitPos>
 
 /**
  * [RgaTreeSplit] is a block-based list with improved index-based lookup in RGA.
@@ -41,11 +44,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
      * 4. Add removed nodes.
      */
     fun edit(
-        range: RgaTreeSplitNodeRange,
+        range: RgaTreeSplitPosRange,
         executedAt: TimeTicket,
         value: T?,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Triple<RgaTreeSplitNodePos, Map<ActorID, TimeTicket>, List<ContentChange>> {
+    ): Triple<RgaTreeSplitPos, Map<ActorID, TimeTicket>, List<ContentChange>> {
         // 1. Split nodes.
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
         val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
@@ -58,11 +61,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
             latestCreatedAtMapByActor,
         )
         val caretID = toRight?.id ?: toLeft.id
-        var caretPos = RgaTreeSplitNodePos(caretID, 0)
+        var caretPos = RgaTreeSplitPos(caretID, 0)
 
         // 3. Insert a new node.
         value?.let {
-            val index = findIndexFromNodePos(fromLeft.createRange().second, true)
+            val index = posToIndex(fromLeft.createPosRange().second, true)
             val inserted = insertAfter(
                 fromLeft,
                 RgaTreeSplitNode(
@@ -82,7 +85,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
                     ),
                 )
             }
-            caretPos = RgaTreeSplitNodePos(inserted.id, inserted.contentLength)
+            caretPos = RgaTreeSplitPos(inserted.id, inserted.contentLength)
         }
 
         // 4. Add removed nodes.
@@ -97,7 +100,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
      * Splits and returns nodes at the given [pos].
      */
     fun findNodeWithSplit(
-        pos: RgaTreeSplitNodePos,
+        pos: RgaTreeSplitPos,
         executedAt: TimeTicket,
     ): Pair<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>?> {
         val absoluteID = pos.absoluteID
@@ -279,11 +282,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
                 if (leftBoundary?.next == rightBoundary) continue
 
                 fromIndex =
-                    findIndexesFromRange(requireNotNull(leftBoundary?.next).createRange()).first
+                    findIndexesFromRange(requireNotNull(leftBoundary?.next).createPosRange()).first
                 toIndex = if (rightBoundary == null) {
                     treeByIndex.length
                 } else {
-                    findIndexesFromRange(requireNotNull(rightBoundary.prev).createRange()).second
+                    findIndexesFromRange(requireNotNull(rightBoundary.prev).createPosRange()).second
                 }
             }
             if (fromIndex < toIndex) {
@@ -292,15 +295,12 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         }.reversed()
     }
 
-    fun findIndexesFromRange(range: RgaTreeSplitNodeRange): Pair<Int, Int> {
+    fun findIndexesFromRange(range: RgaTreeSplitPosRange): Pair<Int, Int> {
         val (fromPos, toPos) = range
-        return findIndexFromNodePos(fromPos, false) to findIndexFromNodePos(toPos, true)
+        return posToIndex(fromPos, false) to posToIndex(toPos, true)
     }
 
-    private fun findIndexFromNodePos(
-        pos: RgaTreeSplitNodePos,
-        preferToLeft: Boolean,
-    ): Int {
+    private fun posToIndex(pos: RgaTreeSplitPos, preferToLeft: Boolean): Int {
         val absoluteID = pos.absoluteID
         val node = if (preferToLeft) {
             findFloorNodePreferToLeft(absoluteID)
@@ -329,12 +329,12 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     }
 
     /**
-     * Finds [RgaTreeSplitNodePos] of the given [index].
+     * Finds [RgaTreeSplitPos] of the given [index].
      */
-    fun findNodePos(index: Int): RgaTreeSplitNodePos {
+    fun indexToPos(index: Int): RgaTreeSplitPos {
         val (node, offset) = treeByIndex.find(index)
         return node?.let {
-            RgaTreeSplitNodePos(it.id, offset)
+            RgaTreeSplitPos(it.id, offset)
         } ?: throw NoSuchElementException("no node found with the given index: $index")
     }
 
@@ -540,8 +540,8 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
         _removedAt = executedAt
     }
 
-    fun createRange(): RgaTreeSplitNodeRange {
-        return RgaTreeSplitNodeRange(RgaTreeSplitNodePos(id, 0), RgaTreeSplitNodePos(id, length))
+    fun createPosRange(): RgaTreeSplitPosRange {
+        return RgaTreeSplitPosRange(RgaTreeSplitPos(id, 0), RgaTreeSplitPos(id, length))
     }
 
     fun deepCopy(): RgaTreeSplitNode<T> {
@@ -557,10 +557,10 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     }
 }
 
-internal data class RgaTreeSplitNodeID(
+public data class RgaTreeSplitNodeID internal constructor(
     val createdAt: TimeTicket,
     val offset: Int,
-) : Comparable<RgaTreeSplitNodeID> {
+) : Comparable<RgaTreeSplitNodeID>, JsonSerializable<RgaTreeSplitNodeID, RgaTreeSplitNodeIDStruct> {
     /**
      * Returns whether the given ID has the same creation time with this [RgaTreeSplitNodeID].
      */
@@ -576,9 +576,20 @@ internal data class RgaTreeSplitNodeID(
     override fun compareTo(other: RgaTreeSplitNodeID): Int {
         return compareValuesBy(this, other, { it.createdAt }, { it.offset })
     }
+
+    override fun toStruct(): RgaTreeSplitNodeIDStruct {
+        return RgaTreeSplitNodeIDStruct(createdAt.toStruct(), offset)
+    }
 }
 
-internal data class RgaTreeSplitNodePos(val id: RgaTreeSplitNodeID, val relativeOffSet: Int) {
+public data class RgaTreeSplitPos internal constructor(
+    val id: RgaTreeSplitNodeID,
+    val relativeOffSet: Int,
+) : JsonSerializable<RgaTreeSplitPos, RgaTreeSplitPosStruct> {
     val absoluteID: RgaTreeSplitNodeID
         get() = RgaTreeSplitNodeID(id.createdAt, id.offset + relativeOffSet)
+
+    override fun toStruct(): RgaTreeSplitPosStruct {
+        return RgaTreeSplitPosStruct(id.toStruct(), relativeOffSet)
+    }
 }

@@ -2,8 +2,8 @@ package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
-import dev.yorkie.document.crdt.RgaTreeSplitNodePos
-import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
+import dev.yorkie.document.crdt.RgaTreeSplitPos
+import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.time.ActorID
@@ -14,8 +14,8 @@ import dev.yorkie.util.YorkieLogger
  * [EditOperation] is an operations representing editing rich text.
  */
 internal data class EditOperation(
-    val fromPos: RgaTreeSplitNodePos,
-    val toPos: RgaTreeSplitNodePos,
+    val fromPos: RgaTreeSplitPos,
+    val toPos: RgaTreeSplitPos,
     val maxCreatedAtMapByActor: Map<ActorID, TimeTicket>,
     val content: String,
     override val parentCreatedAt: TimeTicket,
@@ -33,7 +33,7 @@ internal data class EditOperation(
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val changes = parentObject.edit(
-                RgaTreeSplitNodeRange(fromPos, toPos),
+                RgaTreeSplitPosRange(fromPos, toPos),
                 content,
                 executedAt,
                 attributes,

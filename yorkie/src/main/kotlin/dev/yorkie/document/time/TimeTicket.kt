@@ -1,5 +1,7 @@
 package dev.yorkie.document.time
 
+import dev.yorkie.document.JsonSerializable
+import dev.yorkie.document.TimeTicketStruct
 import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.ActorID.Companion.MAX_ACTOR_ID
 
@@ -10,7 +12,7 @@ public data class TimeTicket(
     public val lamport: Long,
     public val delimiter: UInt,
     public val actorID: ActorID,
-) : Comparable<TimeTicket> {
+) : Comparable<TimeTicket>, JsonSerializable<TimeTicket, TimeTicketStruct> {
 
     /**
      * Creates a new instance of [TimeTicket] with the given [ActorID].
@@ -23,10 +25,14 @@ public data class TimeTicket(
             ?: delimiter.compareTo(other.delimiter)
     }
 
+    override fun toStruct(): TimeTicketStruct {
+        return TimeTicketStruct(lamport.toString(), delimiter, actorID)
+    }
+
     companion object {
         internal const val INITIAL_DELIMITER = 0u
         internal const val MAX_DELIMITER = UInt.MAX_VALUE
-        internal const val MAX_LAMPORT = Long.MAX_VALUE
+        private const val MAX_LAMPORT = Long.MAX_VALUE
 
         private val NullTimeTicket = TimeTicket(
             Long.MIN_VALUE,

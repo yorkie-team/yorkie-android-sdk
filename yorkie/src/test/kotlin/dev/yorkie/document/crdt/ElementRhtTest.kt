@@ -29,7 +29,7 @@ class ElementRhtTest {
         assertEquals(
             "test1: value1\ntest2: value2\ntest3: value3\ntest4: value4\n" +
                 "test5: value5\n",
-            elementRht.getStructureAsString(),
+            elementRht.toTestString(),
         )
 
         val nullObject = elementRht.set(
@@ -214,8 +214,8 @@ class ElementRhtTest {
         return TimeTicket(lamport, delimiter.toUInt(), ActorID(actorID))
     }
 
-    private fun ElementRht<CrdtPrimitive>.getStructureAsString() = buildString {
-        this@getStructureAsString.forEach {
+    private fun ElementRht<CrdtPrimitive>.toTestString() = buildString {
+        this@toTestString.forEach {
             append("${it.strKey}: ${it.value.value}").appendLine()
         }
     }

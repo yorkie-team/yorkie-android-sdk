@@ -2,14 +2,14 @@ package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
-import dev.yorkie.document.crdt.RgaTreeSplitNodePos
-import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
+import dev.yorkie.document.crdt.RgaTreeSplitPos
+import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
 internal data class SelectOperation(
-    val fromPos: RgaTreeSplitNodePos,
-    val toPos: RgaTreeSplitNodePos,
+    val fromPos: RgaTreeSplitPos,
+    val toPos: RgaTreeSplitPos,
     override val parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
@@ -23,7 +23,7 @@ internal data class SelectOperation(
     override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
-            val change = parentObject.select(RgaTreeSplitNodeRange(fromPos, toPos), executedAt)
+            val change = parentObject.select(RgaTreeSplitPosRange(fromPos, toPos), executedAt)
                 ?: return emptyList()
             listOf(
                 OperationInfo.SelectOpInfo(from = change.from, to = change.to).apply {

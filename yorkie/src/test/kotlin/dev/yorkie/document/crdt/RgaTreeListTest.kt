@@ -30,19 +30,19 @@ class RgaTreeListTest {
         assertEquals(0, target.length)
 
         target.insert(crdtElements[0])
-        assertEquals("A1", target.getStructureAsString())
+        assertEquals("A1", target.toTestString())
         target.insert(crdtElements[1])
-        assertEquals("A1B1", target.getStructureAsString())
+        assertEquals("A1B1", target.toTestString())
         target.insert(crdtElements[2])
-        assertEquals("A1B1C1", target.getStructureAsString())
+        assertEquals("A1B1C1", target.toTestString())
         target.insert(crdtElements[3])
-        assertEquals("A1B1C1D1", target.getStructureAsString())
+        assertEquals("A1B1C1D1", target.toTestString())
         target.insert(crdtElements[4])
-        assertEquals("A1B1C1D1E1", target.getStructureAsString())
+        assertEquals("A1B1C1D1E1", target.toTestString())
         target.insert(crdtElements[5])
-        assertEquals("A1B1C1D1E1F1", target.getStructureAsString())
+        assertEquals("A1B1C1D1E1F1", target.toTestString())
         target.insert(crdtElements[6])
-        assertEquals("A1B1C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B1C1D1E1F1G1", target.toTestString())
 
         assertEquals(crdtElements.size, target.length)
     }
@@ -58,13 +58,13 @@ class RgaTreeListTest {
         crdtElements.forEach(target::insert)
 
         target.remove(timeTickets[1], timeTickets[2])
-        assertEquals("A1B0C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C1D1E1F1G1", target.toTestString())
         target.remove(timeTickets[2], timeTickets[3])
-        assertEquals("A1B0C0D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D1E1F1G1", target.toTestString())
         target.remove(timeTickets[3], timeTickets[4])
-        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E1F1G1", target.toTestString())
         target.remove(timeTickets[6], timeTickets[5])
-        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E1F1G1", target.toTestString())
 
         assertEquals(crdtElements.size - 3, target.length)
     }
@@ -76,15 +76,15 @@ class RgaTreeListTest {
         crdtElements.forEach(target::insert)
 
         target.removeByIndex(1, timeTickets[2])
-        assertEquals("A1B0C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C1D1E1F1G1", target.toTestString())
         target.removeByIndex(1, timeTickets[3])
-        assertEquals("A1B0C0D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D1E1F1G1", target.toTestString())
         target.removeByIndex(1, timeTickets[4])
-        assertEquals("A1B0C0D0E1F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E1F1G1", target.toTestString())
         target.removeByIndex(1, timeTickets[5])
-        assertEquals("A1B0C0D0E0F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E0F1G1", target.toTestString())
         target.removeByIndex(crdtElements.size, timeTickets[6])
-        assertEquals("A1B0C0D0E0F1G1", target.getStructureAsString())
+        assertEquals("A1B0C0D0E0F1G1", target.toTestString())
 
         assertEquals(crdtElements.size - 4, target.length)
     }
@@ -102,13 +102,13 @@ class RgaTreeListTest {
 
         target.delete(crdtElements[0])
         assertEquals(crdtElements.size - 1, target.length)
-        assertEquals("B1C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("B1C1D1E1F1G1", target.toTestString())
         target.delete(crdtElements[1])
         assertEquals(crdtElements.size - 2, target.length)
-        assertEquals("C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("C1D1E1F1G1", target.toTestString())
         target.delete(crdtElements[2])
         assertEquals(crdtElements.size - 3, target.length)
-        assertEquals("D1E1F1G1", target.getStructureAsString())
+        assertEquals("D1E1F1G1", target.toTestString())
     }
 
     @Test
@@ -119,7 +119,7 @@ class RgaTreeListTest {
         assertEquals(crdtElements.size, target.length)
 
         target.insertAfter(timeTickets[0], CrdtPrimitive(1, createTimeTicket()))
-        assertEquals("A1H1B1C1D1E1F1G1", target.getStructureAsString())
+        assertEquals("A1H1B1C1D1E1F1G1", target.toTestString())
     }
 
     @Test
@@ -131,7 +131,7 @@ class RgaTreeListTest {
         crdtElements.forEach(target::insert)
 
         target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())
-        assertEquals("A1B1C1D1F1E1G1", target.getStructureAsString())
+        assertEquals("A1B1C1D1F1E1G1", target.toTestString())
         assertEquals(crdtElements.size, target.length)
     }
 
@@ -139,13 +139,13 @@ class RgaTreeListTest {
     fun `should handle concurrent insertAfter operations`() {
         val sampleTarget1 = RgaTreeList().apply { insert(crdtElements[0]) }
         val sampleTarget2 = RgaTreeList().apply { insert(crdtElements[0]) }
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
 
         sampleTarget1.insertAfter(timeTickets[0], crdtElements[1])
         sampleTarget1.insertAfter(timeTickets[0], crdtElements[2])
         sampleTarget2.insertAfter(timeTickets[0], crdtElements[2])
         sampleTarget2.insertAfter(timeTickets[0], crdtElements[1])
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
     }
 
     @Test
@@ -154,13 +154,13 @@ class RgaTreeListTest {
         val sampleTarget2 = RgaTreeList().apply {
             timeTickets.map { CrdtPrimitive(1, it) }.forEach(this::insert)
         }
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
 
         sampleTarget1.moveAfter(timeTickets[3], timeTickets[1], timeTickets[1])
         sampleTarget1.moveAfter(timeTickets[3], timeTickets[2], timeTickets[2])
         sampleTarget2.moveAfter(timeTickets[3], timeTickets[2], timeTickets[2])
         sampleTarget2.moveAfter(timeTickets[3], timeTickets[1], timeTickets[1])
-        assertEquals(sampleTarget1.getStructureAsString(), sampleTarget2.getStructureAsString())
+        assertEquals(sampleTarget1.toTestString(), sampleTarget2.toTestString())
     }
 
     @Test
@@ -176,8 +176,8 @@ class RgaTreeListTest {
         return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, ActorID("H"))
     }
 
-    private fun RgaTreeList.getStructureAsString() = buildString {
-        this@getStructureAsString.forEach {
+    private fun RgaTreeList.toTestString() = buildString {
+        this@toTestString.forEach {
             append("${it.createdAt.actorID.value}${if (it.isRemoved) 0 else 1}")
         }
     }

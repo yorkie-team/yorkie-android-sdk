@@ -19,16 +19,16 @@ class SplayTreeSetTest {
         assertEquals(0, target.length)
 
         target.insert(Node("A2"))
-        assertEquals("[2,2]A2", target.getStructureAsString())
+        assertEquals("[2,2]A2", target.toTestString())
         target.insert(Node("B23"))
-        assertEquals("[2,2]A2[5,3]B23", target.getStructureAsString())
+        assertEquals("[2,2]A2[5,3]B23", target.toTestString())
         target.insert(Node("C234"))
-        assertEquals("[2,2]A2[5,3]B23[9,4]C234", target.getStructureAsString())
+        assertEquals("[2,2]A2[5,3]B23[9,4]C234", target.toTestString())
         target.insert(Node("D2345"))
-        assertEquals("[2,2]A2[5,3]B23[9,4]C234[14,5]D2345", target.getStructureAsString())
+        assertEquals("[2,2]A2[5,3]B23[9,4]C234[14,5]D2345", target.toTestString())
 
         target.splay(Node("B23"))
-        assertEquals("[2,2]A2[14,3]B23[9,4]C234[5,5]D2345", target.getStructureAsString())
+        assertEquals("[2,2]A2[14,3]B23[9,4]C234[5,5]D2345", target.toTestString())
 
         assertEquals(0, target.indexOf(Node("A2")))
         assertEquals(2, target.indexOf(Node("B23")))
@@ -42,17 +42,17 @@ class SplayTreeSetTest {
     @Test
     fun `should conform to specs when deletions occur`() {
         target.insert(Node("H"))
-        assertEquals("[1,1]H", target.getStructureAsString())
+        assertEquals("[1,1]H", target.toTestString())
         target.insert(Node("E"))
-        assertEquals("[1,1]H[2,1]E", target.getStructureAsString())
+        assertEquals("[1,1]H[2,1]E", target.toTestString())
         target.insert(Node("LL"))
-        assertEquals("[1,1]H[2,1]E[4,2]LL", target.getStructureAsString())
+        assertEquals("[1,1]H[2,1]E[4,2]LL", target.toTestString())
         target.insert(Node("O"))
-        assertEquals("[1,1]H[2,1]E[4,2]LL[5,1]O", target.getStructureAsString())
+        assertEquals("[1,1]H[2,1]E[4,2]LL[5,1]O", target.toTestString())
 
         target.valueToNodes[Node("E")]?.value?.isRemoved = true
         target.delete(Node("E"))
-        assertEquals("[4,1]H[3,2]LL[1,1]O", target.getStructureAsString())
+        assertEquals("[4,1]H[3,2]LL[1,1]O", target.toTestString())
 
         assertEquals(target.indexOf(Node("H")), 0)
         assertEquals(target.indexOf(Node("EE")), -1)
@@ -117,7 +117,7 @@ class SplayTreeSetTest {
         )
     }
 
-    private fun <V> SplayTreeSet<V>.getStructureAsString(): String {
+    private fun <V> SplayTreeSet<V>.toTestString(): String {
         val nodes = traverseInorder(root)
         return nodes.joinToString("") {
             "[${it.weight},${it.length}]${it.value}"

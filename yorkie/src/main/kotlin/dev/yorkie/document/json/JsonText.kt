@@ -2,12 +2,15 @@ package dev.yorkie.document.json
 
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtText
-import dev.yorkie.document.crdt.RgaTreeSplitNodeRange
+import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.util.YorkieLogger
+import dev.yorkie.document.RgaTreeSplitPosStruct as TextPosStruct
+
+public typealias TextPosStructRange = Pair<TextPosStruct, TextPosStruct>
 
 /**
  * [JsonText] is an extended data type for the contents of a text editor.
@@ -31,13 +34,13 @@ public class JsonText internal constructor(
         toIndex: Int,
         content: String,
         attributes: Map<String, String>? = null,
-    ): Boolean {
+    ): Pair<Int, Int>? {
         if (fromIndex > toIndex) {
             YorkieLogger.e(TAG, "fromIndex should be less than or equal to toIndex")
-            return false
+            return null
         }
 
-        val range = createRange(fromIndex, toIndex) ?: return false
+        val range = createRange(fromIndex, toIndex) ?: return null
 
         YorkieLogger.d(
             TAG,
@@ -45,13 +48,13 @@ public class JsonText internal constructor(
         )
 
         val executedAt = context.issueTimeTicket()
-        val maxCreatedAtMapByActor = runCatching {
-            target.edit(range, content, executedAt, attributes).first
+        val (maxCreatedAtMapByActor, _, rangeAfterEdit) = runCatching {
+            target.edit(range, content, executedAt, attributes)
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
                     YorkieLogger.e(TAG, "can't style text")
-                    return false
+                    return null
                 }
 
                 else -> throw it
@@ -73,7 +76,7 @@ public class JsonText internal constructor(
         if (range.first != range.second) {
             context.registerElementHasRemovedNodes(target)
         }
-        return true
+        return target.findIndexesFromRange(rangeAfterEdit)
     }
 
     /**
@@ -157,9 +160,9 @@ public class JsonText internal constructor(
         return true
     }
 
-    private fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitNodeRange? {
+    private fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange? {
         return runCatching {
-            target.createRange(fromIndex, toIndex)
+            target.indexRangeToPosRange(fromIndex, toIndex)
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IndexOutOfBoundsException -> {
@@ -173,16 +176,33 @@ public class JsonText internal constructor(
     }
 
     /**
+     * Returns [TextPosStructRange] of the given index range.
+     */
+    public fun indexRangeToPosRange(fromIndex: Int, toIndex: Int): TextPosStructRange? {
+        val range = createRange(fromIndex, toIndex) ?: return null
+        return range.first.toStruct() to range.second.toStruct()
+    }
+
+    /**
+     * Returns indexes of the given [TextPosStructRange].
+     */
+    public fun posRangeToIndexRange(range: TextPosStructRange): Pair<Int, Int> {
+        return target.findIndexesFromRange(
+            range.first.toOriginal() to range.second.toOriginal(),
+        )
+    }
+
+    /**
      * Deletes the text in the given range.
      */
-    public fun delete(fromIndex: Int, toIndex: Int): Boolean {
+    public fun delete(fromIndex: Int, toIndex: Int): Pair<Int, Int>? {
         return edit(fromIndex, toIndex, "")
     }
 
     /**
      * Clears the text.
      */
-    public fun clear(): Boolean {
+    public fun clear(): Pair<Int, Int>? {
         return edit(0, target.length, "")
     }
 

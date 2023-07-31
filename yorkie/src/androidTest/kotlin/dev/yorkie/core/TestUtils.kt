@@ -6,12 +6,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import java.util.UUID
 
+const val GENERAL_TIMEOUT = 3_000L
+
 fun createClient() = Client(
     InstrumentationRegistry.getInstrumentation().targetContext,
     "10.0.2.2",
     8080,
-    usePlainText = true,
-)
+) {
+    it.usePlaintext()
+}
 
 fun String.toDocKey(): Document.Key {
     return Document.Key(

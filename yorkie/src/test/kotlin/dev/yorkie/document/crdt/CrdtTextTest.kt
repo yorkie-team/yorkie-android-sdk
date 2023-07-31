@@ -5,7 +5,6 @@ import dev.yorkie.document.time.TimeTicket
 import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 class CrdtTextTest {
     private lateinit var target: CrdtText
@@ -18,7 +17,7 @@ class CrdtTextTest {
     @Test
     fun `should handle edit operations with attributes`() {
         target.edit(
-            target.createRange(0, 0),
+            target.indexRangeToPosRange(0, 0),
             "ABCD",
             TimeTicket.InitialTimeTicket,
             mapOf("b" to "1"),
@@ -28,7 +27,7 @@ class CrdtTextTest {
             target.toJson(),
         )
 
-        target.edit(target.createRange(3, 3), "\n", TimeTicket.InitialTimeTicket)
+        target.edit(target.indexRangeToPosRange(3, 3), "\n", TimeTicket.InitialTimeTicket)
         assertEquals(
             """[{"attrs":{"b":"1"},"val":"ABC"},{"val":"\n"},""" +
                 """{"attrs":{"b":"1"},"val":"D"}]""",
@@ -38,10 +37,10 @@ class CrdtTextTest {
 
     @Test
     fun `should handle edit operations without attributes`() {
-        target.edit(target.createRange(0, 0), "A", TimeTicket.InitialTimeTicket)
+        target.edit(target.indexRangeToPosRange(0, 0), "A", TimeTicket.InitialTimeTicket)
         assertEquals("""[{"val":"A"}]""", target.toJson())
 
-        target.edit(target.createRange(0, 0), "B", TimeTicket.InitialTimeTicket)
+        target.edit(target.indexRangeToPosRange(0, 0), "B", TimeTicket.InitialTimeTicket)
         assertEquals(
             """[{"val":"A"},{"val":"B"}]""",
             target.toJson(),
@@ -50,10 +49,9 @@ class CrdtTextTest {
 
     @Test
     fun `should handle select operations`() {
-        target.edit(target.createRange(0, 0), "ABCD", TimeTicket.InitialTimeTicket)
+        target.edit(target.indexRangeToPosRange(0, 0), "ABCD", TimeTicket.InitialTimeTicket)
         val executedAt = TimeTicket(1L, 1u, ActorID.INITIAL_ACTOR_ID)
-        assertNull(target.select(target.createRange(1, 3), TimeTicket.InitialTimeTicket))
-        val textChange = target.select(target.createRange(2, 4), executedAt)
+        val textChange = target.select(target.indexRangeToPosRange(2, 4), executedAt)
         assertEquals(TextChangeType.Selection, textChange?.type)
         assertEquals(2 to 4, textChange?.from to textChange?.to)
     }

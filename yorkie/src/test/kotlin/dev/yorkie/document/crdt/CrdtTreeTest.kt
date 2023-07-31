@@ -236,10 +236,10 @@ class CrdtTreeTest {
         toIndex = target.toIndex(to)
         assertEquals(5 to 6, fromIndex to toIndex)
 
-        var range = target.createRange(0, 5)
+        var range = target.indexRangeToPosRange(0 to 5)
         assertEquals(0 to 5, target.rangeToIndex(range))
 
-        range = target.createRange(5, 7)
+        range = target.indexRangeToPosRange(5 to 7)
         assertEquals(5 to 7, target.rangeToIndex(range))
     }
 

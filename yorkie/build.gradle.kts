@@ -23,7 +23,15 @@ tasks.register<JacocoReport>("jacocoDebugTestReport") {
 
     classDirectories.setFrom(
         fileTree("${buildDir}/tmp/kotlin-classes/debug") {
-            exclude("**/dev/yorkie/api/v1/**")
+            exclude(
+                "**/dev/yorkie/api/v1/**",
+                "**/R.class",
+                "**/R$*.class",
+                "**/BuildConfig.*",
+                "**/Manifest*.*",
+                "**/*Test*.*",
+                "android/**/*.*",
+            )
         },
     )
     sourceDirectories.setFrom("${project.projectDir}/src/main/kotlin")
@@ -32,6 +40,7 @@ tasks.register<JacocoReport>("jacocoDebugTestReport") {
             include(
                 "jacoco/testDebugUnitTest.exec",
                 "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec",
+                "outputs/code_coverage/debugAndroidTest/connected/**/coverage.ec",
             )
         },
     )
@@ -182,7 +191,7 @@ protobuf {
 dependencies {
     protobuf(project(":yorkie:proto"))
 
-    implementation(libs.bundles.grpc)
+    api(libs.bundles.grpc)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.apache.commons.collections)
 

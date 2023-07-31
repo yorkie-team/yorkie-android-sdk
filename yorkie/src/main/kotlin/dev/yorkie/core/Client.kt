@@ -108,10 +108,10 @@ public class Client @VisibleForTesting internal constructor(
         rpcHost: String,
         rpcPort: Int,
         options: Options = Options(),
-        usePlainText: Boolean = false,
+        buildChannel: (AndroidChannelBuilder) -> AndroidChannelBuilder = { it },
     ) : this(
         channel = AndroidChannelBuilder.forAddress(rpcHost, rpcPort)
-            .run { if (usePlainText) usePlaintext() else this }
+            .let(buildChannel)
             .context(context.applicationContext)
             .build(),
         options = options,

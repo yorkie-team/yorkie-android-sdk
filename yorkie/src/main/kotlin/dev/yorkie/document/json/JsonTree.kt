@@ -7,12 +7,15 @@ import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.Rht
-import dev.yorkie.document.crdt.TreeRange
+import dev.yorkie.document.crdt.TreePosRange
 import dev.yorkie.document.json.JsonTree.TreeNode
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
+import dev.yorkie.document.CrdtTreePosStruct as TreePosStruct
+
+public typealias TreePosStructRange = Pair<TreePosStruct, TreePosStruct>
 
 /**
  * [JsonTree] is a CRDT-based tree structure that is used to represent the document
@@ -52,7 +55,7 @@ public class JsonTree internal constructor(
     }
 
     private fun styleByRange(
-        range: TreeRange,
+        range: TreePosRange,
         attributes: Map<String, String>,
     ) {
         val ticket = context.issueTimeTicket()
@@ -195,29 +198,36 @@ public class JsonTree internal constructor(
     public fun indexToPath(index: Int): List<Int> = target.indexToPath(index)
 
     /**
-     * Returns pair of CRDTTreePos of the given integer offsets.
+     * Converts the path [range] into the [TreePosStructRange].
      */
-    public fun createRange(
-        fromIndex: Int,
-        toIndex: Int,
-    ): TreeRange = target.createRange(fromIndex, toIndex)
-
-    /**
-     * Returns a pair of [CrdtTreeNode] of the given integer offsets.
-     */
-    public fun createRangeByPath(fromPath: List<Int>, toPath: List<Int>): TreeRange {
-        return createRange(target.pathToIndex(fromPath), target.pathToIndex(toPath))
+    public fun pathRangeToPosRange(range: Pair<List<Int>, List<Int>>): TreePosStructRange {
+        val indexRange = target.pathToIndex(range.first) to target.pathToIndex(range.second)
+        val posRange = target.indexRangeToPosRange(indexRange)
+        return posRange.first.toStruct() to posRange.second.toStruct()
     }
 
     /**
-     * Returns the integer offsets of the given [range].
+     * Converts the index [range] into the [TreePosStructRange].
      */
-    public fun rangeToIndex(range: TreeRange): Pair<Int, Int> = target.rangeToIndex(range)
+    public fun indexRangeToPosRange(range: Pair<Int, Int>): TreePosStructRange {
+        return target.indexRangeToPosStructRange(range)
+    }
 
     /**
-     *  Returns the path of the given [range].
+     * Converts the position [range] into the index range.
      */
-    public fun rangeToPath(range: TreeRange): Pair<List<Int>, List<Int>> = target.rangeToPath(range)
+    public fun posRangeToIndexRange(range: TreePosStructRange): Pair<Int, Int> {
+        val posRange = range.first.toOriginal() to range.second.toOriginal()
+        return target.toIndex(posRange.first) to target.toIndex(posRange.second)
+    }
+
+    /**
+     *  Converts the position [range] into the path range.
+     */
+    public fun posRangeToPathRange(range: TreePosStructRange): Pair<List<Int>, List<Int>> {
+        val posRange = range.first.toOriginal() to range.second.toOriginal()
+        return target.posRangeToPathRange(posRange)
+    }
 
     override fun isEmpty(): Boolean = target.isEmpty()
 

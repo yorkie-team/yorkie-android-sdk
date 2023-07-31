@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class JsonTextTest {
@@ -122,10 +123,10 @@ class JsonTextTest {
     }
 
     @Test
-    fun `should return false when index range is invalid with edit`() {
-        assertTrue(target.edit(0, 0, "ABC"))
-        assertFalse(target.edit(5, 0, "D"))
-        assertFalse(target.edit(5, 7, "E"))
+    fun `should return null when index range is invalid with edit`() {
+        target.edit(0, 0, "ABC")
+        assertNull(target.edit(5, 0, "D"))
+        assertNull(target.edit(5, 7, "E"))
     }
 
     @Test

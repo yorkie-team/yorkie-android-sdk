@@ -1,7 +1,9 @@
 package dev.yorkie.document.crdt
 
-import com.google.common.annotations.VisibleForTesting
+import dev.yorkie.document.CrdtTreePosStruct
+import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.json.TreePosStructRange
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
@@ -11,7 +13,7 @@ import dev.yorkie.util.TreePos
 import dev.yorkie.util.traverse
 import java.util.TreeMap
 
-public typealias TreeRange = Pair<CrdtTreePos, CrdtTreePos>
+public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
 
 internal class CrdtTree(
     val root: CrdtTreeNode,
@@ -65,7 +67,7 @@ internal class CrdtTree(
      * Applies the given [attributes] of the given [range].
      */
     fun style(
-        range: TreeRange,
+        range: TreePosRange,
         attributes: Map<String, String>?,
         executedAt: TimeTicket,
     ): List<TreeChange> {
@@ -139,7 +141,7 @@ internal class CrdtTree(
      * If the [contents] is null, the [range] will be removed.
      */
     fun edit(
-        range: TreeRange,
+        range: TreePosRange,
         contents: List<CrdtTreeNode>?,
         executedAt: TimeTicket,
     ): List<TreeChange> {
@@ -391,15 +393,14 @@ internal class CrdtTree(
     /**
      * Converts the given [pos] to the index of the tree.
      */
-    @VisibleForTesting
     fun toIndex(pos: CrdtTreePos): Int {
         return toTreePos(pos)?.let(indexTree::indexOf) ?: -1
     }
 
     /**
-     * Finds the range of pos from given [path].
+     * Converts the given path of the node to the range of the position.
      */
-    fun pathToPosRange(path: List<Int>): TreeRange {
+    fun pathToPosRange(path: List<Int>): TreePosRange {
         val index = pathToIndex(path)
         val (parentNode, offset) = pathToTreePos(path)
 
@@ -449,9 +450,10 @@ internal class CrdtTree(
     }
 
     /**
-     * Returns [TreeRange] based on the given index range.
+     * Returns the position range from the given [range].
      */
-    fun createRange(fromIndex: Int, toIndex: Int): TreeRange {
+    fun indexRangeToPosRange(range: Pair<Int, Int>): TreePosRange {
+        val (fromIndex, toIndex) = range
         val fromPos = findPos(fromIndex)
         return if (fromIndex == toIndex) {
             fromPos to fromPos
@@ -461,16 +463,24 @@ internal class CrdtTree(
     }
 
     /**
-     * Returns a pair of integer offsets of the tree.
+     * Converts the [range] into [TreePosStructRange].
      */
-    fun rangeToIndex(range: TreeRange): Pair<Int, Int> {
-        return toIndex(range.first) to toIndex(range.second)
+    fun indexRangeToPosStructRange(range: Pair<Int, Int>): TreePosStructRange {
+        val (fromPos, toPos) = indexRangeToPosRange(range)
+        return fromPos.toStruct() to toPos.toStruct()
     }
 
     /**
      * Returns a pair of integer offsets of the tree.
      */
-    fun rangeToPath(range: TreeRange): Pair<List<Int>, List<Int>> {
+    fun rangeToIndex(range: TreePosRange): Pair<Int, Int> {
+        return toIndex(range.first) to toIndex(range.second)
+    }
+
+    /**
+     * Converts the given position [range] to the path range.
+     */
+    fun posRangeToPathRange(range: TreePosRange): Pair<List<Int>, List<Int>> {
         val fromPath = indexTree.indexToPath(toIndex(range.first))
         val toPath = indexTree.indexToPath(toIndex(range.second))
         return fromPath to toPath
@@ -644,10 +654,14 @@ public data class CrdtTreePos(
      * The distance from the beginning of the node when the node is split.
      */
     val offset: Int,
-) : Comparable<CrdtTreePos> {
+) : Comparable<CrdtTreePos>, JsonSerializable<CrdtTreePos, CrdtTreePosStruct> {
 
     override fun compareTo(other: CrdtTreePos): Int {
         return compareValuesBy(this, other, { it.createdAt }, { it.offset })
+    }
+
+    override fun toStruct(): CrdtTreePosStruct {
+        return CrdtTreePosStruct(createdAt.toStruct(), offset)
     }
 
     companion object {

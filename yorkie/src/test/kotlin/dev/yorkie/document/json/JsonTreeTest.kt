@@ -433,8 +433,8 @@ class JsonTreeTest {
         val document = Document(Document.Key(""))
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
-        document.updateAsync {
-            it.setNewTree(
+        document.updateAsync { root, _ ->
+            root.setNewTree(
                 "t",
                 element("root") {
                     element("p") {

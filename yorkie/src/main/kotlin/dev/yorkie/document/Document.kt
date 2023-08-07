@@ -3,13 +3,14 @@ package dev.yorkie.document
 import com.google.common.annotations.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
-import dev.yorkie.core.Peers
-import dev.yorkie.core.Peers.Companion.asPeers
 import dev.yorkie.core.Presence
 import dev.yorkie.core.PresenceChange
 import dev.yorkie.core.PresenceInfo
-import dev.yorkie.document.Document.Event.PeersChanged
-import dev.yorkie.document.Document.PeersChangedResult.PresenceChanged
+import dev.yorkie.core.PresenceProxy
+import dev.yorkie.core.Presences
+import dev.yorkie.core.Presences.Companion.asPresences
+import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
+import dev.yorkie.document.Document.Event.PresenceChange.Others
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
@@ -79,15 +80,15 @@ public class Document(public val key: Key) {
 
     internal val onlineClients = mutableSetOf<ActorID>()
 
-    private val _presences = MutableStateFlow(Peers.UninitializedPresences)
-    public val presences: StateFlow<Peers> = _presences.asStateFlow()
+    private val _presences = MutableStateFlow(Presences())
+    public val presences: StateFlow<Presences> = _presences.asStateFlow()
 
     /**
      * Executes the given [updater] to update this document.
      */
     public fun updateAsync(
         message: String? = null,
-        updater: suspend (root: JsonObject, presence: Presence) -> Unit,
+        updater: suspend (root: JsonObject, presence: PresenceProxy) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
             check(status != DocumentStatus.Removed) {
@@ -103,8 +104,7 @@ public class Document(public val key: Key) {
 
             runCatching {
                 val proxy = JsonObject(context, clone.root.rootObject)
-                val presence = clone.presences.getOrPut(changeID.actor) { emptyMap() }
-                updater.invoke(proxy, Presence(context, presence.toMutableMap()))
+                updater.invoke(proxy, PresenceProxy(context, clone.presences, changeID.actor))
             }.onFailure {
                 this@Document.clone = null
                 YorkieLogger.e("Document.update", it.message.orEmpty())
@@ -122,13 +122,20 @@ public class Document(public val key: Key) {
             eventStream.emit(Event.LocalChange(changeInfo))
             if (change.hasPresenceChange) {
                 val presence = _presences.value[change.id.actor] ?: return@async false
-                eventStream.emit(
-                    PeersChanged(
-                        PresenceChanged(change.id.actor to presence),
-                    ),
-                )
+                eventStream.emit(createPresenceChangedEvent(change.id.actor, presence))
             }
             true
+        }
+    }
+
+    private fun createPresenceChangedEvent(
+        actorID: ActorID,
+        presence: Presence,
+    ): Event.PresenceChange {
+        return if (actorID == changeID.actor) {
+            MyPresence.PresenceChanged(PresenceInfo(actorID, presence))
+        } else {
+            Others.PresenceChanged(PresenceInfo(actorID, presence))
         }
     }
 
@@ -139,22 +146,19 @@ public class Document(public val key: Key) {
         return events.filterNot { it is Event.Snapshot && targetPath != "&" }
             .mapNotNull { event ->
                 when (event) {
-                    is Event.Snapshot, is PeersChanged -> event
                     is Event.RemoteChange -> {
                         event.changeInfo.operations.filterTargetOpInfos(targetPath)
                             .takeIf { it.isNotEmpty() }
-                            ?.let {
-                                Event.RemoteChange(event.changeInfo.copy(operations = it))
-                            }
+                            ?.let { Event.RemoteChange(event.changeInfo.copy(operations = it)) }
                     }
 
                     is Event.LocalChange -> {
                         event.changeInfo.operations.filterTargetOpInfos(targetPath)
                             .takeIf { it.isNotEmpty() }
-                            ?.let {
-                                Event.LocalChange(event.changeInfo.copy(operations = it))
-                            }
+                            ?.let { Event.LocalChange(event.changeInfo.copy(operations = it)) }
                     }
+
+                    else -> event
                 }
             }
     }
@@ -229,7 +233,7 @@ public class Document(public val key: Key) {
     private suspend fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
         val (root, presences) = snapshot.toSnapshot()
         this.root = CrdtRoot(root)
-        _presences.value = presences.asPeers()
+        _presences.value = presences.asPresences()
         changeID = changeID.syncLamport(serverSeq)
         clone = null
         eventStream.emit(Event.Snapshot(snapshot))
@@ -241,31 +245,32 @@ public class Document(public val key: Key) {
     private suspend fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, _presences.value)
+            change.execute(clone.root, clone.presences)
             val actorID = change.id.actor
+            var event: Event? = null
             if (change.hasPresenceChange) {
                 val presenceChange = change.presenceChange ?: return@forEach
-                if (presenceChange is PresenceChange.PresencePut && actorID in onlineClients) {
-                    val result = if (actorID in _presences.value) {
-                        PresenceChanged(actorID to presenceChange.presence)
+                if (presenceChange is PresenceChange.Put && actorID in onlineClients) {
+                    event = if (actorID in _presences.value) {
+                        createPresenceChangedEvent(actorID, presenceChange.presence)
                     } else {
-                        PeersChangedResult.Watched(actorID to presenceChange.presence)
+                        Others.Watched(PresenceInfo(actorID, presenceChange.presence))
                     }
-                    eventStream.emit(PeersChanged(result))
                 }
             }
 
+            val opInfos = change.execute(root, _presences.value)
             if (change.hasOperations) {
-                val opInfos = change.execute(root, _presences.value)
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
 
+            event?.let { eventStream.emit(it) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
     }
 
     private suspend fun ensureClone(): RootClone = withContext(dispatcher) {
-        clone ?: RootClone(root.deepCopy(), _presences.value.toMutableMap()).also { clone = it }
+        clone ?: RootClone(root.deepCopy(), _presences.value.asPresences()).also { clone = it }
     }
 
     /**
@@ -351,7 +356,40 @@ public class Document(public val key: Key) {
             public val changeInfo: ChangeInfo,
         ) : Event
 
-        public class PeersChanged(public val result: PeersChangedResult) : Event
+        public sealed interface PresenceChange : Event {
+
+            public sealed interface MyPresence : PresenceChange {
+
+                /**
+                 * Means that online clients have been loaded from the server.
+                 */
+                public data class Initialized(public val initialized: Presences) : MyPresence
+
+                /**
+                 * Means that the presences of the client has been updated.
+                 */
+                public data class PresenceChanged(public val changed: PresenceInfo) : MyPresence
+            }
+
+            public sealed interface Others : PresenceChange {
+
+                /**
+                 * Means that the client has established a connection with the server,
+                 * enabling real-time synchronization.
+                 */
+                public data class Watched(public val watched: PresenceInfo) : Others
+
+                /**
+                 * Means that the client has been disconnected.
+                 */
+                public data class Unwatched(public val unwatched: ActorID) : Others
+
+                /**
+                 * Means that the presences of the client has been updated.
+                 */
+                public data class PresenceChanged(public val changed: PresenceInfo) : Others
+            }
+        }
 
         /**
          * Represents the modification made during a document update and the message passed.
@@ -361,19 +399,6 @@ public class Document(public val key: Key) {
             public val operations: List<OperationInfo>,
             public val actorID: ActorID,
         )
-    }
-
-    public sealed class PeersChangedResult {
-
-        public class Initialized(public val changedPeers: Peers) : PeersChangedResult()
-
-        public class PresenceChanged(public val changedPeer: Pair<ActorID, PresenceInfo>) :
-            PeersChangedResult()
-
-        public class Watched(public val changedPeer: Pair<ActorID, PresenceInfo>) :
-            PeersChangedResult()
-
-        public class Unwatched(public val changedPeer: ActorID) : PeersChangedResult()
     }
 
     /**
@@ -407,6 +432,6 @@ public class Document(public val key: Key) {
 
     internal data class RootClone(
         val root: CrdtRoot,
-        val presences: MutableMap<ActorID, PresenceInfo>,
+        val presences: Presences,
     )
 }

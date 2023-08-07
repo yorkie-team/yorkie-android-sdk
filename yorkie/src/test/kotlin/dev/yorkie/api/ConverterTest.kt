@@ -114,13 +114,13 @@ class ConverterTest {
         val addChange = Change(
             ChangeID.InitialChangeID,
             listOf(addOperation),
-            PresenceChange.PresencePut(mapOf("a" to "b")),
+            PresenceChange.Put(mapOf("a" to "b")),
             "add",
         )
         val setChange = Change(
             ChangeID.InitialChangeID,
             listOf(setOperation),
-            PresenceChange.PresenceClear,
+            PresenceChange.Clear,
             "set",
         )
         val converted = listOf(addChange.toPBChange(), setChange.toPBChange()).toChanges()

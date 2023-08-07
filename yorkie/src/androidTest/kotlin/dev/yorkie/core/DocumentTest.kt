@@ -512,7 +512,6 @@ class DocumentTest {
                     document1TodosOps.isEmpty() ||
                     document1ObjOps.isEmpty()
                 ) {
-                    println(document1Ops)
                     delay(50)
                 }
             }

@@ -19,14 +19,10 @@ import dev.yorkie.api.v1.watchDocumentRequest
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
 import dev.yorkie.core.Client.Event.DocumentSynced
-import dev.yorkie.core.Peers.Companion.UninitializedPresences
-import dev.yorkie.core.Peers.Companion.asPeers
+import dev.yorkie.core.Presences.Companion.asPresences
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
-import dev.yorkie.document.Document.Event.PeersChanged
-import dev.yorkie.document.Document.PeersChangedResult.Initialized
-import dev.yorkie.document.Document.PeersChangedResult.Unwatched
-import dev.yorkie.document.Document.PeersChangedResult.Watched
+import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -48,7 +44,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
@@ -290,9 +285,7 @@ public class Client @VisibleForTesting internal constructor(
                 val document = attachments.value[documentKey]?.document ?: return
                 document.onlineClients.add(clientID)
                 document.publish(
-                    PeersChanged(
-                        Initialized((document.presences.value).asPeers()),
-                    ),
+                    PresenceChange.MyPresence.Initialized(document.presences.value.asPresences()),
                 )
             }
             return
@@ -310,16 +303,14 @@ public class Client @VisibleForTesting internal constructor(
                 if (publisher in attachment.document.presences.value) {
                     val presence = attachment.document.presences.value[publisher] ?: return
                     attachment.document.publish(
-                        PeersChanged(
-                            Watched(publisher to presence),
-                        ),
+                        PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
                     )
                 }
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
                 attachment.document.onlineClients.remove(publisher)
-                attachment.document.publish(PeersChanged(Unwatched(publisher)))
+                attachment.document.publish(PresenceChange.Others.Unwatched(publisher))
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
@@ -341,7 +332,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun attachAsync(
         document: Document,
-        initialPresence: PresenceInfo? = null,
+        initialPresence: Presence = emptyMap(),
         isRealTimeSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
@@ -353,7 +344,7 @@ public class Client @VisibleForTesting internal constructor(
             }
             document.setActor(requireClientId())
             document.updateAsync { _, presence ->
-                initialPresence?.let(presence::set)
+                presence.set(initialPresence)
             }.await()
 
             val request = attachDocumentRequest {
@@ -382,7 +373,6 @@ public class Client @VisibleForTesting internal constructor(
                 response.documentId,
                 isRealTimeSync,
             )
-            waitForInitialization(document.key)
             true
         }
     }
@@ -492,15 +482,6 @@ public class Client @VisibleForTesting internal constructor(
 
     public fun requireClientId() = (status.value as Status.Activated).clientId
 
-    private suspend fun waitForInitialization(documentKey: Document.Key) {
-        attachments.first { attachments ->
-            with(attachments[documentKey]) {
-                this == null || !isRealTimeSync
-                    || document.presences.value != UninitializedPresences
-            }
-        }
-    }
-
     /**
      * Pauses the realtime synchronization of the given [document].
      */
@@ -577,7 +558,7 @@ public class Client @VisibleForTesting internal constructor(
          * Means that the client is not activated. It is the initial stastus of the client.
          * If the client is deactivated, all [Document]s of the client are also not used.
          */
-        public object Deactivated : Status
+        public data object Deactivated : Status
     }
 
     /**

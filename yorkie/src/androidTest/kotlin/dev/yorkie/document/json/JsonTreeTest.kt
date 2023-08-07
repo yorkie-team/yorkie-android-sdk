@@ -2,7 +2,7 @@ package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.core.Client
-import dev.yorkie.core.Presence
+import dev.yorkie.core.PresenceProxy
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import dev.yorkie.document.json.TreeBuilder.element
@@ -170,7 +170,7 @@ class JsonTreeTest {
         data class Updater(
             val client: Client,
             val document: Document,
-            val updater: (suspend (JsonObject, Presence) -> Unit)? = null,
+            val updater: (suspend (JsonObject, PresenceProxy) -> Unit)? = null,
         )
     }
 }

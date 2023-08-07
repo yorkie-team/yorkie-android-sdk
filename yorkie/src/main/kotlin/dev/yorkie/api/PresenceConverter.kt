@@ -2,8 +2,8 @@ package dev.yorkie.api
 
 import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.presenceChange
+import dev.yorkie.core.Presence
 import dev.yorkie.core.PresenceChange
-import dev.yorkie.core.PresenceInfo
 import dev.yorkie.document.time.ActorID
 
 internal typealias PBPresence = dev.yorkie.api.v1.Presence
@@ -14,35 +14,35 @@ internal fun PresenceChange.toPBPresenceChange(): PBPresenceChange {
     val change = this
     return presenceChange {
         when (change) {
-            is PresenceChange.PresencePut -> {
+            is PresenceChange.Put -> {
                 type = PBPresenceChangeType.CHANGE_TYPE_PUT
                 presence = change.presence.toPBPresence()
             }
 
-            is PresenceChange.PresenceClear -> {
+            is PresenceChange.Clear -> {
                 type = PBPresenceChangeType.CHANGE_TYPE_CLEAR
             }
         }
     }
 }
 
-internal fun PresenceInfo.toPBPresence(): PBPresence {
+internal fun Presence.toPBPresence(): PBPresence {
     return presence {
         data.putAll(this@toPBPresence)
     }
 }
 
-internal fun PBPresence.toPresence(): PresenceInfo = dataMap
+internal fun PBPresence.toPresence(): Presence = dataMap
 
 internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     return when (type) {
-        PBPresenceChangeType.CHANGE_TYPE_PUT -> PresenceChange.PresencePut(presence.toPresence())
-        PBPresenceChangeType.CHANGE_TYPE_CLEAR -> PresenceChange.PresenceClear
+        PBPresenceChangeType.CHANGE_TYPE_PUT -> PresenceChange.Put(presence.toPresence())
+        PBPresenceChangeType.CHANGE_TYPE_CLEAR -> PresenceChange.Clear
         else -> throw IllegalArgumentException("unsupported type: $type")
     }
 }
 
-internal fun Map<String, PBPresence>.toPresences(): Map<ActorID, PresenceInfo> {
+internal fun Map<String, PBPresence>.toPresences(): Map<ActorID, Presence> {
     return map { (actorID, pbPresence) ->
         ActorID(actorID) to pbPresence.toPresence()
     }.toMap()

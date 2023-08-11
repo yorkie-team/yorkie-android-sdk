@@ -43,7 +43,7 @@ internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
 }
 
 internal fun Map<String, PBPresence>.toPresences(): Map<ActorID, Presence> {
-    return map { (actorID, pbPresence) ->
+    return entries.associate { (actorID, pbPresence) ->
         ActorID(actorID) to pbPresence.toPresence()
-    }.toMap()
+    }
 }

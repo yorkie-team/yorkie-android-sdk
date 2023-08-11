@@ -3,6 +3,7 @@ package dev.yorkie.core
 import com.google.protobuf.kotlin.toByteString
 import dev.yorkie.api.PBTimeTicket
 import dev.yorkie.api.toByteString
+import dev.yorkie.api.toPBChange
 import dev.yorkie.api.toPBTimeTicket
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.ActivateClientResponse
@@ -36,10 +37,10 @@ import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.pushPullChangesResponse
 import dev.yorkie.api.v1.removeDocumentResponse
 import dev.yorkie.api.v1.watchDocumentResponse
-import dev.yorkie.document.crdt.CrdtElement
-import dev.yorkie.document.crdt.CrdtObject
+import dev.yorkie.document.change.Change
+import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtPrimitive
-import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import io.grpc.Status
@@ -74,15 +75,19 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             clientId = request.clientId
             changePack = changePack {
                 documentKey = request.changePack.documentKey
-                snapshot = CrdtObject(
-                    InitialTimeTicket,
-                    rht = ElementRht<CrdtElement>().apply {
-                        set(
-                            "k1",
-                            CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),
-                        )
-                    },
-                ).toByteString()
+                changes.add(
+                    Change(
+                        ChangeID(0u, 0, TEST_ACTOR_ID),
+                        listOf(
+                            SetOperation(
+                                "k1",
+                                CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),
+                                InitialTimeTicket,
+                                InitialTimeTicket,
+                            ),
+                        ),
+                    ).toPBChange(),
+                )
                 minSyncedTicket = PBTimeTicket.getDefaultInstance()
             }
             documentId = changePack.documentKey
@@ -141,24 +146,13 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
     override fun watchDocument(request: WatchDocumentRequest): Flow<WatchDocumentResponse> {
         val key = request.documentId
         return flow {
-            if (key == SLOW_INITIALIZATION_DOCUMENT_KEY) {
-                delay(5_000)
-                emit(
-                    watchDocumentResponse {
-                        initialization = initialization {
-                            clientIds.add(TEST_ACTOR_ID.toByteString())
-                        }
-                    },
-                )
-            } else {
-                emit(
-                    watchDocumentResponse {
-                        initialization = initialization {
-                            clientIds.add(TEST_ACTOR_ID.toByteString())
-                        }
-                    },
-                )
-            }
+            emit(
+                watchDocumentResponse {
+                    initialization = initialization {
+                        clientIds.add(TEST_ACTOR_ID.toByteString())
+                    }
+                },
+            )
             delay(1_000)
             if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
                 throw StatusException(Status.UNAVAILABLE)
@@ -217,8 +211,6 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         internal const val WATCH_SYNC_ERROR_DOCUMENT_KEY = "WATCH_SYNC_ERROR_DOCUMENT_KEY"
         internal const val ATTACH_ERROR_DOCUMENT_KEY = "ATTACH_ERROR_DOCUMENT_KEY"
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
-        internal const val UPDATE_PRESENCE_ERROR_DOCUMENT_KEY = "UPDATE_PRESENCE_ERROR_DOCUMENT_KEY"
-        internal const val SLOW_INITIALIZATION_DOCUMENT_KEY = "SLOW_INITIALIZATION_DOCUMENT_KEY"
         internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000ffff0000000000")
     }

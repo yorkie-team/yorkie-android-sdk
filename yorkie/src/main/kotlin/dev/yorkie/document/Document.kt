@@ -118,8 +118,9 @@ public class Document(public val key: Key) {
             val operationInfos = change.execute(root, _presences.value)
             localChanges += change
             changeID = change.id
-            val changeInfo = change.toChangeInfo(operationInfos)
-            eventStream.emit(Event.LocalChange(changeInfo))
+            if (change.hasOperations) {
+                eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
+            }
             if (change.hasPresenceChange) {
                 val presence = _presences.value[change.id.actor] ?: return@async false
                 eventStream.emit(createPresenceChangedEvent(change.id.actor, presence))

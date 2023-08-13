@@ -237,6 +237,4 @@ internal fun Operation.toPBOperation(): PBOperation {
     }
 }
 
-internal fun List<Operation>.toPBOperations(): List<PBOperation> {
-    return map { it.toPBOperation() }
-}
+internal fun List<Operation>.toPBOperations(): List<PBOperation> = map(Operation::toPBOperation)

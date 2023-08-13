@@ -17,9 +17,9 @@ internal interface JsonSerializable<I, O : JsonSerializable.Struct<I>> {
 }
 
 /**
-* [CrdtTreePosStruct] represents the structure of [CrdtTreePos].
-* It is used to serialize and deserialize the CRDTTreePos.
-*/
+ * [CrdtTreePosStruct] represents the structure of [CrdtTreePos].
+ * It is used to serialize and deserialize the CRDTTreePos.
+ */
 public data class CrdtTreePosStruct(
     val createdAt: TimeTicketStruct,
     val offset: Int,

@@ -87,11 +87,11 @@ class MainActivity : AppCompatActivity() {
 
         if (editable.removePrevSpan(actor) && from == to) {
             viewModel.updatePeerPrevSelection(actor, null)
-        } else if (from < to) {
+        } else {
             editable.setSpan(
                 BackgroundColorSpan(viewModel.getPeerSelectionColor(actor)),
-                from,
-                to,
+                from.coerceAtMost(to),
+                to.coerceAtLeast(from),
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
             )
             viewModel.updatePeerPrevSelection(actor, from to to)

@@ -58,7 +58,9 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
     fun addCardToColumn(cardColumn: KanbanColumn, title: String) {
         viewModelScope.launch {
             document.updateAsync { root, _ ->
-                val column = root.getAs<JsonArray>(DOCUMENT_LIST_KEY).getAs<JsonObject>(cardColumn.id)
+                val column = root.getAs<JsonArray>(DOCUMENT_LIST_KEY).getAs<JsonObject>(
+                    cardColumn.id,
+                )
                 column?.getAs<JsonArray>("cards")?.putNewObject()?.apply {
                     set("title", title)
                 }

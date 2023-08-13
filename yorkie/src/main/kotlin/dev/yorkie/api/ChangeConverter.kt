@@ -27,7 +27,6 @@ internal fun List<PBChange>.toChanges(): List<Change> {
     }
 }
 
-
 internal fun Change.toPBChange(): PBChange {
     val change = this
     return change {

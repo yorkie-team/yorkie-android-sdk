@@ -13,7 +13,7 @@ internal class Rht : Iterable<Rht.Node> {
 
     val nodeKeyValueMap: Map<String, String>
         get() {
-            return nodeMapByKey.entries.associate{ (key, node) ->
+            return nodeMapByKey.entries.associate { (key, node) ->
                 key to node.value
             }
         }

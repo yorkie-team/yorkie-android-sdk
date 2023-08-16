@@ -33,15 +33,13 @@ public data class Change internal constructor(
     internal fun execute(
         root: CrdtRoot,
         presences: Presences,
-    ): List<OperationInfo> {
-        presenceChange?.let {
+    ): Pair<List<OperationInfo>, Presences?> {
+        val newPresences = presenceChange?.let {
             when (presenceChange) {
-                is PresenceChange.Put -> presences[id.actor] = presenceChange.presence
-                is PresenceChange.Clear -> presences.remove(id.actor)
+                is PresenceChange.Put -> presences + (id.actor to presenceChange.presence)
+                is PresenceChange.Clear -> presences - id.actor
             }
         }
-        return operations.flatMap {
-            it.execute(root)
-        }
+        return operations.flatMap { it.execute(root) } to newPresences
     }
 }

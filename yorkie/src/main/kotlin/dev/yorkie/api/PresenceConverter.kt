@@ -2,7 +2,7 @@ package dev.yorkie.api
 
 import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.presenceChange
-import dev.yorkie.core.Presence
+import dev.yorkie.core.P
 import dev.yorkie.core.PresenceChange
 import dev.yorkie.document.time.ActorID
 
@@ -26,13 +26,13 @@ internal fun PresenceChange.toPBPresenceChange(): PBPresenceChange {
     }
 }
 
-internal fun Presence.toPBPresence(): PBPresence {
+internal fun P.toPBPresence(): PBPresence {
     return presence {
         data.putAll(this@toPBPresence)
     }
 }
 
-internal fun PBPresence.toPresence(): Presence = dataMap
+internal fun PBPresence.toPresence(): P = dataMap
 
 internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     return when (type) {
@@ -42,7 +42,7 @@ internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     }
 }
 
-internal fun Map<String, PBPresence>.toPresences(): Map<ActorID, Presence> {
+internal fun Map<String, PBPresence>.toPresences(): Map<ActorID, P> {
     return entries.associate { (actorID, pbPresence) ->
         ActorID(actorID) to pbPresence.toPresence()
     }

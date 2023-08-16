@@ -3,10 +3,10 @@ package dev.yorkie.document
 import com.google.common.annotations.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
+import dev.yorkie.core.P
 import dev.yorkie.core.Presence
 import dev.yorkie.core.PresenceChange
 import dev.yorkie.core.PresenceInfo
-import dev.yorkie.core.PresenceProxy
 import dev.yorkie.core.Presences
 import dev.yorkie.core.Presences.Companion.asPresences
 import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
@@ -35,11 +35,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 
 /**
@@ -81,14 +85,19 @@ public class Document(public val key: Key) {
     internal val onlineClients = mutableSetOf<ActorID>()
 
     private val _presences = MutableStateFlow(Presences())
-    public val presences: StateFlow<Presences> = _presences.asStateFlow()
+    public val presences: StateFlow<Presences> = _presences.map { presences ->
+        presences.filterKeys { it in onlineClients }.asPresences()
+    }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences())
+
+    @VisibleForTesting
+    internal val allPresences: StateFlow<Presences> = _presences.asStateFlow()
 
     /**
      * Executes the given [updater] to update this document.
      */
     public fun updateAsync(
         message: String? = null,
-        updater: suspend (root: JsonObject, presence: PresenceProxy) -> Unit,
+        updater: suspend (root: JsonObject, presence: Presence) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
             check(status != DocumentStatus.Removed) {
@@ -101,10 +110,14 @@ public class Document(public val key: Key) {
                 root = clone.root,
                 message = message,
             )
+            val actorID = changeID.actor
 
             runCatching {
                 val proxy = JsonObject(context, clone.root.rootObject)
-                updater.invoke(proxy, PresenceProxy(context, clone.presences, changeID.actor))
+                updater.invoke(
+                    proxy,
+                    Presence(context, clone.presences.getOrDefault(changeID.actor, emptyMap())),
+                )
             }.onFailure {
                 this@Document.clone = null
                 YorkieLogger.e("Document.update", it.message.orEmpty())
@@ -115,24 +128,24 @@ public class Document(public val key: Key) {
                 return@async true
             }
             val change = context.getChange()
-            val operationInfos = change.execute(root, _presences.value)
+            val (operationInfos, newPresences) = change.execute(root, _presences.value)
+
+            newPresences?.let { _presences.emit(it) }
             localChanges += change
             changeID = change.id
+
             if (change.hasOperations) {
                 eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
             }
             if (change.hasPresenceChange) {
-                val presence = _presences.value[change.id.actor] ?: return@async false
-                eventStream.emit(createPresenceChangedEvent(change.id.actor, presence))
+                val presence = _presences.value[actorID] ?: return@async false
+                eventStream.emit(createPresenceChangedEvent(actorID, presence))
             }
             true
         }
     }
 
-    private fun createPresenceChangedEvent(
-        actorID: ActorID,
-        presence: Presence,
-    ): Event.PresenceChange {
+    private fun createPresenceChangedEvent(actorID: ActorID, presence: P): Event.PresenceChange {
         return if (actorID == changeID.actor) {
             MyPresence.PresenceChanged(PresenceInfo(actorID, presence))
         } else {
@@ -246,11 +259,29 @@ public class Document(public val key: Key) {
     private suspend fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, clone.presences)
+            change.execute(clone.root, clone.presences).also { (_, newPresences) ->
+                this.clone = clone.copy(presences = newPresences ?: return@also)
+            }
             val actorID = change.id.actor
             var event: Event? = null
-            if (change.hasPresenceChange) {
+            if (change.hasPresenceChange && actorID in onlineClients) {
                 val presenceChange = change.presenceChange ?: return@forEach
+                event = when (presenceChange) {
+                    is PresenceChange.Put -> {
+                        if (actorID in _presences.value) {
+                            createPresenceChangedEvent(actorID, presenceChange.presence)
+                        } else {
+                            Others.Watched(PresenceInfo(actorID, presenceChange.presence))
+                        }
+                    }
+
+                    is PresenceChange.Clear -> {
+                        onlineClients.remove(actorID)
+                        presences.value[actorID]?.let { presence ->
+                            Others.Unwatched(PresenceInfo(actorID, presence))
+                        }
+                    }
+                }
                 if (presenceChange is PresenceChange.Put && actorID in onlineClients) {
                     event = if (actorID in _presences.value) {
                         createPresenceChangedEvent(actorID, presenceChange.presence)
@@ -260,12 +291,13 @@ public class Document(public val key: Key) {
                 }
             }
 
-            val opInfos = change.execute(root, _presences.value)
+            val (opInfos, newPresences) = change.execute(root, _presences.value)
             if (change.hasOperations) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
 
             event?.let { eventStream.emit(it) }
+            newPresences?.let { _presences.emit(it) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
     }
@@ -321,6 +353,21 @@ public class Document(public val key: Key) {
      * Triggers an event in this [Document].
      */
     internal suspend fun publish(event: Event) {
+        when (event) {
+            is Others.Watched -> {
+                presences.first { event.watched.actorID in it.keys }
+            }
+
+            is Others.Unwatched -> {
+                presences.first { event.unwatched.actorID !in it.keys }
+            }
+
+            is MyPresence.Initialized -> {
+                presences.first { event.initialized == it }
+            }
+
+            else -> {}
+        }
         eventStream.emit(event)
     }
 
@@ -383,7 +430,7 @@ public class Document(public val key: Key) {
                 /**
                  * Means that the client has been disconnected.
                  */
-                public data class Unwatched(public val unwatched: ActorID) : Others
+                public data class Unwatched(public val unwatched: PresenceInfo) : Others
 
                 /**
                  * Means that the presences of the client has been updated.

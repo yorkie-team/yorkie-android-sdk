@@ -21,7 +21,7 @@ import dev.yorkie.api.v1.textNodePos
 import dev.yorkie.api.v1.treeNode
 import dev.yorkie.api.v1.treeNodes
 import dev.yorkie.api.v1.treePos
-import dev.yorkie.core.Presence
+import dev.yorkie.core.P
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
@@ -67,7 +67,7 @@ internal typealias PBTreePos = dev.yorkie.api.v1.TreePos
 internal typealias PBTreeNodes = dev.yorkie.api.v1.TreeNodes
 internal typealias PBSnapshot = dev.yorkie.api.v1.Snapshot
 
-internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<ActorID, Presence>> {
+internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<ActorID, P>> {
     return if (this == null) {
         CrdtObject(InitialTimeTicket) to emptyMap()
     } else {

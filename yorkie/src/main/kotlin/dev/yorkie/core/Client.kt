@@ -310,7 +310,10 @@ public class Client @VisibleForTesting internal constructor(
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
                 attachment.document.onlineClients.remove(publisher)
-                attachment.document.publish(PresenceChange.Others.Unwatched(publisher))
+                val presence = attachment.document.presences.value[publisher] ?: return
+                attachment.document.publish(
+                    PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
+                )
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
@@ -332,7 +335,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun attachAsync(
         document: Document,
-        initialPresence: Presence = emptyMap(),
+        initialPresence: P = emptyMap(),
         isRealTimeSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
@@ -344,7 +347,7 @@ public class Client @VisibleForTesting internal constructor(
             }
             document.setActor(requireClientId())
             document.updateAsync { _, presence ->
-                presence.set(initialPresence)
+                presence.put(initialPresence)
             }.await()
 
             val request = attachDocumentRequest {

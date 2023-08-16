@@ -25,7 +25,9 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: EditorViewModel by viewModels {
         viewModelFactory {
             initializer {
-                val client = Client(this@MainActivity, "api.yorkie.dev", 443)
+                val client = Client(this@MainActivity, "10.0.2.2", 8080) {
+                    it.usePlaintext()
+                }
                 EditorViewModel(client)
             }
         }

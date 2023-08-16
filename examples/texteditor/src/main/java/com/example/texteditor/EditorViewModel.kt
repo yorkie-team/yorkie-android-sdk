@@ -34,7 +34,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     val textOpInfos = _textOpInfos.asSharedFlow()
 
     val removedPeers = document.events.filterIsInstance<PresenceChange.Others.Unwatched>()
-        .map { it.unwatched }
+        .map { it.unwatched.actorID }
 
     private val _peerSelectionInfos = mutableMapOf<ActorID, PeerSelectionInfo>()
     val peerSelectionInfos: Map<ActorID, PeerSelectionInfo>
@@ -111,7 +111,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
             document.updateAsync { root, presence ->
                 val range = root.getAs<JsonText>(TEXT_KEY)
                     .indexRangeToPosRange(from to to)?.toList()
-                presence.set(mapOf("selection" to gson.toJson(range)))
+                presence.put(mapOf("selection" to gson.toJson(range)))
             }.await()
         }
     }

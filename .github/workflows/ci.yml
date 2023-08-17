@@ -62,7 +62,7 @@ jobs:
       - run: chmod +x gradlew
       - uses: gradle/gradle-build-action@v2
       - name: Setup Docker on macOS using Colima, Lima-VM, and Homebrew.
-        uses: yorkie-team/yorkie-ios-sdk@main
+        uses: 7hong13/setup-docker-macos-action@fix_formula_paths
         id: docker
       - run: docker-compose -f docker/docker-compose-ci.yml up --build -d
       - uses: actions/cache@v3

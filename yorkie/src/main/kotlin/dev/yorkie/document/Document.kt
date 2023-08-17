@@ -282,13 +282,6 @@ public class Document(public val key: Key) {
                         }
                     }
                 }
-                if (presenceChange is PresenceChange.Put && actorID in onlineClients) {
-                    event = if (actorID in _presences.value) {
-                        createPresenceChangedEvent(actorID, presenceChange.presence)
-                    } else {
-                        Others.Watched(PresenceInfo(actorID, presenceChange.presence))
-                    }
-                }
             }
 
             val (opInfos, newPresences) = change.execute(root, _presences.value)

@@ -103,7 +103,6 @@ class IndexTreeTest {
                 createElementNode("p", createTextNode("fg")),
             ),
         )
-        println(tree.root.size)
         assertEquals(
             listOf("text.b", "p", "text.cde", "p", "text.fg", "p"),
             tree.nodesBetween(2, 11),

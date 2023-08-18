@@ -178,9 +178,9 @@ public class JsonText internal constructor(
     /**
      * Returns [TextPosStructRange] of the given index range.
      */
-    public fun indexRangeToPosRange(fromIndex: Int, toIndex: Int): TextPosStructRange? {
-        val range = createRange(fromIndex, toIndex) ?: return null
-        return range.first.toStruct() to range.second.toStruct()
+    public fun indexRangeToPosRange(range: Pair<Int, Int>): TextPosStructRange? {
+        val posRange = createRange(range.first, range.second) ?: return null
+        return posRange.first.toStruct() to posRange.second.toStruct()
     }
 
     /**

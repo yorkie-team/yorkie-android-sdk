@@ -1,5 +1,6 @@
 package dev.yorkie.document.change
 
+import dev.yorkie.core.PresenceChange
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtGCElement
@@ -16,6 +17,7 @@ internal data class ChangeContext(
     val id: ChangeID,
     val root: CrdtRoot,
     val message: String? = null,
+    var presenceChange: PresenceChange? = null,
     private val _operations: MutableList<Operation> = mutableListOf(),
     private var delimiter: UInt = TimeTicket.INITIAL_DELIMITER,
 ) {
@@ -23,10 +25,10 @@ internal data class ChangeContext(
         get() = _operations.toList()
 
     /**
-     * Returns whether this context has operations or not.
+     * Returns whether this context has change or not.
      */
-    val hasOperations: Boolean
-        get() = operations.isNotEmpty()
+    val hasChange: Boolean
+        get() = operations.isNotEmpty() || presenceChange != null
 
     /**
      *  Returns the last time ticket issued in this context.
@@ -66,7 +68,7 @@ internal data class ChangeContext(
      * Creates a new instance of [Change] in this context.
      */
     fun getChange(): Change {
-        return Change(id, operations, message)
+        return Change(id, operations, presenceChange, message)
     }
 
     /**

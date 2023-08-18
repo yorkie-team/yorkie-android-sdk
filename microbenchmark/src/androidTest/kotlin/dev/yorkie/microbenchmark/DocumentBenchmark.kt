@@ -34,8 +34,8 @@ class DocumentBenchmark {
                     )
                 }
 
-                docs[0].updateAsync("updates k1") {
-                    it["k1"] = "v1"
+                docs[0].updateAsync("updates k1") { root, _ ->
+                    root["k1"] = "v1"
                 }.await()
 
                 assert(docs[0].toJson() != docs[1].toJson())
@@ -54,12 +54,12 @@ class DocumentBenchmark {
                 val document = runWithTimingDisabled {
                     Document(Document.Key("d1"))
                 }
-                document.updateAsync {
-                    it["k1"] = "v1"
-                    it.setNewObject("k2").also { obj ->
+                document.updateAsync { root, _ ->
+                    root["k1"] = "v1"
+                    root.setNewObject("k2").also { obj ->
                         obj["k4"] = "v4"
                     }
-                    it.setNewArray("k3").also { array ->
+                    root.setNewArray("k3").also { array ->
                         array.put("v5")
                         array.put("v6")
                     }
@@ -79,12 +79,12 @@ class DocumentBenchmark {
                 var expected = runWithTimingDisabled {
                     """{"k1":"v1","k2":{"k4":"v4"},"k3":["v5","v6"]}"""
                 }
-                document.updateAsync("updates k1, k2, k3") {
-                    it["k1"] = "v1"
-                    it.setNewObject("k2").also { obj ->
+                document.updateAsync("updates k1, k2, k3") { root, _ ->
+                    root["k1"] = "v1"
+                    root.setNewObject("k2").also { obj ->
                         obj["k4"] = "v4"
                     }
-                    it.setNewArray("k3").also { array ->
+                    root.setNewArray("k3").also { array ->
                         array.put("v5")
                         array.put("v6")
                     }
@@ -94,8 +94,8 @@ class DocumentBenchmark {
                 expected = runWithTimingDisabled {
                     """{"k1":"v1","k3":["v5","v6"]}"""
                 }
-                document.updateAsync("deletes k2") {
-                    it.remove("k2")
+                document.updateAsync("deletes k2") { root, _ ->
+                    root.remove("k2")
                 }.await()
                 assert(document.toJson() == expected)
             }
@@ -109,9 +109,9 @@ class DocumentBenchmark {
                 val document = runWithTimingDisabled {
                     Document(Document.Key("d1"))
                 }
-                document.updateAsync {
-                    it["k1"] = "v1"
-                    it["k1"] = "v2"
+                document.updateAsync { root, _ ->
+                    root["k1"] = "v1"
+                    root["k1"] = "v2"
                 }.await()
                 assert(document.toJson() == """{"k1":"v2"}""")
             }

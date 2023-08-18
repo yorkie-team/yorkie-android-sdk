@@ -2,6 +2,7 @@ package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.core.Client
+import dev.yorkie.core.Presence
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import dev.yorkie.document.json.TreeBuilder.element
@@ -18,7 +19,7 @@ class JsonTreeTest {
     fun test_tree_sync_between_replicas() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
-                Updater(c1, d1) { root ->
+                Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
                         element("doc") {
@@ -33,7 +34,7 @@ class JsonTreeTest {
             assertTreesXmlEquals("<doc><p>hello</p></doc>", d1, d2)
 
             updateAndSync(
-                Updater(c1, d1) { root ->
+                Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(
                         7,
                         7,
@@ -52,7 +53,7 @@ class JsonTreeTest {
     fun test_inserting_text_to_same_position_concurrently() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
-                Updater(c1, d1) { root ->
+                Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
                         element("r") {
@@ -69,10 +70,10 @@ class JsonTreeTest {
             // TODO: add inserting on the leftmost after tree is fixed
 
             updateAndSync(
-                Updater(c1, d1) { root ->
+                Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 2, text { "A" })
                 },
-                Updater(c2, d2) { root ->
+                Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(2, 2, text { "B" })
                 },
             ) {
@@ -82,10 +83,10 @@ class JsonTreeTest {
             assertTreesXmlEquals("<r><p>1BA2</p></r>", d1, d2)
 
             updateAndSync(
-                Updater(c1, d1) { root ->
+                Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(5, 5, text { "C" })
                 },
-                Updater(c2, d2) { root ->
+                Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(5, 5, text { "D" })
                 },
             ) {
@@ -100,7 +101,7 @@ class JsonTreeTest {
     fun test_tree_with_attributes_between_replicas() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
-                Updater(c1, d1) { root ->
+                Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
                         element("doc") {
@@ -116,7 +117,7 @@ class JsonTreeTest {
             assertTreesXmlEquals("""<doc><p italic="true">hello</p></doc>""", d1, d2)
 
             updateAndSync(
-                Updater(c1, d1) { root ->
+                Updater(c1, d1) { root, _ ->
                     root.rootTree().style(6, 7, mapOf("bold" to "true"))
                 },
                 Updater(c2, d2),
@@ -169,7 +170,7 @@ class JsonTreeTest {
         data class Updater(
             val client: Client,
             val document: Document,
-            val updater: (suspend (JsonObject) -> Unit)? = null,
+            val updater: (suspend (JsonObject, Presence) -> Unit)? = null,
         )
     }
 }

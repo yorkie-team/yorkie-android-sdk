@@ -27,19 +27,19 @@ class GCTest {
             val document = Document(documentKey)
             assertEquals("{}", document.toJson())
 
-            document.updateAsync {
-                it["1"] = 1
-                it.setNewArray("2").apply {
+            document.updateAsync { root, _ ->
+                root["1"] = 1
+                root.setNewArray("2").apply {
                     put(1)
                     put(2)
                     put(3)
                 }
-                it["3"] = 3
+                root["3"] = 3
             }.await()
             assertJsonContentEquals("""{"1":1,"2":[1,2,3],"3":3}""", document.toJson())
 
-            document.updateAsync {
-                it.remove("2")
+            document.updateAsync { root, _ ->
+                root.remove("2")
             }.await()
             assertJsonContentEquals("""{"1":1,"3":3}""", document.toJson())
             assertEquals(4, document.garbageLength)
@@ -55,8 +55,8 @@ class GCTest {
             val document = Document(documentKey)
             assertEquals("{}", document.toJson())
 
-            document.updateAsync {
-                it.setNewText("text").apply {
+            document.updateAsync { root, _ ->
+                root.setNewText("text").apply {
                     edit(0, 0, "ABCD")
                     edit(0, 2, "12")
                 }
@@ -79,8 +79,8 @@ class GCTest {
             val document = Document(documentKey)
             assertEquals("{}", document.toJson())
 
-            document.updateAsync {
-                it.setNewText("text").apply {
+            document.updateAsync { root, _ ->
+                root.setNewText("text").apply {
                     edit(0, 0, "Hello world", mapOf("b" to "1"))
                     edit(6, 11, "mario")
                 }
@@ -91,8 +91,8 @@ class GCTest {
             )
             assertEquals(1, document.garbageLength)
 
-            document.updateAsync {
-                val text = it.getAs<JsonText>("text")
+            document.updateAsync { root, _ ->
+                val text = root.getAs<JsonText>("text")
                 text.edit(0, 5, "Hi", mapOf("b" to "1"))
                 text.edit(3, 4, "j")
                 text.edit(4, 8, "ane", mapOf("b" to "1"))
@@ -116,8 +116,8 @@ class GCTest {
             val document = Document(documentKey)
             assertEquals("{}", document.toJson())
 
-            document.updateAsync {
-                it.setNewTree(
+            document.updateAsync { root, _ ->
+                root.setNewTree(
                     "t",
                     element("doc") {
                         element("p") {
@@ -149,8 +149,8 @@ class GCTest {
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(2, nodeLengthBeforeGC - nodeLengthAfterGC)
 
-            document.updateAsync {
-                it.getAs<JsonTree>("t").editByPath(
+            document.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(
                     listOf(0, 0, 0),
                     listOf(0, 0, 2),
                     text { "cv" },
@@ -171,8 +171,8 @@ class GCTest {
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(1, nodeLengthBeforeGC - nodeLengthAfterGC)
 
-            document.updateAsync {
-                it.getAs<JsonTree>("t").editByPath(
+            document.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(
                     listOf(0),
                     listOf(1),
                     element("p") { element("tn") { text { "ab" } } },
@@ -199,8 +199,8 @@ class GCTest {
     @Test
     fun test_gc_with_tree_for_multi_client() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
-            d1.updateAsync {
-                it.setNewTree(
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
                     "t",
                     element("doc") {
                         element("p") {
@@ -224,8 +224,8 @@ class GCTest {
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
             c2.syncAsync().await()
 
-            d2.updateAsync {
-                it.getAs<JsonTree>("t").editByPath(
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(
                     listOf(0, 0, 0),
                     listOf(0, 0, 2),
                     text { "gh" },
@@ -264,14 +264,14 @@ class GCTest {
     @Test
     fun test_gc_with_container_type_for_multi_client() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
-            d1.updateAsync {
-                it["1"] = 1
-                it.setNewArray("2").apply {
+            d1.updateAsync { root, _ ->
+                root["1"] = 1
+                root.setNewArray("2").apply {
                     put(1)
                     put(2)
                     put(3)
                 }
-                it["3"] = 3
+                root["3"] = 3
             }.await()
             assertEquals(0, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
@@ -282,8 +282,8 @@ class GCTest {
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
             c2.syncAsync().await()
 
-            d2.updateAsync {
-                it.remove("2")
+            d2.updateAsync { root, _ ->
+                root.remove("2")
             }.await()
             assertEquals(0, d1.garbageLength)
             assertEquals(4, d2.garbageLength)
@@ -318,9 +318,9 @@ class GCTest {
     @Test
     fun test_gc_with_text_for_multi_client() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
-            d1.updateAsync {
-                it.setNewText("text").edit(0, 0, "Hello World")
-                it.setNewText("textWithAttr").edit(0, 0, "Hello World")
+            d1.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, "Hello World")
+                root.setNewText("textWithAttr").edit(0, 0, "Hello World")
             }.await()
             assertEquals(0, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
@@ -331,12 +331,12 @@ class GCTest {
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
             c2.syncAsync().await()
 
-            d2.updateAsync {
-                it.getAs<JsonText>("text").apply {
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").apply {
                     edit(0, 1, "a")
                     edit(1, 2, "b")
                 }
-                it.getAs<JsonText>("textWithAttr").edit(
+                root.getAs<JsonText>("textWithAttr").edit(
                     0,
                     1,
                     "a",
@@ -379,16 +379,16 @@ class GCTest {
             detachDocuments = false,
             realTimeSync = false,
         ) { c1, c2, d1, d2, _ ->
-            d1.updateAsync {
-                it["1"] = 1
-                it.setNewArray("2").apply {
+            d1.updateAsync { root, _ ->
+                root["1"] = 1
+                root.setNewArray("2").apply {
                     put(1)
                     put(2)
                     put(3)
                 }
-                it["3"] = 3
-                it.setNewText("4").edit(0, 0, "hi")
-                it.setNewText("5").edit(0, 0, "hi")
+                root["3"] = 3
+                root.setNewText("4").edit(0, 0, "hi")
+                root.setNewText("5").edit(0, 0, "hi")
             }.await()
             assertEquals(0, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
@@ -399,10 +399,10 @@ class GCTest {
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
             c2.syncAsync().await()
 
-            d1.updateAsync {
-                it.remove("2")
-                it.getAs<JsonText>("4").edit(0, 1, "h")
-                it.getAs<JsonText>("5").edit(
+            d1.updateAsync { root, _ ->
+                root.remove("2")
+                root.getAs<JsonText>("4").edit(0, 1, "h")
+                root.getAs<JsonText>("5").edit(
                     0,
                     1,
                     "h",

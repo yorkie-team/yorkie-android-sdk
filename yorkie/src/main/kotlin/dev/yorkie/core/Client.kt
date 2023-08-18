@@ -6,8 +6,6 @@ import dev.yorkie.api.toActorID
 import dev.yorkie.api.toByteString
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
-import dev.yorkie.api.toPBClient
-import dev.yorkie.api.toPresence
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchDocumentResponse
 import dev.yorkie.api.v1.YorkieServiceGrpcKt.YorkieServiceCoroutineStub
@@ -17,20 +15,14 @@ import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.removeDocumentRequest
-import dev.yorkie.api.v1.updatePresenceRequest
 import dev.yorkie.api.v1.watchDocumentRequest
-import dev.yorkie.core.Attachment.Companion.UninitializedPresences
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
 import dev.yorkie.core.Client.Event.DocumentSynced
-import dev.yorkie.core.Client.Event.PeersChanged
-import dev.yorkie.core.Client.PeersChangedResult.Initialized
-import dev.yorkie.core.Client.PeersChangedResult.PresenceChanged
-import dev.yorkie.core.Client.PeersChangedResult.Unwatched
-import dev.yorkie.core.Client.PeersChangedResult.Watched
-import dev.yorkie.core.Peers.Companion.asPeers
+import dev.yorkie.core.Presences.Companion.asPresences
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
+import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -52,7 +44,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
@@ -89,12 +80,6 @@ public class Client @VisibleForTesting internal constructor(
 
     private val _streamConnectionStatus = MutableStateFlow(StreamConnectionStatus.Disconnected)
     public val streamConnectionStatus = _streamConnectionStatus.asStateFlow()
-
-    private val _peerStatus = MutableStateFlow(emptyMap<Document.Key, Peers>())
-    public val peerStatus = _peerStatus.asStateFlow()
-
-    public var presenceInfo = PresenceInfo(0, options.presence?.value.orEmpty())
-        private set
 
     private val service by lazy {
         YorkieServiceCoroutineStub(channel, CallOptions.DEFAULT).withInterceptors(
@@ -275,7 +260,7 @@ public class Client @VisibleForTesting internal constructor(
         return scope.launch(activationJob) {
             service.watchDocument(
                 watchDocumentRequest {
-                    client = toPBClient()
+                    clientId = requireClientId().toByteString()
                     documentId = attachment.documentID
                 },
                 documentBasedRequestHeader(attachment.document.key),
@@ -295,57 +280,40 @@ public class Client @VisibleForTesting internal constructor(
         response: WatchDocumentResponse,
     ) {
         if (response.hasInitialization()) {
-            val pbPeers = response.initialization.peersList
-            val attachment = attachments.value[documentKey] ?: return
-            if (attachment.peerPresences == UninitializedPresences) {
-                attachments.value += documentKey to attachment.copy(peerPresences = Peers())
+            response.initialization.clientIdsList.forEach { pbClientID ->
+                val clientID = pbClientID.toActorID()
+                val document = attachments.value[documentKey]?.document ?: return
+                document.onlineClients.add(clientID)
+                document.publish(
+                    PresenceChange.MyPresence.Initialized(document.presences.value.asPresences()),
+                )
             }
-            val peers = pbPeers.associate { peer ->
-                peer.id.toActorID() to peer.presence.toPresence()
-            }.asPeers()
-            val newAttachment = attachments.value
-                .getValue(documentKey)
-                .copy(peerPresences = peers)
-            attachments.value += documentKey to newAttachment
-
-            val changedPeers = mapOf(
-                documentKey to attachments.value[documentKey]?.peerPresences.orEmpty().asPeers(),
-            )
-            eventStream.emit(PeersChanged(Initialized(changedPeers)))
-            emitPeerStatus()
             return
         }
+
         val watchEvent = response.event
         val eventType = checkNotNull(watchEvent.type)
         // only single key will be received since 0.3.1 server.
         val attachment = attachments.value[documentKey] ?: return
-        val publisher = watchEvent.publisher.id.toActorID()
-        val presence = watchEvent.publisher.presence.toPresence()
-        val presences = attachment.peerPresences
+        val publisher = watchEvent.publisher.toActorID()
+
         when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
-                val newPeers = presences + (publisher to presence)
-                attachments.value += documentKey to attachment.copy(peerPresences = newPeers)
-                eventStream.emit(
-                    PeersChanged(
-                        Watched(documentKey to newPeers.filterKeys { it == publisher }.asPeers()),
-                    ),
-                )
-                emitPeerStatus()
+                attachment.document.onlineClients.add(publisher)
+                if (publisher in attachment.document.presences.value) {
+                    val presence = attachment.document.presences.value[publisher] ?: return
+                    attachment.document.publish(
+                        PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
+                    )
+                }
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
-                val removedPresence = presences[publisher]
-                removedPresence?.let {
-                    val newPeers = presences - publisher
-                    attachments.value += documentKey to attachment.copy(peerPresences = newPeers)
-                    eventStream.emit(
-                        PeersChanged(
-                            Unwatched(documentKey to (publisher to it).asPeers()),
-                        ),
-                    )
-                }
-                emitPeerStatus()
+                attachment.document.onlineClients.remove(publisher)
+                val presence = attachment.document.presences.value[publisher] ?: return
+                attachment.document.publish(
+                    PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
+                )
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
@@ -355,73 +323,9 @@ public class Client @VisibleForTesting internal constructor(
                 eventStream.emit(Event.DocumentsChanged(listOf(documentKey)))
             }
 
-            DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED -> {
-                if ((presences[publisher]?.clock ?: -1) < presence.clock) {
-                    val newPeers = presences + (publisher to presence)
-                    attachments.value += documentKey to attachment.copy(peerPresences = newPeers)
-                }
-                eventStream.emit(
-                    PeersChanged(
-                        PresenceChanged(documentKey to (publisher to presence).asPeers()),
-                    ),
-                )
-                emitPeerStatus()
-            }
-
             DocEventType.UNRECOGNIZED -> {
                 // nothing to do
             }
-        }
-    }
-
-    private suspend fun emitPeerStatus() {
-        _peerStatus.emit(
-            attachments.value.toList().associate { (documentKey, attachment) ->
-                documentKey to attachment.peerPresences.asPeers()
-            },
-        )
-    }
-
-    /**
-     * Updates the [PresenceInfo] of this [Client].
-     */
-    public fun updatePresenceAsync(key: String, value: String): Deferred<Boolean> {
-        return scope.async {
-            if (!isActive) {
-                return@async false
-            }
-
-            fun realTimeAttachments() = attachments.value.filter { it.value.isRealTimeSync }.keys
-
-            realTimeAttachments().forEach {
-                waitForInitialization(it)
-            }
-
-            presenceInfo = presenceInfo.copy(
-                clock = presenceInfo.clock + 1,
-                data = presenceInfo.data + (key to value),
-            )
-
-            realTimeAttachments().takeUnless { it.isEmpty() }
-                ?.forEach { key ->
-                    try {
-                        service.updatePresence(
-                            updatePresenceRequest {
-                                client = toPBClient()
-                                documentId = attachments.value[key]?.documentID ?: return@forEach
-                            },
-                            documentBasedRequestHeader(key),
-                        )
-                    } catch (e: StatusException) {
-                        YorkieLogger.e("Client.updatePresence", e.stackTraceToString())
-                        return@async false
-                    }
-                    val attachment = attachments.value[key] ?: return@forEach
-                    val newPeers = attachment.peerPresences + (requireClientId() to presenceInfo)
-                    attachments.value += key to attachment.copy(peerPresences = newPeers)
-                } ?: return@async true
-            emitPeerStatus()
-            true
         }
     }
 
@@ -431,6 +335,7 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun attachAsync(
         document: Document,
+        initialPresence: P = emptyMap(),
         isRealTimeSync: Boolean = true,
     ): Deferred<Boolean> {
         return scope.async {
@@ -441,6 +346,9 @@ public class Client @VisibleForTesting internal constructor(
                 "document is not detached"
             }
             document.setActor(requireClientId())
+            document.updateAsync { _, presence ->
+                presence.put(initialPresence)
+            }.await()
 
             val request = attachDocumentRequest {
                 clientId = requireClientId().toByteString()
@@ -468,7 +376,6 @@ public class Client @VisibleForTesting internal constructor(
                 response.documentId,
                 isRealTimeSync,
             )
-            waitForInitialization(document.key)
             true
         }
     }
@@ -488,6 +395,11 @@ public class Client @VisibleForTesting internal constructor(
             }
             val attachment = attachments.value[document.key]
                 ?: throw IllegalArgumentException("document is not attached")
+
+            document.updateAsync { _, presence ->
+                presence.clear()
+            }.await()
+
             val request = detachDocumentRequest {
                 clientId = requireClientId().toByteString()
                 changePack = document.createChangePack().toPBChangePack()
@@ -573,14 +485,6 @@ public class Client @VisibleForTesting internal constructor(
 
     public fun requireClientId() = (status.value as Status.Activated).clientId
 
-    private suspend fun waitForInitialization(documentKey: Document.Key) {
-        attachments.first { attachments ->
-            with(attachments[documentKey]) {
-                this == null || !isRealTimeSync || peerPresences != UninitializedPresences
-            }
-        }
-    }
-
     /**
      * Pauses the realtime synchronization of the given [document].
      */
@@ -657,7 +561,7 @@ public class Client @VisibleForTesting internal constructor(
          * Means that the client is not activated. It is the initial stastus of the client.
          * If the client is deactivated, all [Document]s of the client are also not used.
          */
-        public object Deactivated : Status
+        public data object Deactivated : Status
     }
 
     /**
@@ -694,36 +598,6 @@ public class Client @VisibleForTesting internal constructor(
         ) : DocumentSyncResult(document)
     }
 
-    public sealed class PeersChangedResult(
-        public val changedPeers: Map<Document.Key, Peers>,
-    ) {
-
-        public class Initialized(
-            changedPeers: Map<Document.Key, Peers>,
-        ) : PeersChangedResult(changedPeers)
-
-        public class PresenceChanged(
-            changedPeers: Map<Document.Key, Peers>,
-        ) : PeersChangedResult(changedPeers) {
-
-            public constructor(changedPeer: Pair<Document.Key, Peers>) : this(mapOf(changedPeer))
-        }
-
-        public class Watched(
-            changedPeers: Map<Document.Key, Peers>,
-        ) : PeersChangedResult(changedPeers) {
-
-            public constructor(changedPeer: Pair<Document.Key, Peers>) : this(mapOf(changedPeer))
-        }
-
-        public class Unwatched(
-            changedPeers: Map<Document.Key, Peers>,
-        ) : PeersChangedResult(changedPeers) {
-
-            public constructor(changedPeer: Pair<Document.Key, Peers>) : this(mapOf(changedPeer))
-        }
-    }
-
     /**
      * User-settable options used when defining [Client].
      */
@@ -733,12 +607,6 @@ public class Client @VisibleForTesting internal constructor(
          * If not set, a random key is generated.
          */
         public val key: String = UUID.randomUUID().toString(),
-        /**
-         * The presence information of this [Client].
-         * If the [Client] attaches a [Document], the [PresenceInfo] is sent to the other peers
-         * attached to the [Document].
-         */
-        public val presence: Presence? = null,
         /**
          * API key of the project used to identify the project.
          */
@@ -775,10 +643,5 @@ public class Client @VisibleForTesting internal constructor(
          * Means that the document has synced with the server.
          */
         public class DocumentSynced(public val result: DocumentSyncResult) : Event
-
-        /**
-         * Means that there is a change in peers.
-         */
-        public class PeersChanged(public val result: PeersChangedResult) : Event
     }
 }

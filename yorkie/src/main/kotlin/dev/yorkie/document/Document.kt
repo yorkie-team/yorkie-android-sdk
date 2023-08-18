@@ -2,7 +2,15 @@ package dev.yorkie.document
 
 import com.google.common.annotations.VisibleForTesting
 import com.google.protobuf.ByteString
-import dev.yorkie.api.toCrdtObject
+import dev.yorkie.api.toSnapshot
+import dev.yorkie.core.P
+import dev.yorkie.core.Presence
+import dev.yorkie.core.PresenceChange
+import dev.yorkie.core.PresenceInfo
+import dev.yorkie.core.Presences
+import dev.yorkie.core.Presences.Companion.asPresences
+import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
+import dev.yorkie.document.Document.Event.PresenceChange.Others
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
@@ -26,9 +34,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 
 /**
@@ -48,7 +63,7 @@ public class Document(public val key: Key) {
 
     @get:VisibleForTesting
     @Volatile
-    internal var clone: CrdtRoot? = null
+    internal var clone: RootClone? = null
         private set
 
     private var changeID = ChangeID.InitialChangeID
@@ -67,12 +82,22 @@ public class Document(public val key: Key) {
     internal val garbageLength: Int
         get() = root.getGarbageLength()
 
+    internal val onlineClients = mutableSetOf<ActorID>()
+
+    private val _presences = MutableStateFlow(Presences())
+    public val presences: StateFlow<Presences> = _presences.map { presences ->
+        presences.filterKeys { it in onlineClients }.asPresences()
+    }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences())
+
+    @VisibleForTesting
+    internal val allPresences: StateFlow<Presences> = _presences.asStateFlow()
+
     /**
      * Executes the given [updater] to update this document.
      */
     public fun updateAsync(
         message: String? = null,
-        updater: suspend (root: JsonObject) -> Unit,
+        updater: suspend (root: JsonObject, presence: Presence) -> Unit,
     ): Deferred<Boolean> {
         return scope.async {
             check(status != DocumentStatus.Removed) {
@@ -82,29 +107,49 @@ public class Document(public val key: Key) {
             val clone = ensureClone()
             val context = ChangeContext(
                 id = changeID.next(),
-                root = clone,
+                root = clone.root,
                 message = message,
             )
+            val actorID = changeID.actor
 
             runCatching {
-                val proxy = JsonObject(context, clone.rootObject)
-                updater.invoke(proxy)
+                val proxy = JsonObject(context, clone.root.rootObject)
+                updater.invoke(
+                    proxy,
+                    Presence(context, clone.presences[changeID.actor] ?: emptyMap()),
+                )
             }.onFailure {
                 this@Document.clone = null
                 YorkieLogger.e("Document.update", it.message.orEmpty())
                 return@async false
             }
 
-            if (!context.hasOperations) {
+            if (!context.hasChange) {
                 return@async true
             }
             val change = context.getChange()
-            val operationInfos = change.execute(root)
+            val (operationInfos, newPresences) = change.execute(root, _presences.value)
+
+            newPresences?.let { _presences.emit(it) }
             localChanges += change
             changeID = change.id
-            val changeInfo = change.toChangeInfo(operationInfos)
-            eventStream.emit(Event.LocalChange(changeInfo))
+
+            if (change.hasOperations) {
+                eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
+            }
+            if (change.hasPresenceChange) {
+                val presence = _presences.value[actorID] ?: return@async false
+                eventStream.emit(createPresenceChangedEvent(actorID, presence))
+            }
             true
+        }
+    }
+
+    private fun createPresenceChangedEvent(actorID: ActorID, presence: P): Event.PresenceChange {
+        return if (actorID == changeID.actor) {
+            MyPresence.PresenceChanged(PresenceInfo(actorID, presence))
+        } else {
+            Others.PresenceChanged(PresenceInfo(actorID, presence))
         }
     }
 
@@ -115,22 +160,19 @@ public class Document(public val key: Key) {
         return events.filterNot { it is Event.Snapshot && targetPath != "&" }
             .mapNotNull { event ->
                 when (event) {
-                    is Event.Snapshot -> event
                     is Event.RemoteChange -> {
                         event.changeInfo.operations.filterTargetOpInfos(targetPath)
                             .takeIf { it.isNotEmpty() }
-                            ?.let {
-                                Event.RemoteChange(event.changeInfo.copy(operations = it))
-                            }
+                            ?.let { Event.RemoteChange(event.changeInfo.copy(operations = it)) }
                     }
 
                     is Event.LocalChange -> {
                         event.changeInfo.operations.filterTargetOpInfos(targetPath)
                             .takeIf { it.isNotEmpty() }
-                            ?.let {
-                                Event.LocalChange(event.changeInfo.copy(operations = it))
-                            }
+                            ?.let { Event.LocalChange(event.changeInfo.copy(operations = it)) }
                     }
+
+                    else -> event
                 }
             }
     }
@@ -203,7 +245,9 @@ public class Document(public val key: Key) {
      * Applies the given [snapshot] into this document.
      */
     private suspend fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
-        root = CrdtRoot(snapshot.toCrdtObject())
+        val (root, presences) = snapshot.toSnapshot()
+        this.root = CrdtRoot(root)
+        _presences.value = presences.asPresences()
         changeID = changeID.syncLamport(serverSeq)
         clone = null
         eventStream.emit(Event.Snapshot(snapshot))
@@ -214,22 +258,45 @@ public class Document(public val key: Key) {
      */
     private suspend fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
-        val changesInfo = changes.map {
-            it.execute(clone)
-            val operationInfos = it.execute(root)
-            changeID = changeID.syncLamport(it.id.lamport)
-            it.toChangeInfo(operationInfos)
-        }
-        if (changesInfo.isEmpty()) {
-            return
-        }
-        changesInfo.forEach { changeInfo ->
-            eventStream.emit(Event.RemoteChange(changeInfo))
+        changes.forEach { change ->
+            change.execute(clone.root, clone.presences).also { (_, newPresences) ->
+                this.clone = clone.copy(presences = newPresences ?: return@also)
+            }
+            val actorID = change.id.actor
+            var event: Event? = null
+            if (change.hasPresenceChange && actorID in onlineClients) {
+                val presenceChange = change.presenceChange ?: return@forEach
+                event = when (presenceChange) {
+                    is PresenceChange.Put -> {
+                        if (actorID in _presences.value) {
+                            createPresenceChangedEvent(actorID, presenceChange.presence)
+                        } else {
+                            Others.Watched(PresenceInfo(actorID, presenceChange.presence))
+                        }
+                    }
+
+                    is PresenceChange.Clear -> {
+                        onlineClients.remove(actorID)
+                        presences.value[actorID]?.let { presence ->
+                            Others.Unwatched(PresenceInfo(actorID, presence))
+                        }
+                    }
+                }
+            }
+
+            val (opInfos, newPresences) = change.execute(root, _presences.value)
+            if (change.hasOperations) {
+                eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
+            }
+
+            event?.let { eventStream.emit(it) }
+            newPresences?.let { _presences.emit(it) }
+            changeID = changeID.syncLamport(change.id.lamport)
         }
     }
 
-    private suspend fun ensureClone(): CrdtRoot = withContext(dispatcher) {
-        clone ?: root.deepCopy().also { clone = it }
+    private suspend fun ensureClone(): RootClone = withContext(dispatcher) {
+        clone ?: RootClone(root.deepCopy(), _presences.value.asPresences()).also { clone = it }
     }
 
     /**
@@ -263,16 +330,38 @@ public class Document(public val key: Key) {
 
     public suspend fun getRoot(): JsonObject = withContext(dispatcher) {
         val clone = ensureClone()
-        val context = ChangeContext(changeID.next(), clone)
-        JsonObject(context, clone.rootObject)
+        val context = ChangeContext(changeID.next(), clone.root)
+        JsonObject(context, clone.root.rootObject)
     }
 
     /**
      * Deletes elements that were removed before the given time.
      */
     internal fun garbageCollect(ticket: TimeTicket): Int {
-        clone?.garbageCollect(ticket)
+        clone?.root?.garbageCollect(ticket)
         return root.garbageCollect(ticket)
+    }
+
+    /**
+     * Triggers an event in this [Document].
+     */
+    internal suspend fun publish(event: Event) {
+        when (event) {
+            is Others.Watched -> {
+                presences.first { event.watched.actorID in it.keys }
+            }
+
+            is Others.Unwatched -> {
+                presences.first { event.unwatched.actorID !in it.keys }
+            }
+
+            is MyPresence.Initialized -> {
+                presences.first { event.initialized == it }
+            }
+
+            else -> {}
+        }
+        eventStream.emit(event)
     }
 
     private fun Change.toChangeInfo(operationInfos: List<OperationInfo>) =
@@ -307,6 +396,41 @@ public class Document(public val key: Key) {
         public class RemoteChange internal constructor(
             public val changeInfo: ChangeInfo,
         ) : Event
+
+        public sealed interface PresenceChange : Event {
+
+            public sealed interface MyPresence : PresenceChange {
+
+                /**
+                 * Means that online clients have been loaded from the server.
+                 */
+                public data class Initialized(public val initialized: Presences) : MyPresence
+
+                /**
+                 * Means that the presences of the client has been updated.
+                 */
+                public data class PresenceChanged(public val changed: PresenceInfo) : MyPresence
+            }
+
+            public sealed interface Others : PresenceChange {
+
+                /**
+                 * Means that the client has established a connection with the server,
+                 * enabling real-time synchronization.
+                 */
+                public data class Watched(public val watched: PresenceInfo) : Others
+
+                /**
+                 * Means that the client has been disconnected.
+                 */
+                public data class Unwatched(public val unwatched: PresenceInfo) : Others
+
+                /**
+                 * Means that the presences of the client has been updated.
+                 */
+                public data class PresenceChanged(public val changed: PresenceInfo) : Others
+            }
+        }
 
         /**
          * Represents the modification made during a document update and the message passed.
@@ -346,4 +470,9 @@ public class Document(public val key: Key) {
          */
         Removed,
     }
+
+    internal data class RootClone(
+        val root: CrdtRoot,
+        val presences: Presences,
+    )
 }

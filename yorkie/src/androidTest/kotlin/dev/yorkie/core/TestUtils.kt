@@ -8,11 +8,10 @@ import java.util.UUID
 
 const val GENERAL_TIMEOUT = 3_000L
 
-fun createClient(presence: Presence? = null) = Client(
+fun createClient() = Client(
     InstrumentationRegistry.getInstrumentation().targetContext,
     "10.0.2.2",
     8080,
-    options = Client.Options(presence = presence),
 ) {
     it.usePlaintext()
 }
@@ -27,6 +26,7 @@ fun String.toDocKey(): Document.Key {
 fun withTwoClientsAndDocuments(
     detachDocuments: Boolean = true,
     realTimeSync: Boolean = true,
+    presences: Pair<Map<String, String>, Map<String, String>> = Pair(emptyMap(), emptyMap()),
     callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
 ) {
     runBlocking {
@@ -39,8 +39,16 @@ fun withTwoClientsAndDocuments(
         client1.activateAsync().await()
         client2.activateAsync().await()
 
-        client1.attachAsync(document1, realTimeSync).await()
-        client2.attachAsync(document2, realTimeSync).await()
+        client1.attachAsync(
+            document1,
+            isRealTimeSync = realTimeSync,
+            initialPresence = presences.first,
+        ).await()
+        client2.attachAsync(
+            document2,
+            isRealTimeSync = realTimeSync,
+            initialPresence = presences.second,
+        ).await()
 
         callback.invoke(this, client1, client2, document1, document2, documentKey)
 

@@ -32,22 +32,22 @@ class DocumentTest {
     @Test
     fun `should not throw error when trying to delete missing key`() {
         runTest {
-            var result = target.updateAsync {
-                it["k1"] = "1"
-                it["k2"] = "2"
-                it["k2"] = "3"
-                with(it.setNewArray("k3")) {
+            var result = target.updateAsync { root, _ ->
+                root["k1"] = "1"
+                root["k2"] = "2"
+                root["k2"] = "3"
+                with(root.setNewArray("k3")) {
                     put(1)
                     put(2)
                 }
             }.await()
             assertTrue(result)
 
-            result = target.updateAsync {
-                it.remove("k1")
-                val array = it.getAs<JsonArray>("k3")
+            result = target.updateAsync { root, _ ->
+                root.remove("k1")
+                val array = root.getAs<JsonArray>("k3")
                 array.removeAt(0)
-                it.remove("k2")
+                root.remove("k2")
                 array.removeAt(2)
             }.await()
             assertTrue(result)
@@ -57,8 +57,8 @@ class DocumentTest {
     @Test
     fun `should handle null values`() {
         runTest {
-            target.updateAsync {
-                val data = it.setNewObject("data")
+            target.updateAsync { root, _ ->
+                val data = root.setNewObject("data")
                 data["null"] = null
                 data[""] = null
             }.await()
@@ -70,8 +70,8 @@ class DocumentTest {
     @Test
     fun `should handle all types`() {
         runTest {
-            target.updateAsync {
-                val obj = it.setNewObject("data")
+            target.updateAsync { root, _ ->
+                val obj = root.setNewObject("data")
                 obj["k1"] = true
                 obj["k2"] = false
                 obj["k3"] = 11
@@ -134,9 +134,9 @@ class DocumentTest {
 
             assertFalse(target.hasLocalChanges)
 
-            target.updateAsync {
-                it["k1"] = 1
-                it["k2"] = true
+            target.updateAsync { root, _ ->
+                root["k1"] = 1
+                root["k2"] = true
             }.await()
 
             assertEquals(1, events.size)
@@ -152,9 +152,9 @@ class DocumentTest {
             val secondSet = operations.last() as SetOpInfo
             assertEquals("k2", secondSet.key)
 
-            target.updateAsync {
-                it.remove("k2")
-                it.remove("k1")
+            target.updateAsync { root, _ ->
+                root.remove("k2")
+                root.remove("k1")
             }.await()
 
             assertEquals(2, events.size)
@@ -179,13 +179,13 @@ class DocumentTest {
     @Test
     fun `should clear clone when error occurs on update`() {
         runTest {
-            target.updateAsync {
-                it["k1"] = 1
+            target.updateAsync { root, _ ->
+                root["k1"] = 1
             }.await()
             assertNotNull(target.clone)
 
-            target.updateAsync {
-                it["k2"] = 2
+            target.updateAsync { root, _ ->
+                root["k2"] = 2
                 error("error test")
             }.await()
             assertNull(target.clone)
@@ -205,16 +205,16 @@ class DocumentTest {
     @Test
     fun `should get value from paths`() {
         runTest {
-            target.updateAsync {
-                it.setNewArray("todos").putNewObject().apply {
+            target.updateAsync { root, _ ->
+                root.setNewArray("todos").putNewObject().apply {
                     set("text", "todo1")
                     set("completed", false)
                 }
-                it.setNewObject("obj").setNewObject("c1").apply {
+                root.setNewObject("obj").setNewObject("c1").apply {
                     set("name", "josh")
                     set("age", 14)
                 }
-                it["str"] = "string"
+                root["str"] = "string"
             }.await()
 
             assertEquals(

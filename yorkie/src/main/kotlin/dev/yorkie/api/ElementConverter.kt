@@ -19,7 +19,9 @@ import dev.yorkie.api.v1.textNode
 import dev.yorkie.api.v1.textNodeID
 import dev.yorkie.api.v1.textNodePos
 import dev.yorkie.api.v1.treeNode
+import dev.yorkie.api.v1.treeNodes
 import dev.yorkie.api.v1.treePos
+import dev.yorkie.core.P
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
@@ -41,6 +43,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TextValue
+import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.traverse
@@ -61,9 +64,16 @@ internal typealias PBTextNode = dev.yorkie.api.v1.TextNode
 internal typealias PBTree = dev.yorkie.api.v1.JSONElement.Tree
 internal typealias PBTreeNode = dev.yorkie.api.v1.TreeNode
 internal typealias PBTreePos = dev.yorkie.api.v1.TreePos
+internal typealias PBTreeNodes = dev.yorkie.api.v1.TreeNodes
+internal typealias PBSnapshot = dev.yorkie.api.v1.Snapshot
 
-internal fun ByteString.toCrdtObject(): CrdtObject {
-    return PBJsonElement.parseFrom(this).jsonObject.toCrdtObject()
+internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<ActorID, P>> {
+    return if (this == null) {
+        CrdtObject(InitialTimeTicket) to emptyMap()
+    } else {
+        val snapshot = PBSnapshot.parseFrom(this)
+        snapshot.root.toCrdtElement() as CrdtObject to snapshot.presencesMap.toPresences()
+    }
 }
 
 internal fun ByteString.toCrdtTree(): CrdtTree {
@@ -309,6 +319,18 @@ internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
             add(pbTreeNode)
         }
     }
+}
+
+internal fun List<CrdtTreeNode>.toPBTreeNodesWhenEdit(): List<PBTreeNodes> {
+    return map {
+        treeNodes {
+            content.addAll(it.toPBTreeNodes())
+        }
+    }
+}
+
+internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
+    return mapNotNull { it.contentList.toCrdtTreeRootNode() }.ifEmpty { null }
 }
 
 internal fun CrdtTreePos.toPBTreePos(): PBTreePos {

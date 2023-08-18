@@ -13,9 +13,9 @@ internal class Rht : Iterable<Rht.Node> {
 
     val nodeKeyValueMap: Map<String, String>
         get() {
-            return nodeMapByKey.map { (key, node) ->
+            return nodeMapByKey.entries.associate { (key, node) ->
                 key to node.value
-            }.toMap()
+            }
         }
 
     fun set(key: String, value: String, executedAt: TimeTicket) {

@@ -2,6 +2,7 @@ package dev.yorkie.core
 
 import android.content.Context
 import com.google.common.annotations.VisibleForTesting
+import com.google.protobuf.ByteString
 import dev.yorkie.api.toActorID
 import dev.yorkie.api.toByteString
 import dev.yorkie.api.toChangePack
@@ -19,6 +20,7 @@ import dev.yorkie.api.v1.watchDocumentRequest
 import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
 import dev.yorkie.core.Client.DocumentSyncResult.Synced
 import dev.yorkie.core.Client.Event.DocumentSynced
+import dev.yorkie.core.Presences.Companion.UninitializedPresences
 import dev.yorkie.core.Presences.Companion.asPresences
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
@@ -44,6 +46,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
@@ -280,14 +283,12 @@ public class Client @VisibleForTesting internal constructor(
         response: WatchDocumentResponse,
     ) {
         if (response.hasInitialization()) {
-            response.initialization.clientIdsList.forEach { pbClientID ->
-                val clientID = pbClientID.toActorID()
-                val document = attachments.value[documentKey]?.document ?: return
-                document.onlineClients.add(clientID)
-                document.publish(
-                    PresenceChange.MyPresence.Initialized(document.presences.value.asPresences()),
-                )
-            }
+            val document = attachments.value[documentKey]?.document ?: return
+            val clientIDs = response.initialization.clientIdsList.map(ByteString::toActorID)
+            document.onlineClients.value = document.onlineClients.value + clientIDs
+            document.publish(
+                PresenceChange.MyPresence.Initialized(document.presences.value.asPresences()),
+            )
             return
         }
 
@@ -295,25 +296,29 @@ public class Client @VisibleForTesting internal constructor(
         val eventType = checkNotNull(watchEvent.type)
         // only single key will be received since 0.3.1 server.
         val attachment = attachments.value[documentKey] ?: return
+        val document = attachment.document
         val publisher = watchEvent.publisher.toActorID()
 
         when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
-                attachment.document.onlineClients.add(publisher)
-                if (publisher in attachment.document.presences.value) {
-                    val presence = attachment.document.presences.value[publisher] ?: return
-                    attachment.document.publish(
+                // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
+                // unless we also know their initial presence data at this point.
+                document.onlineClients.value = document.onlineClients.value + publisher
+                if (publisher in document.allPresences.value) {
+                    val presence = document.presences.first { publisher in it }[publisher] ?: return
+                    document.publish(
                         PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
                     )
                 }
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
-                attachment.document.onlineClients.remove(publisher)
-                val presence = attachment.document.presences.value[publisher] ?: return
-                attachment.document.publish(
-                    PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
-                )
+                // NOTE(chacha912): There is no presence,
+                // when PresenceChange(clear) is applied before unwatching. In that case,
+                // the 'unwatched' event is triggered while handling the PresenceChange.
+                val presence = document.presences.value[publisher] ?: return
+                document.onlineClients.value = document.onlineClients.value - publisher
+                document.publish(PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)))
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
@@ -376,6 +381,7 @@ public class Client @VisibleForTesting internal constructor(
                 response.documentId,
                 isRealTimeSync,
             )
+            waitForInitialization(document.key)
             true
         }
     }
@@ -480,6 +486,13 @@ public class Client @VisibleForTesting internal constructor(
             document.applyChangePack(pack)
             attachments.value -= document.key
             true
+        }
+    }
+
+    private suspend fun waitForInitialization(documentKey: Document.Key) {
+        val attachment = attachments.value[documentKey] ?: return
+        if (attachment.isRealTimeSync) {
+            attachment.document.presences.first { it != UninitializedPresences }
         }
     }
 

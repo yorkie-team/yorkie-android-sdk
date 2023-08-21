@@ -13,7 +13,7 @@ public data class Presence internal constructor(
 
     public fun put(data: Map<String, String>) {
         presence.putAll(data)
-        changeContext.presenceChange = PresenceChange.Put(presence + data)
+        changeContext.presenceChange = PresenceChange.Put(presence)
     }
 
     public fun clear() {

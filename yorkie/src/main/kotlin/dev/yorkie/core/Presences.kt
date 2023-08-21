@@ -30,6 +30,13 @@ public class Presences private constructor(
         public fun Pair<ActorID, P>.asPresences(): Presences {
             return Presences(mutableMapOf(first to second.toMutableMap()))
         }
+
+        internal val UninitializedPresences = Presences(
+            object : HashMap<ActorID, MutableMap<String, String>>() {
+
+                override fun equals(other: Any?): Boolean = this === other
+            },
+        )
     }
 }
 

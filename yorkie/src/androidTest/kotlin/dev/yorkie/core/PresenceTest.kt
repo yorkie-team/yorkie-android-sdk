@@ -18,6 +18,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class PresenceTest {
@@ -303,6 +304,274 @@ class PresenceTest {
             c1.detachAsync(d1).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun test_returning_online_clients_only() {
+        val cursor = gson.toJson(Cursor(0, 0))
+
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val c3 = createClient()
+
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(documentKey)
+            val d2 = Document(documentKey)
+            val d3 = Document(documentKey)
+            val d1Events = mutableListOf<Document.Event>()
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+            c3.activateAsync().await()
+
+            val c1ID = c1.requireClientId()
+            val c2ID = c2.requireClientId()
+            val c3ID = c3.requireClientId()
+
+            c1.attachAsync(d1, initialPresence = mapOf("name" to "a1", "cursor" to cursor)).await()
+
+            val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.filterIsInstance<Document.Event.PresenceChange>()
+                    .collect(d1Events::add)
+            }
+
+            // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
+            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
+            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c2 watched
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+
+            assertIs<Others.Watched>(d1Events.last())
+            assertEquals(
+                mapOf(c1ID to d1.presences.value[c1ID], c2ID to d2.presences.value[c2ID]),
+                d1.presences.value.toMap(),
+            )
+            assertNull(d1.presences.value[c3ID])
+
+            // 02. c2 pauses the document (in manual sync), c3 resumes the document (in realtime sync).
+            c2.pause(d2)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c2 unwatched
+                while (d1Events.size < 2) {
+                    delay(50)
+                }
+            }
+
+            assertIs<Others.Unwatched>(d1Events.last())
+            c3.resume(d3)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c3 watched
+                while (d1Events.size < 3) {
+                    delay(50)
+                }
+            }
+
+            assertIs<Others.Watched>(d1Events.last())
+            assertEquals(
+                mapOf(c1ID to d1.presences.value[c1ID], c3ID to d3.presences.value[c3ID]),
+                d1.presences.value.toMap(),
+            )
+            assertNull(d1.presences.value[c2ID])
+
+            d1CollectJob.cancel()
+            c1.detachAsync(d1).await()
+            c3.detachAsync(d3).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c3.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun test_receiving_presence_events_only_for_realtime_sync() {
+        val cursor = gson.toJson(Cursor(0, 0))
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val c3 = createClient()
+
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(documentKey)
+            val d2 = Document(documentKey)
+            val d3 = Document(documentKey)
+            val d1Events = mutableListOf<Document.Event>()
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+            c3.activateAsync().await()
+
+            val c2ID = c2.requireClientId()
+            val c3ID = c3.requireClientId()
+
+            c1.attachAsync(d1, initialPresence = mapOf("name" to "a1", "cursor" to cursor)).await()
+
+            val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.filterIsInstance<Document.Event.PresenceChange>()
+                    .collect(d1Events::add)
+            }
+
+            // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
+            //     c1 receives the watched event from c2.
+            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
+            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c2 watched
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(1, d1Events.size)
+            assertEquals(
+                Others.Watched(PresenceInfo(c2ID, mapOf("name" to "b1", "cursor" to cursor))),
+                d1Events.last(),
+            )
+
+            // 02. c2 and c3 update the presence.
+            //     c1 receives the presence-changed event from c2.
+            d2.updateAsync { _, presence ->
+                presence.put(mapOf("name" to "b2"))
+            }.await()
+
+            d3.updateAsync { _, presence ->
+                presence.put(mapOf("name" to "c2"))
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c2 presence changed
+                while (d1Events.size < 2) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(2, d1Events.size)
+            assertEquals(
+                Others.PresenceChanged(
+                    PresenceInfo(
+                        c2ID,
+                        mapOf("name" to "b2", "cursor" to cursor),
+                    ),
+                ),
+                d1Events.last(),
+            )
+
+            // 03-1. c2 pauses the document, c1 receives an unwatched event from c2.
+            c2.pause(d2)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c2 unwatched
+                while (d1Events.size < 3) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(3, d1Events.size)
+            assertEquals(
+                Others.Unwatched(PresenceInfo(c2ID, mapOf("name" to "b2", "cursor" to cursor))),
+                d1Events.last(),
+            )
+
+            // 03-2. c3 resumes the document, c1 receives a watched event from c3.
+            // NOTE(chacha912): The events are influenced by the timing of realtime sync
+            // and watch stream resolution. For deterministic testing, the resume is performed
+            // after the sync. Since the sync updates c1 with all previous presence changes
+            // from c3, only the watched event is triggered.
+            c3.syncAsync().await()
+            c1.syncAsync().await()
+            c3.resume(d3)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c3 watched
+                while (d1Events.size < 4) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(4, d1Events.size)
+            assertEquals(
+                Others.Watched(PresenceInfo(c3ID, mapOf("name" to "c2", "cursor" to cursor))),
+                d1Events.last(),
+            )
+
+            // 04. c2 and c3 update the presence.
+            //     c1 receives the presence-changed event from c3.
+            d2.updateAsync { _, presence ->
+                presence.put(mapOf("name" to "b3"))
+            }.await()
+
+            d3.updateAsync { _, presence ->
+                presence.put(mapOf("name" to "c3"))
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c3 presence changed
+                while (d1Events.size < 5) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(5, d1Events.size)
+            assertEquals(
+                Others.PresenceChanged(
+                    PresenceInfo(
+                        c3ID,
+                        mapOf("name" to "c3", "cursor" to cursor),
+                    ),
+                ),
+                d1Events.last(),
+            )
+
+            // 05-1. c3 pauses the document, c1 receives an unwatched event from c3.
+            c3.pause(d3)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c3 unwatched
+                while (d1Events.size < 6) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(6, d1Events.size)
+            assertEquals(
+                Others.Unwatched(PresenceInfo(c3ID, mapOf("name" to "c3", "cursor" to cursor))),
+                d1Events.last(),
+            )
+
+            // 05-2. c2 resumes the document, c1 receives a watched event from c2.
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+            c2.resume(d2)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // c3 unwatched
+                while (d1Events.size < 7) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(7, d1Events.size)
+            assertEquals(
+                Others.Watched(PresenceInfo(c2ID, mapOf("name" to "b3", "cursor" to cursor))),
+                d1Events.last(),
+            )
+
+            d1CollectJob.cancel()
+            c1.detachAsync(d1).await()
+            c2.detachAsync(d2).await()
+            c3.detachAsync(d3).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c3.deactivateAsync().await()
         }
     }
 

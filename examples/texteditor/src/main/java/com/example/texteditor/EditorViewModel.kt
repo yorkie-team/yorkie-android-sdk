@@ -30,8 +30,8 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _content = MutableSharedFlow<String>()
     val content = _content.asSharedFlow()
 
-    private val _textOpInfos = MutableSharedFlow<Pair<ActorID, OperationInfo.TextOpInfo>>()
-    val textOpInfos = _textOpInfos.asSharedFlow()
+    private val _textOperationInfos = MutableSharedFlow<Pair<ActorID, OperationInfo.TextOperationInfo>>()
+    val textOpInfos = _textOperationInfos.asSharedFlow()
 
     val removedPeers = document.events.filterIsInstance<PresenceChange.Others.Unwatched>()
         .map { it.unwatched.actorID }
@@ -73,7 +73,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private suspend fun emitEditOpInfos(changeInfo: Document.Event.ChangeInfo) {
         changeInfo.operations.filterIsInstance<OperationInfo.EditOpInfo>()
             .forEach { opInfo ->
-                _textOpInfos.emit(changeInfo.actorID to opInfo)
+                _textOperationInfos.emit(changeInfo.actorID to opInfo)
             }
     }
 
@@ -85,7 +85,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
             gson.fromJson(jsonArray.getString(1), TextPosStructure::class.java) ?: return
         val (from, to) = document.getRoot().getAs<JsonText>(TEXT_KEY)
             .posRangeToIndexRange(fromPos to toPos)
-        _textOpInfos.emit(actorID to OperationInfo.SelectOpInfo(from, to))
+        _textOperationInfos.emit(actorID to OperationInfo.SelectOpInfo(from, to))
     }
 
     fun syncText() {

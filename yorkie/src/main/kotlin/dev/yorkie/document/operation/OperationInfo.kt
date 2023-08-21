@@ -2,6 +2,11 @@ package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.crdt.TreeNode
+import dev.yorkie.document.json.JsonArray
+import dev.yorkie.document.json.JsonCounter
+import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.json.JsonText
+import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.time.TimeTicket
 
 /**
@@ -14,48 +19,71 @@ public sealed class OperationInfo {
 
     internal var executedAt: TimeTicket = TimeTicket.InitialTimeTicket
 
-    public interface TextOpInfo
+    /**
+     * [TextOperationInfo] represents the [OperationInfo] for the [JsonText].
+     */
+    public interface TextOperationInfo
+
+    /**
+     * [CounterOperationInfo] represents the [OperationInfo] for the [JsonCounter].
+     */
+    public interface CounterOperationInfo
+
+    /**
+     * [ArrayOperationInfo] represents the [OperationInfo] for the [JsonArray].
+     */
+    public interface ArrayOperationInfo
+
+    /**
+     * [ObjectOperationInfo] represents the [OperationInfo] for the [JsonObject].
+     */
+    public interface ObjectOperationInfo
+
+    /**
+     * [TreeOperationInfo] represents the [OperationInfo] for the [JsonTree].
+     */
+    public interface TreeOperationInfo
 
     public data class AddOpInfo(val index: Int, override var path: String = INITIAL_PATH) :
-        OperationInfo()
+        OperationInfo(), ArrayOperationInfo
 
     public data class MoveOpInfo(
         val previousIndex: Int,
         val index: Int,
         override var path: String = INITIAL_PATH,
-    ) : OperationInfo()
+    ) : OperationInfo(), ArrayOperationInfo
 
     public data class SetOpInfo(val key: String, override var path: String = INITIAL_PATH) :
-        OperationInfo()
+        OperationInfo(), ObjectOperationInfo
 
     public data class RemoveOpInfo(
         val key: String?,
         val index: Int?,
         override var path: String = INITIAL_PATH,
-    ) : OperationInfo()
+    ) : OperationInfo(), ArrayOperationInfo, ObjectOperationInfo
 
     public data class IncreaseOpInfo(val value: Number, override var path: String = INITIAL_PATH) :
-        OperationInfo()
+        OperationInfo(), CounterOperationInfo
 
     public data class EditOpInfo(
         val from: Int,
         val to: Int,
         val value: TextWithAttributes,
         override var path: String = INITIAL_PATH,
-    ) : OperationInfo(), TextOpInfo
+    ) : OperationInfo(), TextOperationInfo
 
     public data class StyleOpInfo(
         val from: Int,
         val to: Int,
         val attributes: Map<String, String>,
         override var path: String = INITIAL_PATH,
-    ) : OperationInfo(), TextOpInfo
+    ) : OperationInfo(), TextOperationInfo
 
     public data class SelectOpInfo(
         val from: Int,
         val to: Int,
         override var path: String = INITIAL_PATH,
-    ) : OperationInfo(), TextOpInfo
+    ) : OperationInfo(), TextOperationInfo
 
     public data class TreeEditOpInfo(
         val from: Int,
@@ -64,7 +92,7 @@ public sealed class OperationInfo {
         val toPath: List<Int>,
         val nodes: List<TreeNode>?,
         override var path: String = INITIAL_PATH,
-    ) : OperationInfo()
+    ) : OperationInfo(), TreeOperationInfo
 
     public data class TreeStyleOpInfo(
         val from: Int,
@@ -73,7 +101,7 @@ public sealed class OperationInfo {
         val toPath: List<Int>,
         val attributes: Map<String, String>,
         override var path: String = INITIAL_PATH,
-    ) : OperationInfo()
+    ) : OperationInfo(), TreeOperationInfo
 
     companion object {
         private const val INITIAL_PATH = "initial path"

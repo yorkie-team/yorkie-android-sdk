@@ -300,7 +300,7 @@ public class Client @VisibleForTesting internal constructor(
         val publisher = watchEvent.publisher.toActorID()
 
         when (eventType) {
-            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED -> {
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
                 // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
                 // unless we also know their initial presence data at this point.
                 document.onlineClients.value = document.onlineClients.value + publisher
@@ -312,7 +312,7 @@ public class Client @VisibleForTesting internal constructor(
                 }
             }
 
-            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED -> {
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
                 // NOTE(chacha912): There is no presence,
                 // when PresenceChange(clear) is applied before unwatching. In that case,
                 // the 'unwatched' event is triggered while handling the PresenceChange.
@@ -321,11 +321,11 @@ public class Client @VisibleForTesting internal constructor(
                 document.publish(PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)))
             }
 
-            DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED -> {
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {
                 attachments.value += documentKey to attachment.copy(
                     remoteChangeEventReceived = true,
                 )
-                eventStream.emit(Event.DocumentsChanged(listOf(documentKey)))
+                eventStream.emit(Event.DocumentChanged(listOf(documentKey)))
             }
 
             DocEventType.UNRECOGNIZED -> {
@@ -650,7 +650,7 @@ public class Client @VisibleForTesting internal constructor(
         /**
          * Means that the documents of the client has changed.
          */
-        public class DocumentsChanged(public val documentKeys: List<Document.Key>) : Event
+        public class DocumentChanged(public val documentKeys: List<Document.Key>) : Event
 
         /**
          * Means that the document has synced with the server.

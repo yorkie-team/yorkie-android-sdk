@@ -264,10 +264,10 @@ public class Document(public val key: Key) {
                 this.clone = clone.copy(presences = newPresences ?: return@also)
             }
             val actorID = change.id.actor
-            var event: Event? = null
+            var presenceEvent: Event.PresenceChange? = null
             if (change.hasPresenceChange && actorID in onlineClients.value) {
                 val presenceChange = change.presenceChange ?: return@forEach
-                event = when (presenceChange) {
+                presenceEvent = when (presenceChange) {
                     is PresenceChange.Put -> {
                         if (actorID in _presences.value) {
                             createPresenceChangedEvent(actorID, presenceChange.presence)
@@ -299,7 +299,7 @@ public class Document(public val key: Key) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
 
-            event?.let { eventStream.emit(it) }
+            presenceEvent?.let { eventStream.emit(it) }
             newPresences?.let { emitPresences(it) }
             changeID = changeID.syncLamport(change.id.lamport)
         }

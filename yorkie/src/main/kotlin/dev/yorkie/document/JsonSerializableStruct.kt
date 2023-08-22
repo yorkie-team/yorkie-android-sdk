@@ -1,5 +1,6 @@
 package dev.yorkie.document
 
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPos
@@ -16,17 +17,27 @@ internal interface JsonSerializable<I, O : JsonSerializable.Struct<I>> {
     fun toStruct(): O
 }
 
-/**
- * [CrdtTreePosStruct] represents the structure of [CrdtTreePos].
- * It is used to serialize and deserialize the CRDTTreePos.
- */
 public data class CrdtTreePosStruct(
-    val createdAt: TimeTicketStruct,
-    val offset: Int,
+    val parentID: CrdtTreeNodeIDStruct,
+    val leftSiblingID: CrdtTreeNodeIDStruct,
 ) : JsonSerializable.Struct<CrdtTreePos> {
 
     override fun toOriginal(): CrdtTreePos {
-        return CrdtTreePos(createdAt.toOriginal(), offset)
+        return CrdtTreePos(parentID.toOriginal(), leftSiblingID.toOriginal())
+    }
+}
+
+/**
+ * [CrdtTreeNodeIDStruct] represents the structure of [CrdtTreeNodeID].
+ * It is used to serialize and deserialize the CRDTTreePos.
+ */
+public data class CrdtTreeNodeIDStruct(
+    val createdAt: TimeTicketStruct,
+    val offset: Int,
+) : JsonSerializable.Struct<CrdtTreeNodeID> {
+
+    override fun toOriginal(): CrdtTreeNodeID {
+        return CrdtTreeNodeID(createdAt.toOriginal(), offset)
     }
 }
 

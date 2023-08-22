@@ -3,7 +3,7 @@ package dev.yorkie.util
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
-import dev.yorkie.document.crdt.CrdtTreePos.Companion.InitialCrdtTreePos
+import dev.yorkie.document.crdt.CrdtTreeNodeID.Companion.InitialCrdtTreeNodeID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -46,28 +46,6 @@ class IndexTreeTest {
         assertThrows(IllegalArgumentException::class.java) {
             tree.findTreePos(tree.size + 1)
         }
-    }
-
-    @Test
-    fun `should find right node from the given offset in postorder traversal`() {
-        //       0   1 2 3    4   5 6 7    8
-        // <root> <p> a b </p> <p> c d </p> </root>
-        val tree = createIndexTree(
-            createElementNode(
-                "root",
-                createElementNode("p", createTextNode("ab")),
-                createElementNode("p", createTextNode("cd")),
-            ),
-        )
-
-        // postorder traversal: "ab", <b>, "cd", <p>, <root>
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(0))?.type)
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(1))?.type)
-        assertEquals("p", tree.findPostorderRight(tree.findTreePos(3))?.type)
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(4))?.type)
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(5))?.type)
-        assertEquals("p", tree.findPostorderRight(tree.findTreePos(7))?.type)
-        assertEquals("root", tree.findPostorderRight(tree.findTreePos(8))?.type)
     }
 
     @Test
@@ -405,11 +383,11 @@ class IndexTreeTest {
 
     companion object {
         private fun createElementNode(type: String, vararg childNode: CrdtTreeNode): CrdtTreeNode {
-            return CrdtTreeElement(InitialCrdtTreePos, type, childNode.toList())
+            return CrdtTreeElement(InitialCrdtTreeNodeID, type, childNode.toList())
         }
 
         private fun createTextNode(value: String) =
-            CrdtTreeText(InitialCrdtTreePos, value)
+            CrdtTreeText(InitialCrdtTreeNodeID, value)
 
         private val DefaultRootNode = createElementNode(
             "root",

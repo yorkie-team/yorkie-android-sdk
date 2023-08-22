@@ -2,7 +2,6 @@ package dev.yorkie.core
 
 import com.google.protobuf.kotlin.toByteString
 import dev.yorkie.api.PBTimeTicket
-import dev.yorkie.api.toByteString
 import dev.yorkie.api.toPBChange
 import dev.yorkie.api.toPBTimeTicket
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -54,17 +53,14 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
 
     override suspend fun activateClient(request: ActivateClientRequest): ActivateClientResponse {
         return activateClientResponse {
-            clientId = TEST_ACTOR_ID.toByteString()
-            clientKey = request.clientKey
+            clientId = TEST_ACTOR_ID.value
         }
     }
 
     override suspend fun deactivateClient(
         request: DeactivateClientRequest,
     ): DeactivateClientResponse {
-        return deactivateClientResponse {
-            clientId = request.clientId
-        }
+        return deactivateClientResponse { }
     }
 
     override suspend fun attachDocument(request: AttachDocumentRequest): AttachDocumentResponse {
@@ -72,7 +68,6 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             throw StatusException(Status.UNKNOWN)
         }
         return attachDocumentResponse {
-            clientId = request.clientId
             changePack = changePack {
                 documentKey = request.changePack.documentKey
                 changes.add(
@@ -98,9 +93,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         if (request.changePack.documentKey == DETACH_ERROR_DOCUMENT_KEY) {
             throw StatusException(Status.UNKNOWN)
         }
-        return detachDocumentResponse {
-            clientKey = TEST_KEY
-        }
+        return detachDocumentResponse { }
     }
 
     override suspend fun pushPullChanges(request: PushPullChangesRequest): PushPullChangesResponse {
@@ -108,7 +101,6 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             throw StatusException(Status.UNAVAILABLE)
         }
         return pushPullChangesResponse {
-            clientId = request.clientId
             changePack = changePack {
                 minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
                 changes.add(
@@ -149,7 +141,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             emit(
                 watchDocumentResponse {
                     initialization = initialization {
-                        clientIds.add(TEST_ACTOR_ID.toByteString())
+                        clientIds.add(TEST_ACTOR_ID.value)
                     }
                 },
             )
@@ -160,7 +152,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             emit(
                 watchDocumentResponse {
                     event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED
+                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED
                         publisher = request.clientId
                     }
                 },
@@ -169,7 +161,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             emit(
                 watchDocumentResponse {
                     event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED
+                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED
                         publisher = request.clientId
                     }
                 },
@@ -178,7 +170,7 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             emit(
                 watchDocumentResponse {
                     event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED
+                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED
                         publisher = request.clientId
                     }
                 },
@@ -191,7 +183,6 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
             throw StatusException(Status.UNAVAILABLE)
         }
         return removeDocumentResponse {
-            clientKey = TEST_KEY
             changePack = changePack {
                 minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
                 changes.add(

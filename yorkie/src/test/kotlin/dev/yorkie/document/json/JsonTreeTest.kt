@@ -9,7 +9,7 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
-import dev.yorkie.document.crdt.CrdtTreePos
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
@@ -95,36 +95,6 @@ class JsonTreeTest {
             target.toXml(),
         )
         assertEquals(18, target.size)
-        assertContentEquals(
-            listOf(
-                text { "ab" },
-                element("p") {
-                    text { "ab" }
-                },
-                text { "cd" },
-                element("note") {
-                    text { "cd" }
-                },
-                text { "ef" },
-                element("note") {
-                    text { "ef" }
-                },
-                element("ng") {
-                    element("note") {
-                        text { "cd" }
-                    }
-                    element("note") {
-                        text { "ef" }
-                    }
-                },
-                text { "gh" },
-                element("bp") {
-                    text { "gh" }
-                },
-                root,
-            ),
-            target.toList(),
-        )
     }
 
     @Test
@@ -255,19 +225,19 @@ class JsonTreeTest {
             target.toXml(),
         )
 
-        target.style(4, 5, mapOf("c" to "d"))
+        target.style(1, 2, mapOf("c" to "d"))
         assertEquals(
             """<doc><tc><p a="b" c="d"><tn></tn></p></tc></doc>""",
             target.toXml(),
         )
 
-        target.style(4, 5, mapOf("c" to "q"))
+        target.style(1, 2, mapOf("c" to "q"))
         assertEquals(
             """<doc><tc><p a="b" c="q"><tn></tn></p></tc></doc>""",
             target.toXml(),
         )
 
-        target.style(3, 4, mapOf("z" to "m"))
+        target.style(2, 3, mapOf("z" to "m"))
         assertEquals(
             """<doc><tc><p a="b" c="q"><tn z="m"></tn></p></tc></doc>""",
             target.toXml(),
@@ -337,7 +307,7 @@ class JsonTreeTest {
             root.tree().edit(1, 1, text { "X" })
             assertEquals("<doc><p>Xab</p></doc>", root.tree().toXml())
 
-            root.tree().style(4, 5, mapOf("a" to "b"))
+            root.tree().style(0, 1, mapOf("a" to "b"))
         }.await()
         assertContentEquals(
             listOf(
@@ -350,8 +320,8 @@ class JsonTreeTest {
                     "$.t",
                 ),
                 TreeStyleOpInfo(
-                    4,
-                    5,
+                    0,
+                    1,
                     listOf(0),
                     listOf(0),
                     mapOf("a" to "b"),
@@ -416,8 +386,8 @@ class JsonTreeTest {
                     "$.t",
                 ),
                 TreeStyleOpInfo(
-                    6,
-                    7,
+                    2,
+                    3,
                     listOf(0, 0, 0),
                     listOf(0, 0, 0),
                     mapOf("a" to "b"),
@@ -470,7 +440,7 @@ class JsonTreeTest {
             get() = CrdtTree(rootCrdtTreeNode, InitialTimeTicket)
 
         private val rootCrdtTreeNode: CrdtTreeNode
-            get() = CrdtTreeElement(CrdtTreePos(InitialTimeTicket, 0), DEFAULT_ROOT_TYPE)
+            get() = CrdtTreeElement(CrdtTreeNodeID(InitialTimeTicket, 0), DEFAULT_ROOT_TYPE)
 
         private fun createTreeWithStyle(): JsonTree {
             val root = element("doc") {

@@ -98,6 +98,10 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 toPos = it.treeEdit.to.toCrdtTreePos(),
                 contents = it.treeEdit.contentsList.toCrdtTreeNodesWhenEdit(),
                 executedAt = it.treeEdit.executedAt.toTimeTicket(),
+                maxCreatedAtMapByActor =
+                it.treeEdit.createdAtMapByActorMap.entries.associate { (key, value) ->
+                    ActorID(key) to value.toTimeTicket()
+                },
             )
 
             it.hasTreeStyle() -> TreeStyleOperation(
@@ -215,6 +219,11 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTreePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                     contents.addAll(operation.contents?.toPBTreeNodesWhenEdit().orEmpty())
+                    createdAtMapByActor.putAll(
+                        operation.maxCreatedAtMapByActor.entries.associate {
+                            it.key.value to it.value.toPBTimeTicket()
+                        },
+                    )
                 }
             }
         }

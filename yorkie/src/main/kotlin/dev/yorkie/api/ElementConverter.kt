@@ -19,6 +19,7 @@ import dev.yorkie.api.v1.textNode
 import dev.yorkie.api.v1.textNodeID
 import dev.yorkie.api.v1.textNodePos
 import dev.yorkie.api.v1.treeNode
+import dev.yorkie.api.v1.treeNodeID
 import dev.yorkie.api.v1.treeNodes
 import dev.yorkie.api.v1.treePos
 import dev.yorkie.core.P
@@ -34,6 +35,7 @@ import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeList
@@ -64,6 +66,7 @@ internal typealias PBTextNode = dev.yorkie.api.v1.TextNode
 internal typealias PBTree = dev.yorkie.api.v1.JSONElement.Tree
 internal typealias PBTreeNode = dev.yorkie.api.v1.TreeNode
 internal typealias PBTreePos = dev.yorkie.api.v1.TreePos
+internal typealias PBTreeNodeID = dev.yorkie.api.v1.TreeNodeID
 internal typealias PBTreeNodes = dev.yorkie.api.v1.TreeNodes
 internal typealias PBSnapshot = dev.yorkie.api.v1.Snapshot
 
@@ -225,12 +228,13 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
 }
 
 internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
-    val pos = pos.toCrdtTreePos()
+    val id = id.toCrdtTreeNodeID()
+    val convertedRemovedAt = removedAt.toTimeTicket()
     return if (type == IndexTreeNode.DEFAULT_TEXT_TYPE) {
-        CrdtTreeText(pos, value)
+        CrdtTreeText(id, value)
     } else {
         CrdtTreeElement(
-            pos,
+            id,
             type,
             attributes = Rht().also {
                 attributesMap.forEach { (key, value) ->
@@ -238,10 +242,18 @@ internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
                 }
             },
         )
+    }.apply {
+        remove(convertedRemovedAt)
     }
 }
 
-internal fun PBTreePos.toCrdtTreePos(): CrdtTreePos = CrdtTreePos(createdAt.toTimeTicket(), offset)
+internal fun PBTreePos.toCrdtTreePos(): CrdtTreePos {
+    return CrdtTreePos(parentId.toCrdtTreeNodeID(), leftSiblingId.toCrdtTreeNodeID())
+}
+
+internal fun PBTreeNodeID.toCrdtTreeNodeID(): CrdtTreeNodeID {
+    return CrdtTreeNodeID(createdAt.toTimeTicket(), offset)
+}
 
 internal fun CrdtElement.toPBJsonElement(): PBJsonElement {
     return when (this) {
@@ -295,10 +307,11 @@ internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
 }
 
 internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
+    val treeNode = this
     return buildList {
-        traverse(this@toPBTreeNodes) { node, nodeDepth ->
+        traverse(treeNode) { node, nodeDepth ->
             val pbTreeNode = treeNode {
-                pos = node.pos.toPBTreePos()
+                id = node.id.toPBTreeNodeID()
                 type = node.type
                 if (node.isText) {
                     value = node.value
@@ -336,8 +349,16 @@ internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
 internal fun CrdtTreePos.toPBTreePos(): PBTreePos {
     val crdtTreePos = this
     return treePos {
-        createdAt = crdtTreePos.createdAt.toPBTimeTicket()
-        offset = crdtTreePos.offset
+        parentId = crdtTreePos.parentID.toPBTreeNodeID()
+        leftSiblingId = crdtTreePos.leftSiblingID.toPBTreeNodeID()
+    }
+}
+
+internal fun CrdtTreeNodeID.toPBTreeNodeID(): PBTreeNodeID {
+    val nodeID = this
+    return treeNodeID {
+        createdAt = nodeID.createdAt.toPBTimeTicket()
+        offset = nodeID.offset
     }
 }
 

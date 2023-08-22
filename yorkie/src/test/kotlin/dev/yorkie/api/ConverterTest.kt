@@ -18,6 +18,7 @@ import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeList
@@ -37,8 +38,10 @@ import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -50,7 +53,7 @@ class ConverterTest {
 
     @Test
     fun `should convert ByteString`() {
-        val actorID = ActorID.INITIAL_ACTOR_ID
+        val actorID = INITIAL_ACTOR_ID
         val converted = actorID.toByteString().toActorID()
         val maxActorID = ActorID.MAX_ACTOR_ID
         val maxConverted = maxActorID.toByteString().toActorID()
@@ -247,15 +250,22 @@ class ConverterTest {
         )
         val treeEditOperation = TreeEditOperation(
             InitialTimeTicket,
-            CrdtTreePos(InitialTimeTicket, 5),
-            CrdtTreePos(InitialTimeTicket, 10),
-            listOf(CrdtTreeText(CrdtTreePos(InitialTimeTicket, 0), "hi")),
+            CrdtTreePos(CrdtTreeNodeID(InitialTimeTicket, 5), CrdtTreeNodeID(InitialTimeTicket, 5)),
+            CrdtTreePos(
+                CrdtTreeNodeID(InitialTimeTicket, 10),
+                CrdtTreeNodeID(InitialTimeTicket, 10),
+            ),
+            mapOf(INITIAL_ACTOR_ID to MaxTimeTicket),
+            listOf(CrdtTreeText(CrdtTreeNodeID(InitialTimeTicket, 0), "hi")),
             InitialTimeTicket,
         )
         val treeStyleOperation = TreeStyleOperation(
             InitialTimeTicket,
-            CrdtTreePos(InitialTimeTicket, 5),
-            CrdtTreePos(InitialTimeTicket, 10),
+            CrdtTreePos(CrdtTreeNodeID(InitialTimeTicket, 5), CrdtTreeNodeID(InitialTimeTicket, 5)),
+            CrdtTreePos(
+                CrdtTreeNodeID(InitialTimeTicket, 10),
+                CrdtTreeNodeID(InitialTimeTicket, 10),
+            ),
             mapOf("a" to "b"),
             InitialTimeTicket,
         )
@@ -391,7 +401,7 @@ class ConverterTest {
         val crdtCounter = CrdtCounter(1, InitialTimeTicket)
         val crdtText = CrdtText(RgaTreeSplit(), InitialTimeTicket)
         val crdtTree = CrdtTree(
-            CrdtTreeElement(CrdtTreePos(InitialTimeTicket, 0), DEFAULT_ROOT_TYPE),
+            CrdtTreeElement(CrdtTreeNodeID(InitialTimeTicket, 0), DEFAULT_ROOT_TYPE),
             InitialTimeTicket,
         )
         val crdtElements = listOf(

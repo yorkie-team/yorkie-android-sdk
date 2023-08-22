@@ -2,9 +2,6 @@ package dev.yorkie.core
 
 import android.content.Context
 import com.google.common.annotations.VisibleForTesting
-import com.google.protobuf.ByteString
-import dev.yorkie.api.toActorID
-import dev.yorkie.api.toByteString
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.v1.DocEventType
@@ -136,12 +133,7 @@ public class Client @VisibleForTesting internal constructor(
                 YorkieLogger.e("Client.activate", e.stackTraceToString())
                 return@async false
             }
-            _status.emit(
-                Status.Activated(
-                    activateResponse.clientId.toActorID(),
-                    activateResponse.clientKey,
-                ),
-            )
+            _status.emit(Status.Activated(ActorID(activateResponse.clientId)))
             runSyncLoop()
             runWatchLoop()
             true
@@ -211,7 +203,7 @@ public class Client @VisibleForTesting internal constructor(
                     document,
                     runCatching {
                         val request = pushPullChangesRequest {
-                            clientId = requireClientId().toByteString()
+                            clientId = requireClientId().value
                             changePack = document.createChangePack().toPBChangePack()
                             documentId = documentID
                             pushOnly = syncMode == SyncMode.PushOnly
@@ -263,7 +255,7 @@ public class Client @VisibleForTesting internal constructor(
         return scope.launch(activationJob) {
             service.watchDocument(
                 watchDocumentRequest {
-                    clientId = requireClientId().toByteString()
+                    clientId = requireClientId().value
                     documentId = attachment.documentID
                 },
                 documentBasedRequestHeader(attachment.document.key),
@@ -284,7 +276,7 @@ public class Client @VisibleForTesting internal constructor(
     ) {
         if (response.hasInitialization()) {
             val document = attachments.value[documentKey]?.document ?: return
-            val clientIDs = response.initialization.clientIdsList.map(ByteString::toActorID)
+            val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
             document.onlineClients.value = document.onlineClients.value + clientIDs
             document.publish(
                 PresenceChange.MyPresence.Initialized(document.presences.value.asPresences()),
@@ -297,7 +289,7 @@ public class Client @VisibleForTesting internal constructor(
         // only single key will be received since 0.3.1 server.
         val attachment = attachments.value[documentKey] ?: return
         val document = attachment.document
-        val publisher = watchEvent.publisher.toActorID()
+        val publisher = ActorID(watchEvent.publisher)
 
         when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
@@ -356,7 +348,7 @@ public class Client @VisibleForTesting internal constructor(
             }.await()
 
             val request = attachDocumentRequest {
-                clientId = requireClientId().toByteString()
+                clientId = requireClientId().value
                 changePack = document.createChangePack().toPBChangePack()
             }
             val response = try {
@@ -407,7 +399,7 @@ public class Client @VisibleForTesting internal constructor(
             }.await()
 
             val request = detachDocumentRequest {
-                clientId = requireClientId().toByteString()
+                clientId = requireClientId().value
                 changePack = document.createChangePack().toPBChangePack()
                 documentId = attachment.documentID
             }
@@ -444,7 +436,7 @@ public class Client @VisibleForTesting internal constructor(
             try {
                 service.deactivateClient(
                     deactivateClientRequest {
-                        clientId = requireClientId().toByteString()
+                        clientId = requireClientId().value
                     },
                     projectBasedRequestHeader,
                 )
@@ -469,7 +461,7 @@ public class Client @VisibleForTesting internal constructor(
                 ?: throw IllegalArgumentException("document is not attached")
 
             val request = removeDocumentRequest {
-                clientId = requireClientId().toByteString()
+                clientId = requireClientId().value
                 changePack = document.createChangePack(forceRemove = true).toPBChangePack()
                 documentId = attachment.documentID
             }
@@ -565,10 +557,7 @@ public class Client @VisibleForTesting internal constructor(
          * Means that the client is activated. If the client is activated,
          * all [Document]s of the client are ready to be used.
          */
-        public class Activated internal constructor(
-            public val clientId: ActorID,
-            public val clientKey: String,
-        ) : Status
+        public class Activated internal constructor(public val clientId: ActorID) : Status
 
         /**
          * Means that the client is not activated. It is the initial stastus of the client.

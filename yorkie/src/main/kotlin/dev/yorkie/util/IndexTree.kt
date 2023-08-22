@@ -139,7 +139,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
             val currentNode = node
             if (currentNode == null || currentNode == root) return@repeat
 
-            currentNode.split(offset)
+            currentNode.split(offset, 0)
 
             val nextOffset = currentNode.parent?.findOffset(currentNode) ?: return@repeat
             offset = if (offset == 0) nextOffset else nextOffset + 1
@@ -239,7 +239,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
 
     private fun addSizeOfLeftSiblings(parent: T, offset: Int): Int {
         return parent.children.take(offset).fold(0) { acc, leftSibling ->
-            acc + leftSibling.paddedSize
+            acc + if (leftSibling.isRemoved) 0 else leftSibling.paddedSize
         }
     }
 
@@ -292,18 +292,6 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         }
 
         return TreePos(updatedNode, updatedPathElement)
-    }
-
-    /**
-     * Finds right node of the given [treePos] with postorder traversal.
-     */
-    fun findPostorderRight(treePos: TreePos<T>): T? {
-        val (node, offset) = treePos
-        return when {
-            node.isText -> if (node.size == offset) node.nextSibling ?: node.parent else node
-            node.children.size == offset -> node
-            else -> findLeftMost(node.children[offset])
-        }
     }
 
     private fun findLeftMost(node: T): T {
@@ -467,6 +455,14 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         check(!isText) {
             "Text node cannot have children"
         }
+        if (node.isRemoved) {
+            val index = _children.indexOf(node)
+
+            // If nodes are removed, the offset of the removed node is the number of
+            // nodes before the node excluding the removed nodes.
+            val refined = allChildren.take(index).filterNot { it.isRemoved }.size - 1
+            return refined.coerceAtLeast(0)
+        }
         return children.indexOf(node)
     }
 
@@ -502,7 +498,10 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         _children.addAll(newNode)
         newNode.forEach { node ->
             node.parent = this as T
-            node.updateAncestorSize()
+
+            if (!node.isRemoved) {
+                node.updateAncestorSize()
+            }
         }
     }
 
@@ -590,24 +589,24 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
     /**
      * Splits the node at the given [offset].
      */
-    fun split(offset: Int): T? {
+    fun split(offset: Int, absOffset: Int): T? {
         return if (isText) {
-            splitText(offset)
+            splitText(offset, absOffset)
         } else {
             splitElement(offset)
         }
     }
 
-    private fun splitText(offset: Int): T? {
+    private fun splitText(offset: Int, absOffset: Int): T? {
         if (offset == 0 || offset == size) {
             return null
         }
 
         val leftValue = value.substring(0, offset)
-        val rightValue = value.substring(offset)
+        val rightValue = value.substring(offset).takeUnless { it.isEmpty() } ?: return null
         value = leftValue
 
-        val rightNode = clone(offset)
+        val rightNode = clone(offset + absOffset)
         rightNode.value = rightValue
         parent?.insertAfterInternal(this as T, rightNode)
 

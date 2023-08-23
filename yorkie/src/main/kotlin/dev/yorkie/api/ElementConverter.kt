@@ -229,7 +229,7 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
 
 internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
     val id = id.toCrdtTreeNodeID()
-    val convertedRemovedAt = removedAt.toTimeTicket()
+    val convertedRemovedAt = removedAtOrNull?.toTimeTicket()
     return if (type == IndexTreeNode.DEFAULT_TEXT_TYPE) {
         CrdtTreeText(id, value)
     } else {
@@ -243,7 +243,13 @@ internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
             },
         )
     }.apply {
-        remove(convertedRemovedAt)
+        convertedRemovedAt?.let(::remove)
+        if (hasInsPrevId()) {
+            insPrevID = insPrevId.toCrdtTreeNodeID()
+        }
+        if (hasInsNextId()) {
+            insNextID = insNextId.toCrdtTreeNodeID()
+        }
     }
 }
 
@@ -315,6 +321,12 @@ internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
                 type = node.type
                 if (node.isText) {
                     value = node.value
+                }
+                node.insPrevID?.let {
+                    insPrevId = it.toPBTreeNodeID()
+                }
+                node.insNextID?.let {
+                    insNextId = it.toPBTreeNodeID()
                 }
                 node.removedAt?.toPBTimeTicket()?.let {
                     removedAt = it

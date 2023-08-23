@@ -29,7 +29,6 @@ internal class CrdtTree(
 
     private val removedNodeMap = mutableMapOf<Pair<TimeTicket, Int>, CrdtTreeNode>()
 
-
     init {
         indexTree.traverse { node, _ ->
             nodeMapByID[node.id] = node
@@ -198,12 +197,12 @@ internal class CrdtTree(
                     }
                 }
             }
-        }
 
-        toBeRemoved.forEach { node ->
-            node.remove(executedAt)
-            if (node.isRemoved) {
-                removedNodeMap[node.createdAt to node.id.offset] = node
+            toBeRemoved.forEach { node ->
+                node.remove(executedAt)
+                if (node.isRemoved) {
+                    removedNodeMap[node.createdAt to node.id.offset] = node
+                }
             }
         }
 
@@ -267,15 +266,16 @@ internal class CrdtTree(
             val absOffset = leftSiblingNode.id.offset
             val split = leftSiblingNode.split(pos.leftSiblingID.offset - absOffset, absOffset)
             split?.let {
-                split.insPrev = leftSiblingNode
+                split.insPrevID = leftSiblingNode.id
                 nodeMapByID[split.id] = split
 
-                leftSiblingNode.insNext?.apply {
-                    insPrev = split
-                    split.insNext = this
+                leftSiblingNode.insNextID?.let { insNextID ->
+                    val insNext = findFloorNode(insNextID)
+                    insNext?.insPrevID = split.id
+                    split.insNextID = insNextID
                 }
 
-                leftSiblingNode.insNext = split
+                leftSiblingNode.insNextID = split.id
             }
         }
         val index = if (parentNode == leftSiblingNode) {
@@ -296,28 +296,26 @@ internal class CrdtTree(
         return parentNode to updatedLeftSiblingNode
     }
 
+    private fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
+        val (key, value) = nodeMapByID.floorEntry(id) ?: return null
+        return if (key == null || key.createdAt != id.createdAt) null else value
+    }
+
     private fun toTreeNodes(pos: CrdtTreePos): Pair<CrdtTreeNode, CrdtTreeNode>? {
         val parentID = pos.parentID
         val leftSiblingID = pos.leftSiblingID
-        val (parentKey, parentNode) = nodeMapByID.floorEntry(parentID) ?: return null
-        val (leftSiblingKey, leftSiblingNode) = nodeMapByID.floorEntry(leftSiblingID) ?: return null
-
-        if (parentKey.createdAt != parentID.createdAt ||
-            leftSiblingKey.createdAt != leftSiblingID.createdAt
-        ) {
-            return null
-        }
+        val parentNode = findFloorNode(parentID) ?: return null
+        val leftSiblingNode = findFloorNode(leftSiblingID) ?: return null
 
         val updatedLeftSiblingNode =
-            if (leftSiblingID.offset > 0 && leftSiblingID.offset == leftSiblingNode.offset &&
-                leftSiblingNode.insPrev != null
+            if (leftSiblingID.offset > 0 && leftSiblingID.offset == leftSiblingNode.id.offset &&
+                leftSiblingNode.insPrevID != null
             ) {
-                leftSiblingNode.insPrev
+                findFloorNode(requireNotNull(leftSiblingNode.insPrevID)) ?: leftSiblingNode
             } else {
                 leftSiblingNode
             }
-
-        return requireNotNull(parentNode) to requireNotNull(updatedLeftSiblingNode)
+        return parentNode to updatedLeftSiblingNode
     }
 
     /**
@@ -374,14 +372,20 @@ internal class CrdtTree(
      * Physically deletes the given [node] from [IndexTree].
      */
     private fun delete(node: CrdtTreeNode) {
-        val insPrev = node.insPrev
-        val insNext = node.insNext
+        val insPrevID = node.insPrevID
+        val insNextID = node.insNextID
 
-        insPrev?.insNext = insNext
-        insNext?.insPrev = insPrev
+        insPrevID?.let {
+            val insPrev = findFloorNode(it)
+            insPrev?.insNextID = insNextID
+        }
+        insNextID?.let {
+            val insNext = findFloorNode(it)
+            insNext?.insPrevID = insPrevID
+        }
 
-        node.insPrev = null
-        node.insNext = null
+        node.insPrevID = null
+        node.insNextID = null
     }
 
     /**
@@ -560,9 +564,9 @@ internal data class CrdtTreeNode private constructor(
             size = value.length
         }
 
-    var insPrev: CrdtTreeNode? = null
+    var insPrevID: CrdtTreeNodeID? = null
 
-    var insNext: CrdtTreeNode? = null
+    var insNextID: CrdtTreeNodeID? = null
 
     val rhtNodes: List<Rht.Node>
         get() = _attributes.toList()
@@ -579,7 +583,9 @@ internal data class CrdtTreeNode private constructor(
             id = CrdtTreeNodeID(id.createdAt, offset),
             _value = null,
             childNodes = mutableListOf(),
-        )
+        ).also {
+            it.removedAt = this.removedAt
+        }
     }
 
     fun setAttribute(key: String, value: String, executedAt: TimeTicket) {
@@ -629,16 +635,16 @@ internal data class CrdtTreeNode private constructor(
     @Suppress("FunctionName")
     companion object {
 
-        fun CrdtTreeText(pos: CrdtTreeNodeID, value: String): CrdtTreeNode {
-            return CrdtTreeNode(pos, DEFAULT_TEXT_TYPE, value)
+        fun CrdtTreeText(id: CrdtTreeNodeID, value: String): CrdtTreeNode {
+            return CrdtTreeNode(id, DEFAULT_TEXT_TYPE, value)
         }
 
         fun CrdtTreeElement(
-            pos: CrdtTreeNodeID,
+            id: CrdtTreeNodeID,
             type: String,
             children: List<CrdtTreeNode> = emptyList(),
             attributes: Rht = Rht(),
-        ) = CrdtTreeNode(pos, type, null, children.toMutableList(), attributes)
+        ) = CrdtTreeNode(id, type, null, children.toMutableList(), attributes)
     }
 }
 
@@ -656,7 +662,6 @@ public data class CrdtTreePos internal constructor(
         return CrdtTreePosStruct(parentID.toStruct(), leftSiblingID.toStruct())
     }
 }
-
 
 /**
  * [CrdtTreeNodeID] represent an ID of a node in the tree. It is used to

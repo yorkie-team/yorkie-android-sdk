@@ -105,12 +105,12 @@ class CrdtTreeTest {
         //       0   1 2    3   4 5 6    7
         // <root> <p> a </p> <p> c d </p> </root>
         target.editByIndex(2 to 6, null, issueTime())
-        // TODO(7hong13): should be resolved after the JS SDK fix
+        // TODO(7hong13): should be resolved after the JS SDK implementation
         // assertEquals("root><p>ad</p></root>", target.toXml())
 
         // 03. insert a new text node at the start of the first paragraph.
         target.editByIndex(1 to 1, CrdtTreeText(issuePos(), "@").toList(), issueTime())
-        // TODO(7hong13): should be resolved after the JS SDK fix
+        // TODO(7hong13): should be resolved after the JS SDK implementation
         // assertEquals("root><p>@ad</p></root>", target.toXml())
     }
 
@@ -170,7 +170,7 @@ class CrdtTreeTest {
 
     @Test
     fun `should merge and edit different levels with editByIndex`() {
-        // TODO(7hong13): should be resolved after the JS SDK fix
+        // TODO(7hong13): should be resolved after the JS SDK implementation
 //        fun initializeTree() {
 //            setUp()
 //            target.editByIndex(0 to 0, CrdtTreeElement(issuePos(), "p").toList(), issueTime())

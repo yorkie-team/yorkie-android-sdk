@@ -516,7 +516,10 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         _children.addAll(0, newNode.toList())
         newNode.forEach { node ->
             node.parent = this as T
-            node.updateAncestorSize()
+
+            if (!node.isRemoved) {
+                node.updateAncestorSize()
+            }
         }
     }
 

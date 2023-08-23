@@ -113,12 +113,11 @@ public class JsonTree internal constructor(
         if (contents.isNotEmpty()) {
             validateTreeNodes(contents)
             if (contents.first().type != DEFAULT_TEXT_TYPE) {
-                val children =
-                    contents.filterIsInstance<ElementNode>().flatMap(ElementNode::children)
-                validateTreeNodes(children)
+                contents.forEach { validateTreeNodes(listOf(it))}
             }
         }
 
+        val ticket = context.lastTimeTicket
         val crdtNodes = if (contents.firstOrNull()?.type == DEFAULT_TEXT_TYPE) {
             val compVal = contents
                 .filterIsInstance<TextNode>()
@@ -127,7 +126,6 @@ public class JsonTree internal constructor(
         } else {
             contents.map { createCrdtTreeNode(context, it) }
         }
-        val ticket = context.lastTimeTicket
         val (_, maxCreatedAtMapByActor) = target.edit(
             fromPos to toPos,
             crdtNodes.map { it.deepCopy() }.ifEmpty { null },
@@ -240,12 +238,12 @@ public class JsonTree internal constructor(
          * Returns the root node of this tree.
          */
         internal fun buildRoot(initialRoot: ElementNode?, context: ChangeContext): CrdtTreeNode {
-            val pos = CrdtTreeNodeID(context.issueTimeTicket(), 0)
+            val id = CrdtTreeNodeID(context.issueTimeTicket(), 0)
             if (initialRoot == null) {
-                return CrdtTreeElement(pos, DEFAULT_ROOT_TYPE)
+                return CrdtTreeElement(id, DEFAULT_ROOT_TYPE)
             }
             // TODO(hackerwins): Need to use the ticket of operation of creating tree.
-            return CrdtTreeElement(pos, initialRoot.type).also { root ->
+            return CrdtTreeElement(id, initialRoot.type).also { root ->
                 initialRoot.children.forEach { child ->
                     buildDescendants(child, root, context)
                 }
@@ -259,11 +257,11 @@ public class JsonTree internal constructor(
         ) {
             val type = treeNode.type
             val ticket = context.issueTimeTicket()
-            val pos = CrdtTreeNodeID(ticket, 0)
+            val id = CrdtTreeNodeID(ticket, 0)
 
             when (treeNode) {
                 is TextNode -> {
-                    val textNode = CrdtTreeText(pos, treeNode.value)
+                    val textNode = CrdtTreeText(id, treeNode.value)
                     parent.append(textNode)
                     return
                 }
@@ -277,7 +275,7 @@ public class JsonTree internal constructor(
                             attrs.set(key, value, ticket)
                         }
                     }
-                    val elementNode = CrdtTreeElement(pos, type, attributes = attrs)
+                    val elementNode = CrdtTreeElement(id, type, attributes = attrs)
                     parent.append(elementNode)
                     treeNode.children.forEach { child ->
                         buildDescendants(child, elementNode, context)
@@ -291,16 +289,16 @@ public class JsonTree internal constructor(
          */
         private fun createCrdtTreeNode(context: ChangeContext, content: TreeNode): CrdtTreeNode {
             val ticket = context.issueTimeTicket()
-            val pos = CrdtTreeNodeID(ticket, 0)
+            val id = CrdtTreeNodeID(ticket, 0)
 
             return when (content) {
                 is TextNode -> {
-                    CrdtTreeText(pos, content.value)
+                    CrdtTreeText(id, content.value)
                 }
 
                 is ElementNode -> {
                     CrdtTreeElement(
-                        pos,
+                        id,
                         content.type,
                         attributes = Rht().apply {
                             content.attributes.forEach { (key, value) ->

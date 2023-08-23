@@ -30,7 +30,8 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _content = MutableSharedFlow<String>()
     val content = _content.asSharedFlow()
 
-    private val _textOperationInfos = MutableSharedFlow<Pair<ActorID, OperationInfo.TextOperationInfo>>()
+    private val _textOperationInfos =
+        MutableSharedFlow<Pair<ActorID, OperationInfo.TextOperationInfo>>()
     val textOpInfos = _textOperationInfos.asSharedFlow()
 
     val removedPeers = document.events.filterIsInstance<PresenceChange.Others.Unwatched>()

@@ -3,8 +3,8 @@ package dev.yorkie.core
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.DocumentSyncResult
-import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.Event.DocumentChanged
+import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.StreamConnectionStatus
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange

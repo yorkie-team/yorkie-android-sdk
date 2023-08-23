@@ -113,7 +113,7 @@ public class JsonTree internal constructor(
         if (contents.isNotEmpty()) {
             validateTreeNodes(contents)
             if (contents.first().type != DEFAULT_TEXT_TYPE) {
-                contents.forEach { validateTreeNodes(listOf(it))}
+                contents.forEach { validateTreeNodes(listOf(it)) }
             }
         }
 

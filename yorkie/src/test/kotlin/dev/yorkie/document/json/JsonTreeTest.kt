@@ -592,7 +592,9 @@ class JsonTreeTest {
 
         document.updateAsync { root, _ ->
             root.setNewTree("t").edit(
-                0, 0, element("p") { text { "abcdefghi" } },
+                0,
+                0,
+                element("p") { text { "abcdefghi" } },
             )
             assertEquals("<root><p>abcdefghi</p></root>", document.getRoot().tree().toXml())
 
@@ -629,7 +631,9 @@ class JsonTreeTest {
 
         document.updateAsync { root, _ ->
             root.setNewTree("t").edit(
-                0, 0, element("p") { text { "abcde" } },
+                0,
+                0,
+                element("p") { text { "abcde" } },
             )
             assertEquals("<root><p>abcde</p></root>", document.getRoot().tree().toXml())
 

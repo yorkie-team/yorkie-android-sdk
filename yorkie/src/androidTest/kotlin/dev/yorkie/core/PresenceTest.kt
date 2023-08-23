@@ -84,22 +84,42 @@ class PresenceTest {
 
     @Test
     fun test_presence_sync() {
-        withTwoClientsAndDocuments(
-            presences = mapOf("name" to "a") to mapOf("name" to "b"),
-        ) { c1, c2, d1, d2, _ ->
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(documentKey)
+            val d2 = Document(documentKey)
             val d1Events = mutableListOf<Document.Event>()
             val d2Events = mutableListOf<Document.Event>()
-            val collectJobs = listOf(
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    d1.events.filterIsInstance<Document.Event.PresenceChange>()
-                        .filterNot { it is MyPresence.Initialized }
-                        .collect(d1Events::add)
-                },
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    d2.events.filterIsInstance<Document.Event.PresenceChange>()
-                        .filterNot { it is MyPresence.Initialized }
-                        .collect(d2Events::add)
-                },
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            c1.attachAsync(d1, initialPresence = mapOf("name" to "a")).await()
+            val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.filterIsInstance<Document.Event.PresenceChange>()
+                    .filterNot { it is MyPresence.Initialized }
+                    .collect(d1Events::add)
+            }
+
+            c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
+            val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
+                d2.events.filterIsInstance<Document.Event.PresenceChange>()
+                    .filterNot { it is MyPresence.Initialized }
+                    .collect(d2Events::add)
+            }
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // watched from c2
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(
+                Others.Watched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
+                d1Events.last(),
             )
 
             d1.updateAsync { _, presence ->
@@ -110,7 +130,7 @@ class PresenceTest {
             }.await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (d1Events.size < 3 || d2Events.size < 2) {
+                while (d1Events.size < 3) {
                     delay(50)
                 }
             }
@@ -120,13 +140,19 @@ class PresenceTest {
                     MyPresence.PresenceChanged(
                         PresenceInfo(c1.requireClientId(), mapOf("name" to "A")),
                     ),
-                    Others.Watched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
                     Others.PresenceChanged(
                         PresenceInfo(c2.requireClientId(), mapOf("name" to "B")),
                     ),
                 ),
-                d1Events,
+                d1Events.takeLast(2),
             )
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d2Events.size < 2) {
+                    delay(50)
+                }
+            }
+
             assertEquals(
                 listOf(
                     MyPresence.PresenceChanged(
@@ -141,9 +167,14 @@ class PresenceTest {
                 ),
                 d2Events,
             )
-            assertEquals(d1.presences.value.entries, d2.presences.value.entries)
+            assertEquals(d1.presences.value.toMap(), d2.presences.value.toMap())
 
-            collectJobs.forEach(Job::cancel)
+            d1Job.cancel()
+            d2Job.cancel()
+            c1.detachAsync(d1).await()
+            c2.detachAsync(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
         }
     }
 
@@ -412,7 +443,8 @@ class PresenceTest {
             val c2ID = c2.requireClientId()
             val c3ID = c3.requireClientId()
 
-            c1.attachAsync(d1, initialPresence = mapOf("name" to "a1", "cursor" to cursor)).await()
+            c1.attachAsync(d1, initialPresence = mapOf("name" to "a1", "cursor" to cursor))
+                .await()
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Document.Event.PresenceChange>()
@@ -421,7 +453,8 @@ class PresenceTest {
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
             //     c1 receives the watched event from c2.
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
+            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor))
+                .await()
             c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
 
             withTimeout(GENERAL_TIMEOUT) {

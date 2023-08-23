@@ -299,8 +299,8 @@ public class Document(public val key: Key) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
 
-            presenceEvent?.let { eventStream.emit(it) }
             newPresences?.let { emitPresences(it) }
+            presenceEvent?.let { eventStream.emit(it) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
     }

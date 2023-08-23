@@ -1,6 +1,7 @@
 package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import dev.yorkie.core.Client
 import dev.yorkie.core.Presence
 import dev.yorkie.core.withTwoClientsAndDocuments
@@ -12,6 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
 
+@LargeTest
 @RunWith(AndroidJUnit4::class)
 class JsonTreeTest {
 

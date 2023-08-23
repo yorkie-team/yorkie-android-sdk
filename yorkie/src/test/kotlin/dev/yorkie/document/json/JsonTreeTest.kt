@@ -532,57 +532,62 @@ class JsonTreeTest {
                     }
                 },
             )
-        }.await()
-        assertEquals("<doc><tc><p><tn>ab</tn></p></tc></doc>", document.getRoot().tree().toXml())
+            assertEquals(
+                "<doc><tc><p><tn>ab</tn></p></tc></doc>",
+                document.getRoot().tree().toXml(),
+            )
 
-        document.getRoot().tree().editByPath(
-            listOf(0, 0, 0, 1),
-            listOf(0, 0, 0, 1),
-            text { "X" },
-            text { "X" },
-        )
-        assertEquals("<doc><tc><p><tn>aXXb</tn></p></tc></doc>", document.getRoot().tree().toXml())
+            root.tree().editByPath(
+                listOf(0, 0, 0, 1),
+                listOf(0, 0, 0, 1),
+                text { "X" },
+                text { "X" },
+            )
+            assertEquals(
+                "<doc><tc><p><tn>aXXb</tn></p></tc></doc>",
+                document.getRoot().tree().toXml(),
+            )
 
-        document.getRoot().tree().editByPath(
-            listOf(0, 1),
-            listOf(0, 1),
-            element("p") {
-                element("tn") {
-                    text { "te" }
-                    text { "st" }
-                }
-            },
-            element("p") {
+            root.tree().editByPath(
+                listOf(0, 1),
+                listOf(0, 1),
+                element("p") {
+                    element("tn") {
+                        text { "te" }
+                        text { "st" }
+                    }
+                },
+                element("p") {
+                    element("tn") {
+                        text { "te" }
+                        text { "xt" }
+                    }
+                },
+            )
+            assertEquals(
+                "<doc><tc><p><tn>aXXb</tn></p><p><tn>test</tn></p><p><tn>text</tn></p></tc></doc>",
+                document.getRoot().tree().toXml(),
+            )
+
+            root.tree().editByPath(
+                listOf(0, 3),
+                listOf(0, 3),
+                element("p") {
+                    element("tn") {
+                        text { "te" }
+                        text { "st" }
+                    }
+                },
                 element("tn") {
                     text { "te" }
                     text { "xt" }
-                }
-            },
-        )
-        assertEquals(
-            "<doc><tc><p><tn>aXXb</tn></p><p><tn>test</tn></p><p><tn>text</tn></p></tc></doc>",
-            document.getRoot().tree().toXml(),
-        )
-
-        // TODO(7hong13): the test should be passed when text contents values are "test" and "text"
-        document.getRoot().tree().editByPath(
-            listOf(0, 3),
-            listOf(0, 3),
-            element("p") {
-                element("tn") {
-                    text { "12" }
-                    text { "34" }
-                }
-            },
-            element("tn") {
-                text { "56" }
-                text { "78" }
-            },
-        )
-        assertEquals(
-            "<doc><tc><p><tn>aXXb</tn></p><p><tn>test</tn></p><p><tn>text</tn></p><p><tn>1234</tn></p><tn>5678</tn></tc></doc>",
-            document.getRoot().tree().toXml(),
-        )
+                },
+            )
+            assertEquals(
+                "<doc><tc><p><tn>aXXb</tn></p><p><tn>test</tn></p><p><tn>text</tn></p><p><tn>test</tn></p><tn>text</tn></tc></doc>",
+                document.getRoot().tree().toXml(),
+            )
+        }.await()
     }
 
     @Test

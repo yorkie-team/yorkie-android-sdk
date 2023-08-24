@@ -4,6 +4,7 @@ import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextWithAttributes
+import dev.yorkie.document.json.JsonStringifier.toJsonStringAttributes
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.StyleOperation
@@ -33,7 +34,7 @@ public class JsonText internal constructor(
         fromIndex: Int,
         toIndex: Int,
         content: String,
-        attributes: Map<String, String>? = null,
+        attributes: Map<String, Any>? = null,
     ): Pair<Int, Int>? {
         if (fromIndex > toIndex) {
             YorkieLogger.e(TAG, "fromIndex should be less than or equal to toIndex")
@@ -48,8 +49,9 @@ public class JsonText internal constructor(
         )
 
         val executedAt = context.issueTimeTicket()
+        val jsonAttributes = attributes?.toJsonStringAttributes()
         val (maxCreatedAtMapByActor, _, rangeAfterEdit) = runCatching {
-            target.edit(range, content, executedAt, attributes)
+            target.edit(range, content, executedAt, jsonAttributes)
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
@@ -69,7 +71,7 @@ public class JsonText internal constructor(
                 content = content,
                 parentCreatedAt = target.createdAt,
                 executedAt = executedAt,
-                attributes = attributes ?: emptyMap(),
+                attributes = jsonAttributes ?: emptyMap(),
             ),
         )
 
@@ -85,7 +87,7 @@ public class JsonText internal constructor(
     public fun style(
         fromIndex: Int,
         toIndex: Int,
-        attributes: Map<String, String>,
+        attributes: Map<String, Any>,
     ): Boolean {
         if (fromIndex > toIndex) {
             YorkieLogger.e(TAG, "fromIndex should be less than or equal to toIndex")
@@ -100,8 +102,9 @@ public class JsonText internal constructor(
         )
 
         val executedAt = context.issueTimeTicket()
+        val jsonAttributes = attributes.toJsonStringAttributes()
         runCatching {
-            target.style(range, attributes, executedAt)
+            target.style(range, jsonAttributes, executedAt)
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
@@ -118,7 +121,7 @@ public class JsonText internal constructor(
                 parentCreatedAt = target.createdAt,
                 fromPos = range.first,
                 toPos = range.second,
-                attributes = attributes,
+                attributes = jsonAttributes,
                 executedAt = executedAt,
             ),
         )

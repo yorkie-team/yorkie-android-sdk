@@ -1,5 +1,6 @@
 package dev.yorkie.document.json
 
+import dev.yorkie.document.json.JsonStringifier.toJsonStringAttributes
 import dev.yorkie.document.json.JsonTree.ElementNode
 import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.JsonTree.TreeNode
@@ -56,7 +57,7 @@ public object TreeBuilder {
          */
         public override fun attr(init: ClosingScope.() -> Pair<String, Any>) {
             with(ClosingScope.INSTANCE.init()) {
-                attributes += first to second.toString()
+                attributes += mapOf(this).toJsonStringAttributes()
             }
         }
 
@@ -65,7 +66,7 @@ public object TreeBuilder {
          */
         public override fun attrs(init: ClosingScope.() -> Map<String, Any>) {
             with(ClosingScope.INSTANCE.init()) {
-                attributes += mapValues { it.value.toString() }
+                attributes += toJsonStringAttributes()
             }
         }
 

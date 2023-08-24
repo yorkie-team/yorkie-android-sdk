@@ -9,6 +9,7 @@ import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TreePosRange
+import dev.yorkie.document.json.JsonStringifier.toJsonStringAttributes
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
@@ -32,7 +33,7 @@ public class JsonTree internal constructor(
     /**
      * Sets the [attributes] to the elements of the given [path].
      */
-    public fun styleByPath(path: List<Int>, attributes: Map<String, String>) {
+    public fun styleByPath(path: List<Int>, attributes: Map<String, Any>) {
         require(path.isNotEmpty()) {
             "path should not be empty"
         }
@@ -44,7 +45,7 @@ public class JsonTree internal constructor(
     /**
      * Sets the [attributes] to the elements of the given range.
      */
-    public fun style(fromIndex: Int, toIndex: Int, attributes: Map<String, String>) {
+    public fun style(fromIndex: Int, toIndex: Int, attributes: Map<String, Any>) {
         require(fromIndex <= toIndex) {
             "from should be less than or equal to to"
         }
@@ -56,17 +57,18 @@ public class JsonTree internal constructor(
 
     private fun styleByRange(
         range: TreePosRange,
-        attributes: Map<String, String>,
+        attributes: Map<String, Any>,
     ) {
         val ticket = context.issueTimeTicket()
-        target.style(range, attributes, ticket)
+        val jsonAttributes = attributes.toJsonStringAttributes()
+        target.style(range, jsonAttributes, ticket)
 
         context.push(
             TreeStyleOperation(
                 target.createdAt,
                 range.first,
                 range.second,
-                attributes.toMap(),
+                jsonAttributes,
                 ticket,
             ),
         )

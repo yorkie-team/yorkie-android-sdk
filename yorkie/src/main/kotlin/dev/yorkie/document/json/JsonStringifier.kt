@@ -73,4 +73,13 @@ internal object JsonStringifier {
             }
         }
     }
+
+    fun Map<String, Any>.toJsonStringAttributes(): Map<String, String> {
+        return mapValues { (_, value) ->
+            when (value) {
+                is String -> "\"it\""
+                else -> value.toString()
+            }
+        }
+    }
 }

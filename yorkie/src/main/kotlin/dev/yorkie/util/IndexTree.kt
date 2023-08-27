@@ -67,7 +67,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     fun nodesBetween(
         from: Int,
         to: Int,
-        action: (T) -> Unit,
+        action: (T, TagContained) -> Unit,
     ) {
         nodesBetweenInternal(root, from, to, action)
     }
@@ -76,12 +76,13 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
      * Iterates the nodes between the given range.
      * If the given range is collapsed, the callback is not called.
      * It traverses the tree with postorder traversal.
+     * NOTE(sejongk): Nodes should not be removed in callback, because it leads to wrong behaviors.
      */
     private fun nodesBetweenInternal(
         root: T,
         from: Int,
         to: Int,
-        action: ((T) -> Unit),
+        action: ((T, TagContained) -> Unit),
     ) {
         if (from > to) {
             throw IllegalArgumentException("from is greater than to: $from > $to")
@@ -113,7 +114,12 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
                 // If the range spans outside the child,
                 // the callback is called with the child.
                 if (fromChild < 0 || toChild > child.size || child.isText) {
-                    action.invoke(child)
+                    val contained = when {
+                        (fromChild < 0 && toChild > child.size) || child.isText -> TagContained.All
+                        fromChild < 0 -> TagContained.Opening
+                        else -> TagContained.Closing
+                    }
+                    action.invoke(child, contained)
                 }
             }
             pos += child.paddedSize
@@ -344,10 +350,17 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     /**
      * Returns the path of the given [index].
      */
-    public fun indexToPath(index: Int): List<Int> {
+    fun indexToPath(index: Int): List<Int> {
         val treePos = findTreePos(index)
         return treePosToPath(treePos)
     }
+}
+
+/**
+ * [TagContained] represents whether the opening or closing tag of a element is selected.
+ */
+internal enum class TagContained {
+    All, Opening, Closing,
 }
 
 /**
@@ -460,8 +473,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
 
             // If nodes are removed, the offset of the removed node is the number of
             // nodes before the node excluding the removed nodes.
-            val refined = allChildren.take(index).filterNot { it.isRemoved }.size - 1
-            return refined.coerceAtLeast(0)
+            return allChildren.take(index).filterNot { it.isRemoved }.size
         }
         return children.indexOf(node)
     }

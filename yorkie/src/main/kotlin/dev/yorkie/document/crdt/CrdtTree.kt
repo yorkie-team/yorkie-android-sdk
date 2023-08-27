@@ -11,6 +11,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.TagContained
 import dev.yorkie.util.TreePos
 import java.util.TreeMap
 
@@ -58,28 +59,21 @@ internal class CrdtTree(
                 from = toIndex(fromParent, fromLeft),
                 to = toIndex(toParent, toLeft),
                 fromPath = toPath(fromParent, fromLeft),
-                toPath = toPath(fromParent, fromLeft),
+                toPath = toPath(toParent, toLeft),
                 actorID = executedAt.actorID,
                 attributes = attributes,
             ),
         )
 
-        if (fromLeft != toLeft) {
-            val (parent, fromChildIndex) = if (fromLeft.parent == toLeft.parent) {
-                val leftParent = fromLeft.parent ?: return changes
-                leftParent to leftParent.allChildren.indexOf(fromLeft) + 1
-            } else {
-                fromLeft to 0
-            }
-
-            val toChildIndex = parent.allChildren.indexOf(toLeft)
-
-            for (i in fromChildIndex..toChildIndex) {
-                val node = parent.allChildren[i]
-                if (!node.isRemoved && attributes != null) {
-                    attributes.forEach { (key, value) ->
-                        node.setAttribute(key, value, executedAt)
-                    }
+        traverseInPosRange(
+            fromParent = fromParent,
+            fromLeft = fromLeft,
+            toParent = toParent,
+            toLeft = toLeft,
+        ) { node, _ ->
+            if (!node.isRemoved && attributes != null && !node.isText) {
+                attributes.forEach { (key, value) ->
+                    node.setAttribute(key, value, executedAt)
                 }
             }
         }
@@ -155,54 +149,39 @@ internal class CrdtTree(
         val toBeRemoved = mutableListOf<CrdtTreeNode>()
         val latestCreatedAtMap = mutableMapOf<ActorID, TimeTicket>()
 
-        // 02. remove the nodes and update linked list and index tree.
-        if (fromLeft != toLeft) {
-            val (parent, fromChildIndex) = if (fromLeft.parent == toLeft.parent) {
-                val leftParent = requireNotNull(fromLeft.parent)
-                leftParent to leftParent.allChildren.indexOf(fromLeft) + 1
-            } else {
-                fromLeft to 0
+        traverseInPosRange(
+            fromParent = fromParent,
+            fromLeft = fromLeft,
+            toParent = toParent,
+            toLeft = toLeft,
+        ) { node, contained ->
+            // If node is a element node and half-contained in the range,
+            // it should not be removed.
+            if (!node.isText && contained != TagContained.All) {
+                return@traverseInPosRange
             }
 
-            val toChildIndex = parent.allChildren.indexOf(toLeft)
+            val actorID = node.createdAt.actorID
+            val latestCreatedAt = latestCreatedAtMapByActor?.let {
+                latestCreatedAtMapByActor[actorID] ?: InitialTimeTicket
+            } ?: MaxTimeTicket
 
-            for (i in fromChildIndex..toChildIndex) {
-                val node = parent.allChildren[i]
-                val actorID = node.createdAt.actorID
-                val latestCreatedAt = latestCreatedAtMapByActor?.let {
-                    latestCreatedAtMapByActor[actorID] ?: InitialTimeTicket
-                } ?: MaxTimeTicket
+            if (node.canDelete(executedAt, latestCreatedAt)) {
+                val latest = latestCreatedAtMap[actorID]
+                val createdAt = node.createdAt
 
-                if (node.canDelete(executedAt, latestCreatedAt)) {
-                    val latest = latestCreatedAtMap[actorID]
-                    val createdAt = node.createdAt
-
-                    if (latest == null || latest < createdAt) {
-                        latestCreatedAtMap[actorID] = createdAt
-                    }
-
-                    traverseAll(node, 0) { treeNode, _ ->
-                        if (treeNode.canDelete(executedAt, MaxTimeTicket)) {
-                            val latestTicket = latestCreatedAtMap[actorID]
-                            val ticket = treeNode.createdAt
-
-                            if (latestTicket == null || latestTicket < ticket) {
-                                latestCreatedAtMap[actorID] = ticket
-                            }
-
-                            if (!treeNode.isRemoved) {
-                                toBeRemoved.add(treeNode)
-                            }
-                        }
-                    }
+                if (latest == null || latest < createdAt) {
+                    latestCreatedAtMap[actorID] = createdAt
                 }
+
+                toBeRemoved.add(node)
             }
+        }
 
-            toBeRemoved.forEach { node ->
-                node.remove(executedAt)
-                if (node.isRemoved) {
-                    removedNodeMap[node.createdAt to node.id.offset] = node
-                }
+        toBeRemoved.forEach { node ->
+            node.remove(executedAt)
+            if (node.isRemoved) {
+                removedNodeMap[node.createdAt to node.id.offset] = node
             }
         }
 
@@ -244,6 +223,18 @@ internal class CrdtTree(
             traverseAll(child, depth + 1, action)
         }
         action.invoke(node, depth)
+    }
+
+    private fun traverseInPosRange(
+        fromParent: CrdtTreeNode,
+        fromLeft: CrdtTreeNode,
+        toParent: CrdtTreeNode,
+        toLeft: CrdtTreeNode,
+        callback: (CrdtTreeNode, TagContained) -> Unit,
+    ) {
+        val fromIndex = toIndex(fromParent, fromLeft)
+        val toIndex = toIndex(toParent, toLeft)
+        indexTree.nodesBetween(fromIndex, toIndex, callback)
     }
 
     /**

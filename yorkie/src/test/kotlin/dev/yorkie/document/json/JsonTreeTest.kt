@@ -319,11 +319,12 @@ class JsonTreeTest {
                     listOf(TreeNode("text", value = "X")),
                     "$.t",
                 ),
+                // TODO(7hong13): need to check whether toPath is correctly passed
                 TreeStyleOpInfo(
                     0,
                     1,
                     listOf(0),
-                    listOf(0),
+                    listOf(0, 0),
                     mapOf("a" to "b"),
                     "$.t",
                 ),
@@ -385,11 +386,12 @@ class JsonTreeTest {
                     listOf(TreeNode("text", value = "X")),
                     "$.t",
                 ),
+                // TODO(7hong13): need to check whether toPath is correctly passed
                 TreeStyleOpInfo(
                     2,
                     3,
                     listOf(0, 0, 0),
-                    listOf(0, 0, 0),
+                    listOf(0, 0, 0, 0),
                     mapOf("a" to "b"),
                     "$.t",
                 ),
@@ -668,6 +670,45 @@ class JsonTreeTest {
 
             root.tree().edit(1, 2)
             assertEquals("<<root><p></p></root>", root.tree().toXml())
+        }.await()
+    }
+
+    @Test
+    fun `should delete nodes correctly in a multi-level range`() = runTest {
+        val document = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") {
+                        text { "ab" }
+                        element("p") {
+                            text { "x" }
+                        }
+                    }
+                    element("p") {
+                        element("p") {
+                            text { "cd" }
+                        }
+                    }
+                    element("p") {
+                        element("p") {
+                            text { "y" }
+                        }
+                        text { "ef" }
+                    }
+                },
+            )
+            assertEquals(
+                "<doc><p>ab<p>x</p></p><p><p>cd</p></p><p><p>y</p>ef</p></doc>",
+                document.getRoot().tree().toXml(),
+            )
+
+            root.tree().edit(2, 18)
+            // TODO(7hong13): should be resolved after implementing Tree.move()
+            // assertEquals("<doc><p>a</p><p>af</p></doc>", root.tree().toXml())
         }.await()
     }
 

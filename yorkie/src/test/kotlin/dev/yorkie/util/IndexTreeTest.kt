@@ -82,12 +82,16 @@ class IndexTreeTest {
             ),
         )
         assertEquals(
-            listOf("text.b", "p", "text.cde", "p", "text.fg", "p"),
+            listOf("text.b:All", "p:Closing", "text.cde:All", "p:All", "text.fg:All", "p:Opening"),
             tree.nodesBetween(2, 11),
         )
-        assertEquals(listOf("p"), tree.nodesBetween(0, 1))
-        assertEquals(listOf("p"), tree.nodesBetween(3, 4))
-        assertEquals(listOf("p", "p"), tree.nodesBetween(3, 5))
+        assertEquals(
+            listOf("text.b:All", "p:Closing", "text.cde:All", "p:Opening"),
+            tree.nodesBetween(2, 6),
+        )
+        assertEquals(listOf("p:Opening"), tree.nodesBetween(0, 1))
+        assertEquals(listOf("p:Closing"), tree.nodesBetween(3, 4))
+        assertEquals(listOf("p:Closing", "p:Opening"), tree.nodesBetween(3, 5))
     }
 
     @Test
@@ -376,8 +380,8 @@ class IndexTreeTest {
     }
 
     private fun IndexTree<CrdtTreeNode>.nodesBetween(from: Int, to: Int) = buildList {
-        nodesBetween(from, to) { node ->
-            add(node.toDiagnostic())
+        nodesBetween(from, to) { node, contain ->
+            add("${node.toDiagnostic()}:${contain.name}")
         }
     }
 

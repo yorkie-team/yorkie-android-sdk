@@ -106,7 +106,7 @@ class CrdtTreeTest {
         // <root> <p> a </p> <p> c d </p> </root>
         target.editByIndex(2 to 6, null, issueTime())
         // TODO(7hong13): should be resolved after the JS SDK implementation
-        // assertEquals("root><p>ad</p></root>", target.toXml())
+        // assertEquals("<root><p>ad</p></root>", target.toXml())
 
         // 03. insert a new text node at the start of the first paragraph.
         target.editByIndex(1 to 1, CrdtTreeText(issuePos(), "@").toList(), issueTime())

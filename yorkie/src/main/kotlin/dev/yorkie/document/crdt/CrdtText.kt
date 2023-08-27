@@ -12,8 +12,6 @@ internal data class CrdtText(
     override var _movedAt: TimeTicket? = null,
     override var _removedAt: TimeTicket? = null,
 ) : CrdtGCElement() {
-    private val selectionMap = mutableMapOf<ActorID, Selection>()
-
     override val removedNodesLength: Int
         get() = rgaTreeSplit.removedNodesLength
 
@@ -68,17 +66,6 @@ internal data class CrdtText(
         return Triple(latestCreatedAtMap, changes, caretPos to caretPos)
     }
 
-    private fun selectPrev(range: RgaTreeSplitPosRange, executedAt: TimeTicket): TextChange? {
-        val prevSelection = selectionMap[executedAt.actorID]
-        return if (prevSelection == null || prevSelection.executedAt < executedAt) {
-            selectionMap[executedAt.actorID] = Selection(range.first, range.second, executedAt)
-            val (from, to) = rgaTreeSplit.findIndexesFromRange(range)
-            TextChange(TextChangeType.Selection, executedAt.actorID, from, to)
-        } else {
-            null
-        }
-    }
-
     /**
      * Applies the style of the given [range].
      * 1. Split nodes with from and to.
@@ -108,13 +95,6 @@ internal data class CrdtText(
                     attributes,
                 )
             }
-    }
-
-    /**
-     * Stores that the given [range] has been selected.
-     */
-    fun select(range: RgaTreeSplitPosRange, executedAt: TimeTicket): TextChange? {
-        return selectPrev(range, executedAt)
     }
 
     /**

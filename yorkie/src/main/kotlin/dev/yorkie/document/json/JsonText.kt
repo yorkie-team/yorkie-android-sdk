@@ -5,7 +5,6 @@ import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.operation.EditOperation
-import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.document.RgaTreeSplitPosStruct as TextPosStruct
@@ -119,41 +118,6 @@ public class JsonText internal constructor(
                 fromPos = range.first,
                 toPos = range.second,
                 attributes = attributes,
-                executedAt = executedAt,
-            ),
-        )
-        return true
-    }
-
-    /**
-     * Selects the given range.
-     */
-    public fun select(fromIndex: Int, toIndex: Int): Boolean {
-        if (fromIndex > toIndex) {
-            YorkieLogger.e(TAG, "fromIndex should be less than or equal to toIndex")
-            return false
-        }
-
-        val range = createRange(fromIndex, toIndex) ?: return false
-
-        YorkieLogger.d(
-            TAG,
-            "SELT: f:$fromIndex->${range.first}, t:$toIndex->${range.second}",
-        )
-
-        val executedAt = context.issueTimeTicket()
-        try {
-            target.select(range, executedAt)
-        } catch (e: NoSuchElementException) {
-            YorkieLogger.e(TAG, "can't select text")
-            return false
-        }
-
-        context.push(
-            SelectOperation(
-                parentCreatedAt = target.createdAt,
-                fromPos = range.first,
-                toPos = range.second,
                 executedAt = executedAt,
             ),
         )

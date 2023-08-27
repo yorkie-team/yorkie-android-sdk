@@ -5,7 +5,6 @@ import dev.yorkie.api.v1.OperationKt.edit
 import dev.yorkie.api.v1.OperationKt.increase
 import dev.yorkie.api.v1.OperationKt.move
 import dev.yorkie.api.v1.OperationKt.remove
-import dev.yorkie.api.v1.OperationKt.select
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.OperationKt.style
 import dev.yorkie.api.v1.OperationKt.treeEdit
@@ -17,7 +16,6 @@ import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.RemoveOperation
-import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
@@ -27,7 +25,7 @@ import dev.yorkie.document.time.ActorID
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
 
 internal fun List<PBOperation>.toOperations(): List<Operation> {
-    return map {
+    return mapNotNull {
         when {
             it.hasSet() -> SetOperation(
                 key = it.set.key,
@@ -77,12 +75,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                     ?: mapOf(),
             )
 
-            it.hasSelect() -> SelectOperation(
-                fromPos = it.select.from.toRgaTreeSplitNodePos(),
-                toPos = it.select.to.toRgaTreeSplitNodePos(),
-                parentCreatedAt = it.select.parentCreatedAt.toTimeTicket(),
-                executedAt = it.select.executedAt.toTimeTicket(),
-            )
+            it.hasSelect() -> null
 
             it.hasStyle() -> StyleOperation(
                 fromPos = it.style.from.toRgaTreeSplitNodePos(),
@@ -184,17 +177,6 @@ internal fun Operation.toPBOperation(): PBOperation {
                         createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
                     }
                     operation.attributes.forEach { attributes[it.key] = it.value }
-                }
-            }
-        }
-
-        is SelectOperation -> {
-            operation {
-                select = select {
-                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
-                    from = operation.fromPos.toPBTextNodePos()
-                    to = operation.toPos.toPBTextNodePos()
-                    executedAt = operation.executedAt.toPBTimeTicket()
                 }
             }
         }

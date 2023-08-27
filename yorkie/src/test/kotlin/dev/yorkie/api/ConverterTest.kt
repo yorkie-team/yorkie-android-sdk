@@ -32,7 +32,6 @@ import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.RemoveOperation
-import dev.yorkie.document.operation.SelectOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
@@ -235,12 +234,6 @@ class ConverterTest {
             InitialTimeTicket,
             mapOf("style" to "bold"),
         )
-        val selectOperation = SelectOperation(
-            nodePos,
-            nodePos,
-            InitialTimeTicket,
-            InitialTimeTicket,
-        )
         val styleOperation = StyleOperation(
             nodePos,
             nodePos,
@@ -277,7 +270,6 @@ class ConverterTest {
             increaseOperation.toPBOperation(),
             editOperationWithoutAttrs.toPBOperation(),
             editOperationWithAttrs.toPBOperation(),
-            selectOperation.toPBOperation(),
             styleOperation.toPBOperation(),
             treeEditOperation.toPBOperation(),
             treeStyleOperation.toPBOperation(),
@@ -290,10 +282,9 @@ class ConverterTest {
         assertEquals(increaseOperation, converted[4])
         assertEquals(editOperationWithoutAttrs, converted[5])
         assertEquals(editOperationWithAttrs, converted[6])
-        assertEquals(selectOperation, converted[7])
-        assertEquals(styleOperation, converted[8])
-        assertEquals(treeEditOperation, converted[9])
-        assertEquals(treeStyleOperation, converted[10])
+        assertEquals(styleOperation, converted[7])
+        assertEquals(treeEditOperation, converted[8])
+        assertEquals(treeStyleOperation, converted[9])
     }
 
     @Test

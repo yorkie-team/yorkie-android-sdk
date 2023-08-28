@@ -8,7 +8,6 @@ import dev.yorkie.gson
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNull
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNot
@@ -214,25 +213,45 @@ class PresenceTest {
         val previousCursor = gson.toJson(Cursor(0, 0))
         val updatedCursor = gson.toJson(Cursor(1, 1))
 
-        withTwoClientsAndDocuments(
-            presences = mapOf("name" to "a", "cursor" to previousCursor) to mapOf(
-                "name" to "b",
-                "cursor" to previousCursor,
-            ),
-        ) { c1, c2, d1, d2, _ ->
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(documentKey)
+            val d2 = Document(documentKey)
             val d1Events = mutableListOf<Document.Event>()
             val d2Events = mutableListOf<Document.Event>()
-            val collectJobs = listOf(
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    d1.events.filterIsInstance<Document.Event.PresenceChange>()
-                        .filterNot { it is MyPresence.Initialized }
-                        .collect(d1Events::add)
-                },
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    d2.events.filterIsInstance<Document.Event.PresenceChange>()
-                        .filterNot { it is MyPresence.Initialized }
-                        .collect(d2Events::add)
-                },
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            val c1ID = c1.requireClientId()
+            val c2ID = c2.requireClientId()
+
+            c1.attachAsync(d1, mapOf("name" to "a", "cursor" to previousCursor)).await()
+            val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.filterIsInstance<Document.Event.PresenceChange>()
+                    .filterNot { it is MyPresence.Initialized }
+                    .collect(d1Events::add)
+            }
+
+            println("c2 attach")
+            c2.attachAsync(d2, mapOf("name" to "b", "cursor" to previousCursor)).await()
+            val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
+                d2.events.filterIsInstance<Document.Event.PresenceChange>()
+                    .filterNot { it is MyPresence.Initialized }
+                    .collect(d2Events::add)
+            }
+
+            withTimeout(GENERAL_TIMEOUT + 1) {
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(
+                Others.Watched(PresenceInfo(c2ID, d2.presences.value[c2ID]!!)),
+                d1Events.last(),
             )
 
             d1.updateAsync { _, presence ->
@@ -241,42 +260,31 @@ class PresenceTest {
                 presence.put(mapOf("name" to "X"))
             }.await()
 
-            withTimeout(GENERAL_TIMEOUT) {
+            withTimeout(GENERAL_TIMEOUT + 2) {
                 while (d1Events.size < 2 || d2Events.isEmpty()) {
                     delay(50)
                 }
             }
 
             assertEquals(
-                listOf(
-                    MyPresence.PresenceChanged(
-                        PresenceInfo(
-                            c1.requireClientId(),
-                            mapOf("name" to "X", "cursor" to updatedCursor),
-                        ),
-                    ),
-                    Others.Watched(
-                        PresenceInfo(
-                            c2.requireClientId(),
-                            mapOf("name" to "b", "cursor" to previousCursor),
-                        ),
-                    ),
+                MyPresence.PresenceChanged(
+                    PresenceInfo(c1ID, mapOf("name" to "X", "cursor" to updatedCursor)),
                 ),
-                d1Events,
+                d1Events.last(),
             )
             assertEquals(
-                listOf(
-                    Others.PresenceChanged(
-                        PresenceInfo(
-                            c1.requireClientId(),
-                            mapOf("name" to "X", "cursor" to updatedCursor),
-                        ),
-                    ),
+                Others.PresenceChanged(
+                    PresenceInfo(c1ID, mapOf("name" to "X", "cursor" to updatedCursor)),
                 ),
-                d2Events,
+                d2Events.last(),
             )
 
-            collectJobs.forEach(Job::cancel)
+            d1Job.cancel()
+            d2Job.cancel()
+            c1.detachAsync(d1).await()
+            c2.detachAsync(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
         }
     }
 

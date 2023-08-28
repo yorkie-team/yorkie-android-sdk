@@ -94,7 +94,9 @@ jobs:
           ram-size: 4096M
           emulator-boot-timeout: 12000
           disable-animations: true
-          script: ./gradlew yorkie:connectedCheck --no-build-cache --no-daemon --stacktrace
+          script: |
+            ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
+            ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.annotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
       - if: ${{ matrix.api-level == 30 }}
         run: ./gradlew yorkie:jacocoDebugTestReport
       - if: ${{ matrix.api-level == 30 }}

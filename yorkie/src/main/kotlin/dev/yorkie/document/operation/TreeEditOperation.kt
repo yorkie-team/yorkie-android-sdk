@@ -4,6 +4,7 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreePos
+import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
 
@@ -14,6 +15,7 @@ internal data class TreeEditOperation(
     override val parentCreatedAt: TimeTicket,
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
+    val maxCreatedAtMapByActor: Map<ActorID, TimeTicket>,
     val contents: List<CrdtTreeNode>?,
     override var executedAt: TimeTicket,
 ) : Operation() {
@@ -30,9 +32,14 @@ internal data class TreeEditOperation(
             return emptyList()
         }
         val changes =
-            tree.edit(fromPos to toPos, contents?.map(CrdtTreeNode::deepCopy), executedAt)
+            tree.edit(
+                fromPos to toPos,
+                contents?.map(CrdtTreeNode::deepCopy),
+                executedAt,
+                maxCreatedAtMapByActor,
+            ).first
 
-        if (fromPos.createdAt != toPos.createdAt || fromPos.offset != toPos.offset) {
+        if (fromPos != toPos) {
             root.registerElementHasRemovedNodes(tree)
         }
 

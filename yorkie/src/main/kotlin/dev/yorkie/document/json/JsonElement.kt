@@ -31,6 +31,7 @@ public abstract class JsonElement {
             CrdtText::class.java to JsonText::class.java,
             CrdtPrimitive::class.java to JsonPrimitive::class.java,
             CrdtCounter::class.java to JsonCounter::class.java,
+            CrdtTree::class.java to JsonTree::class.java,
         )
 
         internal inline fun <reified T : JsonElement> CrdtElement.toJsonElement(

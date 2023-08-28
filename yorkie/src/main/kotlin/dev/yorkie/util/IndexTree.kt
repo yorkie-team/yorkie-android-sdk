@@ -67,7 +67,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     fun nodesBetween(
         from: Int,
         to: Int,
-        action: (T) -> Unit,
+        action: (T, TagContained) -> Unit,
     ) {
         nodesBetweenInternal(root, from, to, action)
     }
@@ -76,12 +76,13 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
      * Iterates the nodes between the given range.
      * If the given range is collapsed, the callback is not called.
      * It traverses the tree with postorder traversal.
+     * NOTE(sejongk): Nodes should not be removed in callback, because it leads to wrong behaviors.
      */
     private fun nodesBetweenInternal(
         root: T,
         from: Int,
         to: Int,
-        action: ((T) -> Unit),
+        action: ((T, TagContained) -> Unit),
     ) {
         if (from > to) {
             throw IllegalArgumentException("from is greater than to: $from > $to")
@@ -113,7 +114,12 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
                 // If the range spans outside the child,
                 // the callback is called with the child.
                 if (fromChild < 0 || toChild > child.size || child.isText) {
-                    action.invoke(child)
+                    val contained = when {
+                        (fromChild < 0 && toChild > child.size) || child.isText -> TagContained.All
+                        fromChild < 0 -> TagContained.Opening
+                        else -> TagContained.Closing
+                    }
+                    action.invoke(child, contained)
                 }
             }
             pos += child.paddedSize
@@ -139,7 +145,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
             val currentNode = node
             if (currentNode == null || currentNode == root) return@repeat
 
-            currentNode.split(offset)
+            currentNode.split(offset, 0)
 
             val nextOffset = currentNode.parent?.findOffset(currentNode) ?: return@repeat
             offset = if (offset == 0) nextOffset else nextOffset + 1
@@ -239,7 +245,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
 
     private fun addSizeOfLeftSiblings(parent: T, offset: Int): Int {
         return parent.children.take(offset).fold(0) { acc, leftSibling ->
-            acc + leftSibling.paddedSize
+            acc + if (leftSibling.isRemoved) 0 else leftSibling.paddedSize
         }
     }
 
@@ -294,18 +300,6 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         return TreePos(updatedNode, updatedPathElement)
     }
 
-    /**
-     * Finds right node of the given [treePos] with postorder traversal.
-     */
-    fun findPostorderRight(treePos: TreePos<T>): T? {
-        val (node, offset) = treePos
-        return when {
-            node.isText -> if (node.size == offset) node.nextSibling ?: node.parent else node
-            node.children.size == offset -> node
-            else -> findLeftMost(node.children[offset])
-        }
-    }
-
     private fun findLeftMost(node: T): T {
         return if (node.isText || node.children.isEmpty()) {
             node
@@ -356,10 +350,17 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     /**
      * Returns the path of the given [index].
      */
-    public fun indexToPath(index: Int): List<Int> {
+    fun indexToPath(index: Int): List<Int> {
         val treePos = findTreePos(index)
         return treePosToPath(treePos)
     }
+}
+
+/**
+ * [TagContained] represents whether the opening or closing tag of a element is selected.
+ */
+internal enum class TagContained {
+    All, Opening, Closing,
 }
 
 /**
@@ -467,6 +468,13 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         check(!isText) {
             "Text node cannot have children"
         }
+        if (node.isRemoved) {
+            val index = _children.indexOf(node)
+
+            // If nodes are removed, the offset of the removed node is the number of
+            // nodes before the node excluding the removed nodes.
+            return allChildren.take(index).filterNot { it.isRemoved }.size
+        }
         return children.indexOf(node)
     }
 
@@ -502,7 +510,10 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         _children.addAll(newNode)
         newNode.forEach { node ->
             node.parent = this as T
-            node.updateAncestorSize()
+
+            if (!node.isRemoved) {
+                node.updateAncestorSize()
+            }
         }
     }
 
@@ -517,7 +528,10 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         _children.addAll(0, newNode.toList())
         newNode.forEach { node ->
             node.parent = this as T
-            node.updateAncestorSize()
+
+            if (!node.isRemoved) {
+                node.updateAncestorSize()
+            }
         }
     }
 
@@ -590,24 +604,24 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
     /**
      * Splits the node at the given [offset].
      */
-    fun split(offset: Int): T? {
+    fun split(offset: Int, absOffset: Int): T? {
         return if (isText) {
-            splitText(offset)
+            splitText(offset, absOffset)
         } else {
             splitElement(offset)
         }
     }
 
-    private fun splitText(offset: Int): T? {
+    private fun splitText(offset: Int, absOffset: Int): T? {
         if (offset == 0 || offset == size) {
             return null
         }
 
         val leftValue = value.substring(0, offset)
-        val rightValue = value.substring(offset)
+        val rightValue = value.substring(offset).takeUnless { it.isEmpty() } ?: return null
         value = leftValue
 
-        val rightNode = clone(offset)
+        val rightNode = clone(offset + absOffset)
         rightNode.value = rightValue
         parent?.insertAfterInternal(this as T, rightNode)
 

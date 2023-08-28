@@ -3,8 +3,8 @@ package dev.yorkie.core
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.DocumentSyncResult
+import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
-import dev.yorkie.core.Client.Event.DocumentsChanged
 import dev.yorkie.core.Client.StreamConnectionStatus
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
@@ -89,8 +89,8 @@ class ClientTest {
                     delay(50)
                 }
             }
-            val changeEvent = assertIs<DocumentsChanged>(
-                client2Events.first { it is DocumentsChanged },
+            val changeEvent = assertIs<DocumentChanged>(
+                client2Events.first { it is DocumentChanged },
             )
             assertContentEquals(listOf(documentKey), changeEvent.documentKeys)
             var syncEvent = assertIs<DocumentSynced>(client2Events.first { it is DocumentSynced })
@@ -121,11 +121,15 @@ class ClientTest {
                 root.remove("k1")
             }.await()
 
-            while (client1Events.none { it is DocumentSynced }) {
-                delay(50)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (client1Events.none { it is DocumentSynced }) {
+                    delay(50)
+                }
             }
-            while (client2Events.isEmpty()) {
-                delay(50)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (client2Events.isEmpty()) {
+                    delay(50)
+                }
             }
             syncEvent = assertIs(client2Events.first { it is DocumentSynced })
             assertIs<DocumentSyncResult.Synced>(syncEvent.result)
@@ -191,7 +195,7 @@ class ClientTest {
                 root["version"] = "v2"
             }.await()
             client1.syncAsync().await()
-            withTimeout(5_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (client2Events.size < 2) {
                     delay(50)
                 }

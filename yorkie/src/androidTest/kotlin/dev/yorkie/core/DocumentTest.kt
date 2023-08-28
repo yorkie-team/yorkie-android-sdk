@@ -147,7 +147,9 @@ class DocumentTest {
             assertEquals(document1.toJson(), document2.toJson())
 
             client1.removeAsync(document1).await()
-            client2.detachAsync(document2).await()
+            if (document2.status != DocumentStatus.Removed) {
+                client2.detachAsync(document2).await()
+            }
             assertEquals(DocumentStatus.Removed, document1.status)
             assertEquals(DocumentStatus.Removed, document2.status)
         }

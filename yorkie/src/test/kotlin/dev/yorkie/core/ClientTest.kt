@@ -1,8 +1,6 @@
 package dev.yorkie.core
 
-import com.google.protobuf.ByteString
 import dev.yorkie.api.PBChangePack
-import dev.yorkie.api.toActorID
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.AttachDocumentRequest
@@ -13,8 +11,8 @@ import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.WatchDocumentRequest
 import dev.yorkie.api.v1.YorkieServiceGrpcKt
 import dev.yorkie.assertJsonContentEquals
+import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
-import dev.yorkie.core.Client.Event.DocumentsChanged
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
@@ -28,6 +26,7 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.time.ActorID
 import io.grpc.Channel
 import io.grpc.inprocess.InProcessChannelBuilder
 import io.grpc.inprocess.InProcessServerBuilder
@@ -87,7 +86,6 @@ class ClientTest {
             assertTrue(target.isActive)
 
             val activatedStatus = assertIs<Client.Status.Activated>(target.status.value)
-            assertEquals(TEST_KEY, activatedStatus.clientKey)
             assertEquals(TEST_ACTOR_ID, activatedStatus.clientId)
 
             val deactivateRequestCaptor = argumentCaptor<DeactivateClientRequest>()
@@ -138,8 +136,8 @@ class ClientTest {
 
             val watchRequestCaptor = argumentCaptor<WatchDocumentRequest>()
             target.attachAsync(document).await()
-            val event = target.events.first { it is DocumentsChanged }
-            val changeEvent = assertIs<DocumentsChanged>(event)
+            val event = target.events.first { it is DocumentChanged }
+            val changeEvent = assertIs<DocumentChanged>(event)
             verify(service, atLeastOnce()).watchDocument(watchRequestCaptor.capture())
             assertIsTestActorID(watchRequestCaptor.firstValue.clientId)
             assertEquals(1, changeEvent.documentKeys.size)
@@ -283,8 +281,8 @@ class ClientTest {
         }
     }
 
-    private fun assertIsTestActorID(clientId: ByteString) {
-        assertEquals(TEST_ACTOR_ID, clientId.toActorID())
+    private fun assertIsTestActorID(clientId: String) {
+        assertEquals(TEST_ACTOR_ID, ActorID(clientId))
     }
 
     private fun assertIsInitialChangePack(changePack: PBChangePack) {

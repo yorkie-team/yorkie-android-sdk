@@ -17,17 +17,8 @@ internal data class TextChange(
  * The type of [TextChange].
  */
 internal enum class TextChangeType {
-    Content, Selection, Style
+    Content, Style
 }
-
-/**
- * Represents the selection of text range in the editor.
- */
-internal data class Selection(
-    val from: RgaTreeSplitPos,
-    val to: RgaTreeSplitPos,
-    val executedAt: TimeTicket,
-)
 
 internal data class TextValue(
     val content: String,

@@ -137,13 +137,6 @@ class JsonTextTest {
     }
 
     @Test
-    fun `should return false when index range is invalid with select`() {
-        assertTrue(target.select(0, 0))
-        assertFalse(target.select(5, 0))
-        assertFalse(target.select(5, 7))
-    }
-
-    @Test
     fun `should handle text clear operations`() {
         target.edit(0, 0, "ABCD")
         assertTrue(target.toString().isNotEmpty())

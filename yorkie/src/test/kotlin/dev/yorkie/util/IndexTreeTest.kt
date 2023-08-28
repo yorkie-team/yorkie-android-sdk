@@ -3,7 +3,7 @@ package dev.yorkie.util
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
-import dev.yorkie.document.crdt.CrdtTreePos.Companion.InitialCrdtTreePos
+import dev.yorkie.document.crdt.CrdtTreeNodeID.Companion.InitialCrdtTreeNodeID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -49,28 +49,6 @@ class IndexTreeTest {
     }
 
     @Test
-    fun `should find right node from the given offset in postorder traversal`() {
-        //       0   1 2 3    4   5 6 7    8
-        // <root> <p> a b </p> <p> c d </p> </root>
-        val tree = createIndexTree(
-            createElementNode(
-                "root",
-                createElementNode("p", createTextNode("ab")),
-                createElementNode("p", createTextNode("cd")),
-            ),
-        )
-
-        // postorder traversal: "ab", <b>, "cd", <p>, <root>
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(0))?.type)
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(1))?.type)
-        assertEquals("p", tree.findPostorderRight(tree.findTreePos(3))?.type)
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(4))?.type)
-        assertEquals("text", tree.findPostorderRight(tree.findTreePos(5))?.type)
-        assertEquals("p", tree.findPostorderRight(tree.findTreePos(7))?.type)
-        assertEquals("root", tree.findPostorderRight(tree.findTreePos(8))?.type)
-    }
-
-    @Test
     fun `should find common ancestor of two given nodes`() {
         val tree = createIndexTree(
             createElementNode(
@@ -104,12 +82,16 @@ class IndexTreeTest {
             ),
         )
         assertEquals(
-            listOf("text.b", "p", "text.cde", "p", "text.fg", "p"),
+            listOf("text.b:All", "p:Closing", "text.cde:All", "p:All", "text.fg:All", "p:Opening"),
             tree.nodesBetween(2, 11),
         )
-        assertEquals(listOf("p"), tree.nodesBetween(0, 1))
-        assertEquals(listOf("p"), tree.nodesBetween(3, 4))
-        assertEquals(listOf("p", "p"), tree.nodesBetween(3, 5))
+        assertEquals(
+            listOf("text.b:All", "p:Closing", "text.cde:All", "p:Opening"),
+            tree.nodesBetween(2, 6),
+        )
+        assertEquals(listOf("p:Opening"), tree.nodesBetween(0, 1))
+        assertEquals(listOf("p:Closing"), tree.nodesBetween(3, 4))
+        assertEquals(listOf("p:Closing", "p:Opening"), tree.nodesBetween(3, 5))
     }
 
     @Test
@@ -398,18 +380,18 @@ class IndexTreeTest {
     }
 
     private fun IndexTree<CrdtTreeNode>.nodesBetween(from: Int, to: Int) = buildList {
-        nodesBetween(from, to) { node ->
-            add(node.toDiagnostic())
+        nodesBetween(from, to) { node, contain ->
+            add("${node.toDiagnostic()}:${contain.name}")
         }
     }
 
     companion object {
         private fun createElementNode(type: String, vararg childNode: CrdtTreeNode): CrdtTreeNode {
-            return CrdtTreeElement(InitialCrdtTreePos, type, childNode.toList())
+            return CrdtTreeElement(InitialCrdtTreeNodeID, type, childNode.toList())
         }
 
         private fun createTextNode(value: String) =
-            CrdtTreeText(InitialCrdtTreePos, value)
+            CrdtTreeText(InitialCrdtTreeNodeID, value)
 
         private val DefaultRootNode = createElementNode(
             "root",

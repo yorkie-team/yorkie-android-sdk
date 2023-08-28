@@ -113,7 +113,7 @@ public class JsonObject internal constructor(
         val ticket = context.issueTimeTicket()
         val tree = CrdtTree(JsonTree.buildRoot(initialRoot, context), ticket)
         setAndRegister(key, tree)
-        return JsonTree(context, tree)
+        return tree.toJsonElement(context)
     }
 
     private fun setAndRegister(key: String, element: CrdtElement) {

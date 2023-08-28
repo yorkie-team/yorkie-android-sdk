@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Before
 import org.junit.Test
@@ -45,14 +44,5 @@ class CrdtTextTest {
             """[{"val":"A"},{"val":"B"}]""",
             target.toJson(),
         )
-    }
-
-    @Test
-    fun `should handle select operations`() {
-        target.edit(target.indexRangeToPosRange(0, 0), "ABCD", TimeTicket.InitialTimeTicket)
-        val executedAt = TimeTicket(1L, 1u, ActorID.INITIAL_ACTOR_ID)
-        val textChange = target.select(target.indexRangeToPosRange(2, 4), executedAt)
-        assertEquals(TextChangeType.Selection, textChange?.type)
-        assertEquals(2 to 4, textChange?.from to textChange?.to)
     }
 }

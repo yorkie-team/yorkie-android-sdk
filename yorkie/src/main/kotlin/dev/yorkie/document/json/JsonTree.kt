@@ -5,10 +5,10 @@ import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TreePosRange
-import dev.yorkie.document.json.JsonTree.TreeNode
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
@@ -24,8 +24,8 @@ public typealias TreePosStructRange = Pair<TreePosStruct, TreePosStruct>
 public class JsonTree internal constructor(
     internal val context: ChangeContext,
     override val target: CrdtTree,
-) : JsonElement(), Collection<TreeNode> {
-    public override val size: Int by target::size
+) : JsonElement() {
+    public val size: Int by target::size
 
     internal val indexTree by target::indexTree
 
@@ -105,26 +105,28 @@ public class JsonTree internal constructor(
         editByPos(fromPos, toPos, contents.toList())
     }
 
-    private fun editByPos(fromPos: CrdtTreePos, toPos: CrdtTreePos, contents: List<TreeNode>) {
+    private fun editByPos(
+        fromPos: CrdtTreePos,
+        toPos: CrdtTreePos,
+        contents: List<TreeNode>,
+    ) {
         if (contents.isNotEmpty()) {
             validateTreeNodes(contents)
             if (contents.first().type != DEFAULT_TEXT_TYPE) {
-                val children =
-                    contents.filterIsInstance<ElementNode>().flatMap(ElementNode::children)
-                validateTreeNodes(children)
+                contents.forEach { validateTreeNodes(listOf(it)) }
             }
         }
 
+        val ticket = context.lastTimeTicket
         val crdtNodes = if (contents.firstOrNull()?.type == DEFAULT_TEXT_TYPE) {
             val compVal = contents
                 .filterIsInstance<TextNode>()
                 .joinToString("") { it.value }
-            listOf(CrdtTreeText(CrdtTreePos(context.issueTimeTicket(), 0), compVal))
+            listOf(CrdtTreeText(CrdtTreeNodeID(context.issueTimeTicket(), 0), compVal))
         } else {
             contents.map { createCrdtTreeNode(context, it) }
         }
-        val ticket = context.lastTimeTicket
-        target.edit(
+        val (_, maxCreatedAtMapByActor) = target.edit(
             fromPos to toPos,
             crdtNodes.map { it.deepCopy() }.ifEmpty { null },
             ticket,
@@ -135,12 +137,13 @@ public class JsonTree internal constructor(
                 target.createdAt,
                 fromPos,
                 toPos,
+                maxCreatedAtMapByActor,
                 crdtNodes.ifEmpty { null },
                 ticket,
             ),
         )
 
-        if (fromPos.createdAt != toPos.createdAt || fromPos.offset != toPos.offset) {
+        if (fromPos != toPos) {
             context.registerElementHasRemovedNodes(target)
         }
     }
@@ -218,7 +221,7 @@ public class JsonTree internal constructor(
      */
     public fun posRangeToIndexRange(range: TreePosStructRange): Pair<Int, Int> {
         val posRange = range.first.toOriginal() to range.second.toOriginal()
-        return target.toIndex(posRange.first) to target.toIndex(posRange.second)
+        return target.posRangeToIndexRange(posRange, context.lastTimeTicket)
     }
 
     /**
@@ -226,45 +229,7 @@ public class JsonTree internal constructor(
      */
     public fun posRangeToPathRange(range: TreePosStructRange): Pair<List<Int>, List<Int>> {
         val posRange = range.first.toOriginal() to range.second.toOriginal()
-        return target.posRangeToPathRange(posRange)
-    }
-
-    override fun isEmpty(): Boolean = target.isEmpty()
-
-    override fun contains(element: TreeNode): Boolean {
-        return find { it == element } != null
-    }
-
-    override fun containsAll(elements: Collection<TreeNode>): Boolean {
-        return toList().containsAll(elements)
-    }
-
-    override fun iterator(): Iterator<TreeNode> {
-        return object : Iterator<TreeNode> {
-            val targetIterator = target.iterator()
-
-            override fun hasNext(): Boolean {
-                return targetIterator.hasNext()
-            }
-
-            override fun next(): TreeNode {
-                return targetIterator.next().toTreeNode()
-            }
-
-            private fun CrdtTreeNode.toTreeNode(): TreeNode {
-                return if (isText) {
-                    TextNode(value)
-                } else {
-                    ElementNode(
-                        type,
-                        attributes,
-                        children.map {
-                            it.toTreeNode()
-                        },
-                    )
-                }
-            }
-        }
+        return target.posRangeToPathRange(posRange, context.lastTimeTicket)
     }
 
     companion object {
@@ -273,12 +238,12 @@ public class JsonTree internal constructor(
          * Returns the root node of this tree.
          */
         internal fun buildRoot(initialRoot: ElementNode?, context: ChangeContext): CrdtTreeNode {
-            val pos = CrdtTreePos(context.issueTimeTicket(), 0)
+            val id = CrdtTreeNodeID(context.issueTimeTicket(), 0)
             if (initialRoot == null) {
-                return CrdtTreeElement(pos, DEFAULT_ROOT_TYPE)
+                return CrdtTreeElement(id, DEFAULT_ROOT_TYPE)
             }
             // TODO(hackerwins): Need to use the ticket of operation of creating tree.
-            return CrdtTreeElement(pos, initialRoot.type).also { root ->
+            return CrdtTreeElement(id, initialRoot.type).also { root ->
                 initialRoot.children.forEach { child ->
                     buildDescendants(child, root, context)
                 }
@@ -292,11 +257,11 @@ public class JsonTree internal constructor(
         ) {
             val type = treeNode.type
             val ticket = context.issueTimeTicket()
-            val pos = CrdtTreePos(ticket, 0)
+            val id = CrdtTreeNodeID(ticket, 0)
 
             when (treeNode) {
                 is TextNode -> {
-                    val textNode = CrdtTreeText(pos, treeNode.value)
+                    val textNode = CrdtTreeText(id, treeNode.value)
                     parent.append(textNode)
                     return
                 }
@@ -310,7 +275,7 @@ public class JsonTree internal constructor(
                             attrs.set(key, value, ticket)
                         }
                     }
-                    val elementNode = CrdtTreeElement(pos, type, attributes = attrs)
+                    val elementNode = CrdtTreeElement(id, type, attributes = attrs)
                     parent.append(elementNode)
                     treeNode.children.forEach { child ->
                         buildDescendants(child, elementNode, context)
@@ -324,16 +289,16 @@ public class JsonTree internal constructor(
          */
         private fun createCrdtTreeNode(context: ChangeContext, content: TreeNode): CrdtTreeNode {
             val ticket = context.issueTimeTicket()
-            val pos = CrdtTreePos(ticket, 0)
+            val id = CrdtTreeNodeID(ticket, 0)
 
             return when (content) {
                 is TextNode -> {
-                    CrdtTreeText(pos, content.value)
+                    CrdtTreeText(id, content.value)
                 }
 
                 is ElementNode -> {
                     CrdtTreeElement(
-                        pos,
+                        id,
                         content.type,
                         attributes = Rht().apply {
                             content.attributes.forEach { (key, value) ->

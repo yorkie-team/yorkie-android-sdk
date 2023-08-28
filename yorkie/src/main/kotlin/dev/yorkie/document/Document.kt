@@ -8,6 +8,7 @@ import dev.yorkie.core.Presence
 import dev.yorkie.core.PresenceChange
 import dev.yorkie.core.PresenceInfo
 import dev.yorkie.core.Presences
+import dev.yorkie.core.Presences.Companion.UninitializedPresences
 import dev.yorkie.core.Presences.Companion.asPresences
 import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChange.Others
@@ -39,9 +40,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
@@ -82,14 +83,14 @@ public class Document(public val key: Key) {
     internal val garbageLength: Int
         get() = root.getGarbageLength()
 
-    internal val onlineClients = mutableSetOf<ActorID>()
+    internal val onlineClients = MutableStateFlow(setOf<ActorID>())
 
-    private val _presences = MutableStateFlow(Presences())
-    public val presences: StateFlow<Presences> = _presences.map { presences ->
-        presences.filterKeys { it in onlineClients }.asPresences()
-    }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences())
+    private val _presences = MutableStateFlow(UninitializedPresences)
+    public val presences: StateFlow<Presences> =
+        combine(_presences, onlineClients) { presences, onlineClients ->
+            presences.filterKeys { it in onlineClients }.asPresences()
+        }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences())
 
-    @VisibleForTesting
     internal val allPresences: StateFlow<Presences> = _presences.asStateFlow()
 
     /**
@@ -130,7 +131,7 @@ public class Document(public val key: Key) {
             val change = context.getChange()
             val (operationInfos, newPresences) = change.execute(root, _presences.value)
 
-            newPresences?.let { _presences.emit(it) }
+            newPresences?.let { emitPresences(it) }
             localChanges += change
             changeID = change.id
 
@@ -263,22 +264,31 @@ public class Document(public val key: Key) {
                 this.clone = clone.copy(presences = newPresences ?: return@also)
             }
             val actorID = change.id.actor
-            var event: Event? = null
-            if (change.hasPresenceChange && actorID in onlineClients) {
+            var presenceEvent: Event.PresenceChange? = null
+            if (change.hasPresenceChange && actorID in onlineClients.value) {
                 val presenceChange = change.presenceChange ?: return@forEach
-                event = when (presenceChange) {
+                presenceEvent = when (presenceChange) {
                     is PresenceChange.Put -> {
                         if (actorID in _presences.value) {
                             createPresenceChangedEvent(actorID, presenceChange.presence)
                         } else {
+                            // NOTE(chacha912): When the user exists in onlineClients, but
+                            // their presence was initially absent, we can consider that we have
+                            // received their initial presence, so trigger the 'watched' event.
                             Others.Watched(PresenceInfo(actorID, presenceChange.presence))
                         }
                     }
 
                     is PresenceChange.Clear -> {
-                        onlineClients.remove(actorID)
+                        // NOTE(chacha912): When the user exists in onlineClients, but
+                        // PresenceChange(clear) is received, we can consider it as detachment
+                        // occurring before unwatching.
+                        // Detached user is no longer participating in the document, we remove
+                        // them from the online clients and trigger the 'unwatched' event.
                         presences.value[actorID]?.let { presence ->
                             Others.Unwatched(PresenceInfo(actorID, presence))
+                        }.also {
+                            onlineClients.value = onlineClients.value - actorID
                         }
                     }
                 }
@@ -289,14 +299,19 @@ public class Document(public val key: Key) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
 
-            event?.let { eventStream.emit(it) }
-            newPresences?.let { _presences.emit(it) }
+            newPresences?.let { emitPresences(it) }
+            presenceEvent?.let { eventStream.emit(it) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
     }
 
     private suspend fun ensureClone(): RootClone = withContext(dispatcher) {
         clone ?: RootClone(root.deepCopy(), _presences.value.asPresences()).also { clone = it }
+    }
+
+    private suspend fun emitPresences(newPresences: Presences) {
+        _presences.emit(newPresences)
+        clone = ensureClone().copy(presences = newPresences)
     }
 
     /**

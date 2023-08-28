@@ -58,77 +58,39 @@
   <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.document.crdt</a><span class="delimiter">/</span><span class="current">CrdtTreePos</span></div>
   <div class="cover ">
     <h1 class="cover"><span>Crdt</span><wbr></wbr><span>Tree</span><wbr></wbr><span><span>Pos</span></span></h1>
-    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">data </span><span class="token keyword">class </span><a href="index.html">CrdtTreePos</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>createdAt<span class="token operator">: </span><a href="../../dev.yorkie.document.time/-time-ticket/index.html">TimeTicket</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>offset<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-int/index.html">Int</a></span></span><span class="token punctuation">)</span> : <a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-comparable/index.html">Comparable</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="index.html">CrdtTreePos</a><span class="token operator">&gt; </span>, <span data-unresolved-link="dev.yorkie.document/JsonSerializable///PointingToDeclaration/">JsonSerializable</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="index.html">CrdtTreePos</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../dev.yorkie.document/-crdt-tree-pos-struct/index.html">CrdtTreePosStruct</a><span class="token operator">&gt; </span></div><p class="paragraph"><a href="index.html">CrdtTreePos</a> represents a position in the tree. It indicates the virtual location in the tree, so whether the node is split or not, we can find the adjacent node to pos by calling <code class="lang-kotlin">map.floorEntry()</code>.</p></div></div>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">data </span><span class="token keyword">class </span><a href="index.html">CrdtTreePos</a> : <span data-unresolved-link="dev.yorkie.document/JsonSerializable///PointingToDeclaration/">JsonSerializable</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="index.html">CrdtTreePos</a><span class="token punctuation">, </span><span class="token keyword"></span><a href="../../dev.yorkie.document/-crdt-tree-pos-struct/index.html">CrdtTreePosStruct</a><span class="token operator">&gt; </span></div><p class="paragraph"><a href="index.html">CrdtTreePos</a> represent a position in the tree. It is used to identify a position in the tree. It is composed of the parent ID and the left sibling ID. If there's no left sibling in parent's children, then left sibling is parent.</p></div></div>
   </div>
   <div class="tabbedcontent">
     <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
     <div class="tabs-section-body">
-      <div data-togglable="CONSTRUCTOR">
-        <h2 class="">Constructors</h2>
-        <div class="table"><a data-name="-2070064591%2FConstructors%2F-1590045667" anchor-label="CrdtTreePos" id="-2070064591%2FConstructors%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-togglable="CONSTRUCTOR" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="-crdt-tree-pos.html"><span>Crdt</span><wbr></wbr><span>Tree</span><wbr></wbr><span><span>Pos</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-2070064591%2FConstructors%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">constructor</span><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">createdAt<span class="token operator">: </span><a href="../../dev.yorkie.document.time/-time-ticket/index.html">TimeTicket</a><span class="token punctuation">, </span></span><span class="parameter ">offset<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-int/index.html">Int</a></span></span><span class="token punctuation">)</span></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div data-togglable="TYPE">
-        <h2 class="">Types</h2>
-        <div class="table"><a data-name="-1243287389%2FClasslikes%2F-1590045667" anchor-label="Companion" id="-1243287389%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="-companion/index.html"><span><span>Companion</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1243287389%2FClasslikes%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">object </span><a href="-companion/index.html">Companion</a></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
       <div data-togglable="PROPERTY">
         <h2 class="">Properties</h2>
-        <div class="table"><a data-name="-1837598079%2FProperties%2F-1590045667" anchor-label="createdAt" id="-1837598079%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+        <div class="table"><a data-name="-1820779130%2FProperties%2F-1590045667" anchor-label="leftSiblingID" id="-1820779130%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
-                  <div><a href="created-at.html"><span>created</span><wbr></wbr><span><span>At</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1837598079%2FProperties%2F-1590045667"></span>
+                  <div><a href="left-sibling-i-d.html"><span>left</span><wbr></wbr><span>Sibling</span><wbr></wbr><span><span>ID</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1820779130%2FProperties%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">val </span><a href="created-at.html">createdAt</a><span class="token operator">: </span><a href="../../dev.yorkie.document.time/-time-ticket/index.html">TimeTicket</a></div><div class="brief "><p class="paragraph">Creation time of the node.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">val </span><a href="left-sibling-i-d.html">leftSiblingID</a><span class="token operator">: </span><a href="../-crdt-tree-node-i-d/index.html">CrdtTreeNodeID</a></div></div></div>
                 </div>
               </div>
             </div>
           </div>
-<a data-name="-1136477365%2FProperties%2F-1590045667" anchor-label="offset" id="-1136477365%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+<a data-name="-572493671%2FProperties%2F-1590045667" anchor-label="parentID" id="-572493671%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
-                  <div><a href="offset.html"><span><span>offset</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1136477365%2FProperties%2F-1590045667"></span>
+                  <div><a href="parent-i-d.html"><span>parent</span><wbr></wbr><span><span>ID</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-572493671%2FProperties%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">val </span><a href="offset.html">offset</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-int/index.html">Int</a></div><div class="brief "><p class="paragraph">The distance from the beginning of the node when the node is split.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">val </span><a href="parent-i-d.html">parentID</a><span class="token operator">: </span><a href="../-crdt-tree-node-i-d/index.html">CrdtTreeNodeID</a></div></div></div>
                 </div>
               </div>
             </div>
@@ -137,22 +99,7 @@
       </div>
       <div data-togglable="FUNCTION">
         <h2 class="">Functions</h2>
-        <div class="table"><a data-name="-2124879093%2FFunctions%2F-1590045667" anchor-label="compareTo" id="-2124879093%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="compare-to.html"><span>compare</span><wbr></wbr><span><span>To</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-2124879093%2FFunctions%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">operator override </span><span class="token keyword">fun </span><a href="compare-to.html"><span class="token function">compareTo</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">other<span class="token operator">: </span><a href="index.html">CrdtTreePos</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-int/index.html">Int</a></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-<a data-name="-1965256690%2FFunctions%2F-1590045667" anchor-label="toStruct" id="-1965256690%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+        <div class="table"><a data-name="-1965256690%2FFunctions%2F-1590045667" anchor-label="toStruct" id="-1965256690%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">

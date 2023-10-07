@@ -28,9 +28,8 @@ internal data class StyleOperation(
                     it.from,
                     it.to,
                     it.attributes.orEmpty(),
-                ).apply {
-                    executedAt = parentCreatedAt
-                }
+                    root.createPath(parentCreatedAt),
+                )
             }
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

@@ -4,6 +4,7 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreePos
+import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieLogger
@@ -49,10 +50,9 @@ internal data class TreeEditOperation(
                 it.to,
                 it.fromPath,
                 it.toPath,
-                it.value,
-            ).apply {
-                executedAt = parentCreatedAt
-            }
+                it.value?.map(TreeNode::toJsonTreeNode),
+                root.createPath(parentCreatedAt),
+            )
         }
     }
 

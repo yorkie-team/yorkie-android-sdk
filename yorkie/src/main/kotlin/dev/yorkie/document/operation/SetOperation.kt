@@ -32,11 +32,7 @@ internal data class SetOperation(
             val copiedValue = value.deepCopy()
             parentObject[key] = copiedValue
             root.registerElement(copiedValue, parentObject)
-            listOf(
-                OperationInfo.SetOpInfo(key).apply {
-                    executedAt = parentCreatedAt
-                },
-            )
+            listOf(OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)))
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only object can execute set")

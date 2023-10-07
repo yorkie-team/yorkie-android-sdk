@@ -31,9 +31,11 @@ internal data class MoveOperation(
             parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
             val index = parentObject.subPathOf(createdAt).toInt()
             listOf(
-                OperationInfo.MoveOpInfo(previousIndex = previousIndex, index = index).apply {
-                    executedAt = parentCreatedAt
-                },
+                OperationInfo.MoveOpInfo(
+                    previousIndex = previousIndex,
+                    index = index,
+                    path = root.createPath(parentCreatedAt),
+                ),
             )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

@@ -37,11 +37,7 @@ internal data class IncreaseOperation(
             } else {
                 copiedValue.value as Long
             }
-            listOf(
-                OperationInfo.IncreaseOpInfo(increasedValue).apply {
-                    executedAt = effectedCreatedAt
-                },
-            )
+            listOf(OperationInfo.IncreaseOpInfo(increasedValue, root.createPath(parentCreatedAt)))
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "fail to execute, only Counter can execute increase")

@@ -38,9 +38,8 @@ internal data class TreeStyleOperation(
                 it.fromPath,
                 it.toPath,
                 it.attributes.orEmpty(),
-            ).apply {
-                executedAt = parentCreatedAt
-            }
+                root.createPath(parentCreatedAt),
+            )
         }
     }
 

@@ -29,6 +29,9 @@ public class JsonTree internal constructor(
 
     internal val indexTree by target::indexTree
 
+    public val rootTreeNode: TreeNode
+        get() = target.rootTreeNode.toJsonTreeNode()
+
     /**
      * Sets the [attributes] to the elements of the given [path].
      */

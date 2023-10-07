@@ -1,7 +1,6 @@
 package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.TextWithAttributes
-import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonObject
@@ -79,18 +78,12 @@ public sealed class OperationInfo {
         override var path: String = INITIAL_PATH,
     ) : OperationInfo(), TextOperationInfo
 
-    public data class SelectOpInfo(
-        val from: Int,
-        val to: Int,
-        override var path: String = INITIAL_PATH,
-    ) : OperationInfo(), TextOperationInfo
-
     public data class TreeEditOpInfo(
         val from: Int,
         val to: Int,
         val fromPath: List<Int>,
         val toPath: List<Int>,
-        val nodes: List<TreeNode>?,
+        val nodes: List<JsonTree.TreeNode>?,
         override var path: String = INITIAL_PATH,
     ) : OperationInfo(), TreeOperationInfo
 

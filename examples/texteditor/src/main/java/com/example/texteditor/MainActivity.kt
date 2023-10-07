@@ -11,6 +11,7 @@ import androidx.core.text.getSpans
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.texteditor.EditorViewModel.Selection
 import com.example.texteditor.databinding.ActivityMainBinding
 import dev.yorkie.core.Client
 import dev.yorkie.document.operation.OperationInfo
@@ -51,18 +52,21 @@ class MainActivity : AppCompatActivity() {
             }
 
             launch {
-                viewModel.textOpInfos.collect { (actor, opInfo) ->
-                    when (opInfo) {
-                        is OperationInfo.EditOpInfo -> opInfo.handleContentChange()
-                        is OperationInfo.SelectOpInfo -> opInfo.handleSelectChange(actor)
-                    }
+                viewModel.editOpInfos.collect { opInfo ->
+                    opInfo.handleContentChange()
                 }
             }
 
             launch {
                 viewModel.removedPeers.collect {
                     binding.textEditor.text?.removePrevSpan(it)
-                    viewModel.removeDetachedPeerSelectionInfo(it)
+                    viewModel.removeUnwatchedPeerSelectionInfo(it)
+                }
+            }
+
+            launch {
+                viewModel.selections.collect { selection ->
+                    selection.handleSelectChange()
                 }
             }
         }
@@ -82,26 +86,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun OperationInfo.SelectOpInfo.handleSelectChange(actor: ActorID) {
+    private fun Selection.handleSelectChange() {
         val editable = binding.textEditor.text ?: return
 
-        if (editable.removePrevSpan(actor) && from == to) {
-            viewModel.updatePeerPrevSelection(actor, null)
-        } else {
-            editable.setSpan(
-                BackgroundColorSpan(viewModel.getPeerSelectionColor(actor)),
-                from.coerceAtMost(to),
-                to.coerceAtLeast(from),
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-            )
-            viewModel.updatePeerPrevSelection(actor, from to to)
-        }
+        editable.removePrevSpan(clientID)
+        editable.setSpan(
+            BackgroundColorSpan(viewModel.getPeerSelectionColor(clientID)),
+            from.coerceAtMost(to),
+            to.coerceAtLeast(from),
+            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
     }
 
     private fun Editable.removePrevSpan(actorID: ActorID): Boolean {
-        val (start, end) = viewModel.peerSelectionInfos[actorID]?.prevSelection ?: return false
-        val backgroundSpan = getSpans<BackgroundColorSpan>(start, end).firstOrNull {
-            it.backgroundColor == viewModel.peerSelectionInfos[actorID]?.color
+        val backgroundSpan = getSpans<BackgroundColorSpan>(0, length).firstOrNull {
+            it.backgroundColor == viewModel.selectionColors[actorID]
         }
         backgroundSpan?.let(::removeSpan)
         return true

@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 
@@ -7,12 +8,24 @@ import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
  * [TreeNode] represents the JSON representation of a node in the tree.
  * It is used to serialize and deserialize the tree.
  */
-public data class TreeNode(
+internal data class TreeNode(
     val type: String,
     val children: List<TreeNode>? = null,
     val value: String? = null,
     val attributes: Map<String, String>? = null,
 ) {
+
+    fun toJsonTreeNode(): JsonTree.TreeNode {
+        return if (type == DEFAULT_TEXT_TYPE) {
+            JsonTree.TextNode(value.orEmpty())
+        } else {
+            JsonTree.ElementNode(
+                type,
+                attributes.orEmpty(),
+                children?.map(TreeNode::toJsonTreeNode).orEmpty(),
+            )
+        }
+    }
 
     override fun toString(): String {
         return if (type == DEFAULT_TEXT_TYPE) {

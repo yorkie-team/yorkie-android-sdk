@@ -30,6 +30,9 @@ internal class CrdtTree(
 
     private val removedNodeMap = mutableMapOf<Pair<TimeTicket, Int>, CrdtTreeNode>()
 
+    val rootTreeNode: TreeNode
+        get() = indexTree.root.toTreeNode()
+
     init {
         indexTree.traverse { node, _ ->
             nodeMapByID[node.id] = node
@@ -142,7 +145,7 @@ internal class CrdtTree(
                 fromPath = toPath(fromParent, fromLeft),
                 toPath = toPath(toParent, toLeft),
                 actorID = executedAt.actorID,
-                value = contents?.map(CrdtTreeNode::toJson),
+                value = contents?.map(CrdtTreeNode::toTreeNode),
             ),
         )
 

@@ -10,7 +10,6 @@ import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNodeID
-import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
@@ -316,7 +315,7 @@ class JsonTreeTest {
                     1,
                     listOf(0, 0),
                     listOf(0, 0),
-                    listOf(TreeNode("text", value = "X")),
+                    listOf(JsonTree.TextNode("X")),
                     "$.t",
                 ),
                 // TODO(7hong13): need to check whether toPath is correctly passed
@@ -383,7 +382,7 @@ class JsonTreeTest {
                     4,
                     listOf(0, 0, 0, 1),
                     listOf(0, 0, 0, 1),
-                    listOf(TreeNode("text", value = "X")),
+                    listOf(JsonTree.TextNode("X")),
                     "$.t",
                 ),
                 // TODO(7hong13): need to check whether toPath is correctly passed

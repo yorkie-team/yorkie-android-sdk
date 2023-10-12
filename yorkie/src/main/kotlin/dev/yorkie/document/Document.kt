@@ -51,7 +51,7 @@ import kotlinx.coroutines.withContext
  * A CRDT-based data type.
  * We can represent the model of the application and edit it even while offline.
  */
-public class Document(public val key: Key) {
+public class Document(public val key: Key, public val options: Options = Options()) {
     private val dispatcher = createSingleThreadDispatcher("Document($key)")
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
@@ -353,6 +353,10 @@ public class Document(public val key: Key) {
      * Deletes elements that were removed before the given time.
      */
     internal fun garbageCollect(ticket: TimeTicket): Int {
+        if (options.disableGC) {
+            return 0
+        }
+
         clone?.root?.garbageCollect(ticket)
         return root.garbageCollect(ticket)
     }
@@ -481,6 +485,13 @@ public class Document(public val key: Key) {
          */
         Removed,
     }
+
+    public data class Options(
+        /**
+         * Disables garbage collection if true.
+         */
+        public val disableGC: Boolean = false,
+    )
 
     internal data class RootClone(
         val root: CrdtRoot,

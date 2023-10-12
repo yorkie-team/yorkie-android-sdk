@@ -56,18 +56,18 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
             if (client.activateAsync().await() && client.attachAsync(document).await()) {
                 client.syncAsync().await()
             }
+        }
 
-            viewModelScope.launch {
-                document.events.collect { event ->
-                    when (event) {
-                        is Document.Event.Snapshot -> syncText()
+        viewModelScope.launch {
+            document.events.collect { event ->
+                when (event) {
+                    is Document.Event.Snapshot -> syncText()
 
-                        is Document.Event.RemoteChange -> emitEditOpInfos(event.changeInfo)
+                    is Document.Event.RemoteChange -> emitEditOpInfos(event.changeInfo)
 
-                        is PresenceChange.Others.PresenceChanged -> event.changed.emitSelection()
+                    is PresenceChange.Others.PresenceChanged -> event.changed.emitSelection()
 
-                        else -> {}
-                    }
+                    else -> {}
                 }
             }
         }

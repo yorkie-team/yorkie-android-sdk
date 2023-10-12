@@ -422,24 +422,24 @@ public class Document(public val key: Key) {
                 public data class PresenceChanged(public val changed: PresenceInfo) : MyPresence
             }
 
-            public sealed class Others(public open val changed: PresenceInfo) : PresenceChange {
+            public sealed interface Others : PresenceChange {
+                public val changed: PresenceInfo
 
                 /**
                  * Means that the client has established a connection with the server,
                  * enabling real-time synchronization.
                  */
-                public data class Watched(override val changed: PresenceInfo) : Others(changed)
+                public data class Watched(override val changed: PresenceInfo) : Others
 
                 /**
                  * Means that the client has been disconnected.
                  */
-                public data class Unwatched(override val changed: PresenceInfo) : Others(changed)
+                public data class Unwatched(override val changed: PresenceInfo) : Others
 
                 /**
                  * Means that the presences of the client has been updated.
                  */
-                public data class PresenceChanged(override val changed: PresenceInfo) :
-                    Others(changed)
+                public data class PresenceChanged(override val changed: PresenceInfo) : Others
             }
         }
 

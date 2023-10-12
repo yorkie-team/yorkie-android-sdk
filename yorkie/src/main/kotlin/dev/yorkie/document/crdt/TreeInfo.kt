@@ -54,7 +54,7 @@ internal data class TreeNode(
 
 internal data class TreeChange(
     val actorID: ActorID,
-    val type: String,
+    val type: TreeChangeType,
     val from: Int,
     val to: Int,
     val fromPath: List<Int>,
@@ -63,6 +63,6 @@ internal data class TreeChange(
     val attributes: Map<String, String>? = null,
 )
 
-internal enum class TreeChangeType(val type: String) {
-    Content("content"), Style("style")
+internal enum class TreeChangeType {
+    Content, Style
 }

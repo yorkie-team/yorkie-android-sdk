@@ -58,7 +58,7 @@ internal class CrdtTree(
         // TODO(7hong13): check whether toPath is set correctly
         val changes = listOf(
             TreeChange(
-                type = TreeChangeType.Style.type,
+                type = TreeChangeType.Style,
                 from = toIndex(fromParent, fromLeft),
                 to = toIndex(toParent, toLeft),
                 fromPath = toPath(fromParent, fromLeft),
@@ -139,7 +139,7 @@ internal class CrdtTree(
         // range(from, to) into multiple ranges.
         val changes = listOf(
             TreeChange(
-                type = TreeChangeType.Content.type,
+                type = TreeChangeType.Content,
                 from = toIndex(fromParent, fromLeft),
                 to = toIndex(toParent, toLeft),
                 fromPath = toPath(fromParent, fromLeft),

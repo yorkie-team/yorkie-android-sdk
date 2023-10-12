@@ -15,6 +15,7 @@ import dev.yorkie.document.time.ActorID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
@@ -86,14 +87,17 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     }
 
     private suspend fun PresenceInfo.emitSelection() {
-        val jsonArray = JSONArray(presence["selection"] ?: return)
-        val fromPos =
-            gson.fromJson(jsonArray.getString(0), TextPosStructure::class.java) ?: return
-        val toPos =
-            gson.fromJson(jsonArray.getString(1), TextPosStructure::class.java) ?: return
-        val (from, to) = document.getRoot().getAs<JsonText>(TEXT_KEY)
-            .posRangeToIndexRange(fromPos to toPos)
-        _selections.emit(Selection(actorID, from, to))
+        runCatching {
+            delay(500)
+            val jsonArray = JSONArray(presence["selection"] ?: return)
+            val fromPos =
+                gson.fromJson(jsonArray.getString(0), TextPosStructure::class.java) ?: return
+            val toPos =
+                gson.fromJson(jsonArray.getString(1), TextPosStructure::class.java) ?: return
+            val (from, to) = document.getRoot().getAs<JsonText>(TEXT_KEY)
+                .posRangeToIndexRange(fromPos to toPos)
+            _selections.emit(Selection(actorID, from, to))
+        }
     }
 
     override fun handleEditEvent(from: Int, to: Int, content: CharSequence) {
@@ -147,8 +151,8 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     data class Selection(val clientID: ActorID, val from: Int, val to: Int)
 
     companion object {
-        private const val DOCUMENT_KEY = "codemirror6"
-        private const val TEXT_KEY = "content"
+        private const val DOCUMENT_KEY = "document-key"
+        private const val TEXT_KEY = "text-key"
 
         private val TerminationScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     }

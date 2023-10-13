@@ -83,6 +83,10 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.style.attributesMap,
                 parentCreatedAt = it.style.parentCreatedAt.toTimeTicket(),
                 executedAt = it.style.executedAt.toTimeTicket(),
+                maxCreatedAtMapByActor = it.style.createdAtMapByActorMap.entries
+                    .associate { (actorID, createdAt) ->
+                        ActorID(actorID) to createdAt.toTimeTicket()
+                    },
             )
 
             it.hasTreeEdit() -> TreeEditOperation(
@@ -103,7 +107,8 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 toPos = it.treeStyle.to.toCrdtTreePos(),
                 attributes = it.treeStyle.attributesMap.toMap(),
                 executedAt = it.treeStyle.executedAt.toTimeTicket(),
-            )
+
+                )
 
             else -> throw IllegalArgumentException("unimplemented operation")
         }
@@ -189,6 +194,9 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTextNodePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
+                    operation.maxCreatedAtMapByActor.forEach {
+                        createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
+                    }
                 }
             }
         }

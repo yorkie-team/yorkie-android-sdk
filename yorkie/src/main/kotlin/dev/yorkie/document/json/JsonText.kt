@@ -100,7 +100,17 @@ public class JsonText internal constructor(
 
         val executedAt = context.issueTimeTicket()
         runCatching {
-            target.style(range, attributes, executedAt)
+            val maxCreatedAtMapByActor = target.style(range, attributes, executedAt).first
+            context.push(
+                StyleOperation(
+                    parentCreatedAt = target.createdAt,
+                    fromPos = range.first,
+                    toPos = range.second,
+                    attributes = attributes,
+                    executedAt = executedAt,
+                    maxCreatedAtMapByActor = maxCreatedAtMapByActor,
+                ),
+            )
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
@@ -111,16 +121,6 @@ public class JsonText internal constructor(
                 else -> throw it
             }
         }
-
-        context.push(
-            StyleOperation(
-                parentCreatedAt = target.createdAt,
-                fromPos = range.first,
-                toPos = range.second,
-                attributes = attributes,
-                executedAt = executedAt,
-            ),
-        )
         return true
     }
 

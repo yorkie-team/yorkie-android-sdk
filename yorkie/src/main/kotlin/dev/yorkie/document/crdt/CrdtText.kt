@@ -75,14 +75,32 @@ internal data class CrdtText(
         range: RgaTreeSplitPosRange,
         attributes: Map<String, String>,
         executedAt: TimeTicket,
-    ): List<TextChange> {
+        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+    ): Pair<Map<ActorID, TimeTicket>, List<TextChange>> {
         // 1. Split nodes with from and to.
         val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
         val fromRight = rgaTreeSplit.findNodeWithSplit(range.first, executedAt).second
 
         // 2. Style nodes between from and to.
-        return rgaTreeSplit.findBetween(fromRight, toRight)
-            .filterNot { it.isRemoved }
+        val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
+        val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
+        val toBeStyleds = nodes.mapNotNull { node ->
+            val actorID = node.createdAt.actorID
+            val latestCreatedAt = if (latestCreatedAtMapByActor?.isNotEmpty() == true) {
+                latestCreatedAtMapByActor[actorID] ?: TimeTicket.InitialTimeTicket
+            } else {
+                TimeTicket.MaxTimeTicket
+            }
+
+            node.takeIf { it.canStyle(executedAt, latestCreatedAt) }?.also {
+                val updatedLatestCreatedAt = createdAtMapByActor[actorID]
+                val updatedCreatedAt = node.createdAt
+                if (updatedLatestCreatedAt == null || updatedLatestCreatedAt < updatedCreatedAt) {
+                    createdAtMapByActor[actorID] = updatedCreatedAt
+                }
+            }
+        }
+        val changes = toBeStyleds.filterNot { it.isRemoved }
             .map { node ->
                 val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
                 attributes.forEach { node.value.setAttribute(it.key, it.value, executedAt) }
@@ -95,6 +113,8 @@ internal data class CrdtText(
                     attributes,
                 )
             }
+
+        return createdAtMapByActor to changes
     }
 
     /**

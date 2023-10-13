@@ -51,7 +51,7 @@ import kotlinx.coroutines.withContext
  * A CRDT-based data type.
  * We can represent the model of the application and edit it even while offline.
  */
-public class Document(public val key: Key, public val options: Options = Options()) {
+public class Document(public val key: Key, private val options: Options = Options()) {
     private val dispatcher = createSingleThreadDispatcher("Document($key)")
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()

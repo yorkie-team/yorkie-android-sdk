@@ -55,7 +55,6 @@ internal class CrdtTree(
     ): List<TreeChange> {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
-        // TODO(7hong13): check whether toPath is set correctly
         val changes = listOf(
             TreeChange(
                 type = TreeChangeType.Style,
@@ -272,15 +271,16 @@ internal class CrdtTree(
                 leftSiblingNode.insNextID = split.id
             }
         }
+        val allChildren = parentNode.allChildren
         val index = if (parentNode == leftSiblingNode) {
             0
         } else {
-            parentNode.allChildren.indexOf(leftSiblingNode) + 1
+            allChildren.indexOf(leftSiblingNode) + 1
         }
 
         var updatedLeftSiblingNode = leftSiblingNode
         for (i in index until parentNode.allChildren.size) {
-            val next = parentNode.allChildren[i]
+            val next = allChildren[i]
             if (executedAt < next.id.createdAt) {
                 updatedLeftSiblingNode = next
             } else {
@@ -412,7 +412,7 @@ internal class CrdtTree(
     }
 
     /**
-     * Converts the given [pos] to the index of the tree.
+     * Converts the given [parentNode] to the index of the tree.
      */
     fun toIndex(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): Int {
         return indexTree.indexOf(toTreePos(parentNode, leftSiblingNode))

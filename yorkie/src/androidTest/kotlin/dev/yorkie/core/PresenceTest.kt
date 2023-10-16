@@ -531,6 +531,7 @@ class PresenceTest {
             // from c3, only the watched event is triggered.
             c3.syncAsync().await()
             c1.syncAsync().await()
+            delay(50)
             c3.resume(d3)
 
             withTimeout(GENERAL_TIMEOUT) {
@@ -593,6 +594,7 @@ class PresenceTest {
             // 05-2. c2 resumes the document, c1 receives a watched event from c2.
             c2.syncAsync().await()
             c1.syncAsync().await()
+            delay(50)
             c2.resume(d2)
 
             withTimeout(GENERAL_TIMEOUT) {

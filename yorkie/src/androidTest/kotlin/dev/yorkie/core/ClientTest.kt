@@ -194,6 +194,7 @@ class ClientTest {
             }
 
             client2.resume(document2)
+            delay(30)
             document1.updateAsync { root, _ ->
                 root["version"] = "v2"
             }.await()

@@ -288,7 +288,7 @@ public class Document(public val key: Key) {
                         presences.value[actorID]?.let { presence ->
                             Others.Unwatched(PresenceInfo(actorID, presence))
                         }.also {
-                            onlineClients.value = onlineClients.value - actorID
+                            onlineClients.value -= actorID
                         }
                     }
                 }

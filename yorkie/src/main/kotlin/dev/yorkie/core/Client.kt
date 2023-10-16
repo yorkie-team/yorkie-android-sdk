@@ -295,7 +295,7 @@ public class Client @VisibleForTesting internal constructor(
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
                 // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
                 // unless we also know their initial presence data at this point.
-                document.onlineClients.value = document.onlineClients.value + publisher
+                document.onlineClients.value += publisher
                 if (publisher in document.allPresences.value) {
                     val presence = document.presences.first { publisher in it }[publisher] ?: return
                     document.publish(
@@ -309,7 +309,7 @@ public class Client @VisibleForTesting internal constructor(
                 // when PresenceChange(clear) is applied before unwatching. In that case,
                 // the 'unwatched' event is triggered while handling the PresenceChange.
                 val presence = document.presences.value[publisher] ?: return
-                document.onlineClients.value = document.onlineClients.value - publisher
+                document.onlineClients.value -= publisher
                 document.publish(PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)))
             }
 

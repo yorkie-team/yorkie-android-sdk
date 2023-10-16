@@ -107,8 +107,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 toPos = it.treeStyle.to.toCrdtTreePos(),
                 attributes = it.treeStyle.attributesMap.toMap(),
                 executedAt = it.treeStyle.executedAt.toTimeTicket(),
-
-                )
+            )
 
             else -> throw IllegalArgumentException("unimplemented operation")
         }

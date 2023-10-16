@@ -180,7 +180,9 @@ class ClientTest {
             document1.updateAsync { root, _ ->
                 root["version"] = "v1"
             }.await()
-            assertNotEquals(document1.toJson(), document2.toJson())
+            assertJsonContentEquals("""{"version":"v1"}""", document1.toJson())
+            assertJsonContentEquals("""{}""", document2.toJson())
+
             client1.syncAsync().await()
             client2.syncAsync().await()
             assertEquals(document1.toJson(), document2.toJson())
@@ -190,11 +192,14 @@ class ClientTest {
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 client2.events.collect(client2Events::add)
             }
+
             client2.resume(document2)
+            delay(30)
             document1.updateAsync { root, _ ->
                 root["version"] = "v2"
             }.await()
             client1.syncAsync().await()
+
             withTimeout(GENERAL_TIMEOUT) {
                 while (client2Events.size < 2) {
                     delay(50)
@@ -210,6 +215,7 @@ class ClientTest {
                 root["version"] = "v3"
             }.await()
             assertNotEquals(document1.toJson(), document2.toJson())
+
             client1.syncAsync().await()
             client2.syncAsync().await()
             assertEquals(document1.toJson(), document2.toJson())

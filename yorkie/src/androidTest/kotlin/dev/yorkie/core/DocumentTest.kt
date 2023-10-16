@@ -31,7 +31,6 @@ import org.junit.runner.RunWith
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 
 @RunWith(AndroidJUnit4::class)
 class DocumentTest {
@@ -167,8 +166,10 @@ class DocumentTest {
             client2.syncAsync().await()
             assertEquals(document1.toJson(), document2.toJson())
 
-            assertTrue(client1.removeAsync(document1).await())
-            assertTrue(client2.removeAsync(document2).await())
+            client1.removeAsync(document1).await()
+            if (document2.status == DocumentStatus.Attached) {
+                client2.removeAsync(document2).await()
+            }
             assertEquals(DocumentStatus.Removed, document1.status)
             assertEquals(DocumentStatus.Removed, document2.status)
         }

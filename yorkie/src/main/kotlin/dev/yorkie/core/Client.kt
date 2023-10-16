@@ -277,10 +277,10 @@ public class Client @VisibleForTesting internal constructor(
         if (response.hasInitialization()) {
             val document = attachments.value[documentKey]?.document ?: return
             val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
-            document.onlineClients.value = document.onlineClients.value + clientIDs
-            document.publish(
-                PresenceChange.MyPresence.Initialized(document.presences.value.asPresences()),
-            )
+            document.onlineClients.value += clientIDs
+
+            val presences = document.presences.first { it.keys.containsAll(clientIDs) }
+            document.publish(PresenceChange.MyPresence.Initialized(presences.asPresences()))
             return
         }
 

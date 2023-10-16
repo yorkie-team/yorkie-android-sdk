@@ -33,7 +33,6 @@ public class Presences private constructor(
 
         internal val UninitializedPresences = Presences(
             object : HashMap<ActorID, MutableMap<String, String>>() {
-
                 override fun equals(other: Any?): Boolean = this === other
             },
         )

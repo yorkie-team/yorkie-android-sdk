@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -235,7 +236,6 @@ class PresenceTest {
                     .collect(d1Events::add)
             }
 
-            println("c2 attach")
             c2.attachAsync(d2, mapOf("name" to "b", "cursor" to previousCursor)).await()
             val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d2.events.filterIsInstance<Document.Event.PresenceChange>()
@@ -243,7 +243,7 @@ class PresenceTest {
                     .collect(d2Events::add)
             }
 
-            withTimeout(GENERAL_TIMEOUT + 1) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
                     delay(50)
                 }
@@ -260,7 +260,7 @@ class PresenceTest {
                 presence.put(mapOf("name" to "X"))
             }.await()
 
-            withTimeout(GENERAL_TIMEOUT + 2) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.size < 2 || d2Events.isEmpty()) {
                     delay(50)
                 }
@@ -372,15 +372,14 @@ class PresenceTest {
             c1.attachAsync(d1, initialPresence = mapOf("name" to "a1", "cursor" to cursor)).await()
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<Document.Event.PresenceChange>()
-                    .collect(d1Events::add)
+                d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
             c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
 
-            withTimeout(GENERAL_TIMEOUT) {
+            withTimeout(GENERAL_TIMEOUT + 1) {
                 // c2 watched
                 while (d1Events.isEmpty()) {
                     delay(50)
@@ -397,7 +396,7 @@ class PresenceTest {
             // 02. c2 pauses the document (in manual sync), c3 resumes the document (in realtime sync).
             c2.pause(d2)
 
-            withTimeout(GENERAL_TIMEOUT) {
+            withTimeout(GENERAL_TIMEOUT + 2) {
                 // c2 unwatched
                 while (d1Events.size < 2) {
                     delay(50)
@@ -407,7 +406,7 @@ class PresenceTest {
             assertIs<Others.Unwatched>(d1Events.last())
             c3.resume(d3)
 
-            withTimeout(GENERAL_TIMEOUT) {
+            withTimeout(GENERAL_TIMEOUT + 3) {
                 // c3 watched
                 while (d1Events.size < 3) {
                     delay(50)
@@ -415,6 +414,9 @@ class PresenceTest {
             }
 
             assertIs<Others.Watched>(d1Events.last())
+            withTimeout(GENERAL_TIMEOUT) {
+                d3.presences.first { c3ID in d3.presences.value }
+            }
             assertEquals(
                 mapOf(c1ID to d1.presences.value[c1ID], c3ID to d3.presences.value[c3ID]),
                 d1.presences.value.toMap(),
@@ -455,7 +457,7 @@ class PresenceTest {
                 .await()
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<Document.Event.PresenceChange>()
+                d1.events.filterIsInstance<Others>()
                     .collect(d1Events::add)
             }
 
@@ -529,6 +531,7 @@ class PresenceTest {
             // from c3, only the watched event is triggered.
             c3.syncAsync().await()
             c1.syncAsync().await()
+            delay(50)
             c3.resume(d3)
 
             withTimeout(GENERAL_TIMEOUT) {
@@ -591,10 +594,11 @@ class PresenceTest {
             // 05-2. c2 resumes the document, c1 receives a watched event from c2.
             c2.syncAsync().await()
             c1.syncAsync().await()
+            delay(50)
             c2.resume(d2)
 
             withTimeout(GENERAL_TIMEOUT) {
-                // c3 unwatched
+                // c2 watched
                 while (d1Events.size < 7) {
                     delay(50)
                 }

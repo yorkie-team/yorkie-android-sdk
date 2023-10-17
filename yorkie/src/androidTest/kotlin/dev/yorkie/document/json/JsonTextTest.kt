@@ -11,7 +11,7 @@ class JsonTextTest {
 
     @Test
     fun test_concurrent_insertion_and_deletion() {
-        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewText("k1").apply {
                     edit(0, 0, "AB")

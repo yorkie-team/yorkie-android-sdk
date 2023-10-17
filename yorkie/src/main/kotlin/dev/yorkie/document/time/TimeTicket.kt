@@ -41,7 +41,7 @@ public data class TimeTicket(
         )
 
         public val InitialTimeTicket = TimeTicket(0, INITIAL_DELIMITER, INITIAL_ACTOR_ID)
-        internal val MaxTimeTicket = TimeTicket(MAX_LAMPORT, MAX_DELIMITER, MAX_ACTOR_ID)
+        public val MaxTimeTicket = TimeTicket(MAX_LAMPORT, MAX_DELIMITER, MAX_ACTOR_ID)
 
         public operator fun TimeTicket?.compareTo(other: TimeTicket?): Int {
             return orNull().compareTo(other.orNull())

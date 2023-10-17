@@ -20,6 +20,6 @@ internal fun CrdtTreeNode.toTreeNode(): TreeNode {
     return if (isText) {
         TreeNode(type, value = value)
     } else {
-        TreeNode(type, children.map { it.toTreeNode() }, attributes = attributes)
+        TreeNode(type, children.map(CrdtTreeNode::toTreeNode), attributes = attributes)
     }
 }

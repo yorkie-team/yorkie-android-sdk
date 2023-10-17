@@ -34,7 +34,7 @@ internal data class CrdtText(
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Triple<Map<ActorID, TimeTicket>, List<TextChange>, RgaTreeSplitPosRange> {
+    ): TextOperationResult {
         val textValue = if (value.isNotEmpty()) {
             TextValue(value).apply {
                 attributes?.forEach { setAttribute(it.key, it.value, executedAt) }
@@ -63,7 +63,7 @@ internal data class CrdtText(
         if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        return Triple(latestCreatedAtMap, changes, caretPos to caretPos)
+        return TextOperationResult(latestCreatedAtMap, changes, caretPos to caretPos)
     }
 
     /**
@@ -76,7 +76,7 @@ internal data class CrdtText(
         attributes: Map<String, String>,
         executedAt: TimeTicket,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Pair<Map<ActorID, TimeTicket>, List<TextChange>> {
+    ): TextOperationResult {
         // 1. Split nodes with from and to.
         val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
         val fromRight = rgaTreeSplit.findNodeWithSplit(range.first, executedAt).second
@@ -114,7 +114,7 @@ internal data class CrdtText(
                 )
             }
 
-        return createdAtMapByActor to changes
+        return TextOperationResult(createdAtMapByActor, changes)
     }
 
     /**

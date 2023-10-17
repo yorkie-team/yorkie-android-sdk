@@ -237,6 +237,7 @@ class ConverterTest {
         val styleOperation = StyleOperation(
             nodePos,
             nodePos,
+            emptyMap(),
             mapOf("style" to "bold"),
             InitialTimeTicket,
             InitialTimeTicket,

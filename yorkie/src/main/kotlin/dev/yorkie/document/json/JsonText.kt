@@ -75,7 +75,7 @@ public class JsonText internal constructor(
         if (range.first != range.second) {
             context.registerElementHasRemovedNodes(target)
         }
-        return target.findIndexesFromRange(rangeAfterEdit)
+        return rangeAfterEdit?.let(target::findIndexesFromRange)
     }
 
     /**
@@ -100,7 +100,8 @@ public class JsonText internal constructor(
 
         val executedAt = context.issueTimeTicket()
         runCatching {
-            val maxCreatedAtMapByActor = target.style(range, attributes, executedAt).first
+            val maxCreatedAtMapByActor =
+                target.style(range, attributes, executedAt).createdAtMapByActor
             context.push(
                 StyleOperation(
                     parentCreatedAt = target.createdAt,

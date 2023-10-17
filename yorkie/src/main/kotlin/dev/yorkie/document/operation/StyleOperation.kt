@@ -28,7 +28,7 @@ internal data class StyleOperation(
                 attributes,
                 executedAt,
                 maxCreatedAtMapByActor,
-            ).second
+            ).textChanges
             changes.map {
                 OperationInfo.StyleOpInfo(
                     it.from,

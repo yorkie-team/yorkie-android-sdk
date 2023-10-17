@@ -37,7 +37,7 @@ internal data class EditOperation(
                 executedAt,
                 attributes,
                 maxCreatedAtMapByActor,
-            ).second
+            ).textChanges
             if (fromPos != toPos) {
                 root.registerElementHasRemovedNodes(parentObject)
             }

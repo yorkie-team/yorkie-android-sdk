@@ -534,6 +534,13 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     }
 
     /**
+     * Checks if node is able to set style.
+     */
+    fun canStyle(executedAt: TimeTicket, latestCreatedAt: TimeTicket): Boolean {
+        return createdAt <= latestCreatedAt && removedAt < executedAt
+    }
+
+    /**
      * Removes this [RgaTreeSplitNode] at the given [executedAt].
      */
     fun remove(executedAt: TimeTicket?) {

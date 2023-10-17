@@ -71,3 +71,9 @@ public value class TextWithAttributes(private val value: Pair<String, Map<String
     val attributes: Map<String, String>
         get() = value.second
 }
+
+internal data class TextOperationResult(
+    val createdAtMapByActor: Map<ActorID, TimeTicket>,
+    val textChanges: List<TextChange>,
+    val posRange: RgaTreeSplitPosRange? = null,
+)

@@ -31,11 +31,7 @@ internal data class RemoveOperation(
             val element = parentObject.remove(createdAt, executedAt)
             root.registerRemovedElement(element)
             val index = if (parentObject is CrdtArray) key?.toInt() else null
-            listOf(
-                OperationInfo.RemoveOpInfo(key, index).apply {
-                    executedAt = effectedCreatedAt
-                },
-            )
+            listOf(OperationInfo.RemoveOpInfo(key, index, root.createPath(parentCreatedAt)))
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
             YorkieLogger.e(TAG, "only object and array can execute remove: $parentObject")

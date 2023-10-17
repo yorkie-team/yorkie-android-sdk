@@ -16,10 +16,10 @@ internal fun CrdtTreeNode.toXml(): String {
 /**
  * Converts the given node to JSON.
  */
-internal fun CrdtTreeNode.toJson(): TreeNode {
+internal fun CrdtTreeNode.toTreeNode(): TreeNode {
     return if (isText) {
         TreeNode(type, value = value)
     } else {
-        TreeNode(type, children.map { it.toJson() }, attributes = attributes)
+        TreeNode(type, children.map { it.toTreeNode() }, attributes = attributes)
     }
 }

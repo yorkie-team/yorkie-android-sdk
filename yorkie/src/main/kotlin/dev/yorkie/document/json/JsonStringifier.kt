@@ -8,7 +8,6 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.CrdtTree
-import dev.yorkie.document.crdt.toJson
 import java.util.Date
 
 internal object JsonStringifier {
@@ -69,7 +68,7 @@ internal object JsonStringifier {
             }
 
             is CrdtTree -> {
-                buffer.append(root.toJson())
+                buffer.append(rootTreeNode)
             }
         }
     }

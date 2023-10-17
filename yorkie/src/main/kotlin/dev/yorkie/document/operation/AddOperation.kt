@@ -32,9 +32,10 @@ internal data class AddOperation(
             parentObject.insertAfter(prevCreatedAt, copiedValue)
             root.registerElement(copiedValue, parentObject)
             listOf(
-                OperationInfo.AddOpInfo(parentObject.subPathOf(effectedCreatedAt).toInt()).apply {
-                    executedAt = parentCreatedAt
-                },
+                OperationInfo.AddOpInfo(
+                    parentObject.subPathOf(effectedCreatedAt).toInt(),
+                    root.createPath(parentCreatedAt),
+                ),
             )
         } else {
             parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")

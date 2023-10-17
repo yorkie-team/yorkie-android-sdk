@@ -15,6 +15,7 @@ import dev.yorkie.document.time.ActorID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
@@ -30,16 +31,18 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _content = MutableSharedFlow<String>()
     val content = _content.asSharedFlow()
 
-    private val _textOperationInfos =
-        MutableSharedFlow<Pair<ActorID, OperationInfo.TextOperationInfo>>()
-    val textOpInfos = _textOperationInfos.asSharedFlow()
+    private val _editOpInfos = MutableSharedFlow<OperationInfo.EditOpInfo>()
+    val editOpInfos = _editOpInfos.asSharedFlow()
+
+    private val _selections = MutableSharedFlow<Selection>()
+    val selections = _selections.asSharedFlow()
 
     val removedPeers = document.events.filterIsInstance<PresenceChange.Others.Unwatched>()
-        .map { it.unwatched.actorID }
+        .map { it.changed.actorID }
 
-    private val _peerSelectionInfos = mutableMapOf<ActorID, PeerSelectionInfo>()
-    val peerSelectionInfos: Map<ActorID, PeerSelectionInfo>
-        get() = _peerSelectionInfos
+    private val _selectionColors = mutableMapOf<ActorID, Int>()
+    val selectionColors: Map<ActorID, Int>
+        get() = _selectionColors
 
     private val gson = Gson()
 
@@ -63,7 +66,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
                     is Document.Event.RemoteChange -> emitEditOpInfos(event.changeInfo)
 
-                    is PresenceChange.Others.PresenceChanged -> event.changed.emitSelectOpInfo()
+                    is PresenceChange.Others.PresenceChanged -> event.changed.emitSelection()
 
                     else -> {}
                 }
@@ -71,28 +74,29 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
         }
     }
 
-    private suspend fun emitEditOpInfos(changeInfo: Document.Event.ChangeInfo) {
-        changeInfo.operations.filterIsInstance<OperationInfo.EditOpInfo>()
-            .forEach { opInfo ->
-                _textOperationInfos.emit(changeInfo.actorID to opInfo)
-            }
-    }
-
-    private suspend fun PresenceInfo.emitSelectOpInfo() {
-        val jsonArray = JSONArray(presence["selection"] ?: return)
-        val fromPos =
-            gson.fromJson(jsonArray.getString(0), TextPosStructure::class.java) ?: return
-        val toPos =
-            gson.fromJson(jsonArray.getString(1), TextPosStructure::class.java) ?: return
-        val (from, to) = document.getRoot().getAs<JsonText>(TEXT_KEY)
-            .posRangeToIndexRange(fromPos to toPos)
-        _textOperationInfos.emit(actorID to OperationInfo.SelectOpInfo(from, to))
-    }
-
     fun syncText() {
         viewModelScope.launch {
             val content = document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
             _content.emit(content?.toString().orEmpty())
+        }
+    }
+
+    private suspend fun emitEditOpInfos(changeInfo: Document.Event.ChangeInfo) {
+        changeInfo.operations.filterIsInstance<OperationInfo.EditOpInfo>()
+            .forEach { _editOpInfos.emit(it) }
+    }
+
+    private suspend fun PresenceInfo.emitSelection() {
+        runCatching {
+            delay(500)
+            val jsonArray = JSONArray(presence["selection"] ?: return)
+            val fromPos =
+                gson.fromJson(jsonArray.getString(0), TextPosStructure::class.java) ?: return
+            val toPos =
+                gson.fromJson(jsonArray.getString(1), TextPosStructure::class.java) ?: return
+            val (from, to) = document.getRoot().getAs<JsonText>(TEXT_KEY)
+                .posRangeToIndexRange(fromPos to toPos)
+            _selections.emit(Selection(actorID, from, to))
         }
     }
 
@@ -119,21 +123,13 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
     @ColorInt
     fun getPeerSelectionColor(actorID: ActorID): Int {
-        return _peerSelectionInfos[actorID]?.color ?: run {
-            val newColor =
-                Color.argb(51, Random.nextInt(256), Random.nextInt(256), Random.nextInt(256))
-            _peerSelectionInfos[actorID] = PeerSelectionInfo(newColor)
-            newColor
+        return _selectionColors.getOrPut(actorID) {
+            Color.argb(51, Random.nextInt(256), Random.nextInt(256), Random.nextInt(256))
         }
     }
 
-    fun updatePeerPrevSelection(actorID: ActorID, prevSelection: Pair<Int, Int>?) {
-        val peerSelectionInfo = _peerSelectionInfos[actorID] ?: return
-        _peerSelectionInfos[actorID] = peerSelectionInfo.copy(prevSelection = prevSelection)
-    }
-
-    fun removeDetachedPeerSelectionInfo(actorID: ActorID) {
-        _peerSelectionInfos.remove(actorID)
+    fun removeUnwatchedPeerSelectionInfo(actorID: ActorID) {
+        _selectionColors.remove(actorID)
     }
 
     override fun handleHangulCompositionStart() {
@@ -152,10 +148,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
         super.onCleared()
     }
 
-    data class PeerSelectionInfo(
-        @ColorInt val color: Int,
-        val prevSelection: Pair<Int, Int>? = null,
-    )
+    data class Selection(val clientID: ActorID, val from: Int, val to: Int)
 
     companion object {
         private const val DOCUMENT_KEY = "document-key"

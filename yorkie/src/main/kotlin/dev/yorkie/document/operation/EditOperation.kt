@@ -4,7 +4,6 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
-import dev.yorkie.document.crdt.TextChangeType
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
@@ -42,18 +41,13 @@ internal data class EditOperation(
             if (fromPos != toPos) {
                 root.registerElementHasRemovedNodes(parentObject)
             }
-            changes.map { (type, _, from, to, content, attributes) ->
-                if (type == TextChangeType.Content) {
-                    OperationInfo.EditOpInfo(
-                        from,
-                        to,
-                        TextWithAttributes(content.orEmpty() to attributes.orEmpty()),
-                    )
-                } else {
-                    OperationInfo.SelectOpInfo(from, to)
-                }.apply {
-                    executedAt = parentCreatedAt
-                }
+            changes.map { (_, _, from, to, content, attributes) ->
+                OperationInfo.EditOpInfo(
+                    from,
+                    to,
+                    TextWithAttributes(content.orEmpty() to attributes.orEmpty()),
+                    root.createPath(parentCreatedAt),
+                )
             }
         } else {
             if (parentObject == null) {

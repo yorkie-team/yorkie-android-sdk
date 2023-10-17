@@ -361,8 +361,11 @@ $dokka.location:dev.yorkie.document/Document.Event///PointingToDeclaration/york
 $dokka.location:dev.yorkie.document/Document.Key///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-key/index.html
 $dokka.location:dev.yorkie.document/Document.Key/Key/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-key/-key.html
 $dokka.location:dev.yorkie.document/Document.Key/value/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-key/value.html
+$dokka.location:dev.yorkie.document/Document.Options///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/index.html
+$dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
+$dokka.location:dev.yorkie.document/Document.Options/disableGC/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/disable-g-c.html
 $dokka.location:dev.yorkie.document/Document///PointingToDeclaration/yorkie/dev.yorkie.document/-document/index.html
-$dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
+$dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key#dev.yorkie.document.Document.Options/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
 $dokka.location:dev.yorkie.document/Document/events/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
 $dokka.location:dev.yorkie.document/Document/events/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html

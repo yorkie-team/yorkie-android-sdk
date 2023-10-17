@@ -7,6 +7,7 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
@@ -141,6 +142,26 @@ class DocumentBenchmark {
         benchmarkTreeDeleteAll(1000)
     }
 
+    @Test
+    fun tree_split_gc_100() {
+        benchmarkTreeSplitGC(100)
+    }
+
+    @Test
+    fun tree_split_gc_1000() {
+        benchmarkTreeSplitGC(1000)
+    }
+
+    @Test
+    fun tree_edit_gc_100() {
+        benchmarkTreeEditGC(100)
+    }
+
+    @Test
+    fun tree_edit_gc_1000() {
+        benchmarkTreeEditGC(1000)
+    }
+
     private fun benchmarkTree(size: Int) {
         benchmarkRule.measureRepeated {
             runTest {
@@ -176,6 +197,63 @@ class DocumentBenchmark {
                     "<doc><p></p></doc>"
                 }
                 assert(document.getRoot().getAs<JsonTree>("tree").toXml() == expected)
+            }
+        }
+    }
+
+    private fun benchmarkTreeSplitGC(size: Int) {
+        benchmarkRule.measureRepeated {
+            runTest {
+                val document = runWithTimingDisabled {
+                    Document(Document.Key("d1"))
+                }
+                document.updateAsync { root, _ ->
+                    root.setNewTree(
+                        "tree",
+                        element("doc") {
+                            element("p") {
+                                text { "a".repeat(size) }
+                            }
+                        },
+                    )
+                }.await()
+
+                document.updateAsync { root, _ ->
+                    for (i in 1..size) {
+                        root.getAs<JsonTree>("tree").edit(i, i + 1, text { "b" })
+                    }
+                }.await()
+
+                assert(document.garbageLength == size)
+                assert(document.garbageCollect(MaxTimeTicket) == size)
+                assert(document.garbageLength == 0)
+            }
+        }
+    }
+
+    private fun benchmarkTreeEditGC(size: Int) {
+        benchmarkRule.measureRepeated {
+            runTest {
+                val document = runWithTimingDisabled {
+                    Document(Document.Key("d1"))
+                }
+                document.updateAsync { root, _ ->
+                    root.setNewTree("tree", element("doc") { element("p") }).apply {
+                        for (i in 1..size) {
+                            edit(i, i, text { "a" })
+                        }
+                    }
+                }.await()
+
+                document.updateAsync { root, _ ->
+                    for (i in 1..size) {
+                        root.getAs<JsonTree>("tree").edit(i, i + 1, text { "b" })
+                    }
+                }.await()
+
+                assert(document.garbageLength == size)
+                assert(document.garbageCollect(MaxTimeTicket) == size)
+                assert(document.garbageLength == 0)
             }
         }
     }

@@ -433,6 +433,30 @@ class GCTest {
         }
     }
 
+    @Test
+    fun test_disable_gc() = runBlocking {
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+        val document = Document(documentKey, Document.Options(disableGC = true))
+        document.updateAsync { root, _ ->
+            root["1"] = 1
+            root.setNewArray("2").apply {
+                put(1)
+                put(2)
+                put(3)
+            }
+            root["3"] = 3
+        }.await()
+        assertJsonContentEquals("""{"1":1,"2":[1,2,3],"3":3}""", document.toJson())
+
+        document.updateAsync { root, _ ->
+            root.remove("2")
+        }.await()
+        assertJsonContentEquals("""{"1":1, "3":3}""", document.toJson())
+        assertEquals(4, document.garbageLength)
+        assertEquals(0, document.garbageCollect(TimeTicket.MaxTimeTicket))
+        assertEquals(4, document.garbageLength)
+    }
+
     private fun getNodeLength(root: IndexTreeNode<CrdtTreeNode>): Int {
         return root.allChildren.fold(root.allChildren.size) { acc, child ->
             acc + getNodeLength(child)

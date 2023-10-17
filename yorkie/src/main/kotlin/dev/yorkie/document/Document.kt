@@ -80,7 +80,8 @@ public class Document(public val key: Key, private val options: Options = Option
     public var status = DocumentStatus.Detached
         internal set
 
-    internal val garbageLength: Int
+    @VisibleForTesting
+    public val garbageLength: Int
         get() = root.getGarbageLength()
 
     internal val onlineClients = MutableStateFlow(setOf<ActorID>())
@@ -352,7 +353,8 @@ public class Document(public val key: Key, private val options: Options = Option
     /**
      * Deletes elements that were removed before the given time.
      */
-    internal fun garbageCollect(ticket: TimeTicket): Int {
+    @VisibleForTesting
+    public fun garbageCollect(ticket: TimeTicket): Int {
         if (options.disableGC) {
             return 0
         }

@@ -302,6 +302,7 @@ $dokka.location:dev.yorkie.document.time/ActorID/compareTo/#dev.yorkie.document.
 $dokka.location:dev.yorkie.document.time/ActorID/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-actor-i-d/value.html
 $dokka.location:dev.yorkie.document.time/TimeTicket.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-companion/index.html
 $dokka.location:dev.yorkie.document.time/TimeTicket.Companion/InitialTimeTicket/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-companion/-initial-time-ticket.html
+$dokka.location:dev.yorkie.document.time/TimeTicket.Companion/MaxTimeTicket/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-companion/-max-time-ticket.html
 $dokka.location:dev.yorkie.document.time/TimeTicket.Companion/compareTo/dev.yorkie.document.time.TimeTicket?#dev.yorkie.document.time.TimeTicket?/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-companion/compare-to.html
 $dokka.location:dev.yorkie.document.time/TimeTicket///PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/index.html
 $dokka.location:dev.yorkie.document.time/TimeTicket/TimeTicket/#kotlin.Long#kotlin.UInt#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.document.time/-time-ticket/-time-ticket.html
@@ -368,6 +369,8 @@ $dokka.location:dev.yorkie.document/Document///PointingToDeclaration/yorkie/dev
 $dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key#dev.yorkie.document.Document.Options/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
 $dokka.location:dev.yorkie.document/Document/events/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
 $dokka.location:dev.yorkie.document/Document/events/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
+$dokka.location:dev.yorkie.document/Document/garbageCollect/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document/-document/garbage-collect.html
+$dokka.location:dev.yorkie.document/Document/garbageLength/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/garbage-length.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html

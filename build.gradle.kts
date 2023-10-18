@@ -4,10 +4,10 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     id("com.android.application") version libs.versions.agp apply false
     id("com.android.library") version libs.versions.agp apply false
-    id("org.jetbrains.kotlin.android") version "1.9.0" apply false
-    id("com.google.protobuf") version "0.9.3" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.10" apply false
+    id("com.google.protobuf") version "0.9.4" apply false
     id("org.jmailen.kotlinter") version "3.15.0" apply true
-    id("org.jetbrains.dokka") version "1.8.20" apply false
+    id("org.jetbrains.dokka") version "1.9.10" apply false
     alias(libs.plugins.androidx.benchmark) apply false
 }
 

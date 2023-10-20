@@ -9,7 +9,7 @@ grpc-kotlin = "1.4.0"
 kotlinx-coroutines = "1.7.3"
 androidx-activity = "1.8.0"
 androidx-lifecycle = "2.6.2"
-androidx-benchmark = "1.2.0-rc02"
+androidx-benchmark = "1.2.0"
 androidx-compose-compiler = "1.5.3"
 
 [libraries]

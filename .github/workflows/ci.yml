@@ -63,7 +63,9 @@ jobs:
       - uses: gradle/gradle-build-action@v2
       - name: Setup Docker on macOS
         uses: douglascamata/setup-docker-macos-action@fix-python-dep
-      - run: docker-compose -f docker/docker-compose-ci.yml up --build -d
+      - run: |
+          docker system prune --all --force
+          docker-compose -f docker/docker-compose-ci.yml up --build -d
       - uses: actions/cache@v3
         id: avd-cache
         with:

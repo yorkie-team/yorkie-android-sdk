@@ -10,6 +10,7 @@ import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.gson
 import dev.yorkie.util.IndexTreeNode
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
@@ -455,6 +456,37 @@ class GCTest {
         assertEquals(4, document.garbageLength)
         assertEquals(0, document.garbageCollect(TimeTicket.MaxTimeTicket))
         assertEquals(4, document.garbageLength)
+    }
+
+    @Test
+    fun test_collecting_removed_elements_from_root_and_clone() = runBlocking {
+        data class Point(val x: Int, val y: Int)
+
+        val client = createClient()
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+        val document = Document(documentKey)
+
+        client.activateAsync().await()
+        client.attachAsync(document, isRealTimeSync = false).await()
+
+        document.updateAsync { root, _ ->
+            root["point"] = gson.toJson(Point(0, 0))
+        }.await()
+
+        document.updateAsync { root, _ ->
+            root["point"] = gson.toJson(Point(1, 1))
+        }.await()
+
+        document.updateAsync { root, _ ->
+            root["point"] = gson.toJson(Point(2, 2))
+        }.await()
+
+        document.updateAsync { root, _ ->
+            root.remove("point")
+        }.await()
+
+        assertEquals(3, document.garbageLength)
+        assertEquals(3, document.garbageLengthFromClone)
     }
 
     private fun getNodeLength(root: IndexTreeNode<CrdtTreeNode>): Int {

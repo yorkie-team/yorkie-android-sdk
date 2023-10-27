@@ -5,6 +5,7 @@ import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
+import dev.yorkie.document.time.TimeTicket
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -246,6 +247,22 @@ class DocumentTest {
                 target.getValueByPath("$.str")?.toJson(),
             )
             assertNull(target.getValueByPath("$..."))
+        }
+    }
+
+    @Test
+    fun `should remove previously inserted elements in heap when running GC`() {
+        runTest {
+            target.updateAsync { root, _ ->
+                root["a"] = 1
+                root["a"] = 2
+                root.remove("a")
+            }.await()
+            assertEquals("{}", target.toJson())
+            assertEquals(2, target.garbageLength)
+
+            target.garbageCollect(TimeTicket.MaxTimeTicket)
+            assertEquals(0, target.garbageLength)
         }
     }
 }

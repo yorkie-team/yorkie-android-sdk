@@ -84,6 +84,9 @@ public class Document(public val key: Key, private val options: Options = Option
     public val garbageLength: Int
         get() = root.getGarbageLength()
 
+    internal val garbageLengthFromClone: Int
+        get() = clone?.root?.getGarbageLength() ?: 0
+
     internal val onlineClients = MutableStateFlow(setOf<ActorID>())
 
     private val _presences = MutableStateFlow(UninitializedPresences)

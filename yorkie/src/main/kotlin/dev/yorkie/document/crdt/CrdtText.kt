@@ -92,7 +92,9 @@ internal data class CrdtText(
                 TimeTicket.MaxTimeTicket
             }
 
-            node.takeIf { it.canStyle(executedAt, latestCreatedAt) }?.also {
+            node.takeIf {
+                it.canStyle(executedAt, latestCreatedAt)
+            }?.also {
                 val updatedLatestCreatedAt = createdAtMapByActor[actorID]
                 val updatedCreatedAt = node.createdAt
                 if (updatedLatestCreatedAt == null || updatedLatestCreatedAt < updatedCreatedAt) {
@@ -100,7 +102,8 @@ internal data class CrdtText(
                 }
             }
         }
-        val changes = toBeStyleds.filterNot { it.isRemoved }
+        val changes = toBeStyleds
+            .filterNot { it.isRemoved }
             .map { node ->
                 val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
                 attributes.forEach { node.value.setAttribute(it.key, it.value, executedAt) }

@@ -510,7 +510,10 @@ public class Client @VisibleForTesting internal constructor(
         }
         val attachment = attachments.value[document.key]
             ?: throw IllegalArgumentException("document is not attached")
-        attachments.value += document.key to attachment.copy(isRealTimeSync = isRealTimeSync)
+        attachments.value += document.key to attachment.copy(
+            isRealTimeSync = isRealTimeSync,
+            remoteChangeEventReceived = isRealTimeSync || attachment.remoteChangeEventReceived,
+        )
     }
 
     /**

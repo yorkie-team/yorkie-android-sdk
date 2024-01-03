@@ -194,14 +194,20 @@ class ClientTest {
             }
 
             client2.resume(document2)
-            delay(30)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (client2Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<DocumentSynced>(client2Events.first())
+
             document1.updateAsync { root, _ ->
                 root["version"] = "v2"
             }.await()
             client1.syncAsync().await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (client2Events.size < 2) {
+                while (client2Events.size < 3) {
                     delay(50)
                 }
             }
@@ -225,6 +231,70 @@ class ClientTest {
             client1.deactivateAsync().await()
             client2.deactivateAsync().await()
         }
+    }
+
+    @Test
+    fun test_applying_previous_changes_after_resume() = runBlocking {
+        val client1 = createClient()
+        val client2 = createClient()
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+        val document1 = Document(documentKey)
+        val document2 = Document(documentKey)
+
+        client1.activateAsync().await()
+        client2.activateAsync().await()
+
+        val client2Events = mutableListOf<Client.Event>()
+        val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            client2.events.filterIsInstance<DocumentSynced>().collect(client2Events::add)
+        }
+
+        suspend fun assertDocument2IsSynced(expected: String) {
+            withTimeout(GENERAL_TIMEOUT) {
+                while (client2Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<DocumentSynced>(client2Events.first())
+            assertJsonContentEquals(expected, document2.toJson())
+        }
+
+        // 01. c2 attach the doc with realtime sync mode at first.
+        client1.attachAsync(document1, isRealTimeSync = false).await()
+        client2.attachAsync(document2).await()
+        document1.updateAsync { root, _ ->
+            root["version"] = "v1"
+        }.await()
+        client1.syncAsync().await()
+        assertJsonContentEquals("""{"version":"v1"}""", document1.toJson())
+        assertDocument2IsSynced("""{"version":"v1"}""")
+
+        // 02. c2 pauses realtime sync mode. So, c2 doesn't get the changes of c1.
+        client2.pause(document2)
+        document1.updateAsync { root, _ ->
+            root["version"] = "v2"
+        }.await()
+        client1.syncAsync().await()
+        assertJsonContentEquals("""{"version":"v2"}""", document1.toJson())
+        assertJsonContentEquals("""{"version":"v1"}""", document2.toJson())
+
+        // 03. c2 resumes realtime sync mode.
+        // c2 should be able to apply changes made to the document while c2 is not in realtime sync.
+        client2Events.clear()
+        client2.resume(document2)
+        assertDocument2IsSynced("""{"version":"v2"}""")
+
+        // 04. c2 should automatically synchronize changes.
+        client2Events.clear()
+        document1.updateAsync { root, _ ->
+            root["version"] = "v3"
+        }.await()
+        client1.syncAsync().await()
+        assertDocument2IsSynced("""{"version":"v3"}""")
+
+        client1.deactivateAsync().await()
+        client2.deactivateAsync().await()
+        collectJob.cancel()
     }
 
     @Test

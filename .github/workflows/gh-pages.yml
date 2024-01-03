@@ -15,7 +15,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
-      - run: ./gradlew dokkaHtml
+      - run: ./gradlew dokkaHtml --no-configuration-cache
       - uses: JamesIves/github-pages-deploy-action@v4.4.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

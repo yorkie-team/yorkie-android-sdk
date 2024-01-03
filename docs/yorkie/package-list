@@ -29,11 +29,13 @@ $dokka.location:dev.yorkie.core/Client.Status///PointingToDeclaration/yorkie/de
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus.Connected///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-stream-connection-status/-connected/index.html
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus.Disconnected///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-stream-connection-status/-disconnected/index.html
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-stream-connection-status/index.html
+$dokka.location:dev.yorkie.core/Client.StreamConnectionStatus/entries/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-stream-connection-status/entries.html
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-stream-connection-status/value-of.html
 $dokka.location:dev.yorkie.core/Client.StreamConnectionStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-stream-connection-status/values.html
 $dokka.location:dev.yorkie.core/Client.SyncMode.PushOnly///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-sync-mode/-push-only/index.html
 $dokka.location:dev.yorkie.core/Client.SyncMode.PushPull///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-sync-mode/-push-pull/index.html
 $dokka.location:dev.yorkie.core/Client.SyncMode///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-sync-mode/index.html
+$dokka.location:dev.yorkie.core/Client.SyncMode/entries/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-sync-mode/entries.html
 $dokka.location:dev.yorkie.core/Client.SyncMode/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-sync-mode/value-of.html
 $dokka.location:dev.yorkie.core/Client.SyncMode/values/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-sync-mode/values.html
 $dokka.location:dev.yorkie.core/Client///PointingToDeclaration/yorkie/dev.yorkie.core/-client/index.html
@@ -53,6 +55,7 @@ $dokka.location:dev.yorkie.core/Client/resumeRemoteChanges/#dev.yorkie.document.
 $dokka.location:dev.yorkie.core/Client/status/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/status.html
 $dokka.location:dev.yorkie.core/Client/streamConnectionStatus/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/stream-connection-status.html
 $dokka.location:dev.yorkie.core/Client/syncAsync/#dev.yorkie.document.Document?#dev.yorkie.core.Client.SyncMode/PointingToDeclaration/yorkie/dev.yorkie.core/-client/sync-async.html
+$dokka.location:dev.yorkie.core/P///PointingToDeclaration/yorkie/dev.yorkie.core/-p/index.html
 $dokka.location:dev.yorkie.core/Presence///PointingToDeclaration/yorkie/dev.yorkie.core/-presence/index.html
 $dokka.location:dev.yorkie.core/Presence/clear/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presence/clear.html
 $dokka.location:dev.yorkie.core/Presence/put/#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.core/-presence/put.html
@@ -97,6 +100,7 @@ $dokka.location:dev.yorkie.document.crdt/TextWithAttributes///PointingToDeclarat
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/TextWithAttributes/#kotlin.Pair[kotlin.String,kotlin.collections.Map[kotlin.String,kotlin.String]]/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/-text-with-attributes.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/attributes.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/text/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/text.html
+$dokka.location:dev.yorkie.document.crdt/TreePosRange///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-tree-pos-range/index.html
 $dokka.location:dev.yorkie.document.json////PointingToDeclaration/yorkie/dev.yorkie.document.json/index.html
 $dokka.location:dev.yorkie.document.json/JsonArray///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/index.html
 $dokka.location:dev.yorkie.document.json/JsonArray/contains/#dev.yorkie.document.json.JsonElement/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/contains.html
@@ -166,6 +170,7 @@ $dokka.location:dev.yorkie.document.json/JsonPrimitive.Type.Long///PointingToDec
 $dokka.location:dev.yorkie.document.json/JsonPrimitive.Type.Null///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document.json/-json-primitive/-type/-null/index.html
 $dokka.location:dev.yorkie.document.json/JsonPrimitive.Type.String///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document.json/-json-primitive/-type/-string/index.html
 $dokka.location:dev.yorkie.document.json/JsonPrimitive.Type///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-primitive/-type/index.html
+$dokka.location:dev.yorkie.document.json/JsonPrimitive.Type/entries/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-primitive/-type/entries.html
 $dokka.location:dev.yorkie.document.json/JsonPrimitive.Type/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-primitive/-type/value-of.html
 $dokka.location:dev.yorkie.document.json/JsonPrimitive.Type/values/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-primitive/-type/values.html
 $dokka.location:dev.yorkie.document.json/JsonPrimitive///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-primitive/index.html
@@ -211,6 +216,7 @@ $dokka.location:dev.yorkie.document.json/JsonTree/split/#kotlin.Int#kotlin.Int/P
 $dokka.location:dev.yorkie.document.json/JsonTree/style/#kotlin.Int#kotlin.Int#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/style.html
 $dokka.location:dev.yorkie.document.json/JsonTree/styleByPath/#kotlin.collections.List[kotlin.Int]#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/style-by-path.html
 $dokka.location:dev.yorkie.document.json/JsonTree/toXml/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/to-xml.html
+$dokka.location:dev.yorkie.document.json/TextPosStructRange///PointingToDeclaration/yorkie/dev.yorkie.document.json/-text-pos-struct-range/index.html
 $dokka.location:dev.yorkie.document.json/TreeBuilder.ClosingScope.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.json/-tree-builder/-closing-scope/-companion/index.html
 $dokka.location:dev.yorkie.document.json/TreeBuilder.ClosingScope///PointingToDeclaration/yorkie/dev.yorkie.document.json/-tree-builder/-closing-scope/index.html
 $dokka.location:dev.yorkie.document.json/TreeBuilder.ClosingScope/attr/#kotlin.Function1[dev.yorkie.document.json.TreeBuilder.ClosingScope,kotlin.Pair[kotlin.String,kotlin.Any]]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-tree-builder/-closing-scope/attr.html
@@ -233,6 +239,7 @@ $dokka.location:dev.yorkie.document.json/TreeBuilder.Scope/text/#kotlin.Function
 $dokka.location:dev.yorkie.document.json/TreeBuilder///PointingToDeclaration/yorkie/dev.yorkie.document.json/-tree-builder/index.html
 $dokka.location:dev.yorkie.document.json/TreeBuilder/element/#kotlin.String#kotlin.Function1[dev.yorkie.document.json.TreeBuilder.ElementNodeBuilder,kotlin.Unit]?/PointingToDeclaration/yorkie/dev.yorkie.document.json/-tree-builder/element.html
 $dokka.location:dev.yorkie.document.json/TreeBuilder/text/#kotlin.Function1[dev.yorkie.document.json.TreeBuilder.ClosingScope,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-tree-builder/text.html
+$dokka.location:dev.yorkie.document.json/TreePosStructRange///PointingToDeclaration/yorkie/dev.yorkie.document.json/-tree-pos-struct-range/index.html
 $dokka.location:dev.yorkie.document.operation////PointingToDeclaration/yorkie/dev.yorkie.document.operation/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo/AddOpInfo/#kotlin.Int#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/-add-op-info.html
@@ -326,6 +333,7 @@ $dokka.location:dev.yorkie.document/Document.DocumentStatus.Attached///PointingT
 $dokka.location:dev.yorkie.document/Document.DocumentStatus.Detached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-document-status/-detached/index.html
 $dokka.location:dev.yorkie.document/Document.DocumentStatus.Removed///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-document-status/-removed/index.html
 $dokka.location:dev.yorkie.document/Document.DocumentStatus///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/index.html
+$dokka.location:dev.yorkie.document/Document.DocumentStatus/entries/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/entries.html
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/value-of.html
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/values.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/index.html

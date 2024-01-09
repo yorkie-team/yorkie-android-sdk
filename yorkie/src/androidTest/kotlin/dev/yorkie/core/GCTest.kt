@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTree.TextNode
@@ -487,6 +488,63 @@ class GCTest {
 
         assertEquals(3, document.garbageLength)
         assertEquals(3, document.garbageLengthFromClone)
+    }
+
+    @Test
+    fun test_delete_removed_elements_after_peers_cannot_access() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(documentKey)
+            val d2 = Document(documentKey)
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            c1.attachAsync(d1, isRealTimeSync = false).await()
+            d1.updateAsync { root, _ ->
+                root.setNewObject("point").apply {
+                    set("x", 0)
+                    set("y", 0)
+                }
+                root.getAs<JsonObject>("point")["x"] = 1
+            }.await()
+            assertEquals(1, d1.garbageLength)
+            c1.syncAsync().await()
+
+            c2.attachAsync(d2, isRealTimeSync = false).await()
+            assertEquals(1, d2.garbageLength)
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonObject>("point")["x"] = 2
+            }.await()
+            assertEquals(2, d2.garbageLength)
+
+            d1.updateAsync { root, _ ->
+                root.setNewObject("point").apply {
+                    set("x", 3)
+                    set("y", 3)
+                }
+            }.await()
+            assertEquals(4, d1.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(4, d1.garbageLength)
+
+            c1.syncAsync().await()
+            assertEquals(4, d1.garbageLength)
+
+            c2.syncAsync().await()
+            assertEquals(4, d1.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(5, d1.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(5, d1.garbageLength)
+            c1.syncAsync().await()
+            assertEquals(0, d1.garbageLength)
+
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+        }
     }
 
     private fun getNodeLength(root: IndexTreeNode<CrdtTreeNode>): Int {

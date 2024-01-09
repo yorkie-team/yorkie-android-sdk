@@ -62,7 +62,7 @@ jobs:
       - run: chmod +x gradlew
       - uses: gradle/gradle-build-action@v2
       - name: Setup Docker on macOS
-        uses: douglascamata/setup-docker-macos-action@fix-python-dep
+        uses: douglascamata/setup-docker-macos-action@main
       - run: |
           docker system prune --all --force
           docker-compose -f docker/docker-compose-ci.yml up --build -d

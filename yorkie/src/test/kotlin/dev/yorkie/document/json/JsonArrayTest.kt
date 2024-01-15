@@ -8,14 +8,14 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.TimeTicket
-import org.junit.Assert.assertThrows
-import org.junit.Before
-import org.junit.Test
 import java.util.Date
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.Assert.assertThrows
+import org.junit.Before
+import org.junit.Test
 
 class JsonArrayTest {
 

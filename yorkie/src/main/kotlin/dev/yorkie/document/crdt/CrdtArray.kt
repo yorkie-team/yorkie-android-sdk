@@ -47,7 +47,11 @@ internal data class CrdtArray(
     /**
      * Moves the given [createdAt] element after the [prevCreatedAt] element.
      */
-    fun moveAfter(prevCreatedAt: TimeTicket, createdAt: TimeTicket, executedAt: TimeTicket) {
+    fun moveAfter(
+        prevCreatedAt: TimeTicket,
+        createdAt: TimeTicket,
+        executedAt: TimeTicket,
+    ) {
         elements.moveAfter(prevCreatedAt, createdAt, executedAt)
     }
 

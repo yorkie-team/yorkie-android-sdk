@@ -8,10 +8,10 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import kotlin.test.assertEquals
 import kotlinx.coroutines.awaitAll
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.test.assertEquals
 
 @LargeTest
 @RunWith(AndroidJUnit4::class)

@@ -5,8 +5,10 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChange.Others
 import dev.yorkie.gson
+import java.util.UUID
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNull
+import kotlin.test.assertIs
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
@@ -17,8 +19,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.UUID
-import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class PresenceTest {

@@ -1,9 +1,9 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import kotlin.test.assertEquals
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
 
 class RgaTreeSplitTest {
     private lateinit var target: RgaTreeSplit<TextValue>

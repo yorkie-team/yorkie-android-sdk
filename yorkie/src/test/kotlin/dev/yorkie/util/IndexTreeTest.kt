@@ -390,8 +390,7 @@ class IndexTreeTest {
             return CrdtTreeElement(InitialCrdtTreeNodeID, type, childNode.toList())
         }
 
-        private fun createTextNode(value: String) =
-            CrdtTreeText(InitialCrdtTreeNodeID, value)
+        private fun createTextNode(value: String) = CrdtTreeText(InitialCrdtTreeNodeID, value)
 
         private val DefaultRootNode = createElementNode(
             "root",

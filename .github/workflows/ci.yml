@@ -98,9 +98,9 @@ jobs:
           script: |
             ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
             ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.annotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
-      - if: ${{ matrix.api-level == 30 }}
+      - if: ${{ matrix.api-level == 23 }}
         run: ./gradlew yorkie:jacocoDebugTestReport
-      - if: ${{ matrix.api-level == 30 }}
+      - if: ${{ matrix.api-level == 23 }}
         uses: actions/upload-artifact@v3
         with:
           name: android-test-artifact

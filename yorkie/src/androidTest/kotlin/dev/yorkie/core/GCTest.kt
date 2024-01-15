@@ -11,6 +11,7 @@ import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.gson
 import dev.yorkie.util.IndexTreeNode
 import java.util.UUID
@@ -541,6 +542,61 @@ class GCTest {
             assertEquals(5, d1.garbageLength)
             c1.syncAsync().await()
             assertEquals(0, d1.garbageLength)
+
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun test_getGarbageLength() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(documentKey)
+            val d2 = Document(documentKey)
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            // 1. initial state
+            c1.attachAsync(d1, isRealTimeSync = false).await()
+            d1.updateAsync { root, _ ->
+                val point = root.setNewObject("point")
+                point["x"] = 0
+                point["y"] = 0
+            }.await()
+            c1.syncAsync().await()
+            c2.attachAsync(d2, isRealTimeSync = false).await()
+
+            // 2. client1 updates doc
+            d1.updateAsync { root, _ ->
+                root.remove("point")
+            }.await()
+            // point, x, y
+            assertEquals(d1.garbageLength, 3)
+
+            // 3. client2 updates doc
+            d2.updateAsync { root, _ ->
+                val point = root.getAs<JsonObject>("point")
+                point.remove("x")
+            }.await()
+            // x
+            assertEquals(d2.garbageLength, 1)
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            // point, x, y
+            val gcNodeLength = 3
+            assertEquals(d1.garbageLength, gcNodeLength)
+            assertEquals(d2.garbageLength, gcNodeLength)
+
+            // Actual garbage-collected nodes
+            assertEquals(d1.garbageCollect(MaxTimeTicket), gcNodeLength)
+            assertEquals(d2.garbageCollect(MaxTimeTicket), gcNodeLength)
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()

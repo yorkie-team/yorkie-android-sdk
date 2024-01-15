@@ -42,10 +42,10 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
-import org.junit.Assert.assertThrows
-import org.junit.Test
 import java.util.Date
 import kotlin.test.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Test
 
 class ConverterTest {
     private val defaultPrimitive = CrdtPrimitive("default", InitialTimeTicket)

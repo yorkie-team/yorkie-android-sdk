@@ -19,6 +19,9 @@ import dev.yorkie.document.operation.OperationInfo.MoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.StyleOpInfo
+import java.util.UUID
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -28,9 +31,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.UUID
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 @RunWith(AndroidJUnit4::class)
 class DocumentTest {

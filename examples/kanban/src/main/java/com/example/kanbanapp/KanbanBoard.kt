@@ -124,10 +124,7 @@ fun KanbanCard(title: String) {
 }
 
 @Composable
-fun KanbanAddCard(
-    column: KanbanColumn,
-    onNewCardAdded: (KanbanColumn, String) -> Unit,
-) {
+fun KanbanAddCard(column: KanbanColumn, onNewCardAdded: (KanbanColumn, String) -> Unit) {
     var newTitle by remember { mutableStateOf("") }
 
     Row(

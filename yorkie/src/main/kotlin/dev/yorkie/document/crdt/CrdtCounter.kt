@@ -77,6 +77,7 @@ internal data class CrdtCounter private constructor(
     }
 
     enum class CounterType {
-        IntegerCnt, LongCnt
+        IntegerCnt,
+        LongCnt,
     }
 }

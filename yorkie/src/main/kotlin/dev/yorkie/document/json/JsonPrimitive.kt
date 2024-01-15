@@ -57,6 +57,13 @@ public class JsonPrimitive internal constructor(
     }
 
     public enum class Type {
-        Null, Boolean, Integer, Long, Double, String, Bytes, Date
+        Null,
+        Boolean,
+        Integer,
+        Long,
+        Double,
+        String,
+        Bytes,
+        Date,
     }
 }

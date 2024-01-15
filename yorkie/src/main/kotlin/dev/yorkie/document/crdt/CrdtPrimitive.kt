@@ -126,6 +126,13 @@ internal data class CrdtPrimitive private constructor(
     }
 
     internal enum class Type {
-        Null, Boolean, Integer, Long, Double, String, Bytes, Date
+        Null,
+        Boolean,
+        Integer,
+        Long,
+        Double,
+        String,
+        Bytes,
+        Date,
     }
 }

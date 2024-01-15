@@ -30,6 +30,9 @@ import io.grpc.Channel
 import io.grpc.Metadata
 import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
+import java.util.UUID
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -48,9 +51,6 @@ import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
-import java.util.UUID
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Client that can communicate with the server.
@@ -574,7 +574,8 @@ public class Client @VisibleForTesting internal constructor(
      * and the server is connected or not.
      */
     public enum class StreamConnectionStatus {
-        Connected, Disconnected
+        Connected,
+        Disconnected,
     }
 
     /**
@@ -582,7 +583,8 @@ public class Client @VisibleForTesting internal constructor(
      * whether to push and pull changes in PushPullChanges API.
      */
     public enum class SyncMode {
-        PushPull, PushOnly
+        PushPull,
+        PushOnly,
     }
 
     /**

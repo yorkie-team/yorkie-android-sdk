@@ -13,11 +13,11 @@ import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.gson
 import dev.yorkie.util.IndexTreeNode
+import java.util.UUID
+import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.UUID
-import kotlin.test.assertEquals
 
 @RunWith(AndroidJUnit4::class)
 class GCTest {

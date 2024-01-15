@@ -86,7 +86,11 @@ class YorkieEditText @JvmOverloads constructor(
 
     interface TextEventHandler {
 
-        fun handleEditEvent(from: Int, to: Int, content: CharSequence)
+        fun handleEditEvent(
+            from: Int,
+            to: Int,
+            content: CharSequence,
+        )
 
         fun handleSelectEvent(from: Int, to: Int)
 

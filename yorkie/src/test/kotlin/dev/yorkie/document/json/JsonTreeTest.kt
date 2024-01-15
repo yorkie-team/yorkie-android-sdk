@@ -16,6 +16,8 @@ import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.asFlow
@@ -28,8 +30,6 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertThrows
 import org.junit.Test
-import kotlin.test.assertContentEquals
-import kotlin.test.assertEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class JsonTreeTest {

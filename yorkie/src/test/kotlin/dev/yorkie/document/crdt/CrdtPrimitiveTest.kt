@@ -1,13 +1,13 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
-import org.junit.Assert.assertTrue
-import org.junit.Test
 import java.util.Date
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class CrdtPrimitiveTest {
     @Test

@@ -201,6 +201,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.gson)
     testImplementation(libs.grpc.testing)
+    testImplementation(libs.grpc.inprocess)
 
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)

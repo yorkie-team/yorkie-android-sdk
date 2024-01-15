@@ -64,5 +64,6 @@ internal data class TreeChange(
 )
 
 internal enum class TreeChangeType {
-    Content, Style
+    Content,
+    Style,
 }

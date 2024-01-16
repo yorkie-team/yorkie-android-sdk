@@ -284,14 +284,6 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         return TreePos(updatedNode, updatedPathElement)
     }
 
-    private fun findLeftMost(node: T): T {
-        return if (node.isText || node.children.isEmpty()) {
-            node
-        } else {
-            findLeftMost(node.children.first())
-        }
-    }
-
     /**
      * Returns the index of the given tree [pos].
      */
@@ -432,24 +424,6 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         }
     }
 
-    /**
-     * Returns true if the node is an ancestor of the [targetNode].
-     */
-    fun isAncestorOf(targetNode: T): Boolean {
-        if (this == targetNode) {
-            return false
-        }
-
-        var node = targetNode
-        while (node.parent != null) {
-            if (node.parent == this) {
-                return true
-            }
-            node = node.parent ?: break
-        }
-        return false
-    }
-
     fun findOffset(node: T): Int {
         check(!isText) {
             "Text node cannot have children"
@@ -462,27 +436,6 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             return allChildren.take(index).filterNot { it.isRemoved }.size
         }
         return children.indexOf(node)
-    }
-
-    /**
-     * Returns offset of the given descendant node in this node.
-     * If the given [node] is not a descendant of this node, it returns -1.
-     */
-    fun findBranchOffset(node: T): Int {
-        check(!isText) {
-            "Text node cannot have children"
-        }
-
-        var current: IndexTreeNode<T>? = node
-        while (current != null) {
-            val offset = _children.indexOf(current)
-            if (offset != -1) {
-                return offset
-            }
-            current = current.parent
-        }
-
-        return -1
     }
 
     /**
@@ -519,21 +472,6 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
                 node.updateAncestorSize()
             }
         }
-    }
-
-    /**
-     * Inserts the [newNode] before the [targetNode].
-     */
-    fun insertBefore(targetNode: T, newNode: T) {
-        check(!isText) {
-            "Text node cannot have children"
-        }
-
-        val offset = _children.indexOf(targetNode).takeUnless { it == -1 }
-            ?: throw NoSuchElementException("child not found")
-
-        insertAtInternal(offset, newNode)
-        newNode.updateAncestorSize()
     }
 
     /**

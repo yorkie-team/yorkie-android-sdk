@@ -6,7 +6,6 @@ package dev.yorkie.document.json
 internal fun escapeString(str: String): String {
     return str.replace("\\", "\\\\")
         .replace("\"", "\\\"")
-        .replace("\'", "\\'")
         .replace("\n", "\\n")
         .replace("\r", "\\r")
         .replace("\b", "\\b")

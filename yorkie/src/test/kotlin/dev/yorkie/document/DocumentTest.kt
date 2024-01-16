@@ -1,5 +1,6 @@
 package dev.yorkie.document
 
+import com.google.gson.JsonParser
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonText
@@ -263,6 +264,43 @@ class DocumentTest {
 
             target.garbageCollect(TimeTicket.MaxTimeTicket)
             assertEquals(0, target.garbageLength)
+        }
+    }
+
+    @Test
+    fun `should handle escape string for strings containing single quotes`() {
+        runTest {
+            target.updateAsync { root, _ ->
+                root["str"] = "I'm Yorkie"
+            }.await()
+            assertEquals("""{"str":"I'm Yorkie"}""", target.toJson())
+            assertEquals(
+                "I'm Yorkie",
+                JsonParser.parseString(target.toJson()).asJsonObject.get("str").asString,
+            )
+
+            target.updateAsync { root, _ ->
+                root["str"] = """I\\'m Yorkie"""
+            }.await()
+            assertEquals("""{"str":"I\\\\'m Yorkie"}""", target.toJson())
+            assertEquals(
+                """I\\'m Yorkie""",
+                JsonParser.parseString(target.toJson()).asJsonObject.get("str").asString,
+            )
+        }
+    }
+
+    @Test
+    fun `should handle escape string for object keys`() {
+        runTest {
+            target.updateAsync { root, _ ->
+                root["""it"s"""] = "Yorkie"
+            }.await()
+            assertEquals("""{"it\"s":"Yorkie"}""", target.toJson())
+            assertEquals(
+                "Yorkie",
+                JsonParser.parseString(target.toJson()).asJsonObject.get("""it"s""").asString,
+            )
         }
     }
 }

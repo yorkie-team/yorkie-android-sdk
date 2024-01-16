@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.CrdtTreeNodeIDStruct
 import dev.yorkie.document.CrdtTreePosStruct
 import dev.yorkie.document.JsonSerializable
@@ -454,23 +453,6 @@ internal class CrdtTree(
     fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
         val (key, value) = nodeMapByID.floorEntry(id) ?: return null
         return value.takeIf { key.createdAt == id.createdAt }
-    }
-
-    /**
-     * Edits the given [range] with the given [contents].
-     * This method uses indexes instead of a pair of [TreePos] for testing.
-     */
-    @VisibleForTesting
-    fun editT(
-        range: Pair<Int, Int>,
-        contents: List<CrdtTreeNode>? = null,
-        splitLevel: Int,
-        executedAt: TimeTicket,
-        issueTimeTicket: () -> TimeTicket,
-    ) {
-        val fromPos = findPos(range.first)
-        val toPos = findPos(range.second)
-        edit(fromPos to toPos, contents, splitLevel, executedAt, issueTimeTicket)
     }
 
     /**

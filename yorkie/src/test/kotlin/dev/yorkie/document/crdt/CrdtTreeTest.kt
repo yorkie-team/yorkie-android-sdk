@@ -257,7 +257,9 @@ class CrdtTreeTest {
     private fun CrdtTreeNode.toList() = listOf(this)
 
     private fun CrdtTree.edit(range: Pair<Int, Int>, nodes: List<CrdtTreeNode>?) {
-        editT(range, nodes, 0, issueTime(), ::issueTime)
+        val fromPos = findPos(range.first)
+        val toPos = findPos(range.second)
+        edit(fromPos to toPos, nodes, 0, issueTime(), ::issueTime)
     }
 
     companion object {

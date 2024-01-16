@@ -320,7 +320,7 @@ public class Client @VisibleForTesting internal constructor(
                 eventStream.emit(Event.DocumentChanged(listOf(documentKey)))
             }
 
-            DocEventType.UNRECOGNIZED -> {
+            DocEventType.UNRECOGNIZED, DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST -> {
                 // nothing to do
             }
         }

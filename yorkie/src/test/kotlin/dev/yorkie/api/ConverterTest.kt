@@ -251,6 +251,7 @@ class ConverterTest {
             ),
             mapOf(INITIAL_ACTOR_ID to MaxTimeTicket),
             listOf(CrdtTreeText(CrdtTreeNodeID(InitialTimeTicket, 0), "hi")),
+            0,
             InitialTimeTicket,
         )
         val treeStyleOperation = TreeStyleOperation(

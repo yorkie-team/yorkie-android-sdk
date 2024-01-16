@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.document.CrdtTreeNodeIDStruct
 import dev.yorkie.document.CrdtTreePosStruct
 import dev.yorkie.document.JsonSerializable
@@ -11,11 +12,14 @@ import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
-import dev.yorkie.util.TagContained
+import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
+import dev.yorkie.util.TreeToken
 import java.util.TreeMap
 
 public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
+
+internal typealias CrdtTreeToken = TreeToken<CrdtTreeNode>
 
 internal class CrdtTree(
     val root: CrdtTreeNode,
@@ -72,7 +76,7 @@ internal class CrdtTree(
             fromLeft = fromLeft,
             toParent = toParent,
             toLeft = toLeft,
-        ) { node, _ ->
+        ) { (node, _), _ ->
             if (!node.isRemoved && attributes != null && !node.isText) {
                 attributes.forEach { (key, value) ->
                     node.setAttribute(key, value, executedAt)
@@ -84,10 +88,10 @@ internal class CrdtTree(
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {
-        return indexTree.treePosToPath(toTreePos(parentNode, leftSiblingNode))
+        return indexTree.treePosToPath(toCrdtTreePos(parentNode, leftSiblingNode))
     }
 
-    private fun toTreePos(
+    private fun toCrdtTreePos(
         parentNode: CrdtTreeNode,
         leftSiblingNode: CrdtTreeNode,
     ): TreePos<CrdtTreeNode> {
@@ -127,28 +131,21 @@ internal class CrdtTree(
     fun edit(
         range: TreePosRange,
         contents: List<CrdtTreeNode>?,
+        splitLevel: Int,
         executedAt: TimeTicket,
+        issueTimeTicket: (() -> TimeTicket)? = null,
         latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): Pair<List<TreeChange>, Map<ActorID, TimeTicket>> {
-        // 01. split text nodes at the given range if needed.
+        // 01. find nodes from the given range and split nodes.
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
 
-        // NOTE(hackerwins): If concurrent deletion happens, we need to separate the
-        // range(from, to) into multiple ranges.
-        val changes = listOf(
-            TreeChange(
-                type = TreeChangeType.Content,
-                from = toIndex(fromParent, fromLeft),
-                to = toIndex(toParent, toLeft),
-                fromPath = toPath(fromParent, fromLeft),
-                toPath = toPath(toParent, toLeft),
-                actorID = executedAt.actorID,
-                value = contents?.map(CrdtTreeNode::toTreeNode),
-            ),
-        )
+        val fromIndex = toIndex(fromParent, fromLeft)
+        val fromPath = toPath(fromParent, fromLeft)
 
-        val toBeRemoved = mutableListOf<CrdtTreeNode>()
+        val nodesToBeRemoved = mutableListOf<CrdtTreeNode>()
+        val tokensToBeRemoved = mutableListOf<CrdtTreeToken>()
+        val toBeMovedToFromParents = mutableListOf<CrdtTreeNode>()
         val latestCreatedAtMap = mutableMapOf<ActorID, TimeTicket>()
 
         traverseInPosRange(
@@ -156,11 +153,11 @@ internal class CrdtTree(
             fromLeft = fromLeft,
             toParent = toParent,
             toLeft = toLeft,
-        ) { node, contained ->
-            // If node is a element node and half-contained in the range,
-            // it should not be removed.
-            if (!node.isText && contained != TagContained.All) {
-                return@traverseInPosRange
+        ) { (node, tokenType), ended ->
+            // NOTE(hackerwins): If the node overlaps as a start tag with the
+            // range then we need to move the remaining children to fromParent.
+            if (tokenType == TokenType.Start && !ended) {
+                toBeMovedToFromParents.addAll(node.children)
             }
 
             val actorID = node.createdAt.actorID
@@ -168,7 +165,7 @@ internal class CrdtTree(
                 latestCreatedAtMapByActor[actorID] ?: InitialTimeTicket
             } ?: MaxTimeTicket
 
-            if (node.canDelete(executedAt, latestCreatedAt)) {
+            if (node.canDelete(executedAt, latestCreatedAt) || node.parent in nodesToBeRemoved) {
                 val latest = latestCreatedAtMap[actorID]
                 val createdAt = node.createdAt
 
@@ -176,19 +173,52 @@ internal class CrdtTree(
                     latestCreatedAtMap[actorID] = createdAt
                 }
 
-                toBeRemoved.add(node)
+                if (tokenType == TokenType.Text || tokenType == TokenType.Start) {
+                    nodesToBeRemoved.add(node)
+                }
+                tokensToBeRemoved.add(TreeToken(node, tokenType))
             }
         }
 
-        toBeRemoved.forEach { node ->
+        // NOTE(hackerwins): If concurrent deletion happens, we need to separate the
+        // range(from, to) into multiple ranges.
+        val changes = makeDeletionChanges(tokensToBeRemoved, executedAt).toMutableList()
+
+        // 02. Delete: delete the nodes that are marked as removed.
+        nodesToBeRemoved.forEach { node ->
             node.remove(executedAt)
             if (node.isRemoved) {
                 removedNodeMap[node.createdAt to node.id.offset] = node
             }
         }
 
-        // 03. insert the given node at the given position.
+        // 03. Merge: move the nodes that are marked as moved.
+        toBeMovedToFromParents.filter { it.removedAt == null }.forEach(fromParent::append)
+
+        // 04. Split: split the element nodes for the given split level.
+        if (splitLevel > 0 && issueTimeTicket != null) {
+            var parent = fromParent
+            var left = fromLeft
+            repeat(splitLevel) {
+                parent.split(this, parent.findOffset(left) + 1, issueTimeTicket)
+                left = parent
+                parent = parent.parent ?: return@repeat
+            }
+            changes.add(
+                TreeChange(
+                    type = TreeChangeType.Content,
+                    from = fromIndex,
+                    to = fromIndex,
+                    fromPath = fromPath,
+                    toPath = fromPath,
+                    actorID = executedAt.actorID,
+                ),
+            )
+        }
+
+        // 05. insert the given node at the given position.
         if (contents?.isNotEmpty() == true) {
+            val aliveContents = mutableListOf<CrdtTreeNode>()
             var leftInChildren = fromLeft
 
             contents.forEach { content ->
@@ -211,9 +241,148 @@ internal class CrdtTree(
                     }
                     nodeMapByID[node.id] = node
                 }
+                if (!content.isRemoved) {
+                    aliveContents.add(content)
+                }
+            }
+
+            if (aliveContents.isNotEmpty()) {
+                val value = aliveContents.map(CrdtTreeNode::toTreeNode)
+                val lastChange = changes.lastOrNull()
+                if (changes.isNotEmpty() && lastChange?.from == fromIndex) {
+                    changes[changes.lastIndex] = lastChange.copy(value = value)
+                } else {
+                    changes.add(
+                        TreeChange(
+                            type = TreeChangeType.Content,
+                            from = fromIndex,
+                            to = fromIndex,
+                            fromPath = fromPath,
+                            toPath = fromPath,
+                            actorID = executedAt.actorID,
+                            value = value,
+                        ),
+                    )
+                }
             }
         }
         return changes to latestCreatedAtMap
+    }
+
+    /**
+     * Converts nodes to be deleted to deletion changes.
+     */
+    private fun makeDeletionChanges(
+        candidates: List<CrdtTreeToken>,
+        executedAt: TimeTicket,
+    ): List<TreeChange> {
+        val changes = mutableListOf<TreeChange>()
+        val ranges = mutableListOf<Pair<CrdtTreeToken, CrdtTreeToken>>()
+
+        // Generate ranges by accumulating consecutive nodes.
+        var start: CrdtTreeToken? = null
+        var end: CrdtTreeToken
+        for (i in candidates.indices) {
+            val cur = candidates[i]
+            val next = candidates.getOrNull(i + 1)
+            if (start == null) {
+                start = cur
+            }
+            end = cur
+
+            val rightToken = findRightToken(cur)
+            if (next == null || rightToken != next) {
+                ranges.add(start to end)
+                start = null
+            }
+        }
+
+        // Convert each range to a deletion change.
+        ranges.forEach { range ->
+            val (_start, _end) = range
+            val (fromLeft, fromLeftTokenType) = findLeftToken(_start)
+            val (toLeft, toLeftTokenType) = _end
+            val fromParent =
+                fromLeft.takeIf { fromLeftTokenType == TokenType.Start } ?: fromLeft.parent
+            val toParent = toLeft.takeIf { toLeftTokenType == TokenType.Start } ?: toLeft.parent
+
+            if (fromParent == null || toParent == null) {
+                return emptyList()
+            }
+
+            val fromIndex = toIndex(fromParent, fromLeft)
+            val toIndex = toIndex(toParent, toLeft)
+            if (fromIndex < toIndex) {
+                // When the range is overlapped with the previous one, compact them.
+                val lastChange = changes.lastOrNull()
+                if (changes.isNotEmpty() && fromIndex == lastChange?.to) {
+                    changes[changes.lastIndex] = lastChange.copy(
+                        to = toIndex,
+                        toPath = toPath(toParent, toLeft),
+                    )
+                } else {
+                    changes.add(
+                        TreeChange(
+                            type = TreeChangeType.Content,
+                            from = fromIndex,
+                            to = toIndex,
+                            fromPath = toPath(fromParent, fromLeft),
+                            toPath = toPath(toParent, toLeft),
+                            actorID = executedAt.actorID,
+                        ),
+                    )
+                }
+            }
+        }
+        return changes
+    }
+
+    private fun findRightToken(treeToken: CrdtTreeToken): CrdtTreeToken {
+        fun CrdtTreeNode.rightTokenType() = if (isText) TokenType.Text else TokenType.Start
+
+        val (node, tokenType) = treeToken
+        if (tokenType == TokenType.Start) {
+            val children = node.allChildren
+            return if (children.isEmpty()) {
+                TreeToken(node, TokenType.End)
+            } else {
+                TreeToken(children.first(), children.first().rightTokenType())
+            }
+        }
+
+        val parent = node.parent
+        val siblings = parent?.allChildren ?: emptyList()
+        val offset = siblings.indexOf(node)
+        return if (parent != null && offset == siblings.size - 1) {
+            TreeToken(parent, TokenType.End)
+        } else {
+            val next = siblings[offset + 1]
+            TreeToken(next, next.rightTokenType())
+        }
+    }
+
+    private fun findLeftToken(treeToken: CrdtTreeToken): CrdtTreeToken {
+        fun CrdtTreeNode.leftTokenType() = if (isText) TokenType.Text else TokenType.End
+
+        val (node, tokenType) = treeToken
+        if (tokenType == TokenType.End) {
+            val children = node.allChildren
+            return if (children.isEmpty()) {
+                TreeToken(node, TokenType.Start)
+            } else {
+                TreeToken(children.last(), children.last().leftTokenType())
+            }
+        }
+
+        val parent = node.parent
+        val siblings = parent?.allChildren ?: emptyList()
+        val offset = siblings.indexOf(node)
+        return if (parent != null && offset == 0) {
+            TreeToken(parent, TokenType.Start)
+        } else {
+            val prev = siblings[offset - 1]
+            TreeToken(prev, prev.leftTokenType())
+        }
     }
 
     private fun traverseAll(
@@ -232,11 +401,15 @@ internal class CrdtTree(
         fromLeft: CrdtTreeNode,
         toParent: CrdtTreeNode,
         toLeft: CrdtTreeNode,
-        callback: (CrdtTreeNode, TagContained) -> Unit,
+        callback: (CrdtTreeToken, Boolean) -> Unit,
     ) {
         val fromIndex = toIndex(fromParent, fromLeft)
         val toIndex = toIndex(toParent, toLeft)
-        indexTree.nodesBetween(fromIndex, toIndex, callback)
+        indexTree.tokensBetween(fromIndex, toIndex, callback)
+    }
+
+    fun registerNode(node: CrdtTreeNode) {
+        nodeMapByID[node.id] = node
     }
 
     /**
@@ -249,88 +422,55 @@ internal class CrdtTree(
         pos: CrdtTreePos,
         executedAt: TimeTicket,
     ): Pair<CrdtTreeNode, CrdtTreeNode> {
-        val treeNodes =
-            toTreeNodes(pos) ?: throw IllegalArgumentException("cannot find node at $pos")
-        val (parentNode, leftSiblingNode) = treeNodes
+        // 01. Find the parent and left sibling node of the given position.
+        val (parent, leftSibling) = pos.toTreeNodes(this)
 
-        // Find the appropriate position. This logic is similar to
-        // handling the insertion of the same position in RGA.
-        if (leftSiblingNode.isText) {
-            val absOffset = leftSiblingNode.id.offset
-            val split = leftSiblingNode.split(pos.leftSiblingID.offset - absOffset, absOffset)
-            split?.let {
-                split.insPrevID = leftSiblingNode.id
-                nodeMapByID[split.id] = split
+        // 02. Determine whether the position is left-most and the exact parent
+        // in the current tree.
+        val isLeftMost = parent == leftSibling
+        val realParent =
+            leftSibling.parent.takeIf { leftSibling.parent != null && !isLeftMost }
+                ?: parent
 
-                leftSiblingNode.insNextID?.let { insNextID ->
-                    val insNext = findFloorNode(insNextID)
-                    insNext?.insPrevID = split.id
-                    split.insNextID = insNextID
-                }
-
-                leftSiblingNode.insNextID = split.id
-            }
-        }
-        val allChildren = parentNode.allChildren
-        val index = if (parentNode == leftSiblingNode) {
-            0
-        } else {
-            allChildren.indexOf(leftSiblingNode) + 1
+        // 03. Split text node if the left node is a text node.
+        if (leftSibling.isText) {
+            leftSibling.split(this, pos.leftSiblingID.offset - leftSibling.id.offset)
         }
 
-        var updatedLeftSiblingNode = leftSiblingNode
-        for (i in index until parentNode.allChildren.size) {
-            val next = allChildren[i]
-            if (executedAt < next.id.createdAt) {
-                updatedLeftSiblingNode = next
-            } else {
-                break
-            }
+        // 04. Find the appropriate left node. If some nodes are inserted at the
+        // same position concurrently, then we need to find the appropriate left
+        // node. This is similar to RGA.
+        val allChildren = realParent.allChildren
+        val index = if (isLeftMost) 0 else allChildren.indexOf(leftSibling) + 1
+
+        var updatedLeftSiblingNode = leftSibling
+        for (node in allChildren.drop(index)) {
+            if (node.id.createdAt <= executedAt) break
+            updatedLeftSiblingNode = node
         }
-        return parentNode to updatedLeftSiblingNode
+        return realParent to updatedLeftSiblingNode
     }
 
-    private fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
+    fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
         val (key, value) = nodeMapByID.floorEntry(id) ?: return null
-        return if (key == null || key.createdAt != id.createdAt) null else value
-    }
-
-    private fun toTreeNodes(pos: CrdtTreePos): Pair<CrdtTreeNode, CrdtTreeNode>? {
-        val parentID = pos.parentID
-        val leftSiblingID = pos.leftSiblingID
-        val parentNode = findFloorNode(parentID) ?: return null
-        val leftSiblingNode = findFloorNode(leftSiblingID) ?: return null
-
-        val updatedLeftSiblingNode =
-            if (leftSiblingID.offset > 0 && leftSiblingID.offset == leftSiblingNode.id.offset &&
-                leftSiblingNode.insPrevID != null
-            ) {
-                findFloorNode(requireNotNull(leftSiblingNode.insPrevID)) ?: leftSiblingNode
-            } else {
-                leftSiblingNode
-            }
-        return parentNode to updatedLeftSiblingNode
+        return value.takeIf { key.createdAt == id.createdAt }
     }
 
     /**
      * Edits the given [range] with the given [contents].
      * This method uses indexes instead of a pair of [TreePos] for testing.
      */
-    fun editByIndex(
+    @VisibleForTesting
+    fun editT(
         range: Pair<Int, Int>,
-        contents: List<CrdtTreeNode>?,
+        contents: List<CrdtTreeNode>? = null,
+        splitLevel: Int,
         executedAt: TimeTicket,
+        issueTimeTicket: () -> TimeTicket,
     ) {
         val fromPos = findPos(range.first)
         val toPos = findPos(range.second)
-        edit(fromPos to toPos, contents, executedAt)
-    }
-
-    /**
-     * Splits the node at the given [index].
-     */
-    fun split(index: Int, depth: Int = 1): TreePos<CrdtTreeNode> {
-        TODO("Implement after JS SDK's implementation")
+        edit(fromPos to toPos, contents, splitLevel, executedAt, issueTimeTicket)
     }
 
     /**
@@ -386,22 +526,8 @@ internal class CrdtTree(
      * Finds the position of the given [index] in the tree.
      */
     fun findPos(index: Int, preferText: Boolean = true): CrdtTreePos {
-        val (node, offset) = indexTree.findTreePos(index, preferText)
-        var updatedNode = node
-        val leftSibling = if (node.isText) {
-            updatedNode = requireNotNull(node.parent)
-            if (node.parent?.children?.firstOrNull() == node && offset == 0) {
-                node.parent
-            } else {
-                node
-            }
-        } else {
-            if (offset == 0) node else node.children[offset - 1]
-        } ?: throw IllegalArgumentException("left sibling should not be null")
-        return CrdtTreePos(
-            updatedNode.id,
-            CrdtTreeNodeID(leftSibling.createdAt, leftSibling.offset + offset),
-        )
+        val treePos = indexTree.findTreePos(index, preferText)
+        return treePos.toCrdtTreePos()
     }
 
     /**
@@ -415,7 +541,7 @@ internal class CrdtTree(
      * Converts the given [parentNode] to the index of the tree.
      */
     fun toIndex(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): Int {
-        return indexTree.indexOf(toTreePos(parentNode, leftSiblingNode))
+        return indexTree.indexOf(toCrdtTreePos(parentNode, leftSiblingNode))
     }
 
     /**
@@ -424,13 +550,6 @@ internal class CrdtTree(
     fun pathToPosRange(path: List<Int>): TreePosRange {
         val fromIndex = pathToIndex(path)
         return findPos(fromIndex) to findPos(fromIndex + 1)
-    }
-
-    /**
-     * Finds the tree position path.
-     */
-    private fun pathToTreePos(path: List<Int>): TreePos<CrdtTreeNode> {
-        return indexTree.pathToTreePos(path)
     }
 
     /**
@@ -510,6 +629,56 @@ internal class CrdtTree(
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
         return toIndex(fromParent, fromLeft) to toIndex(toParent, toLeft)
     }
+
+    /**
+     * Converts the pos to parent and left sibling nodes.
+     */
+    private fun CrdtTreePos.toTreeNodes(tree: CrdtTree): Pair<CrdtTreeNode, CrdtTreeNode> {
+        val parentNode = tree.findFloorNode(parentID)
+        val leftNode = tree.findFloorNode(leftSiblingID)
+        require(parentNode != null && leftNode != null) {
+            "cannot find node at $this"
+        }
+
+        /**
+         * NOTE(hackerwins): If the left node and the parent node are the same,
+         * it means that the position is the left-most of the parent node.
+         * We need to skip finding the left of the position.
+         */
+        val updatedLeftSiblingNode =
+            if (leftSiblingID != parentID &&
+                leftSiblingID.offset > 0 &&
+                leftSiblingID.offset == leftNode.id.offset &&
+                leftNode.insPrevID != null
+            ) {
+                leftNode.insPrevID?.let(tree::findFloorNode) ?: leftNode
+            } else {
+                leftNode
+            }
+        return parentNode to updatedLeftSiblingNode
+    }
+
+    /**
+     * Creates a new instance of CRDTTreePos from the given TreePos.
+     */
+    private fun TreePos<CrdtTreeNode>.toCrdtTreePos(): CrdtTreePos {
+        val (node, offset) = this
+
+        var resultNode = node
+        val leftNode = if (node.isText) {
+            resultNode = requireNotNull(node.parent)
+            node.parent?.takeIf {
+                it.children.firstOrNull() == node && offset == 0
+            } ?: node
+        } else {
+            if (offset == 0) node else node.children[offset - 1]
+        }
+
+        return CrdtTreePos(
+            resultNode.id,
+            CrdtTreeNodeID(leftNode.createdAt, leftNode.offset + offset),
+        )
+    }
 }
 
 /**
@@ -570,16 +739,48 @@ internal data class CrdtTreeNode private constructor(
     }
 
     /**
-     * Clones this node with the given [offset].
+     * Clones this text node with the given [offset].
      */
-    override fun clone(offset: Int): CrdtTreeNode {
+    override fun cloneText(offset: Int) = clone(offset, id.createdAt)
+
+    /**
+     * Clones this element node with the given [issueTimeTicket] function.
+     */
+    override fun cloneElement(issueTimeTicket: () -> TimeTicket) = clone(0, issueTimeTicket())
+
+    private fun clone(offset: Int, createdAt: TimeTicket): CrdtTreeNode {
         return copy(
-            id = CrdtTreeNodeID(id.createdAt, offset),
+            id = CrdtTreeNodeID(createdAt, offset),
             _value = null,
             childNodes = mutableListOf(),
-        ).also {
-            it.removedAt = this.removedAt
+        ).apply {
+            removedAt = this@CrdtTreeNode.removedAt
         }
+    }
+
+    fun split(
+        tree: CrdtTree,
+        offset: Int,
+        issueTimeTicket: (() -> TimeTicket)? = null,
+    ): CrdtTreeNode? {
+        val split = if (isText) {
+            splitText(offset, id.offset)
+        } else {
+            splitElement(offset, requireNotNull(issueTimeTicket))
+        }
+
+        val node = this
+        split?.apply {
+            split.insPrevID = node.id
+            node.insNextID?.let {
+                tree.findFloorNode(it)?.insPrevID = split.id
+                split.insNextID = node.insNextID
+            }
+            node.insNextID = split.id
+            tree.registerNode(split)
+        }
+
+        return split
     }
 
     fun setAttribute(key: String, value: String, executedAt: TimeTicket) {
@@ -590,13 +791,17 @@ internal data class CrdtTreeNode private constructor(
      * Marks the node as removed.
      */
     fun remove(executedAt: TimeTicket) {
-        val notRemoved = removedAt == null
+        val alived = removedAt == null
 
-        if (notRemoved || removedAt < executedAt) {
+        if (alived || removedAt < executedAt) {
             removedAt = executedAt
         }
-        if (notRemoved) {
-            updateAncestorSize()
+        if (alived) {
+            if (parent?.removedAt == null) {
+                updateAncestorSize()
+            } else {
+                requireNotNull(parent).size -= paddedSize
+            }
         }
     }
 

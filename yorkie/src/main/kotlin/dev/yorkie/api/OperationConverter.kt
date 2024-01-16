@@ -99,6 +99,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 it.treeEdit.createdAtMapByActorMap.entries.associate { (key, value) ->
                     ActorID(key) to value.toTimeTicket()
                 },
+                splitLevel = it.treeEdit.splitLevel,
             )
 
             it.hasTreeStyle() -> TreeStyleOperation(
@@ -213,6 +214,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                             it.key.value to it.value.toPBTimeTicket()
                         },
                     )
+                    splitLevel = operation.splitLevel
                 }
             }
         }

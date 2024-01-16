@@ -61,6 +61,7 @@ internal data class TreeChange(
     val toPath: List<Int>,
     val value: List<TreeNode>? = null,
     val attributes: Map<String, String>? = null,
+    val splitLevel: Int = 0,
 )
 
 internal enum class TreeChangeType {

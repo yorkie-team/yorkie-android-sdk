@@ -24,17 +24,17 @@ class IndexTreeTest {
         var pos = tree.findTreePos(0)
         assertEquals("r" to 0, pos.node.toDiagnostic() to pos.offset)
         pos = tree.findTreePos(1)
-        assertEquals("text.hello" to 0, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("hello" to 0, pos.node.toDiagnostic() to pos.offset)
         pos = tree.findTreePos(6)
-        assertEquals("text.hello" to 5, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("hello" to 5, pos.node.toDiagnostic() to pos.offset)
         pos = tree.findTreePos(6, false)
         assertEquals("p" to 1, pos.node.toDiagnostic() to pos.offset)
         pos = tree.findTreePos(7)
         assertEquals("r" to 1, pos.node.toDiagnostic() to pos.offset)
         pos = tree.findTreePos(8)
-        assertEquals("text.world" to 0, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("world" to 0, pos.node.toDiagnostic() to pos.offset)
         pos = tree.findTreePos(13)
-        assertEquals("text.world" to 5, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("world" to 5, pos.node.toDiagnostic() to pos.offset)
         pos = tree.findTreePos(14)
         assertEquals("r" to 2, pos.node.toDiagnostic() to pos.offset)
     }
@@ -64,13 +64,13 @@ class IndexTreeTest {
         val nodeAB = tree.findTreePos(3, true).node
         val nodeCD = tree.findTreePos(7, true).node
 
-        assertEquals("text.ab", nodeAB.toDiagnostic())
-        assertEquals("text.cd", nodeCD.toDiagnostic())
+        assertEquals("ab", nodeAB.toDiagnostic())
+        assertEquals("cd", nodeCD.toDiagnostic())
         assertEquals("p", findCommonAncestor(nodeAB, nodeCD)?.type)
     }
 
     @Test
-    fun `should traverse nodes between two given positions`() {
+    fun `should traverse tokens between two given positions`() {
         //       0   1 2 3    4   5 6 7 8    9   10 11 12   13
         // <root> <p> a b </p> <p> c d e </p> <p>  f  g  </p>  </root>
         val tree = createIndexTree(
@@ -82,16 +82,16 @@ class IndexTreeTest {
             ),
         )
         assertEquals(
-            listOf("text.b:All", "p:Closing", "text.cde:All", "p:All", "text.fg:All", "p:Opening"),
-            tree.nodesBetween(2, 11),
+            listOf("b:Text", "p:End", "p:Start", "cde:Text", "p:End", "p:Start", "fg:Text"),
+            tree.tokensBetween(2, 11),
         )
         assertEquals(
-            listOf("text.b:All", "p:Closing", "text.cde:All", "p:Opening"),
-            tree.nodesBetween(2, 6),
+            listOf("b:Text", "p:End", "p:Start", "cde:Text"),
+            tree.tokensBetween(2, 6),
         )
-        assertEquals(listOf("p:Opening"), tree.nodesBetween(0, 1))
-        assertEquals(listOf("p:Closing"), tree.nodesBetween(3, 4))
-        assertEquals(listOf("p:Closing", "p:Opening"), tree.nodesBetween(3, 5))
+        assertEquals(listOf("p:Start"), tree.tokensBetween(0, 1))
+        assertEquals(listOf("p:End"), tree.tokensBetween(3, 4))
+        assertEquals(listOf("p:End", "p:Start"), tree.tokensBetween(3, 5))
     }
 
     @Test
@@ -99,15 +99,15 @@ class IndexTreeTest {
         val tree = createIndexTree(DefaultRootNode)
 
         assertThrows(IllegalArgumentException::class.java) {
-            tree.nodesBetween(tree.size, 0)
+            tree.tokensBetween(tree.size, 0)
         }
 
         assertThrows(IllegalArgumentException::class.java) {
-            tree.nodesBetween(tree.size + 1, tree.size + 2)
+            tree.tokensBetween(tree.size + 1, tree.size + 2)
         }
 
         assertThrows(IllegalArgumentException::class.java) {
-            tree.nodesBetween(tree.size, tree.size + 1)
+            tree.tokensBetween(tree.size, tree.size + 1)
         }
     }
 
@@ -156,40 +156,40 @@ class IndexTreeTest {
         assertEquals("root" to 0, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(0, 0))
-        assertEquals("text.a" to 0, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("a" to 0, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(0, 1))
-        assertEquals("text.a" to 1, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("a" to 1, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(0, 2))
-        assertEquals("text.b" to 1, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("b" to 1, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(1))
         assertEquals("root" to 1, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(1, 0))
-        assertEquals("text.cde" to 0, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("cde" to 0, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(1, 1))
-        assertEquals("text.cde" to 1, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("cde" to 1, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(1, 2))
-        assertEquals("text.cde" to 2, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("cde" to 2, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(1, 3))
-        assertEquals("text.cde" to 3, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("cde" to 3, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(2))
         assertEquals("root" to 2, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(2, 0))
-        assertEquals("text.fg" to 0, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("fg" to 0, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(2, 1))
-        assertEquals("text.fg" to 1, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("fg" to 1, pos.node.toDiagnostic() to pos.offset)
 
         pos = tree.pathToTreePos(listOf(2, 2))
-        assertEquals("text.fg" to 2, pos.node.toDiagnostic() to pos.offset)
+        assertEquals("fg" to 2, pos.node.toDiagnostic() to pos.offset)
     }
 
     @Test
@@ -360,7 +360,7 @@ class IndexTreeTest {
         assertEquals(listOf(1), tree.indexToPath(pos + 1))
     }
 
-    private fun CrdtTreeNode.toDiagnostic() = if (isText) "$type.$value" else type
+    private fun CrdtTreeNode.toDiagnostic() = if (isText) value else type
 
     private fun createIndexTree(root: CrdtTreeNode): IndexTree<CrdtTreeNode> {
         root.children.forEach { child ->
@@ -379,9 +379,9 @@ class IndexTreeTest {
         }
     }
 
-    private fun IndexTree<CrdtTreeNode>.nodesBetween(from: Int, to: Int) = buildList {
-        nodesBetween(from, to) { node, contain ->
-            add("${node.toDiagnostic()}:${contain.name}")
+    private fun IndexTree<CrdtTreeNode>.tokensBetween(from: Int, to: Int) = buildList {
+        tokensBetween(from, to) { (node, tokenType), _ ->
+            add("${node.toDiagnostic()}:$tokenType")
         }
     }
 

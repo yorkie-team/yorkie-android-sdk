@@ -8,14 +8,12 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.test.assertEquals
 import kotlinx.coroutines.awaitAll
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @LargeTest
-@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class JsonTreeTest {
 
@@ -498,7 +496,6 @@ class JsonTreeTest {
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(0, 0, element("b"))
-
                 },
                 Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(0, 0, element("i"))
@@ -895,7 +892,6 @@ class JsonTreeTest {
                 },
                 Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(1, 2)
-
                 },
             ) {
                 assertEquals("<r><p>23</p></r>", d1.getRoot().rootTree().toXml())
@@ -1592,11 +1588,11 @@ class JsonTreeTest {
 
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(1,3)
+                    root.rootTree().edit(1, 3)
                 },
                 Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(2, 2, text { "c" })
-                }
+                },
             ) {
                 assertTreesXmlEquals("<doc><p></p></doc>", d1)
                 assertTreesXmlEquals("<doc><p>acb</p></doc>", d2)
@@ -1626,11 +1622,11 @@ class JsonTreeTest {
 
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(0,4)
+                    root.rootTree().edit(0, 4)
                 },
                 Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(2, 2, text { "c" })
-                }
+                },
             ) {
                 assertTreesXmlEquals("<doc></doc>", d1)
                 assertTreesXmlEquals("<doc><p>acb</p></doc>", d2)
@@ -1660,11 +1656,11 @@ class JsonTreeTest {
 
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(1,2, text { "b" })
+                    root.rootTree().edit(1, 2, text { "b" })
                 },
                 Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(2, 2, text { "c" })
-                }
+                },
             ) {
                 assertTreesXmlEquals("<doc><p>b</p></doc>", d1)
                 assertTreesXmlEquals("<doc><p>ac</p></doc>", d2)

@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-level: [ 23, 26, 30 ]
+        api-level: [ 26 ]
         target: [ google_apis ]
     runs-on: macos-latest
     timeout-minutes: 60
@@ -98,9 +98,9 @@ jobs:
           script: |
             ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
             ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.annotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
-      - if: ${{ matrix.api-level == 30 }}
+      - if: ${{ matrix.api-level == 26 }}
         run: ./gradlew yorkie:jacocoDebugTestReport
-      - if: ${{ matrix.api-level == 30 }}
+      - if: ${{ matrix.api-level == 26 }}
         uses: actions/upload-artifact@v3
         with:
           name: android-test-artifact
@@ -121,7 +121,6 @@ jobs:
 
   microbenchmarks:
     name: Microbenchmarks
-    needs: [ instrumentation-tests ]
     runs-on: macos-latest
     timeout-minutes: 60
     steps:

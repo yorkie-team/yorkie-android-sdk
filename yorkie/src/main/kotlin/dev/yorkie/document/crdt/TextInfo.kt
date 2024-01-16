@@ -17,7 +17,8 @@ internal data class TextChange(
  * The type of [TextChange].
  */
 internal enum class TextChangeType {
-    Content, Style
+    Content,
+    Style,
 }
 
 internal data class TextValue(
@@ -43,7 +44,11 @@ internal data class TextValue(
         return TextValue(content.substring(startIndex, endIndex), _attributes.deepCopy())
     }
 
-    fun setAttribute(key: String, value: String, executedAt: TimeTicket) {
+    fun setAttribute(
+        key: String,
+        value: String,
+        executedAt: TimeTicket,
+    ) {
         _attributes.set(key, value, executedAt)
     }
 

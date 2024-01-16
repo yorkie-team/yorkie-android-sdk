@@ -2,9 +2,9 @@ package dev.yorkie.core
 
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.yorkie.document.Document
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
-import java.util.UUID
 
 const val GENERAL_TIMEOUT = 3_000L
 

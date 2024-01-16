@@ -8,12 +8,12 @@ import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.time.TimeTicket
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.Before
+import org.junit.Test
 
 class JsonTextTest {
 
@@ -77,12 +77,18 @@ class JsonTextTest {
             Triple(3, 3, "DE"),
             Triple(5, 5, "F"),
             Triple(6, 6, "GHI"),
-            Triple(9, 9, ""), // delete no last node
-            Triple(8, 9, ""), // delete one last node with split
-            Triple(6, 8, ""), // delete one last node without split
-            Triple(4, 6, ""), // delete last nodes with split
-            Triple(2, 4, ""), // delete last nodes without split
-            Triple(0, 2, ""), // delete last nodes containing the first
+            // delete no last node
+            Triple(9, 9, ""),
+            // delete one last node with split
+            Triple(8, 9, ""),
+            // delete one last node without split
+            Triple(6, 8, ""),
+            // delete last nodes with split
+            Triple(4, 6, ""),
+            // delete last nodes without split
+            Triple(2, 4, ""),
+            // delete last nodes containing the first
+            Triple(0, 2, ""),
         ).forEach { command ->
             text = text.replaceRange(command.first, command.second, command.third)
             target.edit(command.first, command.second, command.third)
@@ -97,12 +103,17 @@ class JsonTextTest {
             Triple(0, 0, "1A1BCXEF1"),
             Triple(8, 9, ""),
             Triple(2, 3, ""),
-            Triple(0, 1, ""), // ABCXEF
-            Triple(0, 1, ""), // delete A with two removed boundaries
-            Triple(0, 1, ""), // delete B with removed left boundary
-            Triple(3, 4, ""), // delete F with removed right boundary
+            // ABCXEF
+            Triple(0, 1, ""),
+            // delete A with two removed boundaries
+            Triple(0, 1, ""),
+            // delete B with removed left boundary
+            Triple(0, 1, ""),
+            // delete F with removed right boundary
+            Triple(3, 4, ""),
             Triple(1, 2, ""),
-            Triple(0, 2, ""), // delete CE with removed inner node X
+            // delete CE with removed inner node X
+            Triple(0, 2, ""),
         ).forEach { command ->
             text = text.replaceRange(command.first, command.second, command.third)
             target.edit(command.first, command.second, command.third)

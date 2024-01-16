@@ -9,10 +9,10 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlin.test.assertEquals
 import kotlinx.coroutines.awaitAll
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.test.assertEquals
 
 @LargeTest
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -1714,12 +1714,6 @@ class JsonTreeTest {
             val client: Client,
             val document: Document,
             val updater: (suspend (JsonObject, Presence) -> Unit)? = null,
-        )
-
-        data class SimpleTreeEditOpInfo(
-            val from: Int,
-            val to: Int,
-            val value: List<JsonTree.TreeNode>? = null,
         )
     }
 }

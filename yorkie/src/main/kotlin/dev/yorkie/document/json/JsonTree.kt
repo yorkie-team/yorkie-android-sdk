@@ -47,7 +47,11 @@ public class JsonTree internal constructor(
     /**
      * Sets the [attributes] to the elements of the given range.
      */
-    public fun style(fromIndex: Int, toIndex: Int, attributes: Map<String, String>) {
+    public fun style(
+        fromIndex: Int,
+        toIndex: Int,
+        attributes: Map<String, String>,
+    ) {
         require(fromIndex <= toIndex) {
             "from should be less than or equal to to"
         }
@@ -57,10 +61,7 @@ public class JsonTree internal constructor(
         styleByRange(fromPos to toPos, attributes)
     }
 
-    private fun styleByRange(
-        range: TreePosRange,
-        attributes: Map<String, String>,
-    ) {
+    private fun styleByRange(range: TreePosRange, attributes: Map<String, String>) {
         val ticket = context.issueTimeTicket()
         target.style(range, attributes, ticket)
 
@@ -99,7 +100,12 @@ public class JsonTree internal constructor(
     /**
      * Edits this tree with the given node.
      */
-    public fun edit(fromIndex: Int, toIndex: Int, vararg contents: TreeNode, splitLevel: Int = 0) {
+    public fun edit(
+        fromIndex: Int,
+        toIndex: Int,
+        vararg contents: TreeNode,
+        splitLevel: Int = 0,
+    ) {
         require(fromIndex <= toIndex) {
             "from should be less than or equal to to"
         }

@@ -18,7 +18,11 @@ internal class Rht : Iterable<Rht.Node> {
             }
         }
 
-    fun set(key: String, value: String, executedAt: TimeTicket) {
+    fun set(
+        key: String,
+        value: String,
+        executedAt: TimeTicket,
+    ) {
         val prev = nodeMapByKey[key]
         if (prev?.executedAt < executedAt) {
             val node = Node(key, value, executedAt)

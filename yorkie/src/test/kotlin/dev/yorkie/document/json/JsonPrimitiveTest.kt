@@ -2,10 +2,10 @@ package dev.yorkie.document.json
 
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.time.TimeTicket
-import org.junit.Assert.assertThrows
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Test
 
 class JsonPrimitiveTest {
 

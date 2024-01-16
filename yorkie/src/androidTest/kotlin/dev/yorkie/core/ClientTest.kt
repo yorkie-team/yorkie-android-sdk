@@ -13,6 +13,12 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.operation.OperationInfo
+import java.util.UUID
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,12 +30,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.UUID
-import kotlin.test.assertContentEquals
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 
 @RunWith(AndroidJUnit4::class)
 class ClientTest {

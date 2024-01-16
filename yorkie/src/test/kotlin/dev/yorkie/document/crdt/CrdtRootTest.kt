@@ -10,6 +10,7 @@ import org.junit.Test
 class CrdtRootTest {
 
     // TODO(7hong13): maybe need to separate it into multiple unit test functions.
+    @Suppress("ktlint:standard:property-naming")
     @Test
     fun `basic test`() {
         val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht()))

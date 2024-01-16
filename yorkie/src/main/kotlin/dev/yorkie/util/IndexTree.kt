@@ -338,7 +338,9 @@ internal data class TreeToken<T>(val node: T, val tokenType: TokenType)
  * [TokenType] represents the type of token in XML representation.
  */
 internal enum class TokenType {
-    Start, End, Text,
+    Start,
+    End,
+    Text,
 }
 
 /**
@@ -361,7 +363,7 @@ internal data class TreePos<T : IndexTreeNode<T>>(
 internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableList<T>) {
     abstract val type: String
 
-    protected val _children: MutableList<T> = children
+    protected val childrenInternal: MutableList<T> = children
 
     val isText
         get() = type == DEFAULT_TEXT_TYPE
@@ -393,20 +395,20 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
      * So, we need to filter out the tombstone nodes to get the real children.
      */
     val children: List<T>
-        get() = _children.filterNot { it.isRemoved }
+        get() = childrenInternal.filterNot { it.isRemoved }
 
     /**
      * Returns the children of the node including tombstones.
      */
     @VisibleForTesting
     val allChildren: List<T>
-        get() = _children.toList()
+        get() = childrenInternal.toList()
 
     val hasTextChild: Boolean
         get() = children.any { it.isText }
 
     init {
-        if (isText && _children.isNotEmpty()) {
+        if (isText && childrenInternal.isNotEmpty()) {
             throw IllegalArgumentException("Text node cannot have children")
         }
     }
@@ -429,7 +431,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             "Text node cannot have children"
         }
         if (node.isRemoved) {
-            val index = _children.indexOf(node)
+            val index = childrenInternal.indexOf(node)
 
             // If nodes are removed, the offset of the removed node is the number of
             // nodes before the node excluding the removed nodes.
@@ -446,7 +448,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             "Text node cannot have children"
         }
 
-        _children.addAll(newNode)
+        childrenInternal.addAll(newNode)
         newNode.forEach { node ->
             node.parent = this as T
 
@@ -464,7 +466,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             "Text node cannot have children"
         }
 
-        _children.addAll(0, newNode.toList())
+        childrenInternal.addAll(0, newNode.toList())
         newNode.forEach { node ->
             node.parent = this as T
 
@@ -475,6 +477,21 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
     }
 
     /**
+     * Inserts the [newNode] before the [targetNode].
+     */
+    fun insertBefore(targetNode: T, newNode: T) {
+        check(!isText) {
+            "Text node cannot have children"
+        }
+
+        val offset = childrenInternal.indexOf(targetNode).takeUnless { it == -1 }
+            ?: throw NoSuchElementException("child not found")
+
+        insertAtInternal(offset, newNode)
+        newNode.updateAncestorSize()
+    }
+
+    /**
      * Inserts the [newNode] after the [targetNode].
      */
     fun insertAfter(targetNode: T, newNode: T) {
@@ -482,7 +499,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             "Text node cannot have children"
         }
 
-        val offset = _children.indexOf(targetNode).takeUnless { it == -1 }
+        val offset = childrenInternal.indexOf(targetNode).takeUnless { it == -1 }
             ?: throw NoSuchElementException("child not found")
 
         insertAtInternal(offset + 1, newNode)
@@ -506,7 +523,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             "Text node cannot have children"
         }
 
-        _children.add(offset, newNode)
+        childrenInternal.add(offset, newNode)
         newNode.parent = this as T
     }
 
@@ -518,10 +535,10 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             "Text node cannot have children"
         }
 
-        val offset = _children.indexOf(child).takeUnless { it == -1 }
+        val offset = childrenInternal.indexOf(child).takeUnless { it == -1 }
             ?: throw NoSuchElementException("child not found")
 
-        _children.removeAt(offset)
+        childrenInternal.removeAt(offset)
         child.parent = null
     }
 
@@ -546,20 +563,20 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         parent?.insertAfterInternal(this as T, clone)
         clone.updateAncestorSize()
 
-        val leftChildren = _children.take(offset)
-        val rightChildren = _children.drop(offset)
-        _children.clear()
-        _children.addAll(leftChildren)
-        clone._children.clear()
-        clone._children.addAll(rightChildren)
-        size = _children.fold(0) { acc, child ->
+        val leftChildren = childrenInternal.take(offset)
+        val rightChildren = childrenInternal.drop(offset)
+        childrenInternal.clear()
+        childrenInternal.addAll(leftChildren)
+        clone.childrenInternal.clear()
+        clone.childrenInternal.addAll(rightChildren)
+        size = childrenInternal.fold(0) { acc, child ->
             acc + child.paddedSize
         }
-        clone.size = clone._children.fold(0) { acc, child ->
+        clone.size = clone.childrenInternal.fold(0) { acc, child ->
             acc + child.paddedSize
         }
 
-        clone._children.forEach { child ->
+        clone.childrenInternal.forEach { child ->
             child.parent = clone
         }
 
@@ -571,7 +588,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             "Text node cannot have children"
         }
 
-        val offset = _children.indexOf(targetNode).takeUnless { it == -1 }
+        val offset = childrenInternal.indexOf(targetNode).takeUnless { it == -1 }
             ?: throw NoSuchElementException("child not found")
         insertAtInternal(offset + 1, newNode)
     }

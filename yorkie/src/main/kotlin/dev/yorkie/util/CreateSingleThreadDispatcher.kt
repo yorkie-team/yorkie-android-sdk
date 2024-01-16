@@ -1,10 +1,10 @@
 package dev.yorkie.util
 
-import kotlinx.coroutines.asCoroutineDispatcher
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.asCoroutineDispatcher
 
 internal fun createSingleThreadDispatcher(threadName: String) = ThreadPoolExecutor(
     0,

@@ -621,10 +621,7 @@ internal class CrdtTree(
     /**
      * Converts the given position range to the path range.
      */
-    fun posRangeToIndexRange(
-        range: TreePosRange,
-        executedAt: TimeTicket,
-    ): Pair<Int, Int> {
+    fun posRangeToIndexRange(range: TreePosRange, executedAt: TimeTicket): Pair<Int, Int> {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
         return toIndex(fromParent, fromLeft) to toIndex(toParent, toLeft)
@@ -783,7 +780,11 @@ internal data class CrdtTreeNode private constructor(
         return split
     }
 
-    fun setAttribute(key: String, value: String, executedAt: TimeTicket) {
+    fun setAttribute(
+        key: String,
+        value: String,
+        executedAt: TimeTicket,
+    ) {
         _attributes.set(key, value, executedAt)
     }
 
@@ -811,14 +812,14 @@ internal data class CrdtTreeNode private constructor(
     fun deepCopy(): CrdtTreeNode {
         return copy(
             _value = _value,
-            childNodes = _children.map { child ->
+            childNodes = childrenInternal.map { child ->
                 child.deepCopy()
             }.toMutableList(),
             _attributes = _attributes.deepCopy(),
         ).also {
             it.size = size
             it.removedAt = removedAt
-            it._children.forEach { child ->
+            it.childrenInternal.forEach { child ->
                 child.parent = it
             }
         }

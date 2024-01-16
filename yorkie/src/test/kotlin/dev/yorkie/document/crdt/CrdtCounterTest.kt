@@ -2,14 +2,14 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
-import org.junit.Test
 import java.nio.ByteBuffer
 import java.util.Date
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Test
 
 class CrdtCounterTest {
 

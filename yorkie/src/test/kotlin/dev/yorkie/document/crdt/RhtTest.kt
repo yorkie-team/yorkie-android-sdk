@@ -1,12 +1,12 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.Before
+import org.junit.Test
 
 class RhtTest {
     private lateinit var target: Rht

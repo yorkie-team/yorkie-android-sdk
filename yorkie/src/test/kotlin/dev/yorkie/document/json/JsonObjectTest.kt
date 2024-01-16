@@ -6,12 +6,12 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.TimeTicket
+import kotlin.test.assertIs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertIs
 
 class JsonObjectTest {
     private lateinit var target: JsonObject

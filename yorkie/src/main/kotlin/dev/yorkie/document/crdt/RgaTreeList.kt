@@ -67,10 +67,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
      * It passes through nodes created after [executedAt] from the
      * given node and returns the next node.
      */
-    private fun findNextBeforeExecutedAt(
-        createdAt: TimeTicket,
-        executedAt: TimeTicket,
-    ): Node {
+    private fun findNextBeforeExecutedAt(createdAt: TimeTicket, executedAt: TimeTicket): Node {
         var node = nodeMapByCreatedAt[createdAt]
             ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
 

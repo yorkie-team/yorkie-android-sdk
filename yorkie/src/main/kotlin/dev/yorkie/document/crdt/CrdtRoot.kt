@@ -108,16 +108,18 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     fun getGarbageLength(): Int {
         var count = 0
+        val seen = mutableSetOf<TimeTicket>()
         removedElementSetByCreatedAt.forEach { createdAt ->
-            count++
+            seen += createdAt
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
             if (pair.element is CrdtContainer) {
-                pair.element.getDescendants { _, _ ->
-                    count++
+                pair.element.getDescendants { element, _ ->
+                    seen += element.createdAt
                     false
                 }
             }
         }
+        count += seen.size
 
         elementHasRemovedNodesSetByCreatedAt.forEach { createdAt ->
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach

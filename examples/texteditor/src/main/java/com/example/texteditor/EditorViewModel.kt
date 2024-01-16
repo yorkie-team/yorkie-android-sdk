@@ -12,6 +12,7 @@ import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
+import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,7 +23,6 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.json.JSONArray
-import kotlin.random.Random
 import dev.yorkie.document.RgaTreeSplitPosStruct as TextPosStructure
 
 class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
@@ -100,7 +100,11 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
         }
     }
 
-    override fun handleEditEvent(from: Int, to: Int, content: CharSequence) {
+    override fun handleEditEvent(
+        from: Int,
+        to: Int,
+        content: CharSequence,
+    ) {
         viewModelScope.launch {
             document.updateAsync { root, _ ->
                 val range = root.getAs<JsonText>(TEXT_KEY).edit(from, to, content.toString())

@@ -49,7 +49,7 @@ internal object JsonStringifier {
             is CrdtObject -> {
                 buffer.append("{")
                 forEach { (key, value) ->
-                    buffer.append(""""$key":""")
+                    buffer.append(""""${escapeString(key)}":""")
                     value.toJsonStringInternal(buffer)
                     if (key != last().first) {
                         buffer.append(",")

@@ -202,8 +202,8 @@ $dokka.location:dev.yorkie.document.json/JsonTree.TextNode/value/#/PointingToDec
 $dokka.location:dev.yorkie.document.json/JsonTree.TreeNode///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-tree-node/index.html
 $dokka.location:dev.yorkie.document.json/JsonTree.TreeNode/type/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-tree-node/type.html
 $dokka.location:dev.yorkie.document.json/JsonTree///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/index.html
-$dokka.location:dev.yorkie.document.json/JsonTree/edit/#kotlin.Int#kotlin.Int#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit.html
-$dokka.location:dev.yorkie.document.json/JsonTree/editByPath/#kotlin.collections.List[kotlin.Int]#kotlin.collections.List[kotlin.Int]#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit-by-path.html
+$dokka.location:dev.yorkie.document.json/JsonTree/edit/#kotlin.Int#kotlin.Int#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit.html
+$dokka.location:dev.yorkie.document.json/JsonTree/editByPath/#kotlin.collections.List[kotlin.Int]#kotlin.collections.List[kotlin.Int]#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit-by-path.html
 $dokka.location:dev.yorkie.document.json/JsonTree/indexRangeToPosRange/#kotlin.Pair[kotlin.Int,kotlin.Int]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/index-range-to-pos-range.html
 $dokka.location:dev.yorkie.document.json/JsonTree/indexToPath/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/index-to-path.html
 $dokka.location:dev.yorkie.document.json/JsonTree/pathRangeToPosRange/#kotlin.Pair[kotlin.collections.List[kotlin.Int],kotlin.collections.List[kotlin.Int]]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/path-range-to-pos-range.html
@@ -212,7 +212,6 @@ $dokka.location:dev.yorkie.document.json/JsonTree/posRangeToIndexRange/#kotlin.P
 $dokka.location:dev.yorkie.document.json/JsonTree/posRangeToPathRange/#kotlin.Pair[dev.yorkie.document.CrdtTreePosStruct,dev.yorkie.document.CrdtTreePosStruct]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/pos-range-to-path-range.html
 $dokka.location:dev.yorkie.document.json/JsonTree/rootTreeNode/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/root-tree-node.html
 $dokka.location:dev.yorkie.document.json/JsonTree/size/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/size.html
-$dokka.location:dev.yorkie.document.json/JsonTree/split/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/split.html
 $dokka.location:dev.yorkie.document.json/JsonTree/style/#kotlin.Int#kotlin.Int#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/style.html
 $dokka.location:dev.yorkie.document.json/JsonTree/styleByPath/#kotlin.collections.List[kotlin.Int]#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/style-by-path.html
 $dokka.location:dev.yorkie.document.json/JsonTree/toXml/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/to-xml.html
@@ -281,11 +280,12 @@ $dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/path/#/P
 $dokka.location:dev.yorkie.document.operation/OperationInfo.StyleOpInfo/to/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-style-op-info/to.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TextOperationInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-text-operation-info/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/index.html
-$dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/TreeEditOpInfo/#kotlin.Int#kotlin.Int#kotlin.collections.List[kotlin.Int]#kotlin.collections.List[kotlin.Int]#kotlin.collections.List[dev.yorkie.document.json.JsonTree.TreeNode]?#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/-tree-edit-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/TreeEditOpInfo/#kotlin.Int#kotlin.Int#kotlin.collections.List[kotlin.Int]#kotlin.collections.List[kotlin.Int]#kotlin.collections.List[dev.yorkie.document.json.JsonTree.TreeNode]?#kotlin.Int#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/-tree-edit-op-info.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/from/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/from.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/fromPath/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/from-path.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/nodes/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/nodes.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/path.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/splitLevel/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/split-level.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/to/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/to.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeEditOpInfo/toPath/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-edit-op-info/to-path.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeOperationInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-operation-info/index.html

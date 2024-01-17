@@ -84,6 +84,7 @@ public sealed class OperationInfo {
         val fromPath: List<Int>,
         val toPath: List<Int>,
         val nodes: List<JsonTree.TreeNode>?,
+        val splitLevel: Int,
         override var path: String = INITIAL_PATH,
     ) : OperationInfo(), TreeOperationInfo
 

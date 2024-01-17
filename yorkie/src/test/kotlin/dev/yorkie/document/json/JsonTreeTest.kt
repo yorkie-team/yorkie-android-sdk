@@ -316,6 +316,7 @@ class JsonTreeTest {
                     listOf(0, 0),
                     listOf(0, 0),
                     listOf(JsonTree.TextNode("X")),
+                    0,
                     "$.t",
                 ),
                 // TODO(7hong13): need to check whether toPath is correctly passed
@@ -352,7 +353,7 @@ class JsonTreeTest {
             )
         }.await()
         assertEquals(
-            """<doc><tc><p><tn>ab</tn></p></tc></doc>""",
+            "<doc><tc><p><tn>ab</tn></p></tc></doc>",
             document.getRoot().tree().toXml(),
         )
 
@@ -383,6 +384,7 @@ class JsonTreeTest {
                     listOf(0, 0, 0, 1),
                     listOf(0, 0, 0, 1),
                     listOf(JsonTree.TextNode("X")),
+                    0,
                     "$.t",
                 ),
                 // TODO(7hong13): need to check whether toPath is correctly passed
@@ -706,8 +708,7 @@ class JsonTreeTest {
             )
 
             root.tree().edit(2, 18)
-            // TODO(7hong13): should be resolved after implementing Tree.move()
-            // assertEquals("<doc><p>a</p><p>af</p></doc>", root.tree().toXml())
+            assertEquals("<doc><p>af</p></doc>", root.tree().toXml())
         }.await()
     }
 

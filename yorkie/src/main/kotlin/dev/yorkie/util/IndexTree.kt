@@ -1,6 +1,7 @@
 package dev.yorkie.util
 
 import com.google.common.annotations.VisibleForTesting
+import dev.yorkie.document.time.TimeTicket
 
 /**
  * About `index`, `path`, `size` and `TreePos` in crdt.IndexTree.
@@ -64,25 +65,28 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     /**
      * Returns the nodes between the given range.
      */
-    fun nodesBetween(
+    fun tokensBetween(
         from: Int,
         to: Int,
-        action: (T, TagContained) -> Unit,
+        action: (TreeToken<T>, Boolean) -> Unit,
     ) {
-        nodesBetweenInternal(root, from, to, action)
+        tokensBetweenInternal(root, from, to, action)
     }
 
     /**
-     * Iterates the nodes between the given range.
-     * If the given range is collapsed, the callback is not called.
-     * It traverses the tree with postorder traversal.
+     * Iterates the tokens between the given range.
+     * For example, if the tree is <p><i>abc</i></p>, the tokens are
+     * [p, Start], [i, Start], [abc, Text], [i, End], [p, End].
+     *
+     *  If the given range is collapsed, the callback is not called.
+     *  It traverses the tree based on the concept of token.
      * NOTE(sejongk): Nodes should not be removed in callback, because it leads to wrong behaviors.
      */
-    private fun nodesBetweenInternal(
+    private fun tokensBetweenInternal(
         root: T,
         from: Int,
         to: Int,
-        action: ((T, TagContained) -> Unit),
+        action: ((TreeToken<T>, Boolean) -> Unit),
     ) {
         if (from > to) {
             throw IllegalArgumentException("from is greater than to: $from > $to")
@@ -104,22 +108,24 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
                 // the opening tag to the closing tag.
                 val fromChild = if (child.isText) from - pos else from - pos - 1
                 val toChild = if (child.isText) to - pos else to - pos - 1
-                nodesBetweenInternal(
+
+                val startContained = !child.isText && fromChild < 0
+                val endContained = !child.isText && toChild > child.size
+                if (child.isText || startContained) {
+                    action(
+                        TreeToken(child, if (child.isText) TokenType.Text else TokenType.Start),
+                        endContained,
+                    )
+                }
+                tokensBetweenInternal(
                     child,
                     fromChild.coerceAtLeast(0),
                     toChild.coerceAtMost(child.size),
                     action,
                 )
 
-                // If the range spans outside the child,
-                // the callback is called with the child.
-                if (fromChild < 0 || toChild > child.size || child.isText) {
-                    val contained = when {
-                        (fromChild < 0 && toChild > child.size) || child.isText -> TagContained.All
-                        fromChild < 0 -> TagContained.Opening
-                        else -> TagContained.Closing
-                    }
-                    action.invoke(child, contained)
+                if (endContained) {
+                    action(TreeToken(child, TokenType.End), true)
                 }
             }
             pos += child.paddedSize
@@ -131,28 +137,6 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
      */
     fun traverse(action: ((T, Int) -> Unit)) {
         traverse(root, 0, action)
-    }
-
-    /**
-     * Splits the node at the given [index].
-     */
-    fun split(index: Int, depth: Int = 1): TreePos<T> {
-        val treePos = findTreePos(index, true)
-
-        var node: T? = treePos.node
-        var offset = treePos.offset
-        repeat(depth) {
-            val currentNode = node
-            if (currentNode == null || currentNode == root) return@repeat
-
-            currentNode.split(offset, 0)
-
-            val nextOffset = currentNode.parent?.findOffset(currentNode) ?: return@repeat
-            offset = if (offset == 0) nextOffset else nextOffset + 1
-            node = currentNode.parent
-        }
-
-        return treePos
     }
 
     /**
@@ -300,14 +284,6 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         return TreePos(updatedNode, updatedPathElement)
     }
 
-    private fun findLeftMost(node: T): T {
-        return if (node.isText || node.children.isEmpty()) {
-            node
-        } else {
-            findLeftMost(node.children.first())
-        }
-    }
-
     /**
      * Returns the index of the given tree [pos].
      */
@@ -356,13 +332,15 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     }
 }
 
+internal data class TreeToken<T>(val node: T, val tokenType: TokenType)
+
 /**
- * [TagContained] represents whether the opening or closing tag of a element is selected.
+ * [TokenType] represents the type of token in XML representation.
  */
-internal enum class TagContained {
-    All,
-    Opening,
-    Closing,
+internal enum class TokenType {
+    Start,
+    End,
+    Text,
 }
 
 /**
@@ -448,24 +426,6 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         }
     }
 
-    /**
-     * Returns true if the node is an ancestor of the [targetNode].
-     */
-    fun isAncestorOf(targetNode: T): Boolean {
-        if (this == targetNode) {
-            return false
-        }
-
-        var node = targetNode
-        while (node.parent != null) {
-            if (node.parent == this) {
-                return true
-            }
-            node = node.parent ?: break
-        }
-        return false
-    }
-
     fun findOffset(node: T): Int {
         check(!isText) {
             "Text node cannot have children"
@@ -478,27 +438,6 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             return allChildren.take(index).filterNot { it.isRemoved }.size
         }
         return children.indexOf(node)
-    }
-
-    /**
-     * Returns offset of the given descendant node in this node.
-     * If the given [node] is not a descendant of this node, it returns -1.
-     */
-    fun findBranchOffset(node: T): Int {
-        check(!isText) {
-            "Text node cannot have children"
-        }
-
-        var current: IndexTreeNode<T>? = node
-        while (current != null) {
-            val offset = childrenInternal.indexOf(current)
-            if (offset != -1) {
-                return offset
-            }
-            current = current.parent
-        }
-
-        return -1
     }
 
     /**
@@ -603,39 +542,28 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         child.parent = null
     }
 
-    /**
-     * Splits the node at the given [offset].
-     */
-    fun split(offset: Int, absOffset: Int): T? {
-        return if (isText) {
-            splitText(offset, absOffset)
-        } else {
-            splitElement(offset)
-        }
-    }
-
-    private fun splitText(offset: Int, absOffset: Int): T? {
+    fun splitText(offset: Int, absOffset: Int): T? {
         if (offset == 0 || offset == size) {
             return null
         }
 
         val leftValue = value.substring(0, offset)
-        val rightValue = value.substring(offset).takeUnless { it.isEmpty() } ?: return null
+        val rightValue = value.substring(offset).ifEmpty { return null }
         value = leftValue
 
-        val rightNode = clone(offset + absOffset)
+        val rightNode = cloneText(offset + absOffset)
         rightNode.value = rightValue
         parent?.insertAfterInternal(this as T, rightNode)
 
         return rightNode
     }
 
-    private fun splitElement(offset: Int): T {
-        val clone = clone(offset)
+    fun splitElement(offset: Int, issueTimeTicket: () -> TimeTicket): T {
+        val clone = cloneElement(issueTimeTicket)
         parent?.insertAfterInternal(this as T, clone)
         clone.updateAncestorSize()
 
-        val leftChildren = childrenInternal.subList(0, offset)
+        val leftChildren = childrenInternal.take(offset)
         val rightChildren = childrenInternal.drop(offset)
         childrenInternal.clear()
         childrenInternal.addAll(leftChildren)
@@ -665,7 +593,15 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         insertAtInternal(offset + 1, newNode)
     }
 
-    abstract fun clone(offset: Int): T
+    /**
+     * Clones the text node with the given id and value.
+     */
+    abstract fun cloneText(offset: Int): T
+
+    /**
+     * Clones the element node with the given [issueTimeTicket] lambda and value.
+     */
+    abstract fun cloneElement(issueTimeTicket: () -> TimeTicket): T
 
     companion object {
         /**

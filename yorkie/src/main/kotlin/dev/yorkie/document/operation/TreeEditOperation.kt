@@ -18,6 +18,7 @@ internal data class TreeEditOperation(
     val toPos: CrdtTreePos,
     val maxCreatedAtMapByActor: Map<ActorID, TimeTicket>,
     val contents: List<CrdtTreeNode>?,
+    val splitLevel: Int,
     override var executedAt: TimeTicket,
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
@@ -32,11 +33,15 @@ internal data class TreeEditOperation(
             YorkieLogger.e(TAG, "fail to execute, only Tree can execute edit")
             return emptyList()
         }
+
+        val editedAt = executedAt
         val changes =
             tree.edit(
                 fromPos to toPos,
                 contents?.map(CrdtTreeNode::deepCopy),
-                executedAt,
+                splitLevel,
+                editedAt,
+                issueTimeTicket(editedAt),
                 maxCreatedAtMapByActor,
             ).first
 
@@ -51,9 +56,18 @@ internal data class TreeEditOperation(
                 it.fromPath,
                 it.toPath,
                 it.value?.map(TreeNode::toJsonTreeNode),
+                it.splitLevel,
                 root.createPath(parentCreatedAt),
             )
         }
+    }
+
+    private fun issueTimeTicket(executedAt: TimeTicket): () -> TimeTicket {
+        var delimiter = executedAt.delimiter
+        if (contents != null) {
+            delimiter += contents.size.toUInt()
+        }
+        return { TimeTicket(executedAt.lamport, ++delimiter, executedAt.actorID) }
     }
 
     companion object {

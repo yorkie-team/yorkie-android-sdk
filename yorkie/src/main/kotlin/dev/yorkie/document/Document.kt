@@ -121,7 +121,7 @@ public class Document(public val key: Key, private val options: Options = Option
                 val proxy = JsonObject(context, clone.root.rootObject)
                 updater.invoke(
                     proxy,
-                    Presence(context, clone.presences[changeID.actor] ?: emptyMap()),
+                    Presence(context, clone.presences[changeID.actor].orEmpty()),
                 )
             }.onFailure {
                 this@Document.clone = null

@@ -83,6 +83,7 @@ public class JsonTree internal constructor(
         fromPath: List<Int>,
         toPath: List<Int>,
         vararg contents: TreeNode,
+        splitLevel: Int = 0,
     ) {
         require(fromPath.size == toPath.size) {
             "path length should be equal"
@@ -93,7 +94,7 @@ public class JsonTree internal constructor(
 
         val fromPos = target.pathToPos(fromPath)
         val toPos = target.pathToPos(toPath)
-        editByPos(fromPos, toPos, contents.toList())
+        editInternal(fromPos, toPos, contents.toList(), splitLevel)
     }
 
     /**
@@ -103,6 +104,7 @@ public class JsonTree internal constructor(
         fromIndex: Int,
         toIndex: Int,
         vararg contents: TreeNode,
+        splitLevel: Int = 0,
     ) {
         require(fromIndex <= toIndex) {
             "from should be less than or equal to to"
@@ -110,13 +112,14 @@ public class JsonTree internal constructor(
 
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
-        editByPos(fromPos, toPos, contents.toList())
+        editInternal(fromPos, toPos, contents.toList(), splitLevel)
     }
 
-    private fun editByPos(
+    private fun editInternal(
         fromPos: CrdtTreePos,
         toPos: CrdtTreePos,
         contents: List<TreeNode>,
+        splitLevel: Int = 0,
     ) {
         if (contents.isNotEmpty()) {
             validateTreeNodes(contents)
@@ -136,8 +139,10 @@ public class JsonTree internal constructor(
         }
         val (_, maxCreatedAtMapByActor) = target.edit(
             fromPos to toPos,
-            crdtNodes.map { it.deepCopy() }.ifEmpty { null },
+            crdtNodes.map(CrdtTreeNode::deepCopy).ifEmpty { null },
+            splitLevel,
             ticket,
+            context::issueTimeTicket,
         )
 
         context.push(
@@ -147,6 +152,7 @@ public class JsonTree internal constructor(
                 toPos,
                 maxCreatedAtMapByActor,
                 crdtNodes.ifEmpty { null },
+                splitLevel,
                 ticket,
             ),
         )
@@ -189,13 +195,6 @@ public class JsonTree internal constructor(
      */
     public fun pathToIndex(path: List<Int>): Int {
         return target.pathToIndex(path)
-    }
-
-    /**
-     * Splits this tree at the given index.
-     */
-    public fun split(index: Int, depth: Int) {
-        target.split(index, depth)
     }
 
     /**

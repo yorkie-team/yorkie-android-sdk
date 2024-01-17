@@ -3,17 +3,34 @@ package dev.yorkie.document.json
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import dev.yorkie.core.Client
+import dev.yorkie.core.GENERAL_TIMEOUT
 import dev.yorkie.core.Presence
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.LocalChange
+import dev.yorkie.document.Document.Event.RemoteChange
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import kotlin.test.assertEquals
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @LargeTest
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class JsonTreeTest {
 
@@ -478,64 +495,67 @@ class JsonTreeTest {
     }
 
     @Test
-    fun test_insert_side_by_side_elements_into_left_concurrently() {
+    fun test_contained_split_and_split_at_the_same_position() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
                         element("r") {
-                            element("p")
+                            element("p") {
+                                text { "ab" }
+                            }
                         },
                     )
                 },
                 Updater(c2, d2),
             )
-            assertTreesXmlEquals("<r><p></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(0, 0, element("b"))
+                    root.rootTree().edit(2, 2, splitLevel = 1)
                 },
                 Updater(c2, d2) { root, _ ->
-                    root.rootTree().edit(0, 0, element("i"))
+                    root.rootTree().edit(2, 2, splitLevel = 1)
                 },
             ) {
-                assertEquals("<r><b></b><p></p></r>", d1.getRoot().rootTree().toXml())
-                assertEquals("<r><i></i><p></p></r>", d2.getRoot().rootTree().toXml())
+                assertTreesXmlEquals("<r><p>a</p><p>b</p></r>", d1, d2)
             }
-            assertTreesXmlEquals("<r><i></i><b></b><p></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>a</p><p></p><p>b</p></r>", d1, d2)
         }
     }
 
     @Test
-    fun test_insert_side_by_side_elements_into_middle_concurrently() {
+    fun test_contained_split_and_split_at_different_positions_on_the_same_node() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
                         element("r") {
-                            element("p")
+                            element("p") {
+                                text { "abc" }
+                            }
                         },
                     )
                 },
                 Updater(c2, d2),
             )
-            assertTreesXmlEquals("<r><p></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>abc</p></r>", d1, d2)
 
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(1, 1, element("b"))
+                    root.rootTree().edit(2, 2, splitLevel = 1)
                 },
                 Updater(c2, d2) { root, _ ->
-                    root.rootTree().edit(1, 1, element("i"))
+                    root.rootTree().edit(3, 3, splitLevel = 1)
                 },
             ) {
-                assertEquals("<r><p><b></b></p></r>", d1.getRoot().rootTree().toXml())
-                assertEquals("<r><p><i></i></p></r>", d2.getRoot().rootTree().toXml())
+                assertTreesXmlEquals("<r><p>a</p><p>bc</p></r>", d1)
+                assertTreesXmlEquals("<r><p>ab</p><p>c</p></r>", d2)
             }
-            assertTreesXmlEquals("<r><p><i></i><b></b></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>a</p><p>b</p><p>c</p></r>", d1, d2)
         }
     }
 
@@ -571,7 +591,7 @@ class JsonTreeTest {
     }
 
     @Test
-    fun test_insert_and_delete_side_by_side_elements_concurrently() {
+    fun test_contained_split_and_insert_into_the_split_position() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
@@ -579,32 +599,32 @@ class JsonTreeTest {
                         "t",
                         element("r") {
                             element("p") {
-                                element("b")
+                                text { "ab" }
                             }
                         },
                     )
                 },
                 Updater(c2, d2),
             )
-            assertTreesXmlEquals("<r><p><b></b></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(1, 3)
+                    root.rootTree().edit(2, 2, splitLevel = 1)
                 },
                 Updater(c2, d2) { root, _ ->
-                    root.rootTree().edit(1, 1, element("i"))
+                    root.rootTree().edit(2, 2, text { "c" })
                 },
             ) {
-                assertEquals("<r><p></p></r>", d1.getRoot().rootTree().toXml())
-                assertEquals("<r><p><i></i><b></b></p></r>", d2.getRoot().rootTree().toXml())
+                assertTreesXmlEquals("<r><p>a</p><p>b</p></r>", d1)
+                assertTreesXmlEquals("<r><p>acb</p></r>", d2)
             }
-            assertTreesXmlEquals("<r><p><i></i></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>ac</p><p>b</p></r>", d1, d2)
         }
     }
 
     @Test
-    fun test_delete_and_insert_side_by_side_elements_concurrently() {
+    fun test_contained_split_and_insert_into_original_node() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
@@ -612,27 +632,94 @@ class JsonTreeTest {
                         "t",
                         element("r") {
                             element("p") {
-                                element("b")
+                                text { "ab" }
                             }
                         },
                     )
                 },
                 Updater(c2, d2),
             )
-            assertTreesXmlEquals("<r><p><b></b></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(1, 3)
+                    root.rootTree().edit(2, 2, splitLevel = 1)
                 },
                 Updater(c2, d2) { root, _ ->
-                    root.rootTree().edit(3, 3, element("i"))
+                    root.rootTree().edit(1, 1, text { "c" })
                 },
             ) {
-                assertEquals("<r><p></p></r>", d1.getRoot().rootTree().toXml())
-                assertEquals("<r><p><b></b><i></i></p></r>", d2.getRoot().rootTree().toXml())
+                assertTreesXmlEquals("<r><p>a</p><p>b</p></r>", d1)
+                assertTreesXmlEquals("<r><p>cab</p></r>", d2)
             }
-            assertTreesXmlEquals("<r><p><i></i></p></r>", d1, d2)
+            assertTreesXmlEquals("<r><p>ca</p><p>b</p></r>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_contained_split_and_insert_into_split_node() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("p") {
+                                text { "ab" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(2, 2, splitLevel = 1)
+                },
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(3, 3, text { "c" })
+                },
+            ) {
+                assertTreesXmlEquals("<r><p>a</p><p>b</p></r>", d1)
+                assertTreesXmlEquals("<r><p>abc</p></r>", d2)
+            }
+            assertTreesXmlEquals("<r><p>a</p><p>bc</p></r>", d2)
+        }
+    }
+
+    @Test
+    fun test_contained_split_and_delete_contents_in_split_node() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("p") {
+                                text { "ab" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(2, 2, splitLevel = 1)
+                },
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(2, 3)
+                },
+            ) {
+                assertTreesXmlEquals("<r><p>a</p><p>b</p></r>", d1)
+                assertTreesXmlEquals("<r><p>a</p></r>", d2)
+            }
+
+            assertTreesXmlEquals("<r><p>a</p><p></p></r>", d1, d2)
         }
     }
 
@@ -1458,7 +1545,7 @@ class JsonTreeTest {
 
     @Test
     fun test_split_and_merge_with_empty_paragraph_left_and_multiple_split_level_left() {
-        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "t",
@@ -1552,6 +1639,10 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>ab</p></doc>", d1)
             }
 
+            val ops1 = mutableListOf<SimpleTreeEditOpInfo>()
+            val ops2 = mutableListOf<SimpleTreeEditOpInfo>()
+            val jobs = listOf(collectTreeEditOpInfos(d1, ops1), collectTreeEditOpInfos(d2, ops2))
+
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(0, 4)
@@ -1564,6 +1655,13 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>b</p></doc>", d2)
             }
             assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+
+            assertTreeEditOpInfosEquals(listOf(SimpleTreeEditOpInfo(0, 4)), ops1)
+            assertTreeEditOpInfosEquals(
+                listOf(SimpleTreeEditOpInfo(1, 2), SimpleTreeEditOpInfo(0, 3)),
+                ops2,
+            )
+            jobs.forEach(Job::cancel)
         }
     }
 
@@ -1586,6 +1684,10 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>ab</p></doc>", d1)
             }
 
+            val ops1 = mutableListOf<SimpleTreeEditOpInfo>()
+            val ops2 = mutableListOf<SimpleTreeEditOpInfo>()
+            val jobs = listOf(collectTreeEditOpInfos(d1, ops1), collectTreeEditOpInfos(d2, ops2))
+
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(1, 3)
@@ -1598,6 +1700,23 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>acb</p></doc>", d2)
             }
             assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+
+            assertTreeEditOpInfosEquals(
+                listOf(
+                    SimpleTreeEditOpInfo(1, 3),
+                    SimpleTreeEditOpInfo(1, 1, text { "c" }),
+                ),
+                ops1,
+            )
+            assertTreeEditOpInfosEquals(
+                listOf(
+                    SimpleTreeEditOpInfo(2, 2, text { "c" }),
+                    SimpleTreeEditOpInfo(1, 2),
+                    SimpleTreeEditOpInfo(3, 4),
+                ),
+                ops2,
+            )
+            jobs.forEach(Job::cancel)
         }
     }
 
@@ -1620,6 +1739,10 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>ab</p></doc>", d1)
             }
 
+            val ops1 = mutableListOf<SimpleTreeEditOpInfo>()
+            val ops2 = mutableListOf<SimpleTreeEditOpInfo>()
+            val jobs = listOf(collectTreeEditOpInfos(d1, ops1), collectTreeEditOpInfos(d2, ops2))
+
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(0, 4)
@@ -1632,6 +1755,13 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>acb</p></doc>", d2)
             }
             assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+
+            assertTreeEditOpInfosEquals(listOf(SimpleTreeEditOpInfo(0, 4)), ops1)
+            assertTreeEditOpInfosEquals(
+                listOf(SimpleTreeEditOpInfo(2, 2, text { "c" }), SimpleTreeEditOpInfo(0, 5)),
+                ops2,
+            )
+            jobs.forEach(Job::cancel)
         }
     }
 
@@ -1654,6 +1784,10 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>a</p></doc>", d1)
             }
 
+            val ops1 = mutableListOf<SimpleTreeEditOpInfo>()
+            val ops2 = mutableListOf<SimpleTreeEditOpInfo>()
+            val jobs = listOf(collectTreeEditOpInfos(d1, ops1), collectTreeEditOpInfos(d2, ops2))
+
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(1, 2, text { "b" })
@@ -1666,6 +1800,61 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>ac</p></doc>", d2)
             }
             assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+
+            assertTreeEditOpInfosEquals(
+                listOf(
+                    SimpleTreeEditOpInfo(1, 2, text { "b" }),
+                    SimpleTreeEditOpInfo(2, 2, text { "c" }),
+                ),
+                ops1,
+            )
+            assertTreeEditOpInfosEquals(
+                listOf(
+                    SimpleTreeEditOpInfo(2, 2, text { "c" }),
+                    SimpleTreeEditOpInfo(1, 2, text { "b" }),
+                ),
+                ops2,
+            )
+            jobs.forEach(Job::cancel)
+        }
+    }
+
+    @Test
+    fun test_overlapping_merge_and_merge() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("p") {
+                                text { "a" }
+                            }
+                            element("p") {
+                                text { "b" }
+                            }
+                            element("p") {
+                                text { "c" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<r><p>a</p><p>b</p><p>c</p></r>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(2, 4)
+                },
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(5, 7)
+                },
+            ) {
+                assertTreesXmlEquals("<r><p>ab</p><p>c</p></r>", d1)
+                assertTreesXmlEquals("<r><p>a</p><p>bc</p></r>", d2)
+            }
+            assertTreesXmlEquals("<r><p>abc</p></r>", d1, d2)
         }
     }
 
@@ -1706,10 +1895,45 @@ class JsonTreeTest {
             }
         }
 
+        fun CoroutineScope.collectTreeEditOpInfos(
+            document: Document,
+            ops: MutableList<SimpleTreeEditOpInfo>,
+        ) = launch(start = CoroutineStart.UNDISPATCHED) {
+            document.events("$.t")
+                .flatMapConcat { event ->
+                    when (event) {
+                        is LocalChange -> event.changeInfo.operations.asFlow()
+                        is RemoteChange -> event.changeInfo.operations.asFlow()
+                        else -> emptyFlow()
+                    }
+                }
+                .filterIsInstance<TreeEditOpInfo>()
+                .map { SimpleTreeEditOpInfo(it.from, it.to, it.nodes?.firstOrNull()) }
+                .collect(ops::add)
+        }
+
+        suspend fun assertTreeEditOpInfosEquals(
+            expected: List<SimpleTreeEditOpInfo>,
+            actual: List<SimpleTreeEditOpInfo>,
+        ) {
+            withTimeout(GENERAL_TIMEOUT) {
+                while (actual.size < expected.size) {
+                    delay(50)
+                }
+            }
+            assertEquals(expected, actual)
+        }
+
         data class Updater(
             val client: Client,
             val document: Document,
             val updater: (suspend (JsonObject, Presence) -> Unit)? = null,
+        )
+
+        data class SimpleTreeEditOpInfo(
+            val from: Int,
+            val to: Int,
+            val nodes: JsonTree.TreeNode? = null,
         )
     }
 }

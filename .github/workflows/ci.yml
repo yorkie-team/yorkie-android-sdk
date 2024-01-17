@@ -48,9 +48,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-level: [ 23 ]
+        api-level: [ 26 ]
         target: [ google_apis ]
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v3
@@ -61,11 +61,7 @@ jobs:
           cache: 'gradle'
       - run: chmod +x gradlew
       - uses: gradle/gradle-build-action@v2
-      - name: Setup Docker on macOS
-        uses: douglascamata/setup-docker-macos-action@main
-      - run: |
-          docker system prune --all --force
-          docker-compose -f docker/docker-compose-ci.yml up --build -d
+      - run: docker-compose -f docker/docker-compose-ci.yml up --build -d
       - uses: actions/cache@v3
         id: avd-cache
         with:
@@ -96,11 +92,12 @@ jobs:
           emulator-boot-timeout: 12000
           disable-animations: true
           script: |
+            adb shell pm list packages | grep dev.yorkie.test && adb uninstall dev.yorkie.test || true;
             ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
             ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.annotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
-      - if: ${{ matrix.api-level == 23 }}
+      - if: ${{ matrix.api-level == 26 }}
         run: ./gradlew yorkie:jacocoDebugTestReport
-      - if: ${{ matrix.api-level == 23 }}
+      - if: ${{ matrix.api-level == 26 }}
         uses: actions/upload-artifact@v3
         with:
           name: android-test-artifact

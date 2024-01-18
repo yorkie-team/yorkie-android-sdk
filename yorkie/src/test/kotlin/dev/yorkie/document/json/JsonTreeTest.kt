@@ -319,12 +319,10 @@ class JsonTreeTest {
                     0,
                     "$.t",
                 ),
-                // TODO(7hong13): need to check whether toPath is correctly passed
                 TreeStyleOpInfo(
                     0,
                     1,
                     listOf(0),
-                    listOf(0, 0),
                     mapOf("a" to "b"),
                     "$.t",
                 ),
@@ -387,12 +385,10 @@ class JsonTreeTest {
                     0,
                     "$.t",
                 ),
-                // TODO(7hong13): need to check whether toPath is correctly passed
                 TreeStyleOpInfo(
                     2,
                     3,
                     listOf(0, 0, 0),
-                    listOf(0, 0, 0, 0),
                     mapOf("a" to "b"),
                     "$.t",
                 ),

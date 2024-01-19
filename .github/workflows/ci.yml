@@ -95,8 +95,9 @@ jobs:
           disable-animations: true
           script: |
             adb shell pm list packages | grep dev.yorkie.test && adb uninstall dev.yorkie.test || true;
-            ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
-            ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.annotation=androidx.test.filters.LargeTest --no-build-cache --no-daemon --stacktrace
+            ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=dev.yorkie.TreeTest --no-build-cache --no-daemon --stacktrace
+            ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.annotation=dev.yorkie.TreeBasicTest --no-build-cache --no-daemon --stacktrace
+            ./gradlew yorkie:connectedCheck -Pandroid.testInstrumentationRunnerArguments.annotation=dev.yorkie.TreeSplitMergeTest --no-build-cache --no-daemon --stacktrace
       - if: ${{ matrix.api-level == 24 }}
         run: ./gradlew yorkie:jacocoDebugTestReport
       - if: ${{ matrix.api-level == 24 }}

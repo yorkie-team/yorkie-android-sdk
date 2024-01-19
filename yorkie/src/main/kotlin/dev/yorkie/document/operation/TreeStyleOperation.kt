@@ -36,7 +36,6 @@ internal data class TreeStyleOperation(
                 it.from,
                 it.to,
                 it.fromPath,
-                it.toPath,
                 it.attributes.orEmpty(),
                 root.createPath(parentCreatedAt),
             )

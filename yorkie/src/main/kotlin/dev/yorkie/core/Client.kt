@@ -280,7 +280,9 @@ public class Client @VisibleForTesting internal constructor(
             document.onlineClients.value += clientIDs
 
             val presences = document.presences.first { it.keys.containsAll(clientIDs) }
-            document.publish(PresenceChange.MyPresence.Initialized(presences.asPresences()))
+            document.publishPresenceEvent(
+                PresenceChange.MyPresence.Initialized(presences.asPresences()),
+            )
             return
         }
 
@@ -298,7 +300,7 @@ public class Client @VisibleForTesting internal constructor(
                 document.onlineClients.value += publisher
                 if (publisher in document.allPresences.value) {
                     val presence = document.presences.first { publisher in it }[publisher] ?: return
-                    document.publish(
+                    document.publishPresenceEvent(
                         PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
                     )
                 }
@@ -310,7 +312,9 @@ public class Client @VisibleForTesting internal constructor(
                 // the 'unwatched' event is triggered while handling the PresenceChange.
                 val presence = document.presences.value[publisher] ?: return
                 document.onlineClients.value -= publisher
-                document.publish(PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)))
+                document.publishPresenceEvent(
+                    PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
+                )
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {

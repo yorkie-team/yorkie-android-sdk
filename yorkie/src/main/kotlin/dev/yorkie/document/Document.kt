@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * A CRDT-based data type.
@@ -144,7 +145,7 @@ public class Document(public val key: Key, private val options: Options = Option
             }
             if (change.hasPresenceChange) {
                 val presence = _presences.value[actorID] ?: return@async false
-                eventStream.emit(createPresenceChangedEvent(actorID, presence))
+                publishPresenceEvent(createPresenceChangedEvent(actorID, presence))
             }
             true
         }
@@ -304,7 +305,7 @@ public class Document(public val key: Key, private val options: Options = Option
             }
 
             newPresences?.let { emitPresences(it) }
-            presenceEvent?.let { eventStream.emit(it) }
+            presenceEvent?.let { publishPresenceEvent(it) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
     }
@@ -369,21 +370,25 @@ public class Document(public val key: Key, private val options: Options = Option
     /**
      * Triggers an event in this [Document].
      */
-    internal suspend fun publish(event: Event) {
-        when (event) {
-            is Others.Watched -> {
-                presences.first { event.changed.actorID in it.keys }
-            }
+    internal suspend fun publishPresenceEvent(event: Event.PresenceChange) {
+        val predicate: (Presences) -> Boolean = { presences ->
+            when (event) {
+                is MyPresence.Initialized -> event.initialized == presences
+                is MyPresence.PresenceChanged -> {
+                    val actorID = event.changed.actorID
+                    actorID !in presences || event.changed.presence == presences[actorID]
+                }
 
-            is Others.Unwatched -> {
-                presences.first { event.changed.actorID !in it.keys }
+                is Others.Watched -> event.changed.actorID in presences
+                is Others.Unwatched -> event.changed.actorID !in presences
+                is Others.PresenceChanged -> {
+                    val actorID = event.changed.actorID
+                    actorID !in presences || event.changed.presence == presences[actorID]
+                }
             }
-
-            is MyPresence.Initialized -> {
-                presences.first { event.initialized == it }
-            }
-
-            else -> {}
+        }
+        withTimeoutOrNull(3_000) {
+            presences.first(predicate)
         }
         eventStream.emit(event)
     }

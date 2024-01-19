@@ -5,9 +5,9 @@ import dev.yorkie.TreeSplitMergeTest
 import dev.yorkie.TreeTest
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
+import kotlin.test.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.test.assertEquals
 
 @TreeTest
 @TreeSplitMergeTest

@@ -244,7 +244,7 @@ class JsonTreeSplitMergeTest {
     }
 
     @Test
-    fun test_split_and_merge_with_empty_paragraph_left_and_multiple_split_level_left() {
+    fun test_split_and_merge_with_empty_paragraph_and_multiple_split_level_left() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(

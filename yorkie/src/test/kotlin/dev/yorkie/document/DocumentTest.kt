@@ -16,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -29,6 +30,11 @@ class DocumentTest {
     @Before
     fun setUp() {
         target = Document(Document.Key(""))
+    }
+
+    @After
+    fun tearDown() {
+        target.close()
     }
 
     @Test

@@ -175,6 +175,10 @@ class PresenceTest {
             c2.detachAsync(d2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
         }
     }
 
@@ -285,6 +289,10 @@ class PresenceTest {
             c2.detachAsync(d2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
         }
     }
 
@@ -343,6 +351,10 @@ class PresenceTest {
             c1.detachAsync(d1).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
         }
     }
 
@@ -429,6 +441,12 @@ class PresenceTest {
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c3.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            d3.close()
+            c1.close()
+            c2.close()
+            c3.close()
         }
     }
 
@@ -617,6 +635,12 @@ class PresenceTest {
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c3.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            d3.close()
+            c1.close()
+            c2.close()
+            c3.close()
         }
     }
 

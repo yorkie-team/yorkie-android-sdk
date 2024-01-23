@@ -155,6 +155,10 @@ class ClientTest {
             client2.detachAsync(document2).await()
             client1.deactivateAsync().await()
             client2.deactivateAsync().await()
+            document1.close()
+            document2.close()
+            client1.close()
+            client2.close()
 
             collectJobs.forEach(Job::cancel)
         }
@@ -230,6 +234,10 @@ class ClientTest {
             client2.detachAsync(document2).await()
             client1.deactivateAsync().await()
             client2.deactivateAsync().await()
+            document1.close()
+            document2.close()
+            client1.close()
+            client2.close()
         }
     }
 
@@ -294,6 +302,11 @@ class ClientTest {
 
         client1.deactivateAsync().await()
         client2.deactivateAsync().await()
+
+        document1.close()
+        document2.close()
+        client1.close()
+        client2.close()
         collectJob.cancel()
     }
 
@@ -362,6 +375,10 @@ class ClientTest {
             client1.deactivateAsync().await()
             client2.deactivateAsync().await()
             client3.deactivateAsync().await()
+            document1.close()
+            document2.close()
+            client1.close()
+            client2.close()
         }
     }
 
@@ -504,6 +521,9 @@ class ClientTest {
 
             client.detachAsync(document).await()
             client.deactivateAsync().await()
+
+            document.close()
+            client.close()
         }
     }
 }

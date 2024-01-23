@@ -29,10 +29,13 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
+import java.io.Closeable
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,9 +53,16 @@ import kotlinx.coroutines.withContext
 /**
  * A CRDT-based data type.
  * We can represent the model of the application and edit it even while offline.
+ *
+ * A single-threaded, [Closeable] [dispatcher] is used as default.
+ * Therefore you need to [close] the client, when the client is no longer needed.
+ * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
-public class Document(public val key: Key, private val options: Options = Options()) {
-    private val dispatcher = createSingleThreadDispatcher("Document($key)")
+public class Document(
+    public val key: Key,
+    private val options: Options = Options(),
+    private val dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Document($key)"),
+) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
 
@@ -393,6 +403,11 @@ public class Document(public val key: Key, private val options: Options = Option
 
     public fun toJson(): String {
         return root.toJson()
+    }
+
+    override fun close() {
+        scope.cancel()
+        (dispatcher as? Closeable)?.close()
     }
 
     public sealed interface Event {

@@ -55,7 +55,7 @@ import kotlinx.coroutines.withContext
  * We can represent the model of the application and edit it even while offline.
  *
  * A single-threaded, [Closeable] [dispatcher] is used as default.
- * Therefore you need to [close] the client, when the client is no longer needed.
+ * Therefore you need to [close] the document, when the document is no longer needed.
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
 public class Document(

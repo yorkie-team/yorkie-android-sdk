@@ -71,6 +71,8 @@ class DocumentTest {
             }
 
             client.deactivateAsync().await()
+            document.close()
+            client.close()
         }
     }
 
@@ -105,6 +107,10 @@ class DocumentTest {
 
             client1.deactivateAsync().await()
             client2.deactivateAsync().await()
+            document1.close()
+            document2.close()
+            client1.close()
+            client2.close()
         }
     }
 
@@ -221,6 +227,9 @@ class DocumentTest {
             }
 
             client.deactivateAsync().await()
+
+            document.close()
+            client.close()
         }
     }
 

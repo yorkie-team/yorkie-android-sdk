@@ -30,14 +30,17 @@ import io.grpc.Channel
 import io.grpc.Metadata
 import io.grpc.StatusException
 import io.grpc.android.AndroidChannelBuilder
+import java.io.Closeable
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -56,15 +59,17 @@ import kotlinx.coroutines.launch
  * Client that can communicate with the server.
  * It has [Document]s and sends changes of the documents in local
  * to the server to synchronize with other replicas in remote.
+ *
+ * A single-threaded, [Closeable] [dispatcher] is used as default.
+ * Therefore you need to [close] the client, when the client is no longer needed.
+ * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
 public class Client @VisibleForTesting internal constructor(
     private val channel: Channel,
     private val options: Options = Options(),
-) {
-    private val scope = CoroutineScope(
-        SupervisorJob() +
-            createSingleThreadDispatcher("Client(${options.key})"),
-    )
+    private val dispatcher: CoroutineDispatcher,
+) : Closeable {
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val activationJob = SupervisorJob()
 
     private val eventStream = MutableSharedFlow<Event>()
@@ -103,6 +108,7 @@ public class Client @VisibleForTesting internal constructor(
         rpcHost: String,
         rpcPort: Int,
         options: Options = Options(),
+        dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Client(${options.key})"),
         buildChannel: (AndroidChannelBuilder) -> AndroidChannelBuilder = { it },
     ) : this(
         channel = AndroidChannelBuilder.forAddress(rpcHost, rpcPort)
@@ -110,6 +116,7 @@ public class Client @VisibleForTesting internal constructor(
             .context(context.applicationContext)
             .build(),
         options = options,
+        dispatcher = dispatcher,
     )
 
     /**
@@ -553,6 +560,11 @@ public class Client @VisibleForTesting internal constructor(
         } else {
             attachment.copy(syncMode = syncMode)
         }
+    }
+
+    override fun close() {
+        scope.cancel()
+        (dispatcher as? Closeable)?.close()
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)

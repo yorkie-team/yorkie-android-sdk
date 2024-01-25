@@ -58,32 +58,31 @@ internal class CrdtTree(
     ): List<TreeChange> {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
-        val changes = listOf(
-            TreeChange(
-                type = TreeChangeType.Style,
-                from = toIndex(fromParent, fromLeft),
-                to = toIndex(toParent, toLeft),
-                fromPath = toPath(fromParent, fromLeft),
-                toPath = toPath(toParent, toLeft),
-                actorID = executedAt.actorID,
-                attributes = attributes,
-            ),
-        )
-
-        traverseInPosRange(
-            fromParent = fromParent,
-            fromLeft = fromLeft,
-            toParent = toParent,
-            toLeft = toLeft,
-        ) { (node, _), _ ->
-            if (!node.isRemoved && attributes != null && !node.isText) {
-                attributes.forEach { (key, value) ->
-                    node.setAttribute(key, value, executedAt)
+        return buildList {
+            traverseInPosRange(
+                fromParent = fromParent,
+                fromLeft = fromLeft,
+                toParent = toParent,
+                toLeft = toLeft,
+            ) { (node, _), _ ->
+                if (!node.isRemoved && attributes != null && !node.isText) {
+                    attributes.forEach { (key, value) ->
+                        node.setAttribute(key, value, executedAt)
+                    }
+                    add(
+                        TreeChange(
+                            type = TreeChangeType.Style,
+                            from = toIndex(fromParent, fromLeft),
+                            to = toIndex(toParent, toLeft),
+                            fromPath = toPath(fromParent, fromLeft),
+                            toPath = toPath(toParent, toLeft),
+                            actorID = executedAt.actorID,
+                            attributes = attributes,
+                        ),
+                    )
                 }
             }
         }
-
-        return changes
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {

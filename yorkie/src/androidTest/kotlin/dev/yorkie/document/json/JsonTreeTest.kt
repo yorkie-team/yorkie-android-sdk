@@ -17,7 +17,6 @@ import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
-import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import kotlin.test.assertEquals
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -1721,10 +1720,7 @@ class JsonTreeTest {
                         "$.t",
                     ),
                     // client1 changed attributes on path [0]
-                    /* FIXME: TreeStyleOpInfo here should have not been emitted, as path [0] is already deleted.
-                     This causes users who depend on OperationInfo event streams to not be consistent with the actual document.
-                     And the resulting document would be as below:
-
+                    /* assert style changes on already deleted path is not applied
                      {
                         "t": {
                             "type": "root",
@@ -1734,20 +1730,13 @@ class JsonTreeTest {
                                     "children": [],
                                     "attributes": {
                                         "id": "2",
-                                        "value": "changed"
+                                        "value": "init"
                                     }
                                 }
                             ]
                         }
                      }
                      */
-                    TreeStyleOpInfo(
-                        0,
-                        0,
-                        listOf(0),
-                        mapOf("value" to "changed"),
-                        "$.t",
-                    ),
                 ),
                 document2Ops,
             )

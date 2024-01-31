@@ -1,6 +1,7 @@
 package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.gson.reflect.TypeToken
 import dev.yorkie.TreeBasicTest
 import dev.yorkie.TreeTest
 import dev.yorkie.core.Client
@@ -17,7 +18,9 @@ import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
+import dev.yorkie.gson
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -1740,6 +1743,65 @@ class JsonTreeTest {
                 ),
                 document2Ops,
             )
+        }
+    }
+
+    @Test
+    fun test_returning_range_from_index_correctly_withint_document_events() {
+        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                text { "hello" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>hello</p></doc>", d1)
+            assertTreesXmlEquals("<doc><p>hello</p></doc>", d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, presence ->
+                    root.rootTree().edit(1, 1, text { "a" })
+                    val posSelection = root.rootTree().indexRangeToPosRange(2 to 2)
+                    presence.put(mapOf("selection" to gson.toJson(posSelection)))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>ahello</p></doc>", d1)
+            assertTreesXmlEquals("<doc><p>ahello</p></doc>", d2)
+            val selectionType = object : TypeToken<TreePosStructRange>() {}.type
+            val selection = gson.fromJson<TreePosStructRange>(
+                d1.presences.value[c1.requireClientId()]!!["selection"],
+                selectionType,
+            )
+            assertEquals(2 to 2, d1.getRoot().rootTree().posRangeToIndexRange(selection))
+
+            val d1Events = mutableListOf<Document.Event>()
+            val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.collect(d1Events::add)
+            }
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(2, 2, text { "b" })
+                },
+            )
+            assertTreesXmlEquals("<doc><p>abhello</p></doc>", d1)
+            assertTreesXmlEquals("<doc><p>abhello</p></doc>", d2)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<RemoteChange>(d1Events.first())
+            job.cancel()
         }
     }
 

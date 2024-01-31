@@ -1747,8 +1747,8 @@ class JsonTreeTest {
     }
 
     @Test
-    fun test_returning_range_from_index_correctly_withint_document_events() {
-        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+    fun test_returning_range_from_index_correctly_within_document_events() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1777,7 +1777,7 @@ class JsonTreeTest {
             assertTreesXmlEquals("<doc><p>ahello</p></doc>", d2)
             val selectionType = object : TypeToken<TreePosStructRange>() {}.type
             val selection = gson.fromJson<TreePosStructRange>(
-                d1.presences.value[c1.requireClientId()]!!["selection"],
+                d1.allPresences.value[c1.requireClientId()]!!["selection"],
                 selectionType,
             )
             assertEquals(2 to 2, d1.getRoot().rootTree().posRangeToIndexRange(selection))

@@ -450,7 +450,6 @@ internal class CrdtTree(
                 if (node.id.createdAt <= executedAt) break
                 updatedLeftSiblingNode = node
             }
-            updatedLeftSiblingNode
         }
 
         return realParent to updatedLeftSiblingNode

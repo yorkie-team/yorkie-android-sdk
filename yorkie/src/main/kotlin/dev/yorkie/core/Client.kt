@@ -214,7 +214,6 @@ public class Client @VisibleForTesting internal constructor(
                             changePack = document.createChangePack().toPBChangePack()
                             documentId = documentID
                             pushOnly = syncMode == SyncMode.PushOnly
-                            clientKey = options.key
                         }
                         val response = service.pushPullChanges(
                             request,
@@ -265,8 +264,6 @@ public class Client @VisibleForTesting internal constructor(
                 watchDocumentRequest {
                     clientId = requireClientId().value
                     documentId = attachment.documentID
-                    clientKey = options.key
-                    documentKey = attachment.document.key.value
                 },
                 documentBasedRequestHeader(attachment.document.key),
             ).retry {
@@ -360,7 +357,6 @@ public class Client @VisibleForTesting internal constructor(
             val request = attachDocumentRequest {
                 clientId = requireClientId().value
                 changePack = document.createChangePack().toPBChangePack()
-                clientKey = options.key
             }
             val response = try {
                 service.attachDocument(
@@ -413,7 +409,6 @@ public class Client @VisibleForTesting internal constructor(
                 clientId = requireClientId().value
                 changePack = document.createChangePack().toPBChangePack()
                 documentId = attachment.documentID
-                clientKey = options.key
             }
             val response = try {
                 service.detachDocument(
@@ -449,7 +444,6 @@ public class Client @VisibleForTesting internal constructor(
                 service.deactivateClient(
                     deactivateClientRequest {
                         clientId = requireClientId().value
-                        clientKey = options.key
                     },
                     projectBasedRequestHeader,
                 )
@@ -477,7 +471,6 @@ public class Client @VisibleForTesting internal constructor(
                 clientId = requireClientId().value
                 changePack = document.createChangePack(forceRemove = true).toPBChangePack()
                 documentId = attachment.documentID
-                clientKey = options.key
             }
             val response = try {
                 service.removeDocument(

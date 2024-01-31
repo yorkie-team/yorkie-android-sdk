@@ -415,10 +415,13 @@ internal class CrdtTree(
      *
      * [CrdtTreePos] is a position in the CRDT perspective. This is
      * different from [TreePos] which is a position of the tree in the local perspective.
+     *
+     * If [executedAt] is given, then it is used to find the appropriate left node
+     * for concurrent insertion.
      */
     fun findNodesAndSplitText(
         pos: CrdtTreePos,
-        executedAt: TimeTicket,
+        executedAt: TimeTicket? = null,
     ): Pair<CrdtTreeNode, CrdtTreeNode> {
         // 01. Find the parent and left sibling node of the given position.
         val (parent, leftSibling) = pos.toTreeNodes(this)
@@ -438,14 +441,17 @@ internal class CrdtTree(
         // 04. Find the appropriate left node. If some nodes are inserted at the
         // same position concurrently, then we need to find the appropriate left
         // node. This is similar to RGA.
-        val allChildren = realParent.allChildren
-        val index = if (isLeftMost) 0 else allChildren.indexOf(leftSibling) + 1
-
         var updatedLeftSiblingNode = leftSibling
-        for (node in allChildren.drop(index)) {
-            if (node.id.createdAt <= executedAt) break
-            updatedLeftSiblingNode = node
+        executedAt?.let {
+            val allChildren = realParent.allChildren
+            val index = if (isLeftMost) 0 else allChildren.indexOf(leftSibling) + 1
+
+            for (node in allChildren.drop(index)) {
+                if (node.id.createdAt <= executedAt) break
+                updatedLeftSiblingNode = node
+            }
         }
+
         return realParent to updatedLeftSiblingNode
     }
 
@@ -590,21 +596,18 @@ internal class CrdtTree(
     /**
      * Converts the given position [range] to the path range.
      */
-    fun posRangeToPathRange(
-        range: TreePosRange,
-        executedAt: TimeTicket,
-    ): Pair<List<Int>, List<Int>> {
-        val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
-        val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
+    fun posRangeToPathRange(range: TreePosRange): Pair<List<Int>, List<Int>> {
+        val (fromParent, fromLeft) = findNodesAndSplitText(range.first)
+        val (toParent, toLeft) = findNodesAndSplitText(range.second)
         return toPath(fromParent, fromLeft) to toPath(toParent, toLeft)
     }
 
     /**
      * Converts the given position range to the path range.
      */
-    fun posRangeToIndexRange(range: TreePosRange, executedAt: TimeTicket): Pair<Int, Int> {
-        val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
-        val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
+    fun posRangeToIndexRange(range: TreePosRange): Pair<Int, Int> {
+        val (fromParent, fromLeft) = findNodesAndSplitText(range.first)
+        val (toParent, toLeft) = findNodesAndSplitText(range.second)
         return toIndex(fromParent, fromLeft) to toIndex(toParent, toLeft)
     }
 

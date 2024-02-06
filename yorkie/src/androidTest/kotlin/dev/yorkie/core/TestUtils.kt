@@ -58,5 +58,10 @@ fun withTwoClientsAndDocuments(
         }
         client1.deactivateAsync().await()
         client2.deactivateAsync().await()
+
+        document1.close()
+        document2.close()
+        client1.close()
+        client2.close()
     }
 }

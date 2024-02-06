@@ -27,6 +27,7 @@ import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.createSingleThreadDispatcher
 import io.grpc.Channel
 import io.grpc.inprocess.InProcessChannelBuilder
 import io.grpc.inprocess.InProcessServerBuilder
@@ -38,6 +39,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -72,7 +74,16 @@ class ClientTest {
         channel = grpcCleanup.register(
             InProcessChannelBuilder.forName(serverName).directExecutor().build(),
         )
-        target = Client(channel, Client.Options(key = TEST_KEY, apiKey = TEST_KEY))
+        target = Client(
+            channel,
+            Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            createSingleThreadDispatcher("Client Test"),
+        )
+    }
+
+    @After
+    fun tearDown() {
+        target.close()
     }
 
     @Test

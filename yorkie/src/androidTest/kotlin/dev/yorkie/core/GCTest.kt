@@ -10,7 +10,6 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
-import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.gson
 import dev.yorkie.util.IndexTreeNode
@@ -46,8 +45,10 @@ class GCTest {
             }.await()
             assertJsonContentEquals("""{"1":1,"3":3}""", document.toJson())
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(TimeTicket.MaxTimeTicket))
+            assertEquals(4, document.garbageCollect(MaxTimeTicket))
             assertEquals(0, document.garbageLength)
+
+            document.close()
         }
     }
 
@@ -70,8 +71,10 @@ class GCTest {
                 document.toJson(),
             )
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(TimeTicket.MaxTimeTicket))
+            assertEquals(1, document.garbageCollect(MaxTimeTicket))
             assertEquals(0, document.garbageLength)
+
+            document.close()
         }
     }
 
@@ -107,8 +110,10 @@ class GCTest {
                 document.toJson(),
             )
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(TimeTicket.MaxTimeTicket))
+            assertEquals(4, document.garbageCollect(MaxTimeTicket))
             assertEquals(0, document.garbageLength)
+
+            document.close()
         }
     }
 
@@ -146,7 +151,7 @@ class GCTest {
             var nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(2, document.garbageLength)
-            assertEquals(2, document.garbageCollect(TimeTicket.MaxTimeTicket))
+            assertEquals(2, document.garbageCollect(MaxTimeTicket))
             assertEquals(0, document.garbageLength)
             var nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -168,7 +173,7 @@ class GCTest {
             nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(TimeTicket.MaxTimeTicket))
+            assertEquals(1, document.garbageCollect(MaxTimeTicket))
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -191,11 +196,13 @@ class GCTest {
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
 
             assertEquals(5, document.garbageLength)
-            assertEquals(5, document.garbageCollect(TimeTicket.MaxTimeTicket))
+            assertEquals(5, document.garbageCollect(MaxTimeTicket))
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(5, nodeLengthBeforeGC - nodeLengthAfterGC)
+
+            document.close()
         }
     }
 
@@ -456,7 +463,7 @@ class GCTest {
         }.await()
         assertJsonContentEquals("""{"1":1, "3":3}""", document.toJson())
         assertEquals(4, document.garbageLength)
-        assertEquals(0, document.garbageCollect(TimeTicket.MaxTimeTicket))
+        assertEquals(0, document.garbageCollect(MaxTimeTicket))
         assertEquals(4, document.garbageLength)
     }
 
@@ -489,6 +496,9 @@ class GCTest {
 
         assertEquals(3, document.garbageLength)
         assertEquals(3, document.garbageLengthFromClone)
+
+        document.close()
+        client.close()
     }
 
     @Test
@@ -545,6 +555,11 @@ class GCTest {
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
+
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
         }
     }
 
@@ -600,6 +615,11 @@ class GCTest {
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
+
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
         }
     }
 

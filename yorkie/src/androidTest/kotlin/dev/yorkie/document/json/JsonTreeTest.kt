@@ -1,6 +1,7 @@
 package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.gson.reflect.TypeToken
 import dev.yorkie.TreeBasicTest
 import dev.yorkie.TreeTest
 import dev.yorkie.core.Client
@@ -10,10 +11,16 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
+import dev.yorkie.document.json.JsonTree.ElementNode
+import dev.yorkie.document.json.JsonTree.TreeNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
+import dev.yorkie.gson
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -1554,6 +1561,250 @@ class JsonTreeTest {
         }
     }
 
+    @Test
+    fun test_concurrently_deleting_and_styling_on_same_path() {
+        withTwoClientsAndDocuments(
+            realTimeSync = false,
+        ) { client1, client2, document1, document2, _ ->
+            val document1Ops = mutableListOf<OperationInfo>()
+            val document2Ops = mutableListOf<OperationInfo>()
+
+            val collectJobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    document1.events.filterIsInstance<RemoteChange>()
+                        .collect {
+                            document1Ops.addAll(it.changeInfo.operations)
+                        }
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    document2.events.filterIsInstance<RemoteChange>()
+                        .collect {
+                            document2Ops.addAll(it.changeInfo.operations)
+                        }
+                },
+            )
+
+            // client1 initializes tree
+            updateAndSync(
+                Updater(client1, document1) { root, _ ->
+                    val tree = root.setNewTree("t")
+                    tree.editByPath(
+                        listOf(0),
+                        listOf(0),
+                        ElementNode("t", mapOf("id" to "1", "value" to "init")),
+                        ElementNode("t", mapOf("id" to "2", "value" to "init")),
+                    )
+                },
+                Updater(client2, document2),
+            )
+
+            /* assert both documents are synced right
+             {
+                "t": {
+                    "type": "root",
+                    "children": [
+                        {
+                            "type": "t",
+                            "children": [],
+                            "attributes": {
+                                "id": "1",
+                                "value": "init"
+                            }
+                        },
+                        {
+                            "type": "t",
+                            "children": [],
+                            "attributes": {
+                                "id": "2",
+                                "value": "init"
+                            }
+                        }
+                    ]
+                }
+             }
+             */
+            var root1 = document1.getRoot().rootTree().rootTreeNode as ElementNode
+            assertEquals(
+                mapOf("id" to "1", "value" to "init"),
+                (root1.children.first() as ElementNode).attributes,
+            )
+            assertEquals(
+                mapOf("id" to "2", "value" to "init"),
+                (root1.children[1] as ElementNode).attributes,
+            )
+
+            var root2 = document2.getRoot().rootTree().rootTreeNode as ElementNode
+            assertEquals(
+                mapOf("id" to "1", "value" to "init"),
+                (root2.children.first() as ElementNode).attributes,
+            )
+            assertEquals(
+                mapOf("id" to "2", "value" to "init"),
+                (root2.children[1] as ElementNode).attributes,
+            )
+
+            updateAndSync(
+                // client1 changes attributes on path [0]
+                Updater(client1, document1) { root, _ ->
+                    root.rootTree().styleByPath(listOf(0), mapOf("value" to "changed"))
+                },
+                // client2 deletes path[0]
+                Updater(client2, document2) { root, _ ->
+                    root.rootTree().editByPath(listOf(0), listOf(1))
+                },
+            )
+
+            /* assert both documents are synced right
+             {
+                "t": {
+                    "type": "root",
+                    "children": [
+                        {
+                            "type": "t",
+                            "children": [],
+                            "attributes": {
+                                "id": "2",
+                                "value": "init"
+                            }
+                        }
+                    ]
+                }
+             }
+             */
+            root1 = document1.getRoot().rootTree().rootTreeNode as ElementNode
+            assertEquals(1, root1.children.size)
+            assertEquals(
+                mapOf("id" to "2", "value" to "init"),
+                (root1.children.first() as ElementNode).attributes,
+            )
+
+            root2 = document2.getRoot().rootTree().rootTreeNode as ElementNode
+            assertEquals(1, root2.children.size)
+            assertEquals(
+                mapOf("id" to "2", "value" to "init"),
+                (root2.children.first() as ElementNode).attributes,
+            )
+
+            delay(500)
+            collectJobs.forEach(Job::cancel)
+
+            // assert list of OperationInfo were emitted right
+            assertEquals(
+                listOf<OperationInfo>(
+                    // client2 deleted on path [0]
+                    TreeEditOpInfo(
+                        0,
+                        2,
+                        listOf(0),
+                        listOf(1),
+                        null,
+                        0,
+                        "$.t",
+                    ),
+                ),
+                document1Ops,
+            )
+
+            assertEquals(
+                listOf(
+                    // client1 set new tree
+                    SetOpInfo("t", "$"),
+                    // client1 initialized tree
+                    TreeEditOpInfo(
+                        0,
+                        0,
+                        listOf(0),
+                        listOf(0),
+                        listOf(
+                            ElementNode("t", mapOf("id" to "1", "value" to "init")),
+                            ElementNode("t", mapOf("id" to "2", "value" to "init")),
+                        ),
+                        0,
+                        "$.t",
+                    ),
+                    // client1 changed attributes on path [0]
+                    /* assert style changes on already deleted path is not applied
+                     {
+                        "t": {
+                            "type": "root",
+                            "children": [
+                                {
+                                    "type": "t",
+                                    "children": [],
+                                    "attributes": {
+                                        "id": "2",
+                                        "value": "init"
+                                    }
+                                }
+                            ]
+                        }
+                     }
+                     */
+                ),
+                document2Ops,
+            )
+        }
+    }
+
+    @Test
+    fun test_returning_range_from_index_correctly_within_document_events() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                text { "hello" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>hello</p></doc>", d1)
+            assertTreesXmlEquals("<doc><p>hello</p></doc>", d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, presence ->
+                    root.rootTree().edit(1, 1, text { "a" })
+                    val posSelection = root.rootTree().indexRangeToPosRange(2 to 2)
+                    presence.put(mapOf("selection" to gson.toJson(posSelection)))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>ahello</p></doc>", d1)
+            assertTreesXmlEquals("<doc><p>ahello</p></doc>", d2)
+            val selectionType = object : TypeToken<TreePosStructRange>() {}.type
+            val selection = gson.fromJson<TreePosStructRange>(
+                d1.allPresences.value[c1.requireClientId()]!!["selection"],
+                selectionType,
+            )
+            assertEquals(2 to 2, d1.getRoot().rootTree().posRangeToIndexRange(selection))
+
+            val d1Events = mutableListOf<Document.Event>()
+            val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.collect(d1Events::add)
+            }
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(2, 2, text { "b" })
+                },
+            )
+            assertTreesXmlEquals("<doc><p>abhello</p></doc>", d1)
+            assertTreesXmlEquals("<doc><p>abhello</p></doc>", d2)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<RemoteChange>(d1Events.first())
+            job.cancel()
+        }
+    }
+
     companion object {
 
         fun JsonObject.rootTree() = getAs<JsonTree>("t")
@@ -1629,7 +1880,7 @@ class JsonTreeTest {
         data class SimpleTreeEditOpInfo(
             val from: Int,
             val to: Int,
-            val nodes: JsonTree.TreeNode? = null,
+            val nodes: TreeNode? = null,
         )
     }
 }

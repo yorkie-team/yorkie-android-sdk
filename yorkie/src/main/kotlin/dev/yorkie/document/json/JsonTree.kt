@@ -228,7 +228,7 @@ public class JsonTree internal constructor(
      */
     public fun posRangeToIndexRange(range: TreePosStructRange): Pair<Int, Int> {
         val posRange = range.first.toOriginal() to range.second.toOriginal()
-        return target.posRangeToIndexRange(posRange, context.lastTimeTicket)
+        return target.posRangeToIndexRange(posRange)
     }
 
     /**
@@ -236,7 +236,7 @@ public class JsonTree internal constructor(
      */
     public fun posRangeToPathRange(range: TreePosStructRange): Pair<List<Int>, List<Int>> {
         val posRange = range.first.toOriginal() to range.second.toOriginal()
-        return target.posRangeToPathRange(posRange, context.lastTimeTicket)
+        return target.posRangeToPathRange(posRange)
     }
 
     companion object {

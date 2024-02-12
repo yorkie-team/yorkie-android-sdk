@@ -108,6 +108,11 @@ public class Document(
 
     internal val allPresences: StateFlow<Presences> = _presences.asStateFlow()
 
+    public val myPresence: P
+        get() = allPresences.value[changeID.actor]
+            .takeIf { status == DocumentStatus.Attached }
+            .orEmpty()
+
     /**
      * Executes the given [updater] to update this document.
      */

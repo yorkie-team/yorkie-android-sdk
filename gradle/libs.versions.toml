@@ -9,7 +9,7 @@ grpc-kotlin = "1.4.1"
 kotlinx-coroutines = "1.7.3"
 androidx-activity = "1.8.2"
 androidx-lifecycle = "2.7.0"
-androidx-benchmark = "1.2.2"
+androidx-benchmark = "1.2.3"
 androidx-compose-compiler = "1.5.8"
 
 [libraries]
@@ -35,7 +35,7 @@ androidx-lifecycle-viewmodel = { group = "androidx.lifecycle", name = "lifecycle
 androidx-lifecycle-runtime = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "androidx-lifecycle" }
 androidx-benchmark = { group = "androidx.benchmark", name = "benchmark-junit4", version.ref = "androidx-benchmark" }
 
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2023.10.01" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2024.01.00" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }

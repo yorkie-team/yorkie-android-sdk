@@ -203,18 +203,27 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     fun treePosToPath(treePos: TreePos<T>): List<Int> {
         var node = treePos.node
 
-        val path = if (node.isText) {
-            val parent = node.parent
-            val offset = parent?.findOffset(node) ?: return emptyList()
-            if (offset == -1) {
-                throw IllegalArgumentException("invalid treePos: $treePos")
-            }
+        val path = when {
+            node.isText -> {
+                val parent = node.parent
+                val offset = parent?.findOffset(node) ?: return emptyList()
+                if (offset == -1) {
+                    throw IllegalArgumentException("invalid treePos: $treePos")
+                }
 
-            val sizeOfLeftSiblings = addSizeOfLeftSiblings(parent, offset)
-            node = parent
-            mutableListOf(sizeOfLeftSiblings + treePos.offset)
-        } else {
-            mutableListOf(treePos.offset)
+                val sizeOfLeftSiblings = addSizeOfLeftSiblings(parent, offset)
+                node = parent
+                mutableListOf(sizeOfLeftSiblings + treePos.offset)
+            }
+            node.hasTextChild -> {
+                // TODO(hackerwins): The function does not consider the situation
+                // where Element and Text nodes are mixed in the Element's Children.
+                val sizeOfLeftSiblings = addSizeOfLeftSiblings(node, treePos.offset)
+                mutableListOf(sizeOfLeftSiblings)
+            }
+            else -> {
+                mutableListOf(treePos.offset)
+            }
         }
 
         while (node.parent != null) {
@@ -404,8 +413,11 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
     val allChildren: List<T>
         get() = childrenInternal.toList()
 
+    /**
+     * Returns true if the node's children consist of only text children.
+     */
     val hasTextChild: Boolean
-        get() = children.any { it.isText }
+        get() = children.isNotEmpty() && children.all { it.isText }
 
     init {
         if (isText && childrenInternal.isNotEmpty()) {

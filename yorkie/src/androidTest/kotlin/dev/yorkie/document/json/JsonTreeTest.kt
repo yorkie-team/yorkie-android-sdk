@@ -29,9 +29,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
@@ -1802,6 +1804,109 @@ class JsonTreeTest {
             }
             assertIs<RemoteChange>(d1Events.first())
             job.cancel()
+        }
+    }
+
+    @Test
+    fun test_returning_correct_range_path() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("c") {
+                                element("u") {
+                                    element("p") {
+                                        element("n")
+                                    }
+                                }
+                            }
+                            element("c") {
+                                element("p") {
+                                    element("n")
+                                }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d1),
+            )
+            var expectedXml = "<r><c><u><p><n></n></p></u></c><c><p><n></n></p></c></r>"
+            assertTreesXmlEquals(expectedXml, d1)
+            assertTreesXmlEquals(expectedXml, d2)
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 0), listOf(1, 0, 0, 0), text { "1" })
+                    root.rootTree().editByPath(listOf(1, 0, 0, 1), listOf(1, 0, 0, 1), text { "2" })
+                    root.rootTree().editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 2), text { "3" })
+                },
+            )
+            expectedXml = "<r><c><u><p><n></n></p></u></c><c><p><n>123</n></p></c></r>"
+            assertTreesXmlEquals(expectedXml, d1)
+            assertTreesXmlEquals(expectedXml, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree()
+                        .editByPath(listOf(1, 0, 0, 1), listOf(1, 0, 0, 1), text { "abcdefgh" })
+                },
+                Updater(c2, d1),
+            )
+            expectedXml = "<r><c><u><p><n></n></p></u></c><c><p><n>1abcdefgh23</n></p></c></r>"
+            assertTreesXmlEquals(expectedXml, d1)
+            assertTreesXmlEquals(expectedXml, d2)
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 5), listOf(1, 0, 0, 5), text { "4" })
+                    root.rootTree().editByPath(listOf(1, 0, 0, 6), listOf(1, 0, 0, 7))
+                    root.rootTree().editByPath(listOf(1, 0, 0, 6), listOf(1, 0, 0, 6), text { "5" })
+                },
+            )
+
+            val d2Events = mutableListOf<Document.Event>()
+
+            fun handleOpInfo(operation: TreeEditOpInfo) {
+                val (_, _, fromPath, toPath) = operation
+                assertEquals(listOf(1, 0, 0, 7), fromPath)
+                assertEquals(listOf(1, 0, 0, 8), toPath)
+            }
+
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                d2.events
+                    .filter { it is LocalChange || it is RemoteChange }
+                    .onEach { event ->
+                        when (event) {
+                            is LocalChange -> {
+                                (event.changeInfo.operations.firstOrNull() as? TreeEditOpInfo)
+                                    ?.let(::handleOpInfo)
+                            }
+
+                            else -> {
+                                val operations = (event as RemoteChange).changeInfo.operations
+                                (operations.firstOrNull() as? TreeEditOpInfo)?.let(::handleOpInfo)
+                            }
+                        }
+                    }.collect(d2Events::add)
+            }
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 7), listOf(1, 0, 0, 8))
+                },
+            )
+            expectedXml = "<r><c><u><p><n></n></p></u></c><c><p><n>1abcd45gh23</n></p></c></r>"
+            assertTreesXmlEquals(expectedXml, d1)
+            assertTreesXmlEquals(expectedXml, d2)
+
+            assertIs<LocalChange>(d2Events.firstOrNull())
+
+            collectJob.cancel()
         }
     }
 

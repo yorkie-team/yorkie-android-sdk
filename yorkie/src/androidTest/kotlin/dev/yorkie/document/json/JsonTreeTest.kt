@@ -1910,6 +1910,66 @@ class JsonTreeTest {
         }
     }
 
+    @Test
+    fun test_tree_style_events_concurrency_error() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                text { "hello" }
+                                attr { "italic" to true }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("""<doc><p italic="true">hello</p></doc>""", d1, d2)
+
+            val d1Events = mutableListOf<OperationInfo.TreeStyleOpInfo>()
+            val d2Events = mutableListOf<OperationInfo.TreeStyleOpInfo>()
+
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<RemoteChange>()
+                        .map {
+                            it.changeInfo.operations.filterIsInstance<OperationInfo.TreeStyleOpInfo>()
+                        }
+                        .collect(d1Events::addAll)
+                }
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filterIsInstance<RemoteChange>()
+                        .map {
+                            it.changeInfo.operations.filterIsInstance<OperationInfo.TreeStyleOpInfo>()
+                        }
+                        .collect(d2Events::addAll)
+                }
+            }
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().style(0, 1, mapOf("bold" to "true"))
+            }.await()
+
+            d2.updateAsync { root, _ ->
+                root.rootTree().style(0, 1, mapOf("bold" to "false"))
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+            // either of the two documents should receive bold style event
+            assertEquals("false" ,d1Events.single().attributes["bold"])
+            assertEquals("true" ,d2Events.single().attributes["bold"])
+
+            collectJob.cancel()
+        }
+    }
+
     companion object {
 
         fun JsonObject.rootTree() = getAs<JsonTree>("t")

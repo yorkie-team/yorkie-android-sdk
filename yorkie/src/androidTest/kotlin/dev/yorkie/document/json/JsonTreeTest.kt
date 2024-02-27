@@ -1910,6 +1910,43 @@ class JsonTreeTest {
         }
     }
 
+    @Test
+    fun test_tree_style_concurrency_error() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                text { "hello" }
+                                attr { "italic" to true }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("""<doc><p italic="true">hello</p></doc>""", d1, d2)
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().style(0, 1, mapOf("bold" to "true"))
+            }.await()
+
+            d2.updateAsync { root, _ ->
+                root.rootTree().style(0, 1, mapOf("bold" to "false"))
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            /**
+             * d1 and d2 should have same `bold` value
+             */
+            assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+        }
+    }
+
     companion object {
 
         fun JsonObject.rootTree() = getAs<JsonTree>("t")

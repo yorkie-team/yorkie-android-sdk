@@ -7,6 +7,7 @@ import dev.yorkie.TreeTest
 import dev.yorkie.core.Client
 import dev.yorkie.core.GENERAL_TIMEOUT
 import dev.yorkie.core.Presence
+import dev.yorkie.core.createClient
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
@@ -29,9 +30,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
@@ -1762,8 +1765,7 @@ class JsonTreeTest {
                 },
                 Updater(c2, d2),
             )
-            assertTreesXmlEquals("<doc><p>hello</p></doc>", d1)
-            assertTreesXmlEquals("<doc><p>hello</p></doc>", d2)
+            assertTreesXmlEquals("<doc><p>hello</p></doc>", d1, d2)
 
             updateAndSync(
                 Updater(c1, d1) { root, presence ->
@@ -1773,8 +1775,7 @@ class JsonTreeTest {
                 },
                 Updater(c2, d2),
             )
-            assertTreesXmlEquals("<doc><p>ahello</p></doc>", d1)
-            assertTreesXmlEquals("<doc><p>ahello</p></doc>", d2)
+            assertTreesXmlEquals("<doc><p>ahello</p></doc>", d1, d2)
             val selectionType = object : TypeToken<TreePosStructRange>() {}.type
             val selection = gson.fromJson<TreePosStructRange>(
                 d1.allPresences.value[c1.requireClientId()]!!["selection"],
@@ -1792,8 +1793,7 @@ class JsonTreeTest {
                     root.rootTree().edit(2, 2, text { "b" })
                 },
             )
-            assertTreesXmlEquals("<doc><p>abhello</p></doc>", d1)
-            assertTreesXmlEquals("<doc><p>abhello</p></doc>", d2)
+            assertTreesXmlEquals("<doc><p>abhello</p></doc>", d1, d2)
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
@@ -1802,6 +1802,270 @@ class JsonTreeTest {
             }
             assertIs<RemoteChange>(d1Events.first())
             job.cancel()
+        }
+    }
+
+    @Test
+    fun test_returning_correct_range_path() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("c") {
+                                element("u") {
+                                    element("p") {
+                                        element("n")
+                                    }
+                                }
+                            }
+                            element("c") {
+                                element("p") {
+                                    element("n")
+                                }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d1),
+            )
+            assertTreesXmlEquals("<r><c><u><p><n></n></p></u></c><c><p><n></n></p></c></r>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 0), listOf(1, 0, 0, 0), text { "1" })
+                    root.rootTree().editByPath(listOf(1, 0, 0, 1), listOf(1, 0, 0, 1), text { "2" })
+                    root.rootTree().editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 2), text { "3" })
+                },
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>123</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree()
+                        .editByPath(listOf(1, 0, 0, 1), listOf(1, 0, 0, 1), text { "abcdefgh" })
+                },
+                Updater(c2, d1),
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1abcdefgh23</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 5), listOf(1, 0, 0, 5), text { "4" })
+                    root.rootTree().editByPath(listOf(1, 0, 0, 6), listOf(1, 0, 0, 7))
+                    root.rootTree().editByPath(listOf(1, 0, 0, 6), listOf(1, 0, 0, 6), text { "5" })
+                },
+            )
+
+            val d2Events = mutableListOf<Document.Event>()
+
+            fun handleOpInfo(operation: TreeEditOpInfo) {
+                val (_, _, fromPath, toPath) = operation
+                assertEquals(listOf(1, 0, 0, 7), fromPath)
+                assertEquals(listOf(1, 0, 0, 8), toPath)
+            }
+
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                d2.events
+                    .filter { it is LocalChange || it is RemoteChange }
+                    .onEach { event ->
+                        when (event) {
+                            is LocalChange -> {
+                                (event.changeInfo.operations.firstOrNull() as? TreeEditOpInfo)
+                                    ?.let(::handleOpInfo)
+                            }
+
+                            else -> {
+                                val operations = (event as RemoteChange).changeInfo.operations
+                                (operations.firstOrNull() as? TreeEditOpInfo)?.let(::handleOpInfo)
+                            }
+                        }
+                    }.collect(d2Events::add)
+            }
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 7), listOf(1, 0, 0, 8))
+                },
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1abcd45gh23</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            assertIs<LocalChange>(d2Events.firstOrNull())
+
+            collectJob.cancel()
+        }
+    }
+
+    @Test
+    fun test_client_reload_cases() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, key ->
+            // Perform a dummy update to apply changes up to the snapshot threshold.
+            repeat(500) {
+                d1.updateAsync { root, _ ->
+                    root["num"] = 0
+                }.await()
+            }
+
+            // Start scenario.
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("c") {
+                                element("u") {
+                                    element("p") {
+                                        element("n")
+                                    }
+                                }
+                            }
+                            element("c") {
+                                element("p") {
+                                    element("n")
+                                }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<r><c><u><p><n></n></p></u></c><c><p><n></n></p></c></r>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().apply {
+                        editByPath(listOf(1, 0, 0, 0), listOf(1, 0, 0, 0), text { "1" })
+                        editByPath(listOf(1, 0, 0, 1), listOf(1, 0, 0, 1), text { "2" })
+                        editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 2), text { "3" })
+                        editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 2), text { " " })
+                        editByPath(listOf(1, 0, 0, 3), listOf(1, 0, 0, 3), text { "네이버랑 " })
+                    }
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>12 네이버랑 3</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().apply {
+                        editByPath(listOf(1, 0, 0, 1), listOf(1, 0, 0, 8), text { " 2 네이버랑 " })
+                        editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 2), text { "ㅋ" })
+                        editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 3), text { "카" })
+                        editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 3), text { "캌" })
+                        editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 3), text { "카카" })
+                        editByPath(listOf(1, 0, 0, 3), listOf(1, 0, 0, 4), text { "캉" })
+                        editByPath(listOf(1, 0, 0, 3), listOf(1, 0, 0, 4), text { "카오" })
+                        editByPath(listOf(1, 0, 0, 4), listOf(1, 0, 0, 5), text { "올" })
+                        editByPath(listOf(1, 0, 0, 4), listOf(1, 0, 0, 5), text { "오라" })
+                        editByPath(listOf(1, 0, 0, 5), listOf(1, 0, 0, 6), text { "랑" })
+                        editByPath(listOf(1, 0, 0, 6), listOf(1, 0, 0, 6), text { " " })
+                    }
+                },
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1 카카오랑 2 네이버랑 3</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().apply {
+                        editByPath(listOf(1, 0, 0, 13), listOf(1, 0, 0, 14))
+                        editByPath(listOf(1, 0, 0, 12), listOf(1, 0, 0, 13))
+                    }
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1 카카오랑 2 네이버3</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1),
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().apply {
+                        editByPath(listOf(1, 0, 0, 6), listOf(1, 0, 0, 7))
+                        editByPath(listOf(1, 0, 0, 5), listOf(1, 0, 0, 6))
+                    }
+                },
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1 카카오2 네이버3</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 9), listOf(1, 0, 0, 10))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1 카카오2 네이3</n></p></c></r>",
+                d1,
+                d2,
+            )
+
+            // A new client has been added.
+            val d3 = Document(key)
+            val c3 = createClient()
+            c3.activateAsync().await()
+            c3.attachAsync(d3, isRealTimeSync = false).await()
+            assertTreesXmlEquals(d2.getRoot().rootTree().toXml(), d3)
+
+            updateAndSync(
+                Updater(c3, d3) { root, _ ->
+                    root.rootTree().apply {
+                        editByPath(listOf(1, 0, 0, 4), listOf(1, 0, 0, 5))
+                        editByPath(listOf(1, 0, 0, 3), listOf(1, 0, 0, 4))
+                    }
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1 카2 네이3</n></p></c></r>",
+                d2,
+                d3,
+            )
+
+            updateAndSync(
+                Updater(c3, d3) { root, _ ->
+                    root.rootTree().editByPath(listOf(1, 0, 0, 2), listOf(1, 0, 0, 3))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<r><c><u><p><n></n></p></u></c><c><p><n>1 2 네이3</n></p></c></r>",
+                d2,
+                d3,
+            )
+
+            c3.deactivateAsync().await()
         }
     }
 

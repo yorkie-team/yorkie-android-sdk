@@ -222,11 +222,15 @@ public class Client @VisibleForTesting internal constructor(
                         val responsePack = response.changePack.toChangePack()
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
                         // PushPull, ignore the response when the syncMode is PushOnly.
-                        if (responsePack.hasChanges && syncMode == SyncMode.PushOnly) {
+                        if (responsePack.hasChanges &&
+                            attachments.value[document.key]?.syncMode == SyncMode.PushOnly
+                        ) {
                             return@runCatching
                         }
 
                         document.applyChangePack(responsePack)
+                        // NOTE(chacha912): If a document has been removed, watchStream should
+                        // be disconnected to not receive an event for that document.
                         if (document.status == DocumentStatus.Removed) {
                             attachments.value -= document.key
                         }

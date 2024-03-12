@@ -806,6 +806,8 @@ internal data class CrdtTreeNode private constructor(
             it.childrenInternal.forEach { child ->
                 child.parent = it
             }
+            it.insPrevID = insPrevID
+            it.insNextID = insNextID
         }
     }
 

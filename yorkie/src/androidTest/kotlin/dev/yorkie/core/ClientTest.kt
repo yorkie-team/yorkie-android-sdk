@@ -12,6 +12,10 @@ import dev.yorkie.document.Document.Event.RemoteChange
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
+import dev.yorkie.document.json.JsonTreeTest.Companion.assertTreesXmlEquals
+import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import java.util.UUID
 import kotlin.test.assertContentEquals
@@ -524,6 +528,74 @@ class ClientTest {
 
             document.close()
             client.close()
+        }
+    }
+
+    @Test
+    fun test_prevent_remote_change_in_push_only_mode() {
+        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+            val d1Events = mutableListOf<Document.Event>()
+            val d2Events = mutableListOf<Document.Event>()
+            val collectJobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterNot { it is Document.Event.PresenceChange }
+                        .collect(d1Events::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filterNot { it is Document.Event.PresenceChange }
+                        .collect(d2Events::add)
+                },
+            )
+
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("doc") {
+                        element("p") { text { "12" } }
+                        element("p") { text { "34" } }
+                    },
+                )
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d2Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<RemoteChange>(d2Events.first())
+            assertTreesXmlEquals("<doc><p>12</p><p>34</p></doc>", d1, d2)
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().edit(2, 2, text { "a" })
+            }.await()
+            c1.syncAsync().await()
+
+            // Simulate the situation in the runSyncLoop where a pushpull request has been sent
+            // but a response has not yet been received.
+            c2.syncAsync().await()
+
+            // In push-only mode, remote-change events should not occur.
+            d2Events.clear()
+            c2.pauseRemoteChanges(d2)
+
+            delay(100) // Keep the push-only state.
+            assertTrue(d2Events.none { it is RemoteChange })
+
+            c2.resumeRemoteChanges(d2)
+
+            d2.updateAsync { root, _ ->
+                root.rootTree().edit(2, 2, text { "b" })
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.size < 3) {
+                    delay(50)
+                }
+            }
+            assertIs<RemoteChange>(d1Events.last())
+            assertTreesXmlEquals("<doc><p>1ba2</p><p>34</p></doc>", d1)
+
+            collectJobs.forEach(Job::cancel)
         }
     }
 }

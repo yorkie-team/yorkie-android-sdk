@@ -309,7 +309,7 @@ public class Document(
             }
 
             val (opInfos, newPresences) = change.execute(root, _presences.value)
-            if (change.hasOperations) {
+            if (opInfos.isNotEmpty()) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
 

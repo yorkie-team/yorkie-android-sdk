@@ -9,6 +9,7 @@ import java.util.UUID
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNull
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
@@ -391,7 +392,7 @@ class PresenceTest {
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
             c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
 
-            withTimeout(GENERAL_TIMEOUT + 1) {
+            withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched
                 while (d1Events.isEmpty()) {
                     delay(50)
@@ -408,7 +409,7 @@ class PresenceTest {
             // 02. c2 pauses the document (in manual sync), c3 resumes the document (in realtime sync).
             c2.pause(d2)
 
-            withTimeout(GENERAL_TIMEOUT + 2) {
+            withTimeout(GENERAL_TIMEOUT) {
                 // c2 unwatched
                 while (d1Events.size < 2) {
                     delay(50)
@@ -418,7 +419,7 @@ class PresenceTest {
             assertIs<Others.Unwatched>(d1Events.last())
             c3.resume(d3)
 
-            withTimeout(GENERAL_TIMEOUT + 3) {
+            withTimeout(GENERAL_TIMEOUT) {
                 // c3 watched
                 while (d1Events.size < 3) {
                     delay(50)
@@ -641,6 +642,72 @@ class PresenceTest {
             c1.close()
             c2.close()
             c3.close()
+        }
+    }
+
+    @Test
+    fun test_receive_document_events_according_to_presence_changes() {
+        withTwoClientsAndDocuments(
+            realTimeSync = false,
+            detachDocuments = false,
+        ) { c1, c2, d1, d2, _ ->
+            val d1Events = mutableListOf<Document.Event.PresenceChange>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.filterIsInstance<Others>()
+                    .collect { event ->
+                        when (event) {
+                            is Others.Watched -> {
+                                assertTrue(event.changed.actorID in d1.presences.value)
+                            }
+
+                            is Others.Unwatched -> {
+                                assertTrue(event.changed.actorID !in d1.presences.value)
+                            }
+
+                            is Others.PresenceChanged -> {
+                                val (actorID, presence) = event.changed
+                                if (actorID !in d1.presences.value) {
+                                    return@collect
+                                }
+                                assertEquals(presence, d1.presences.value[actorID])
+                            }
+                        }
+                        d1Events.add(event)
+                    }
+            }
+
+            // c1 in realtime sync
+            c1.resume(d1)
+            d2.updateAsync { _, presence ->
+                presence.put(mapOf("k1" to "v1"))
+            }.await()
+
+            // c2 in realtime sync
+            c2.resume(d2)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // watched, presence changed
+                while (d1Events.size < 2) {
+                    delay(50)
+                }
+            }
+
+            c2.detachAsync(d2).await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // unwatched
+                while (d1Events.size < 3) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(3, d1Events.size)
+            assertIs<Others.Watched>(d1Events.first())
+            assertIs<Others.PresenceChanged>(d1Events[1])
+            assertIs<Others.Unwatched>(d1Events.last())
+
+            c1.detachAsync(d1).await()
+            collectJob.cancel()
         }
     }
 

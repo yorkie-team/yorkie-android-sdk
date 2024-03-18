@@ -288,10 +288,10 @@ public class Client @VisibleForTesting internal constructor(
         if (response.hasInitialization()) {
             val document = attachments.value[documentKey]?.document ?: return
             val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
+            document.presenceEventQueue.add(
+                PresenceChange.MyPresence.Initialized(document.allPresences.value.asPresences()),
+            )
             document.onlineClients.value += clientIDs
-
-            val presences = document.presences.first { it.keys.containsAll(clientIDs) }
-            document.publish(PresenceChange.MyPresence.Initialized(presences.asPresences()))
             return
         }
 
@@ -306,13 +306,13 @@ public class Client @VisibleForTesting internal constructor(
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
                 // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
                 // unless we also know their initial presence data at this point.
-                document.onlineClients.value += publisher
-                if (publisher in document.allPresences.value) {
-                    val presence = document.presences.first { publisher in it }[publisher] ?: return
-                    document.publish(
+                val presence = document.allPresences.value[publisher]
+                if (presence != null) {
+                    document.presenceEventQueue.add(
                         PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
                     )
                 }
+                document.onlineClients.value += publisher
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
@@ -320,8 +320,10 @@ public class Client @VisibleForTesting internal constructor(
                 // when PresenceChange(clear) is applied before unwatching. In that case,
                 // the 'unwatched' event is triggered while handling the PresenceChange.
                 val presence = document.presences.value[publisher] ?: return
+                document.presenceEventQueue.add(
+                    PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
+                )
                 document.onlineClients.value -= publisher
-                document.publish(PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)))
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {

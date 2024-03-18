@@ -383,6 +383,7 @@ $dokka.location:dev.yorkie.document/Document/garbageLength/#/PointingToDeclarati
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
+$dokka.location:dev.yorkie.document/Document/myPresence/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/my-presence.html
 $dokka.location:dev.yorkie.document/Document/presences/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/presences.html
 $dokka.location:dev.yorkie.document/Document/status/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/status.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html

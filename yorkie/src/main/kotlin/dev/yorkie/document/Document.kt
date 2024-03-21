@@ -105,7 +105,9 @@ public class Document(
     public val presences: StateFlow<Presences> =
         combine(_presences, onlineClients) { presences, onlineClients ->
             presences.filterKeys { it in onlineClients }.asPresences()
-        }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences())
+        }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences()).also {
+            scope.launch { it.collect(::publishPresenceEvent) }
+        }
 
     internal val allPresences: StateFlow<Presences> = _presences.asStateFlow()
 
@@ -113,12 +115,6 @@ public class Document(
         get() = allPresences.value[changeID.actor]
             .takeIf { status == DocumentStatus.Attached }
             .orEmpty()
-
-    init {
-        scope.launch {
-            presences.collect(::publishPresenceEvent)
-        }
-    }
 
     /**
      * Executes the given [updater] to update this document.
@@ -396,6 +392,7 @@ public class Document(
      */
     private suspend fun publishPresenceEvent(presences: Presences) {
         val iterator = presenceEventQueue.listIterator()
+        val publishedEvents = mutableListOf<Event.PresenceChange>()
         while (iterator.hasNext()) {
             val event = iterator.next()
             if (event is Others && event.changed.actorID == changeID.actor) {
@@ -404,7 +401,7 @@ public class Document(
             }
 
             val eventReady = when (event) {
-                is MyPresence.Initialized -> event.initialized.keys == presences.keys
+                is MyPresence.Initialized -> presences.keys.containsAll(event.initialized.keys)
                 is MyPresence.PresenceChanged -> {
                     val actorID = event.changed.actorID
                     actorID !in presences || event.changed.presence == presences[actorID]
@@ -417,12 +414,12 @@ public class Document(
                     actorID !in presences || event.changed.presence == presences[actorID]
                 }
             }
-            if (!eventReady) {
-                break
+            if (eventReady) {
+                eventStream.emit(event)
+                publishedEvents.add(event)
             }
-            eventStream.emit(event)
-            iterator.remove()
         }
+        presenceEventQueue.removeAll(publishedEvents)
     }
 
     private fun Change.toChangeInfo(operationInfos: List<OperationInfo>) =

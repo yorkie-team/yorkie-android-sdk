@@ -392,12 +392,10 @@ public class Document(
      */
     private suspend fun publishPresenceEvent(presences: Presences) {
         val publishedEvents = mutableListOf<Event.PresenceChange>()
-        val iterator = presenceEventQueue.toList().iterator()
-        while (iterator.hasNext()) {
-            val event = iterator.next()
+        presenceEventQueue.toList().forEach { event ->
             if (event is Others && event.changed.actorID == changeID.actor) {
                 publishedEvents.add(event)
-                continue
+                return@forEach
             }
 
             val eventReady = when (event) {

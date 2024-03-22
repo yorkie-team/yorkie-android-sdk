@@ -391,12 +391,12 @@ public class Document(
      * Triggers an event in this [Document].
      */
     private suspend fun publishPresenceEvent(presences: Presences) {
-        val iterator = presenceEventQueue.listIterator()
         val publishedEvents = mutableListOf<Event.PresenceChange>()
+        val iterator = presenceEventQueue.toList().iterator()
         while (iterator.hasNext()) {
             val event = iterator.next()
             if (event is Others && event.changed.actorID == changeID.actor) {
-                iterator.remove()
+                publishedEvents.add(event)
                 continue
             }
 

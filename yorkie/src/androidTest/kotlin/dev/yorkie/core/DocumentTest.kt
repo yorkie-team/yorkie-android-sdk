@@ -141,43 +141,39 @@ class DocumentTest {
 
     @Test
     fun test_removed_document_detachment() {
-        withTwoClientsAndDocuments(false) { client1, client2, document1, document2, _ ->
-            document1.updateAsync { root, _ ->
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(documentKey)
+            val d2 = Document(documentKey)
+
+            d1.updateAsync { root, _ ->
                 root["key"] = 1
             }.await()
-            assertEquals("""{"key":1}""", document1.toJson())
+            c1.activateAsync().await()
+            c1.attachAsync(d1, isRealTimeSync = false).await()
+            assertEquals("""{"key":1}""", d1.toJson())
 
-            client1.syncAsync().await()
-            client2.syncAsync().await()
-            assertEquals(document1.toJson(), document2.toJson())
+            c2.activateAsync().await()
+            c2.attachAsync(d2, isRealTimeSync = false).await()
+            assertEquals("""{"key":1}""", d2.toJson())
 
-            client1.removeAsync(document1).await()
-            if (document2.status != DocumentStatus.Removed) {
-                client2.detachAsync(document2).await()
-            }
-            assertEquals(DocumentStatus.Removed, document1.status)
-            assertEquals(DocumentStatus.Removed, document2.status)
-        }
-    }
+            c1.removeAsync(d1).await()
+            c2.removeAsync(d2).await()
 
-    @Test
-    fun test_removing_already_removed_document() {
-        withTwoClientsAndDocuments(false) { client1, client2, document1, document2, _ ->
-            document1.updateAsync { root, _ ->
-                root["key"] = 1
-            }.await()
-            assertEquals("""{"key":1}""", document1.toJson())
+            c1.syncAsync().await()
+            c2.syncAsync().await()
 
-            client1.syncAsync().await()
-            client2.syncAsync().await()
-            assertEquals(document1.toJson(), document2.toJson())
+            assertEquals(DocumentStatus.Removed, d1.status)
+            assertEquals(DocumentStatus.Removed, d2.status)
 
-            client1.removeAsync(document1).await()
-            if (document2.status == DocumentStatus.Attached) {
-                client2.removeAsync(document2).await()
-            }
-            assertEquals(DocumentStatus.Removed, document1.status)
-            assertEquals(DocumentStatus.Removed, document2.status)
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
         }
     }
 

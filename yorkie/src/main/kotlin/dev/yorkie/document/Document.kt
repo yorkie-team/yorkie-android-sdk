@@ -335,6 +335,9 @@ public class Document(
     }
 
     private suspend fun emitPresences(newPresences: Presences) {
+        if (newPresences == _presences.value) {
+            publishPresenceEvent(newPresences)
+        }
         _presences.emit(newPresences)
         clone = ensureClone().copy(presences = newPresences)
     }

@@ -97,7 +97,8 @@ public class Document(
     internal val garbageLengthFromClone: Int
         get() = clone?.root?.getGarbageLength() ?: 0
 
-    internal val presenceEventQueue = mutableListOf<Event.PresenceChange>()
+    private val presenceEventQueue = mutableListOf<Event.PresenceChange>()
+    internal val pendingPresenceEvents = mutableListOf<Event.PresenceChange>()
 
     internal val onlineClients = MutableStateFlow(setOf<ActorID>())
 
@@ -106,7 +107,13 @@ public class Document(
         combine(_presences, onlineClients) { presences, onlineClients ->
             presences.filterKeys { it in onlineClients }.asPresences()
         }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences()).also {
-            scope.launch { it.collect(::publishPresenceEvent) }
+            scope.launch {
+                it.collect { presences ->
+                    presenceEventQueue.addAll(pendingPresenceEvents)
+                    pendingPresenceEvents.clear()
+                    publishPresenceEvent(presences)
+                }
+            }
         }
 
     internal val allPresences: StateFlow<Presences> = _presences.asStateFlow()
@@ -161,12 +168,12 @@ public class Document(
                 eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
             }
             if (change.hasPresenceChange) {
-                val presence = newPresences?.get(actorID) ?: _presences.value[actorID]
-                presence?.let {
-                    presenceEventQueue.add(createPresenceChangedEvent(actorID, presence))
+                val presence =
+                    newPresences?.get(actorID) ?: _presences.value[actorID] ?: return@async false
+                newPresences?.let {
+                    emitPresences(it, createPresenceChangedEvent(actorID, presence))
                 }
             }
-            newPresences?.let { emitPresences(it) }
             true
         }
     }
@@ -273,7 +280,8 @@ public class Document(
     private suspend fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
         val (root, presences) = snapshot.toSnapshot()
         this.root = CrdtRoot(root)
-        emitPresences(presences.asPresences())
+        _presences.value = presences.asPresences()
+        YorkieLogger.d("Document.snapshot", "Snapshot: ${snapshot.toSnapshot()}")
         changeID = changeID.syncLamport(serverSeq)
         clone = null
         eventStream.emit(Event.Snapshot(snapshot))
@@ -323,9 +331,7 @@ public class Document(
             if (opInfos.isNotEmpty()) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
-
-            presenceEvent?.let(presenceEventQueue::add)
-            newPresences?.let { emitPresences(it) }
+            newPresences?.let { emitPresences(it, presenceEvent) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
     }
@@ -334,12 +340,59 @@ public class Document(
         clone ?: RootClone(root.deepCopy(), _presences.value.asPresences()).also { clone = it }
     }
 
-    private suspend fun emitPresences(newPresences: Presences) {
+    private suspend fun emitPresences(newPresences: Presences, event: Event.PresenceChange?) {
         if (newPresences == _presences.value) {
-            publishPresenceEvent(newPresences)
+            event?.let {
+                if (presenceEventReadyToBePublished(it, newPresences)) {
+                    eventStream.emit(it)
+                } else {
+                    pendingPresenceEvents.add(it)
+                }
+            }
+        } else {
+            event?.let(pendingPresenceEvents::add)
+            _presences.emit(newPresences)
+            clone = ensureClone().copy(presences = newPresences)
         }
-        _presences.emit(newPresences)
-        clone = ensureClone().copy(presences = newPresences)
+    }
+
+    /**
+     * Triggers an event in this [Document].
+     */
+    private suspend fun publishPresenceEvent(presences: Presences) {
+        val iterator = presenceEventQueue.listIterator()
+        while (iterator.hasNext()) {
+            val event = iterator.next()
+            if (event is Others && event.changed.actorID == changeID.actor) {
+                iterator.remove()
+                continue
+            }
+
+            if (presenceEventReadyToBePublished(event, presences)) {
+                eventStream.emit(event)
+                iterator.remove()
+            }
+        }
+    }
+
+    private fun presenceEventReadyToBePublished(
+        event: Event.PresenceChange,
+        presences: Presences,
+    ): Boolean {
+        return when (event) {
+            is MyPresence.Initialized -> presences.keys.containsAll(event.initialized.keys)
+            is MyPresence.PresenceChanged -> {
+                val actorID = event.changed.actorID
+                actorID !in presences || event.changed.presence == presences[actorID]
+            }
+
+            is Others.Watched -> event.changed.actorID in presences
+            is Others.Unwatched -> event.changed.actorID !in presences
+            is Others.PresenceChanged -> {
+                val actorID = event.changed.actorID
+                actorID !in presences || event.changed.presence == presences[actorID]
+            }
+        }
     }
 
     /**
@@ -388,39 +441,6 @@ public class Document(
 
         clone?.root?.garbageCollect(ticket)
         return root.garbageCollect(ticket)
-    }
-
-    /**
-     * Triggers an event in this [Document].
-     */
-    private suspend fun publishPresenceEvent(presences: Presences) {
-        val publishedEvents = mutableListOf<Event.PresenceChange>()
-        presenceEventQueue.toList().forEach { event ->
-            if (event is Others && event.changed.actorID == changeID.actor) {
-                publishedEvents.add(event)
-                return@forEach
-            }
-
-            val eventReady = when (event) {
-                is MyPresence.Initialized -> presences.keys.containsAll(event.initialized.keys)
-                is MyPresence.PresenceChanged -> {
-                    val actorID = event.changed.actorID
-                    actorID !in presences || event.changed.presence == presences[actorID]
-                }
-
-                is Others.Watched -> event.changed.actorID in presences
-                is Others.Unwatched -> event.changed.actorID !in presences
-                is Others.PresenceChanged -> {
-                    val actorID = event.changed.actorID
-                    actorID !in presences || event.changed.presence == presences[actorID]
-                }
-            }
-            if (eventReady) {
-                eventStream.emit(event)
-                publishedEvents.add(event)
-            }
-        }
-        presenceEventQueue.removeAll(publishedEvents)
     }
 
     private fun Change.toChangeInfo(operationInfos: List<OperationInfo>) =

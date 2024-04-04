@@ -288,7 +288,7 @@ public class Client @VisibleForTesting internal constructor(
         if (response.hasInitialization()) {
             val document = attachments.value[documentKey]?.document ?: return
             val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
-            document.presenceEventQueue.add(
+            document.pendingPresenceEvents.add(
                 PresenceChange.MyPresence.Initialized(
                     document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
                 ),
@@ -310,7 +310,7 @@ public class Client @VisibleForTesting internal constructor(
                 // unless we also know their initial presence data at this point.
                 val presence = document.allPresences.value[publisher]
                 if (presence != null) {
-                    document.presenceEventQueue.add(
+                    document.pendingPresenceEvents.add(
                         PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
                     )
                 }
@@ -322,7 +322,7 @@ public class Client @VisibleForTesting internal constructor(
                 // when PresenceChange(clear) is applied before unwatching. In that case,
                 // the 'unwatched' event is triggered while handling the PresenceChange.
                 val presence = document.presences.value[publisher] ?: return
-                document.presenceEventQueue.add(
+                document.pendingPresenceEvents.add(
                     PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
                 )
                 document.onlineClients.value -= publisher

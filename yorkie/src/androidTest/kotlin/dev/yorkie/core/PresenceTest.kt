@@ -711,5 +711,47 @@ class PresenceTest {
         }
     }
 
+    @Test
+    fun test_emit_the_same_presence_multiple_times() {
+        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+            val d1Events = mutableListOf<Document.Event.PresenceChange>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                d1.events.filterIsInstance<Others>().collect(d1Events::add)
+            }
+
+            c1.resume(d1)
+            c2.resume(d2)
+
+            d2.updateAsync { _, presence ->
+                presence.put(mapOf("a" to "b"))
+            }.await()
+
+            delay(100)
+
+            d2.updateAsync { _, presence ->
+                presence.put(mapOf("a" to "b"))
+            }.await()
+
+            d2.updateAsync { _, presence ->
+                presence.put(mapOf("a" to "b"))
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.size < 4) {
+                    delay(50)
+                }
+            }
+            assertEquals(4, d1Events.size)
+            assertIs<Others.Watched>(d1Events.first())
+            d1Events.drop(1).forEach { event ->
+                assertEquals(
+                    Others.PresenceChanged(PresenceInfo(c2.requireClientId(), mapOf("a" to "b"))),
+                    event,
+                )
+            }
+            collectJob.cancel()
+        }
+    }
+
     private data class Cursor(val x: Int, val y: Int)
 }

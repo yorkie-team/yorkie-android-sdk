@@ -630,10 +630,13 @@ class ClientTest {
                         c1.pauseRemoteChanges(d1)
                         d1.updateAsync { root, _ ->
                             val tree = root.getAs<JsonTree>("t")
-                            tree.editByPath(
-                                listOf(99),
-                                listOf(100),
-                            )
+                            val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
+                            if (size > 99) {
+                                tree.editByPath(
+                                    listOf(99),
+                                    listOf(100),
+                                )
+                            }
                         }.await()
                         c1.resumeRemoteChanges(d1)
                         delay(10)
@@ -641,10 +644,13 @@ class ClientTest {
                         c1.pauseRemoteChanges(d1)
                         d1.updateAsync { root, _ ->
                             val tree = root.getAs<JsonTree>("t")
-                            tree.editByPath(
-                                listOf(30),
-                                listOf(99),
-                            )
+                            val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
+                            if (size > 31) {
+                                tree.editByPath(
+                                    listOf(30),
+                                    listOf(99.coerceAtMost(size)),
+                                )
+                            }
                         }.await()
                         c1.resumeRemoteChanges(d1)
                         delay(10)
@@ -652,10 +658,13 @@ class ClientTest {
                         c1.pauseRemoteChanges(d1)
                         d1.updateAsync { root, _ ->
                             val tree = root.getAs<JsonTree>("t")
-                            tree.editByPath(
-                                listOf(0),
-                                listOf(30),
-                            )
+                            val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
+                            if (size > 0) {
+                                tree.editByPath(
+                                    listOf(0),
+                                    listOf(30.coerceAtMost(size)),
+                                )
+                            }
                         }.await()
                         c1.resumeRemoteChanges(d1)
                     },
@@ -664,10 +673,13 @@ class ClientTest {
                             c2.pauseRemoteChanges(d2)
                             d2.updateAsync { root, _ ->
                                 val tree = root.getAs<JsonTree>("t")
-                                tree.editByPath(
-                                    listOf(100 - it - 1),
-                                    listOf(100 - it),
-                                )
+                                val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
+                                if (size > 0) {
+                                    tree.editByPath(
+                                        listOf((100 - it - 1).coerceIn(0 until size)),
+                                        listOf((100 - it).coerceIn(1..size)),
+                                    )
+                                }
                             }.await()
                             c2.resumeRemoteChanges(d2)
                             delay(10)

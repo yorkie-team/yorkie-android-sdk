@@ -688,8 +688,10 @@ class ClientTest {
                 ).joinAll()
 
                 suspend fun checkEmpty(document: Document): Boolean {
-                    return (document.getRoot()
-                        .getAs<JsonTree>("t").rootTreeNode as JsonTree.ElementNode).children.isEmpty()
+                    return (
+                        document.getRoot()
+                            .getAs<JsonTree>("t").rootTreeNode as JsonTree.ElementNode
+                        ).children.isEmpty()
                 }
 
                 withTimeoutOrNull(15_000) {

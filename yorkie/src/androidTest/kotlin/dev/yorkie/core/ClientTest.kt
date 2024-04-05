@@ -12,6 +12,7 @@ import dev.yorkie.document.Document.Event.RemoteChange
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
+import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTreeTest.Companion.assertTreesXmlEquals
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
 import dev.yorkie.document.json.TreeBuilder.element
@@ -20,6 +21,7 @@ import dev.yorkie.document.operation.OperationInfo
 import java.util.UUID
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -29,9 +31,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -572,7 +576,10 @@ class ClientTest {
 
             // Simulate the situation in the runSyncLoop where a pushpull request has been sent
             // but a response has not yet been received.
-            c2.syncAsync().await()
+            d2Events.clear()
+            val deferred = c2.syncAsync()
+            c2.pauseRemoteChanges(d2)
+            deferred.await()
 
             // In push-only mode, remote-change events should not occur.
             d2Events.clear()
@@ -596,6 +603,130 @@ class ClientTest {
             assertTreesXmlEquals("<doc><p>1ba2</p><p>34</p></doc>", d1)
 
             collectJobs.forEach(Job::cancel)
+        }
+    }
+
+    @Test
+    fun test_concurrent_deletions() {
+        withTwoClientsAndDocuments(realTimeSync = true) { c1, c2, d1, d2, _ ->
+            repeat(10) { repeat ->
+                d1.updateAsync { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            repeat(100) {
+                                text { "1" }
+                            }
+                        },
+                    )
+                }.await()
+
+                while (d1.toJson() != d2.toJson()) {
+                    delay(100)
+                }
+
+                listOf(
+                    launch {
+                        c1.pauseRemoteChanges(d1)
+                        d1.updateAsync { root, _ ->
+                            val tree = root.getAs<JsonTree>("t")
+                            tree.editByPath(
+                                listOf(99),
+                                listOf(100),
+                            )
+                        }.await()
+                        c1.resumeRemoteChanges(d1)
+                        delay(10)
+
+                        c1.pauseRemoteChanges(d1)
+                        d1.updateAsync { root, _ ->
+                            val tree = root.getAs<JsonTree>("t")
+                            tree.editByPath(
+                                listOf(30),
+                                listOf(99),
+                            )
+                        }.await()
+                        c1.resumeRemoteChanges(d1)
+                        delay(10)
+
+                        c1.pauseRemoteChanges(d1)
+                        d1.updateAsync { root, _ ->
+                            val tree = root.getAs<JsonTree>("t")
+                            tree.editByPath(
+                                listOf(0),
+                                listOf(30),
+                            )
+                        }.await()
+                        c1.resumeRemoteChanges(d1)
+                    },
+                    launch {
+                        repeat(100) {
+                            c2.pauseRemoteChanges(d2)
+                            d2.updateAsync { root, _ ->
+                                val tree = root.getAs<JsonTree>("t")
+                                tree.editByPath(
+                                    listOf(100 - it - 1),
+                                    listOf(100 - it),
+                                )
+                            }.await()
+                            c2.resumeRemoteChanges(d2)
+                            delay(10)
+                        }
+                    },
+                ).joinAll()
+
+                suspend fun checkEmpty(document: Document): Boolean {
+                    return (document.getRoot()
+                        .getAs<JsonTree>("t").rootTreeNode as JsonTree.ElementNode).children.isEmpty()
+                }
+
+                withTimeoutOrNull(15_000) {
+                    while (!checkEmpty(d1) && !checkEmpty(d2)) {
+                        delay(100)
+                    }
+                } ?: run {
+                    error("failed on ${repeat + 1}th test\nd1: ${d1.toJson()}\nd2: ${d2.toJson()}")
+                }
+
+                assertTrue(checkEmpty(d1))
+                assertTrue(checkEmpty(d2))
+
+                listOf(
+                    launch {
+                        d1.updateAsync { root, _ ->
+                            val tree = root.getAs<JsonTree>("t")
+                            tree.editByPath(
+                                listOf(0),
+                                listOf(0),
+                                text { "0" },
+                            )
+                        }.await()
+                    },
+                    launch {
+                        d2.updateAsync { root, _ ->
+                            val tree = root.getAs<JsonTree>("t")
+                            tree.editByPath(
+                                listOf(0),
+                                listOf(0),
+                                text { "2" },
+                            )
+                        }.await()
+                    },
+                ).joinAll()
+
+                withTimeoutOrNull(15_000) {
+                    while (d1.toJson() != d2.toJson()) {
+                        delay(100)
+                    }
+                } ?: run {
+                    error("failed on ${repeat + 1}th test\nd1: ${d1.toJson()}\nd2: ${d2.toJson()}")
+                }
+
+                assertFalse(checkEmpty(d1))
+                assertFalse(checkEmpty(d2))
+
+                assertEquals(d1.toJson(), d2.toJson())
+            }
         }
     }
 }

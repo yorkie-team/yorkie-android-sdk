@@ -1,6 +1,5 @@
 package dev.yorkie.core
 
-import androidx.test.platform.app.InstrumentationRegistry
 import dev.yorkie.document.Document
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -8,13 +7,7 @@ import kotlinx.coroutines.runBlocking
 
 const val GENERAL_TIMEOUT = 3_000L
 
-fun createClient() = Client(
-    InstrumentationRegistry.getInstrumentation().targetContext,
-    "10.0.2.2",
-    8080,
-) {
-    it.usePlaintext()
-}
+fun createClient() = Client("http://10.0.2.2:8080")
 
 fun String.toDocKey(): Document.Key {
     return Document.Key(

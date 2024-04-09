@@ -8,8 +8,7 @@ import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.RemoveDocumentRequest
-import dev.yorkie.api.v1.WatchDocumentRequest
-import dev.yorkie.api.v1.YorkieServiceGrpcKt
+import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
@@ -28,56 +27,43 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.createSingleThreadDispatcher
-import io.grpc.Channel
-import io.grpc.inprocess.InProcessChannelBuilder
-import io.grpc.inprocess.InProcessServerBuilder
-import io.grpc.testing.GrpcCleanupRule
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.AdditionalAnswers.delegatesTo
+import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 
 class ClientTest {
-    @get:Rule
-    val grpcCleanup = GrpcCleanupRule()
-
-    private lateinit var channel: Channel
     private lateinit var target: Client
 
-    private val service = mock<YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase>(
-        defaultAnswer = delegatesTo(MockYorkieService()),
-    )
+    private lateinit var service: YorkieServiceClientInterface
 
     @Before
     fun setUp() {
-        val serverName = InProcessServerBuilder.generateName()
-        grpcCleanup.register(
-            InProcessServerBuilder
-                .forName(serverName)
-                .directExecutor()
-                .addService(service)
-                .build()
-                .start(),
+        service = mock<YorkieServiceClientInterface>(
+            defaultAnswer = delegatesTo(MockYorkieService()),
         )
-        channel = grpcCleanup.register(
-            InProcessChannelBuilder.forName(serverName).directExecutor().build(),
-        )
+
         target = Client(
-            channel,
+            service,
             Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
             createSingleThreadDispatcher("Client Test"),
+            OkHttpClient(),
+            null,
         )
     }
 
@@ -92,7 +78,7 @@ class ClientTest {
             assertFalse(target.isActive)
             val activateRequestCaptor = argumentCaptor<ActivateClientRequest>()
             assertTrue(target.activateAsync().await())
-            verify(service).activateClient(activateRequestCaptor.capture())
+            verify(service).activateClient(activateRequestCaptor.capture(), any())
             assertEquals(TEST_KEY, activateRequestCaptor.firstValue.clientKey)
             assertTrue(target.isActive)
 
@@ -101,7 +87,7 @@ class ClientTest {
 
             val deactivateRequestCaptor = argumentCaptor<DeactivateClientRequest>()
             assertTrue(target.deactivateAsync().await())
-            verify(service).deactivateClient(deactivateRequestCaptor.capture())
+            verify(service).deactivateClient(deactivateRequestCaptor.capture(), any())
             assertIsTestActorID(deactivateRequestCaptor.firstValue.clientId)
             assertFalse(target.isActive)
             assertIs<Client.Status.Deactivated>(target.status.value)
@@ -116,21 +102,21 @@ class ClientTest {
 
             val attachRequestCaptor = argumentCaptor<AttachDocumentRequest>()
             target.attachAsync(document, isRealTimeSync = false).await()
-            verify(service).attachDocument(attachRequestCaptor.capture())
+            verify(service).attachDocument(attachRequestCaptor.capture(), any())
             assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
             assertIsInitialChangePack(attachRequestCaptor.firstValue.changePack)
             assertJsonContentEquals("""{"k1": 4}""", document.toJson())
 
             val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
             target.syncAsync().await()
-            verify(service).pushPullChanges(syncRequestCaptor.capture())
+            verify(service).pushPullChanges(syncRequestCaptor.capture(), any())
             assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
             assertIsInitialChangePack(syncRequestCaptor.firstValue.changePack)
             assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
             val detachRequestCaptor = argumentCaptor<DetachDocumentRequest>()
             target.detachAsync(document).await()
-            verify(service).detachDocument(detachRequestCaptor.capture())
+            verify(service).detachDocument(detachRequestCaptor.capture(), any())
             assertIsTestActorID(detachRequestCaptor.firstValue.clientId)
             val detachmentChange =
                 detachRequestCaptor.firstValue.changePack.toChangePack().changes.last()
@@ -145,18 +131,16 @@ class ClientTest {
             val document = Document(Key(NORMAL_DOCUMENT_KEY))
             target.activateAsync().await()
 
-            val watchRequestCaptor = argumentCaptor<WatchDocumentRequest>()
             target.attachAsync(document).await()
             val event = target.events.first { it is DocumentChanged }
             val changeEvent = assertIs<DocumentChanged>(event)
-            verify(service, atLeastOnce()).watchDocument(watchRequestCaptor.capture())
-            assertIsTestActorID(watchRequestCaptor.firstValue.clientId)
+            verify(service, atLeastOnce()).watchDocument(any())
             assertEquals(1, changeEvent.documentKeys.size)
             assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.documentKeys.first().value)
 
             val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
             val syncEvent = assertIs<DocumentSynced>(target.events.first())
-            verify(service, atLeastOnce()).pushPullChanges(syncRequestCaptor.capture())
+            verify(service, atLeastOnce()).pushPullChanges(syncRequestCaptor.capture(), any())
             assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
             val synced = assertIs<Client.DocumentSyncResult.Synced>(syncEvent.result)
             assertEquals(document, synced.document)
@@ -184,10 +168,15 @@ class ClientTest {
             target.activateAsync().await()
             target.attachAsync(document).await()
 
+            val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                target.events.first()
+            }
+
             document.updateAsync { root, _ ->
                 root["k1"] = 1
             }.await()
-            val syncEvent = assertIs<DocumentSynced>(target.events.first())
+
+            val syncEvent = assertIs<DocumentSynced>(syncEventDeferred.await())
             val failed = assertIs<Client.DocumentSyncResult.SyncFailed>(syncEvent.result)
             assertEquals(document, failed.document)
 
@@ -267,7 +256,7 @@ class ClientTest {
 
             val removeDocumentRequestCaptor = argumentCaptor<RemoveDocumentRequest>()
             target.removeAsync(document).await()
-            verify(service).removeDocument(removeDocumentRequestCaptor.capture())
+            verify(service).removeDocument(removeDocumentRequestCaptor.capture(), any())
             assertIsTestActorID(removeDocumentRequestCaptor.firstValue.clientId)
             assertEquals(
                 InitialChangePack.copy(isRemoved = true),

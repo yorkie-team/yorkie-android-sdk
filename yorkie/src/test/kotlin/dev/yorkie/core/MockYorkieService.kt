@@ -1,5 +1,10 @@
 package dev.yorkie.core
 
+import com.connectrpc.Code
+import com.connectrpc.ConnectException
+import com.connectrpc.Headers
+import com.connectrpc.ResponseMessage
+import com.connectrpc.ServerOnlyStreamInterface
 import com.google.protobuf.kotlin.toByteString
 import dev.yorkie.api.PBTimeTicket
 import dev.yorkie.api.toPBChange
@@ -8,6 +13,8 @@ import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.ActivateClientResponse
 import dev.yorkie.api.v1.AttachDocumentRequest
 import dev.yorkie.api.v1.AttachDocumentResponse
+import dev.yorkie.api.v1.BroadcastRequest
+import dev.yorkie.api.v1.BroadcastResponse
 import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DeactivateClientResponse
 import dev.yorkie.api.v1.DetachDocumentRequest
@@ -23,9 +30,10 @@ import dev.yorkie.api.v1.ValueType
 import dev.yorkie.api.v1.WatchDocumentRequest
 import dev.yorkie.api.v1.WatchDocumentResponse
 import dev.yorkie.api.v1.WatchDocumentResponseKt.initialization
-import dev.yorkie.api.v1.YorkieServiceGrpcKt
+import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.activateClientResponse
 import dev.yorkie.api.v1.attachDocumentResponse
+import dev.yorkie.api.v1.broadcastResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.deactivateClientResponse
@@ -42,75 +50,104 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import io.grpc.Status
-import io.grpc.StatusException
 import java.nio.ByteBuffer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 
-class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
+class MockYorkieService : YorkieServiceClientInterface {
 
-    override suspend fun activateClient(request: ActivateClientRequest): ActivateClientResponse {
-        return activateClientResponse {
-            clientId = TEST_ACTOR_ID.value
-        }
+    override suspend fun activateClient(
+        request: ActivateClientRequest,
+        headers: Headers,
+    ): ResponseMessage<ActivateClientResponse> {
+        return ResponseMessage.Success(
+            activateClientResponse {
+                clientId = TEST_ACTOR_ID.value
+            },
+            emptyMap(),
+            emptyMap(),
+        )
     }
 
     override suspend fun deactivateClient(
         request: DeactivateClientRequest,
-    ): DeactivateClientResponse {
-        return deactivateClientResponse { }
+        headers: Headers,
+    ): ResponseMessage<DeactivateClientResponse> {
+        return ResponseMessage.Success(deactivateClientResponse { }, emptyMap(), emptyMap())
     }
 
-    override suspend fun attachDocument(request: AttachDocumentRequest): AttachDocumentResponse {
+    override suspend fun attachDocument(
+        request: AttachDocumentRequest,
+        headers: Headers,
+    ): ResponseMessage<AttachDocumentResponse> {
         if (request.changePack.documentKey == ATTACH_ERROR_DOCUMENT_KEY) {
-            throw StatusException(Status.UNKNOWN)
+            return ResponseMessage.Failure(ConnectException(Code.UNKNOWN), emptyMap(), emptyMap())
         }
-        return attachDocumentResponse {
-            changePack = changePack {
-                documentKey = request.changePack.documentKey
-                changes.add(
-                    Change(
-                        ChangeID(0u, 0, TEST_ACTOR_ID),
-                        listOf(
-                            SetOperation(
-                                "k1",
-                                CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),
-                                InitialTimeTicket,
-                                InitialTimeTicket,
+        return ResponseMessage.Success(
+            attachDocumentResponse {
+                changePack = changePack {
+                    documentKey = request.changePack.documentKey
+                    changes.add(
+                        Change(
+                            ChangeID(0u, 0, TEST_ACTOR_ID),
+                            listOf(
+                                SetOperation(
+                                    "k1",
+                                    CrdtPrimitive(4, InitialTimeTicket.copy(lamport = 1)),
+                                    InitialTimeTicket,
+                                    InitialTimeTicket,
+                                ),
                             ),
-                        ),
-                    ).toPBChange(),
-                )
-                minSyncedTicket = PBTimeTicket.getDefaultInstance()
-            }
-            documentId = changePack.documentKey
-        }
+                        ).toPBChange(),
+                    )
+                    minSyncedTicket = PBTimeTicket.getDefaultInstance()
+                }
+                documentId = changePack.documentKey
+            },
+            emptyMap(),
+            emptyMap(),
+        )
     }
 
-    override suspend fun detachDocument(request: DetachDocumentRequest): DetachDocumentResponse {
+    override suspend fun detachDocument(
+        request: DetachDocumentRequest,
+        headers: Headers,
+    ): ResponseMessage<DetachDocumentResponse> {
         if (request.changePack.documentKey == DETACH_ERROR_DOCUMENT_KEY) {
-            throw StatusException(Status.UNKNOWN)
+            return ResponseMessage.Failure(ConnectException(Code.UNKNOWN), emptyMap(), emptyMap())
         }
-        return detachDocumentResponse { }
+        return ResponseMessage.Success(detachDocumentResponse { }, emptyMap(), emptyMap())
     }
 
-    override suspend fun pushPullChanges(request: PushPullChangesRequest): PushPullChangesResponse {
+    override suspend fun pushPullChanges(
+        request: PushPullChangesRequest,
+        headers: Headers,
+    ): ResponseMessage<PushPullChangesResponse> {
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
-            throw StatusException(Status.UNAVAILABLE)
+            return ResponseMessage.Failure(ConnectException(Code.UNKNOWN), emptyMap(), emptyMap())
         }
-        return pushPullChangesResponse {
-            changePack = changePack {
-                minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
-                changes.add(
-                    change {
-                        operations.add(createSetOperation())
-                        operations.add(createRemoveOperation())
-                    },
-                )
-            }
-        }
+        return ResponseMessage.Success(
+            pushPullChangesResponse {
+                changePack = changePack {
+                    minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
+                    changes.add(
+                        change {
+                            operations.add(createSetOperation())
+                            operations.add(createRemoveOperation())
+                        },
+                    )
+                }
+            },
+            emptyMap(),
+            emptyMap(),
+        )
     }
 
     private fun createSetOperation() = operation {
@@ -135,65 +172,124 @@ class MockYorkieService : YorkieServiceGrpcKt.YorkieServiceCoroutineImplBase() {
         }
     }
 
-    override fun watchDocument(request: WatchDocumentRequest): Flow<WatchDocumentResponse> {
-        val key = request.documentId
-        return flow {
-            emit(
-                watchDocumentResponse {
-                    initialization = initialization {
-                        clientIds.add(TEST_ACTOR_ID.value)
-                    }
-                },
-            )
-            delay(1_000)
-            if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
-                throw StatusException(Status.UNAVAILABLE)
+    @OptIn(DelicateCoroutinesApi::class)
+    override suspend fun watchDocument(
+        headers: Headers,
+    ): ServerOnlyStreamInterface<WatchDocumentRequest, WatchDocumentResponse> {
+        return object : ServerOnlyStreamInterface<WatchDocumentRequest, WatchDocumentResponse> {
+            private var responseChannel = Channel<WatchDocumentResponse>()
+
+            override fun isClosed(): Boolean {
+                return responseChannel.isClosedForSend
             }
-            emit(
-                watchDocumentResponse {
-                    event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED
-                        publisher = request.clientId
+
+            override fun isReceiveClosed(): Boolean {
+                return responseChannel.isClosedForReceive
+            }
+
+            override suspend fun receiveClose() {
+                responseChannel.close()
+            }
+
+            override fun responseChannel(): ReceiveChannel<WatchDocumentResponse> {
+                return responseChannel.takeUnless { it.isClosedForReceive || it.isClosedForSend }
+                    ?: Channel<WatchDocumentResponse>().also { responseChannel = it }
+            }
+
+            override fun responseHeaders(): Deferred<Headers> {
+                return CompletableDeferred(emptyMap())
+            }
+
+            override fun responseTrailers(): Deferred<Headers> {
+                return CompletableDeferred(emptyMap())
+            }
+
+            override suspend fun sendAndClose(input: WatchDocumentRequest): Result<Unit> {
+                return runCatching {
+                    val key = input.documentId
+                    val clientId = input.clientId
+                    CoroutineScope(Dispatchers.Default).launch {
+                        if (responseChannel.isClosedForSend) {
+                            return@launch
+                        }
+                        responseChannel.trySend(
+                            watchDocumentResponse {
+                                initialization = initialization {
+                                    clientIds.add(TEST_ACTOR_ID.value)
+                                }
+                            },
+                        )
+                        delay(1_000)
+                        if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
+                            responseChannel.close(ConnectException(Code.UNAVAILABLE))
+                            return@launch
+                        }
+                        responseChannel.trySend(
+                            watchDocumentResponse {
+                                event = docEvent {
+                                    type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED
+                                    publisher = clientId
+                                }
+                            },
+                        )
+                        delay(1_000)
+                        responseChannel.trySend(
+                            watchDocumentResponse {
+                                event = docEvent {
+                                    type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED
+                                    publisher = clientId
+                                }
+                            },
+                        )
+                        delay(2_000)
+                        responseChannel.trySend(
+                            watchDocumentResponse {
+                                event = docEvent {
+                                    type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED
+                                    publisher = clientId
+                                }
+                            },
+                        )
                     }
-                },
-            )
-            delay(1_000)
-            emit(
-                watchDocumentResponse {
-                    event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED
-                        publisher = request.clientId
-                    }
-                },
-            )
-            delay(2_000)
-            emit(
-                watchDocumentResponse {
-                    event = docEvent {
-                        type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED
-                        publisher = request.clientId
-                    }
-                },
-            )
+                }
+            }
         }
     }
 
-    override suspend fun removeDocument(request: RemoveDocumentRequest): RemoveDocumentResponse {
+    override suspend fun removeDocument(
+        request: RemoveDocumentRequest,
+        headers: Headers,
+    ): ResponseMessage<RemoveDocumentResponse> {
         if (request.documentId == REMOVE_ERROR_DOCUMENT_KEY) {
-            throw StatusException(Status.UNAVAILABLE)
+            return ResponseMessage.Failure(
+                ConnectException(Code.UNAVAILABLE),
+                emptyMap(),
+                emptyMap(),
+            )
         }
-        return removeDocumentResponse {
-            changePack = changePack {
-                minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
-                changes.add(
-                    change {
-                        operations.add(createSetOperation())
-                        operations.add(createRemoveOperation())
-                    },
-                )
-                isRemoved = true
-            }
-        }
+        return ResponseMessage.Success(
+            removeDocumentResponse {
+                changePack = changePack {
+                    minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
+                    changes.add(
+                        change {
+                            operations.add(createSetOperation())
+                            operations.add(createRemoveOperation())
+                        },
+                    )
+                    isRemoved = true
+                }
+            },
+            emptyMap(),
+            emptyMap(),
+        )
+    }
+
+    override suspend fun broadcast(
+        request: BroadcastRequest,
+        headers: Headers,
+    ): ResponseMessage<BroadcastResponse> {
+        return ResponseMessage.Success(broadcastResponse { }, emptyMap(), emptyMap())
     }
 
     companion object {

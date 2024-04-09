@@ -1,6 +1,6 @@
 package dev.yorkie.document
 
-import com.google.common.annotations.VisibleForTesting
+import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
 import dev.yorkie.core.P

@@ -1,6 +1,6 @@
 package dev.yorkie.document.crdt
 
-import com.google.common.annotations.VisibleForTesting
+import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.YorkieLogger

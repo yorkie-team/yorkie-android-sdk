@@ -1,12 +1,21 @@
 package dev.yorkie.core
 
-import android.content.Context
-import com.google.common.annotations.VisibleForTesting
+import androidx.annotation.VisibleForTesting
+import com.connectrpc.ConnectException
+import com.connectrpc.ProtocolClientConfig
+import com.connectrpc.ServerOnlyStreamInterface
+import com.connectrpc.extensions.GoogleJavaLiteProtobufStrategy
+import com.connectrpc.getOrElse
+import com.connectrpc.getOrThrow
+import com.connectrpc.impl.ProtocolClient
+import com.connectrpc.okhttp.ConnectOkHttpClient
+import com.connectrpc.protocols.NetworkProtocol
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchDocumentResponse
-import dev.yorkie.api.v1.YorkieServiceGrpcKt.YorkieServiceCoroutineStub
+import dev.yorkie.api.v1.YorkieServiceClient
+import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.deactivateClientRequest
@@ -25,24 +34,25 @@ import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
-import io.grpc.CallOptions
-import io.grpc.Channel
-import io.grpc.Metadata
-import io.grpc.StatusException
-import io.grpc.android.AndroidChannelBuilder
 import java.io.Closeable
 import java.util.UUID
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,8 +62,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 
 /**
  * Client that can communicate with the server.
@@ -65,9 +76,11 @@ import kotlinx.coroutines.launch
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
 public class Client @VisibleForTesting internal constructor(
-    private val channel: Channel,
-    private val options: Options = Options(),
+    private val service: YorkieServiceClientInterface,
+    private val options: Options,
     private val dispatcher: CoroutineDispatcher,
+    private val unaryClient: OkHttpClient,
+    private val streamClient: OkHttpClient,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val activationJob = SupervisorJob()
@@ -86,37 +99,46 @@ public class Client @VisibleForTesting internal constructor(
     private val _streamConnectionStatus = MutableStateFlow(StreamConnectionStatus.Disconnected)
     public val streamConnectionStatus = _streamConnectionStatus.asStateFlow()
 
-    private val service by lazy {
-        YorkieServiceCoroutineStub(channel, CallOptions.DEFAULT).withInterceptors(
-            *listOfNotNull(
-                UserAgentInterceptor,
-                options.authInterceptor(),
-            ).toTypedArray(),
+    private val projectBasedRequestHeader = mapOf("x-shard-key" to listOf(options.apiKey.orEmpty()))
+
+    private val Document.Key.documentBasedRequestHeader
+        get() = mapOf(
+            "x-shard-key" to listOf("${options.apiKey.orEmpty()}/$value"),
         )
-    }
-
-    private val projectBasedRequestHeader = Metadata().apply {
-        put("x-shard-key".asMetadataKey(), options.apiKey.orEmpty())
-    }
-
-    private fun documentBasedRequestHeader(documentKey: Document.Key) = Metadata().apply {
-        put("x-shard-key".asMetadataKey(), "${options.apiKey.orEmpty()}/${documentKey.value}")
-    }
 
     public constructor(
-        context: Context,
-        rpcHost: String,
-        rpcPort: Int,
+        host: String,
         options: Options = Options(),
-        dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Client(${options.key})"),
-        buildChannel: (AndroidChannelBuilder) -> AndroidChannelBuilder = { it },
-    ) : this(
-        channel = AndroidChannelBuilder.forAddress(rpcHost, rpcPort)
-            .let(buildChannel)
-            .context(context.applicationContext)
+        unaryClient: OkHttpClient = OkHttpClient(),
+        streamClient: OkHttpClient = unaryClient.newBuilder()
+            .pingInterval(10, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.SECONDS)
             .build(),
+        dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Client(${options.key})"),
+        ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    ) : this(
+        service = YorkieServiceClient(
+            ProtocolClient(
+                ConnectOkHttpClient(unaryClient, streamClient),
+                ProtocolClientConfig(
+                    host = host,
+                    serializationStrategy = GoogleJavaLiteProtobufStrategy(),
+                    networkProtocol = NetworkProtocol.CONNECT,
+                    ioCoroutineContext = ioDispatcher,
+                    interceptors = buildList {
+                        add { UserAgentInterceptor }
+                        options.authInterceptor()?.let { interceptor ->
+                            add { interceptor }
+                        }
+                    },
+                ),
+            ),
+        ),
         options = options,
         dispatcher = dispatcher,
+        unaryClient = unaryClient,
+        streamClient = streamClient,
     )
 
     /**
@@ -129,15 +151,13 @@ public class Client @VisibleForTesting internal constructor(
             if (isActive) {
                 return@async true
             }
-            val activateResponse = try {
-                service.activateClient(
-                    activateClientRequest {
-                        clientKey = options.key
-                    },
-                    projectBasedRequestHeader,
-                )
-            } catch (e: StatusException) {
-                YorkieLogger.e("Client.activate", e.stackTraceToString())
+            val activateResponse = service.activateClient(
+                activateClientRequest {
+                    clientKey = options.key
+                },
+                projectBasedRequestHeader,
+            ).getOrElse {
+                YorkieLogger.e("Client.activate", it.toString())
                 return@async false
             }
             _status.emit(Status.Activated(ActorID(activateResponse.clientId)))
@@ -217,8 +237,8 @@ public class Client @VisibleForTesting internal constructor(
                         }
                         val response = service.pushPullChanges(
                             request,
-                            documentBasedRequestHeader(document.key),
-                        )
+                            document.key.documentBasedRequestHeader,
+                        ).getOrThrow()
                         val responsePack = response.changePack.toChangePack()
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
                         // PushPull, ignore the response when the syncMode is PushOnly.
@@ -234,6 +254,8 @@ public class Client @VisibleForTesting internal constructor(
                         if (document.status == DocumentStatus.Removed) {
                             attachments.value -= document.key
                         }
+                    }.onFailure {
+                        coroutineContext.ensureActive()
                     },
                 )
             }
@@ -262,22 +284,69 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private suspend fun createWatchJob(attachment: Attachment): Job {
+    private fun createWatchJob(attachment: Attachment): Job {
+        var latestStream: ServerOnlyStreamInterface<*, *>? = null
         return scope.launch(activationJob) {
-            service.watchDocument(
-                watchDocumentRequest {
-                    clientId = requireClientId().value
-                    documentId = attachment.documentID
-                },
-                documentBasedRequestHeader(attachment.document.key),
-            ).retry {
-                _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
-                delay(options.reconnectStreamDelay.inWholeMilliseconds)
-                true
-            }.collect {
-                _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                handleWatchDocumentsResponse(attachment.document.key, it)
+            while (true) {
+                ensureActive()
+                latestStream.safeClose()
+                val stream = service.watchDocument(
+                    attachment.document.key.documentBasedRequestHeader,
+                ).also {
+                    latestStream = it
+                }
+                val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                    val channel = stream.responseChannel()
+                    var retry = 0
+                    while (!stream.isReceiveClosed()) {
+                        runCatching {
+                            val response = channel.receive()
+                            _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
+                            handleWatchDocumentsResponse(attachment.document.key, response)
+                        }.onFailure {
+                            YorkieLogger.e(
+                                "watchStream",
+                                if (it is ConnectException) {
+                                    it.toString()
+                                } else {
+                                    it.message.orEmpty()
+                                },
+                            )
+                            _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+                            retry++
+                            if (retry > 3) {
+                                stream.safeClose()
+                            }
+                            ensureActive()
+                            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                        }.onSuccess {
+                            retry = 0
+                        }
+                    }
+                }
+                stream.sendAndClose(
+                    watchDocumentRequest {
+                        clientId = requireClientId().value
+                        documentId = attachment.documentID
+                    },
+                )
+                streamJob.join()
             }
+        }.also {
+            it.invokeOnCompletion {
+                scope.launch {
+                    latestStream.safeClose()
+                }
+            }
+        }
+    }
+
+    private suspend fun ServerOnlyStreamInterface<*, *>?.safeClose() {
+        if (this == null || isReceiveClosed()) {
+            return
+        }
+        withContext(NonCancellable) {
+            receiveClose()
         }
     }
 
@@ -366,13 +435,11 @@ public class Client @VisibleForTesting internal constructor(
                 clientId = requireClientId().value
                 changePack = document.createChangePack().toPBChangePack()
             }
-            val response = try {
-                service.attachDocument(
-                    request,
-                    documentBasedRequestHeader(document.key),
-                )
-            } catch (e: StatusException) {
-                YorkieLogger.e("Client.attach", e.stackTraceToString())
+            val response = service.attachDocument(
+                request,
+                document.key.documentBasedRequestHeader,
+            ).getOrElse {
+                YorkieLogger.e("Client.attach", it.toString())
                 return@async false
             }
             val pack = response.changePack.toChangePack()
@@ -418,13 +485,11 @@ public class Client @VisibleForTesting internal constructor(
                 changePack = document.createChangePack().toPBChangePack()
                 documentId = attachment.documentID
             }
-            val response = try {
-                service.detachDocument(
-                    request,
-                    documentBasedRequestHeader(document.key),
-                )
-            } catch (e: StatusException) {
-                YorkieLogger.e("Client.detach", e.stackTraceToString())
+            val response = service.detachDocument(
+                request,
+                document.key.documentBasedRequestHeader,
+            ).getOrElse {
+                YorkieLogger.e("Client.detach", it.toString())
                 return@async false
             }
             val pack = response.changePack.toChangePack()
@@ -448,15 +513,13 @@ public class Client @VisibleForTesting internal constructor(
             activationJob.cancelChildren()
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 
-            try {
-                service.deactivateClient(
-                    deactivateClientRequest {
-                        clientId = requireClientId().value
-                    },
-                    projectBasedRequestHeader,
-                )
-            } catch (e: StatusException) {
-                YorkieLogger.e("Client.deactivate", e.stackTraceToString())
+            service.deactivateClient(
+                deactivateClientRequest {
+                    clientId = requireClientId().value
+                },
+                projectBasedRequestHeader,
+            ).getOrElse {
+                YorkieLogger.e("Client.deactivate", it.toString())
                 return@async false
             }
             _status.emit(Status.Deactivated)
@@ -480,13 +543,11 @@ public class Client @VisibleForTesting internal constructor(
                 changePack = document.createChangePack(forceRemove = true).toPBChangePack()
                 documentId = attachment.documentID
             }
-            val response = try {
-                service.removeDocument(
-                    request,
-                    documentBasedRequestHeader(document.key),
-                )
-            } catch (e: StatusException) {
-                YorkieLogger.e("Client.remove", e.stackTraceToString())
+            val response = service.removeDocument(
+                request,
+                document.key.documentBasedRequestHeader,
+            ).getOrElse {
+                YorkieLogger.e("Client.remove", it.toString())
                 return@async false
             }
             val pack = response.changePack.toChangePack()
@@ -566,6 +627,8 @@ public class Client @VisibleForTesting internal constructor(
     override fun close() {
         scope.cancel()
         (dispatcher as? Closeable)?.close()
+        unaryClient.dispatcher.executorService.shutdown()
+        streamClient.dispatcher.executorService.shutdown()
     }
 
     private data class SyncResult(val document: Document, val result: Result<Unit>)

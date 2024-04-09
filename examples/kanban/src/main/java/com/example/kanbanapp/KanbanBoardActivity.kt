@@ -21,7 +21,7 @@ class KanbanBoardActivity : ComponentActivity() {
     private val viewModel: KanbanBoardViewModel by viewModels {
         viewModelFactory {
             initializer {
-                val client = Client(this@KanbanBoardActivity, "api.yorkie.dev", 443)
+                val client = Client("https://api.yorkie.dev")
                 KanbanBoardViewModel(client)
             }
         }

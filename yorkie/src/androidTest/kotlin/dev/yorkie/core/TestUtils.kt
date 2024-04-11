@@ -4,10 +4,17 @@ import dev.yorkie.document.Document
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
 
 const val GENERAL_TIMEOUT = 3_000L
 
-fun createClient() = Client("http://10.0.2.2:8080")
+fun createClient() = Client(
+    "http://10.0.2.2:8080",
+    unaryClient = OkHttpClient.Builder()
+        .protocols(listOf(Protocol.H2_PRIOR_KNOWLEDGE))
+        .build(),
+)
 
 fun String.toDocKey(): Document.Key {
     return Document.Key(

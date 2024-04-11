@@ -36,7 +36,6 @@ import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -44,6 +43,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -51,6 +51,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.channels.onFailure
+import kotlinx.coroutines.channels.onSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -110,11 +113,7 @@ public class Client @VisibleForTesting internal constructor(
         host: String,
         options: Options = Options(),
         unaryClient: OkHttpClient = OkHttpClient(),
-        streamClient: OkHttpClient = unaryClient.newBuilder()
-            .pingInterval(10, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.SECONDS)
-            .callTimeout(0, TimeUnit.SECONDS)
-            .build(),
+        streamClient: OkHttpClient = unaryClient,
         dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Client(${options.key})"),
         ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     ) : this(
@@ -284,6 +283,7 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
     private fun createWatchJob(attachment: Attachment): Job {
         var latestStream: ServerOnlyStreamInterface<*, *>? = null
         return scope.launch(activationJob) {
@@ -298,30 +298,30 @@ public class Client @VisibleForTesting internal constructor(
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
                     var retry = 0
-                    while (!stream.isReceiveClosed()) {
-                        runCatching {
-                            val response = channel.receive()
-                            _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                            handleWatchDocumentsResponse(attachment.document.key, response)
-                        }.onFailure {
-                            YorkieLogger.e(
-                                "watchStream",
-                                if (it is ConnectException) {
+                    while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
+                        channel.receiveCatching()
+                            .onSuccess {
+                                _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
+                                handleWatchDocumentsResponse(attachment.document.key, it)
+                                retry = 0
+                            }
+                            .onFailure {
+                                _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+                                retry++
+                                if (retry > 3 || it is ClosedReceiveChannelException) {
+                                    stream.safeClose()
+                                }
+                                val errorMessage = if (it is ConnectException) {
                                     it.toString()
                                 } else {
-                                    it.message.orEmpty()
-                                },
-                            )
-                            _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
-                            retry++
-                            if (retry > 3) {
-                                stream.safeClose()
+                                    it?.message
+                                }
+                                if (!errorMessage.isNullOrEmpty()) {
+                                    YorkieLogger.e("watchStream", errorMessage)
+                                }
+                                ensureActive()
+                                delay(options.reconnectStreamDelay.inWholeMilliseconds)
                             }
-                            ensureActive()
-                            delay(options.reconnectStreamDelay.inWholeMilliseconds)
-                        }.onSuccess {
-                            retry = 0
-                        }
                     }
                 }
                 stream.sendAndClose(

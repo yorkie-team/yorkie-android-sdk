@@ -2,6 +2,7 @@ package dev.yorkie.core
 
 import dev.yorkie.document.Document
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -9,12 +10,20 @@ import okhttp3.Protocol
 
 const val GENERAL_TIMEOUT = 3_000L
 
-fun createClient() = Client(
-    "http://10.0.2.2:8080",
-    unaryClient = OkHttpClient.Builder()
+fun createClient() = run {
+    val unaryClient = OkHttpClient.Builder()
         .protocols(listOf(Protocol.HTTP_1_1))
-        .build(),
-)
+        .build()
+
+    Client(
+        "http://10.0.2.2:8080",
+        unaryClient = unaryClient,
+        streamClient = unaryClient.newBuilder()
+            .pingInterval(10L, TimeUnit.SECONDS)
+            .readTimeout(10L, TimeUnit.MINUTES)
+            .build(),
+    )
+}
 
 fun String.toDocKey(): Document.Key {
     return Document.Key(

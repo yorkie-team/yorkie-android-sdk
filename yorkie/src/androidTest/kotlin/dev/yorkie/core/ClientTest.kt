@@ -695,11 +695,14 @@ class ClientTest {
                 }
 
                 withTimeoutOrNull(15_000) {
-                    while (!checkEmpty(d1) && !checkEmpty(d2)) {
+                    while (!checkEmpty(d1) || !checkEmpty(d2)) {
                         delay(100)
                     }
                 } ?: run {
-                    error("failed on ${repeat + 1}th test\nd1: ${d1.toJson()}\nd2: ${d2.toJson()}")
+                    error(
+                        "empty check failed on ${repeat + 1}th test\n" +
+                            "d1: ${d1.toJson()}\nd2: ${d2.toJson()}",
+                    )
                 }
 
                 assertTrue(checkEmpty(d1))

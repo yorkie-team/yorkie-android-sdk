@@ -460,6 +460,12 @@ internal class CrdtTree(
         return value.takeIf { key.createdAt == id.createdAt }
     }
 
+    fun checkPosRangeValid(posRange: TreePosRange): Boolean {
+        return listOf(posRange.first, posRange.second).all {
+            findFloorNode(it.parentID) != null && findFloorNode(it.leftSiblingID) != null
+        }
+    }
+
     /**
      * Move the given [source] range to the given [target] range.
      */

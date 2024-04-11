@@ -33,6 +33,10 @@ internal data class TreeEditOperation(
             YorkieLogger.e(TAG, "fail to execute, only Tree can execute edit")
             return emptyList()
         }
+        if (!tree.checkPosRangeValid(fromPos to toPos)) {
+            YorkieLogger.e(TAG, "has invalid pos range, skip executing the operation")
+            return emptyList()
+        }
 
         val editedAt = executedAt
         val changes =

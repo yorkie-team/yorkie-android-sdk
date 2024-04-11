@@ -12,7 +12,7 @@ const val GENERAL_TIMEOUT = 3_000L
 fun createClient() = Client(
     "http://10.0.2.2:8080",
     unaryClient = OkHttpClient.Builder()
-        .protocols(listOf(Protocol.H2_PRIOR_KNOWLEDGE))
+        .protocols(listOf(Protocol.HTTP_1_1))
         .build(),
 )
 

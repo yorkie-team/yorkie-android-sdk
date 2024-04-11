@@ -63,7 +63,7 @@ class ClientTest {
             Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
             createSingleThreadDispatcher("Client Test"),
             OkHttpClient(),
-            null,
+            OkHttpClient(),
         )
     }
 

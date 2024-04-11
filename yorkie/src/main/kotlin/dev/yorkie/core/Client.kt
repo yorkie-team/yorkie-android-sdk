@@ -52,8 +52,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
-import kotlinx.coroutines.channels.onFailure
-import kotlinx.coroutines.channels.onSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -299,29 +297,28 @@ public class Client @VisibleForTesting internal constructor(
                     val channel = stream.responseChannel()
                     var retry = 0
                     while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
-                        channel.receiveCatching()
-                            .onSuccess {
-                                _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                                handleWatchDocumentsResponse(attachment.document.key, it)
-                                retry = 0
+                        runCatching {
+                            val response = channel.receive()
+                            _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
+                            handleWatchDocumentsResponse(attachment.document.key, response)
+                            retry = 0
+                        }.onFailure {
+                            _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+                            retry++
+                            if (retry > 3 || it is ClosedReceiveChannelException) {
+                                stream.safeClose()
                             }
-                            .onFailure {
-                                _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
-                                retry++
-                                if (retry > 3 || it is ClosedReceiveChannelException) {
-                                    stream.safeClose()
-                                }
-                                val errorMessage = if (it is ConnectException) {
-                                    it.toString()
-                                } else {
-                                    it?.message
-                                }
-                                if (!errorMessage.isNullOrEmpty()) {
-                                    YorkieLogger.e("watchStream", errorMessage)
-                                }
-                                ensureActive()
-                                delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                            val errorMessage = if (it is ConnectException) {
+                                it.toString()
+                            } else {
+                                it.message.orEmpty()
                             }
+                            if (errorMessage.isNotEmpty()) {
+                                YorkieLogger.e("watchStream", errorMessage)
+                            }
+                            ensureActive()
+                            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                        }
                     }
                 }
                 stream.sendAndClose(

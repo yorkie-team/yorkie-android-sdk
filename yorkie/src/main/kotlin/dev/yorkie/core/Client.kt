@@ -1,7 +1,6 @@
 package dev.yorkie.core
 
 import androidx.annotation.VisibleForTesting
-import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
 import com.connectrpc.ServerOnlyStreamInterface
@@ -55,6 +54,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.channels.onClosed
+import kotlinx.coroutines.channels.onFailure
+import kotlinx.coroutines.channels.onSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -300,22 +302,23 @@ public class Client @VisibleForTesting internal constructor(
                     val channel = stream.responseChannel()
                     var retry = 0
                     while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
-                        runCatching {
-                            val response = channel.receive()
+                        val receiveResult = channel.receiveCatching()
+                        receiveResult.onSuccess {
                             _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
-                            handleWatchDocumentsResponse(attachment.document.key, response)
+                            handleWatchDocumentsResponse(attachment.document.key, it)
                             retry = 0
                         }.onFailure {
-                            retry++
-                            if (retry > 3 || it is ClosedReceiveChannelException ||
-                                (it as? ConnectException)?.code == Code.UNAVAILABLE
-                            ) {
-                                _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
-                                stream.safeClose()
+                            if (receiveResult.isClosed) {
+                                return@onFailure
                             }
-                            sendWatchStreamException(it)
-                            ensureActive()
-                            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+                            retry++
+                            handleWatchStreamFailure(stream, it, retry > 3)
+                        }.onClosed {
+                            handleWatchStreamFailure(
+                                stream,
+                                it ?: ClosedReceiveChannelException("Channel was closed"),
+                                true,
+                            )
                         }
                     }
                 }
@@ -334,6 +337,20 @@ public class Client @VisibleForTesting internal constructor(
                 }
             }
         }
+    }
+
+    private suspend fun handleWatchStreamFailure(
+        stream: ServerOnlyStreamInterface<*, *>,
+        cause: Throwable?,
+        closeStream: Boolean,
+    ) {
+        if (closeStream) {
+            _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+            stream.safeClose()
+        }
+        cause?.let(::sendWatchStreamException)
+        coroutineContext.ensureActive()
+        delay(options.reconnectStreamDelay.inWholeMilliseconds)
     }
 
     private fun sendWatchStreamException(t: Throwable) {

@@ -221,7 +221,7 @@ class MockYorkieService : YorkieServiceClientInterface {
                         )
                         delay(1_000)
                         if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
-                            responseChannel.close(ConnectException(Code.UNAVAILABLE))
+                            responseChannel.close()
                             return@launch
                         }
                         responseChannel.trySend(

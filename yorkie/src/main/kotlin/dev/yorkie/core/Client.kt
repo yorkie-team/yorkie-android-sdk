@@ -1,6 +1,7 @@
 package dev.yorkie.core
 
 import androidx.annotation.VisibleForTesting
+import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
 import com.connectrpc.ServerOnlyStreamInterface
@@ -306,7 +307,9 @@ public class Client @VisibleForTesting internal constructor(
                             retry = 0
                         }.onFailure {
                             retry++
-                            if (retry > 3 || it is ClosedReceiveChannelException) {
+                            if (retry > 3 || it is ClosedReceiveChannelException ||
+                                (it as? ConnectException)?.code == Code.UNAVAILABLE
+                            ) {
                                 _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
                                 stream.safeClose()
                             }

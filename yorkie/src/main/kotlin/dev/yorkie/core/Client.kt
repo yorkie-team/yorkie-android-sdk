@@ -344,8 +344,8 @@ public class Client @VisibleForTesting internal constructor(
         cause: Throwable?,
         closeStream: Boolean,
     ) {
+        _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
         if (closeStream) {
-            _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
             stream.safeClose()
         }
         cause?.let(::sendWatchStreamException)

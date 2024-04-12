@@ -6,10 +6,16 @@ public object YorkieLogger {
     public var logger: Logger? = null
 
     fun d(tag: String, message: String) {
+        if (message.isBlank()) {
+            return
+        }
         logger?.d("$TAG_PREFIX$tag", message)
     }
 
     fun e(tag: String, message: String) {
+        if (message.isBlank()) {
+            return
+        }
         logger?.e("$TAG_PREFIX$tag", message)
     }
 }

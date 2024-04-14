@@ -2,6 +2,7 @@ package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChange.Others
 import dev.yorkie.gson
@@ -13,7 +14,6 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -97,19 +97,33 @@ class PresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            c1.attachAsync(d1, initialPresence = mapOf("name" to "a")).await()
             val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<Document.Event.PresenceChange>()
-                    .filterNot { it is MyPresence.Initialized }
+                d1.events.filterIsInstance<PresenceChange>()
                     .collect(d1Events::add)
             }
+            c1.attachAsync(d1, initialPresence = mapOf("name" to "a")).await()
 
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
+            withTimeout(GENERAL_TIMEOUT) {
+                // initialized, my-presence changed
+                while (d1Events.size < 2) {
+                    delay(50)
+                }
+            }
+            d1Events.clear()
+
             val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d2.events.filterIsInstance<Document.Event.PresenceChange>()
-                    .filterNot { it is MyPresence.Initialized }
+                d2.events.filterIsInstance<PresenceChange>()
                     .collect(d2Events::add)
             }
+            c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                // initialized, my-presence changed
+                while (d2Events.size < 2) {
+                    delay(50)
+                }
+            }
+            d2Events.clear()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // watched from c2
@@ -234,19 +248,23 @@ class PresenceTest {
             val c1ID = c1.requireClientId()
             val c2ID = c2.requireClientId()
 
-            c1.attachAsync(d1, mapOf("name" to "a", "cursor" to previousCursor)).await()
             val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<Document.Event.PresenceChange>()
-                    .filterNot { it is MyPresence.Initialized }
-                    .collect(d1Events::add)
+                d1.events.filterIsInstance<PresenceChange>().collect(d1Events::add)
             }
+            c1.attachAsync(d1, mapOf("name" to "a", "cursor" to previousCursor)).await()
 
-            c2.attachAsync(d2, mapOf("name" to "b", "cursor" to previousCursor)).await()
-            val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d2.events.filterIsInstance<Document.Event.PresenceChange>()
-                    .filterNot { it is MyPresence.Initialized }
-                    .collect(d2Events::add)
+            withTimeout(GENERAL_TIMEOUT) {
+                // initialized, my-presence changed
+                while (d1Events.size < 2) {
+                    delay(50)
+                }
             }
+            d1Events.clear()
+
+            val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
+                d2.events.filterIsInstance<Others>().collect(d2Events::add)
+            }
+            c2.attachAsync(d2, mapOf("name" to "b", "cursor" to previousCursor)).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
@@ -316,9 +334,7 @@ class PresenceTest {
             c1.attachAsync(d1, initialPresence = mapOf("name" to "a")).await()
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<Document.Event.PresenceChange>()
-                    .filterNot { it is MyPresence.Initialized }
-                    .collect(d1Events::add)
+                d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
 
@@ -472,18 +488,15 @@ class PresenceTest {
             val c2ID = c2.requireClientId()
             val c3ID = c3.requireClientId()
 
-            c1.attachAsync(d1, initialPresence = mapOf("name" to "a1", "cursor" to cursor))
-                .await()
+            c1.attachAsync(d1, initialPresence = mapOf("name" to "a1", "cursor" to cursor)).await()
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<Others>()
-                    .collect(d1Events::add)
+                d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
             //     c1 receives the watched event from c2.
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor))
-                .await()
+            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
             c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
 
             withTimeout(GENERAL_TIMEOUT) {
@@ -651,7 +664,7 @@ class PresenceTest {
             realTimeSync = false,
             detachDocuments = false,
         ) { c1, c2, d1, d2, _ ->
-            val d1Events = mutableListOf<Document.Event.PresenceChange>()
+            val d1Events = mutableListOf<PresenceChange>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>()
                     .collect { event ->
@@ -714,7 +727,7 @@ class PresenceTest {
     @Test
     fun test_emit_the_same_presence_multiple_times() {
         withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
-            val d1Events = mutableListOf<Document.Event.PresenceChange>()
+            val d1Events = mutableListOf<PresenceChange>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }

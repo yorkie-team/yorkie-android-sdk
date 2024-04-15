@@ -1,0 +1,11 @@
+version: v1
+plugins:
+  - plugin: buf.build/connectrpc/kotlin:v0.6.0
+    out: kotlin
+    opt: lite
+  - plugin: buf.build/protocolbuffers/kotlin
+    out: kotlin
+    opt: lite
+  - plugin: buf.build/protocolbuffers/java
+    out: java
+    opt: lite

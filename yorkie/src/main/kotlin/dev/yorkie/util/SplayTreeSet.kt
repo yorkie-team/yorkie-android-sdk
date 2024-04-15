@@ -1,7 +1,7 @@
 package dev.yorkie.util
 
-import com.google.common.annotations.VisibleForTesting
 import dev.yorkie.util.SplayTreeSet.LengthCalculator
+import org.jetbrains.annotations.VisibleForTesting
 
 /**
  * SplayTreeSet is weighted binary search tree set based on Splay tree.

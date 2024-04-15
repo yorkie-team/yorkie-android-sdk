@@ -1,6 +1,6 @@
 package dev.yorkie.util
 
-import com.google.common.annotations.VisibleForTesting
+import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 
 /**

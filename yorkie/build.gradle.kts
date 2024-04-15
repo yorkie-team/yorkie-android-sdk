@@ -1,13 +1,13 @@
-import com.google.protobuf.gradle.id
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     id("com.android.library")
     kotlin("android")
-    id("com.google.protobuf")
     id("jacoco")
     id("maven-publish")
     id("org.jetbrains.dokka")
     id("signing")
+    id("build.buf") version "0.9.0"
 }
 
 jacoco {
@@ -22,7 +22,7 @@ tasks.register<JacocoReport>("jacocoDebugTestReport") {
     }
 
     classDirectories.setFrom(
-        fileTree("${buildDir}/tmp/kotlin-classes/debug") {
+        fileTree("${layout.buildDirectory.asFile.get()}/tmp/kotlin-classes/debug") {
             exclude(
                 "**/dev/yorkie/api/v1/**",
                 "**/R.class",
@@ -36,7 +36,7 @@ tasks.register<JacocoReport>("jacocoDebugTestReport") {
     )
     sourceDirectories.setFrom("${project.projectDir}/src/main/kotlin")
     executionData.setFrom(
-        fileTree(project.buildDir) {
+        fileTree(layout.buildDirectory.asFile.get()) {
             include(
                 "jacoco/testDebugUnitTest.exec",
                 "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec",
@@ -49,6 +49,14 @@ tasks.register<JacocoReport>("jacocoDebugTestReport") {
 tasks.register<Zip>("stuffZip") {
     archiveBaseName.set("stuff")
     from("src/stuff")
+}
+
+tasks.named("bufGenerate") {
+    notCompatibleWithConfigurationCache("")
+}
+
+tasks.withType<KotlinCompile> {
+    dependsOn("bufGenerate")
 }
 
 signing {
@@ -87,6 +95,12 @@ android {
             )
         }
     }
+
+    sourceSets["main"].java {
+        val generatedDir = "${layout.buildDirectory.asFile.get()}/bufbuild/generated"
+        srcDirs("${generatedDir}/kotlin", "${generatedDir}/java")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -147,51 +161,11 @@ android {
     }
 }
 
-protobuf {
-    val protocPlatform = findProperty("protoc_platform")?.toString().orEmpty()
-
-    protoc {
-        artifact = "com.google.protobuf:protoc:${libs.versions.protobuf.get()}${protocPlatform}"
-    }
-    plugins {
-        val protocJava =
-            "io.grpc:protoc-gen-grpc-java:${libs.versions.grpc.asProvider().get()}${protocPlatform}"
-        id("java") {
-            artifact = protocJava
-        }
-        id("grpc") {
-            artifact = protocJava
-        }
-        id("grpckt") {
-            artifact = "io.grpc:protoc-gen-grpc-kotlin:${libs.versions.grpc.kotlin.get()}:jdk8@jar"
-        }
-    }
-    generateProtoTasks {
-        all().forEach { task ->
-            task.plugins {
-                id("java") {
-                    option("lite")
-                }
-                id("grpc") {
-                    option("lite")
-                }
-                id("grpckt") {
-                    option("lite")
-                }
-            }
-            task.builtins {
-                id("kotlin") {
-                    option("lite")
-                }
-            }
-        }
-    }
-}
-
 dependencies {
-    protobuf(project(":yorkie:proto"))
+    api(libs.bundles.rpc)
+    implementation(libs.guava)
 
-    api(libs.bundles.grpc)
+    implementation(libs.androidx.annotation)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.apache.commons.collections)
 
@@ -200,8 +174,6 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.gson)
-    testImplementation(libs.grpc.testing)
-    testImplementation(libs.grpc.inprocess)
 
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)

@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken
 import dev.yorkie.TreeBasicTest
 import dev.yorkie.TreeTest
 import dev.yorkie.core.Client
+import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.GENERAL_TIMEOUT
 import dev.yorkie.core.Presence
 import dev.yorkie.core.createClient
@@ -48,7 +49,7 @@ class JsonTreeTest {
 
     @Test
     fun test_tree_sync_between_replicas() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -82,7 +83,7 @@ class JsonTreeTest {
 
     @Test
     fun test_inserting_text_to_same_position_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -128,7 +129,7 @@ class JsonTreeTest {
 
     @Test
     fun test_tree_with_attributes_between_replicas() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -161,7 +162,7 @@ class JsonTreeTest {
 
     @Test
     fun test_deleting_overlapping_elements_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -194,7 +195,7 @@ class JsonTreeTest {
 
     @Test
     fun test_deleting_overlapping_text_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -227,7 +228,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_and_delete_contained_elements_of_the_same_depth_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -266,7 +267,7 @@ class JsonTreeTest {
 
     @Test
     fun test_multiple_insert_and_delete_contained_elements_of_the_same_depth_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -308,7 +309,7 @@ class JsonTreeTest {
 
     @Test
     fun test_detecting_error_when_inserting_and_deleting_contained_elements_at_different_depths() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -341,7 +342,7 @@ class JsonTreeTest {
 
     @Test
     fun test_deleting_contained_elements_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -376,7 +377,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_and_delete_contained_text_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -409,7 +410,7 @@ class JsonTreeTest {
 
     @Test
     fun test_deleting_contained_text_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -442,7 +443,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_and_delete_contained_text_and_elements_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -475,7 +476,7 @@ class JsonTreeTest {
 
     @Test
     fun test_delete_contained_text_and_elements_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -508,7 +509,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_side_by_side_elements_into_right_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -539,7 +540,7 @@ class JsonTreeTest {
 
     @Test
     fun test_deleting_side_by_side_elements_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -573,7 +574,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_text_to_the_same_left_position_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -606,7 +607,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_text_to_the_same_middle_position_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -639,7 +640,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_text_to_the_same_right_position_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -672,7 +673,7 @@ class JsonTreeTest {
 
     @Test
     fun test_insert_and_delete_side_by_side_text_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -705,7 +706,7 @@ class JsonTreeTest {
 
     @Test
     fun test_delete_and_insert_side_by_side_text_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -738,7 +739,7 @@ class JsonTreeTest {
 
     @Test
     fun test_delete_side_by_side_text_blocks_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -771,7 +772,7 @@ class JsonTreeTest {
 
     @Test
     fun test_delete_text_content_at_the_same_left_position_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -804,7 +805,7 @@ class JsonTreeTest {
 
     @Test
     fun test_delete_text_content_at_the_same_middle_position_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -837,7 +838,7 @@ class JsonTreeTest {
 
     @Test
     fun test_delete_text_content_at_the_same_right_position_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -870,7 +871,7 @@ class JsonTreeTest {
 
     @Test
     fun test_delete_text_content_anchored_to_another_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -903,7 +904,7 @@ class JsonTreeTest {
 
     @Test
     fun test_producing_complete_deletion_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -936,7 +937,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_block_delete_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -969,7 +970,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_insertion_within_block_delete_concurrently_case1() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1002,7 +1003,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_insertion_within_block_delete_concurrently_case2() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1035,7 +1036,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_block_element_insertion_within_deletion() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1079,7 +1080,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_concurrent_element_insertion_and_deletion_to_left() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1120,7 +1121,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_concurrent_element_insertion_and_deletion_to_right() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1161,7 +1162,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_deletion_of_insertion_anchor_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1194,7 +1195,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_deletion_after_insertion_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1227,7 +1228,7 @@ class JsonTreeTest {
 
     @Test
     fun test_handling_deletion_before_insertion_concurrently() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1260,7 +1261,7 @@ class JsonTreeTest {
 
     @Test
     fun test_whether_split_link_can_be_transmitted_through_rpc() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1299,7 +1300,7 @@ class JsonTreeTest {
 
     @Test
     fun test_calculating_size_of_index_tree() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1328,7 +1329,7 @@ class JsonTreeTest {
 
     @Test
     fun test_tree_change_concurrent_delete() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1373,7 +1374,7 @@ class JsonTreeTest {
 
     @Test
     fun test_tree_change_concurrent_delete_and_insert() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1428,7 +1429,7 @@ class JsonTreeTest {
 
     @Test
     fun test_tree_change_concurrent_delete_and_insert_when_parent_removed() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1473,7 +1474,7 @@ class JsonTreeTest {
 
     @Test
     fun test_tree_change_concurrent_delete_with_contents_and_insert() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1527,7 +1528,7 @@ class JsonTreeTest {
 
     @Test
     fun test_overlapping_merge_and_merge() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1567,7 +1568,7 @@ class JsonTreeTest {
     @Test
     fun test_concurrently_deleting_and_styling_on_same_path() {
         withTwoClientsAndDocuments(
-            realTimeSync = false,
+            syncMode = Manual,
         ) { client1, client2, document1, document2, _ ->
             val document1Ops = mutableListOf<OperationInfo>()
             val document2Ops = mutableListOf<OperationInfo>()
@@ -1751,7 +1752,7 @@ class JsonTreeTest {
 
     @Test
     fun test_returning_range_from_index_correctly_within_document_events() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1807,7 +1808,7 @@ class JsonTreeTest {
 
     @Test
     fun test_returning_correct_range_path() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(
                 Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -1914,7 +1915,7 @@ class JsonTreeTest {
 
     @Test
     fun test_client_reload_cases() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, key ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, key ->
             // Perform a dummy update to apply changes up to the snapshot threshold.
             repeat(500) {
                 d1.updateAsync { root, _ ->
@@ -2035,7 +2036,7 @@ class JsonTreeTest {
             val d3 = Document(key)
             val c3 = createClient()
             c3.activateAsync().await()
-            c3.attachAsync(d3, isRealTimeSync = false).await()
+            c3.attachAsync(d3, syncMode = Manual).await()
             assertTreesXmlEquals(d2.getRoot().rootTree().toXml(), d3)
 
             updateAndSync(

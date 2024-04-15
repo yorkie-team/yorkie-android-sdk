@@ -187,7 +187,7 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private fun filterRealTimeSyncNeeded() = attachments.value.filterValues { attachment ->
-        attachment.isRealTimeSync &&
+        attachment.syncMode.needRealTimeSync &&
             (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
     }.map { (key, attachment) ->
         attachments.value += key to attachment.copy(remoteChangeEventReceived = false)
@@ -198,15 +198,12 @@ public class Client @VisibleForTesting internal constructor(
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
      */
-    public fun syncAsync(
-        document: Document? = null,
-        syncMode: SyncMode = SyncMode.PushPull,
-    ): Deferred<Boolean> {
+    public fun syncAsync(document: Document? = null): Deferred<Boolean> {
         return scope.async {
             var isAllSuccess = true
             val attachments = document?.let {
                 listOf(
-                    attachments.value[it.key]?.copy(syncMode = syncMode)
+                    attachments.value[it.key]?.copy(syncMode = SyncMode.Realtime)
                         ?: throw IllegalArgumentException("document is not attached"),
                 )
             } ?: attachments.value.values
@@ -227,7 +224,7 @@ public class Client @VisibleForTesting internal constructor(
     private suspend fun Collection<Attachment>.asSyncFlow(): Flow<SyncResult> {
         return asFlow()
             .map { attachment ->
-                val (document, documentID, _, syncMode) = attachment
+                val (document, documentID, syncMode) = attachment
                 SyncResult(
                     document,
                     runCatching {
@@ -235,7 +232,7 @@ public class Client @VisibleForTesting internal constructor(
                             clientId = requireClientId().value
                             changePack = document.createChangePack().toPBChangePack()
                             documentId = documentID
-                            pushOnly = syncMode == SyncMode.PushOnly
+                            pushOnly = syncMode == SyncMode.RealtimePushOnly
                         }
                         val response = service.pushPullChanges(
                             request,
@@ -245,7 +242,7 @@ public class Client @VisibleForTesting internal constructor(
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
                         // PushPull, ignore the response when the syncMode is PushOnly.
                         if (responsePack.hasChanges &&
-                            attachments.value[document.key]?.syncMode == SyncMode.PushOnly
+                            attachments.value[document.key]?.syncMode == SyncMode.RealtimePushOnly
                         ) {
                             return@runCatching
                         }
@@ -265,8 +262,8 @@ public class Client @VisibleForTesting internal constructor(
 
     private fun runWatchLoop() {
         scope.launch(activationJob) {
-            attachments.map {
-                it.filterValues(Attachment::isRealTimeSync)
+            attachments.map { attachment ->
+                attachment.filterValues { it.syncMode != SyncMode.Manual }
             }.fold(emptyMap<Document.Key, WatchJobHolder>()) { accumulator, attachments ->
                 (accumulator.keys - attachments.keys).forEach {
                     accumulator.getValue(it).job.cancel()
@@ -454,7 +451,7 @@ public class Client @VisibleForTesting internal constructor(
     public fun attachAsync(
         document: Document,
         initialPresence: P = emptyMap(),
-        isRealTimeSync: Boolean = true,
+        syncMode: SyncMode = SyncMode.Realtime,
     ): Deferred<Boolean> {
         return scope.async {
             check(isActive) {
@@ -490,7 +487,7 @@ public class Client @VisibleForTesting internal constructor(
             attachments.value += document.key to Attachment(
                 document,
                 response.documentId,
-                isRealTimeSync,
+                syncMode,
             )
             waitForInitialization(document.key)
             true
@@ -596,7 +593,7 @@ public class Client @VisibleForTesting internal constructor(
 
     private suspend fun waitForInitialization(documentKey: Document.Key) {
         val attachment = attachments.value[documentKey] ?: return
-        if (attachment.isRealTimeSync) {
+        if (attachment.syncMode == SyncMode.Realtime) {
             attachment.document.presences.first { it != UninitializedPresences }
         }
     }
@@ -604,57 +601,15 @@ public class Client @VisibleForTesting internal constructor(
     public fun requireClientId() = (status.value as Status.Activated).clientId
 
     /**
-     * Pauses the realtime synchronization of the given [document].
-     */
-    public fun pause(document: Document) {
-        changeRealTimeSync(document, false)
-    }
-
-    /**
-     * Resumes the realtime synchronization of the given [document].
-     */
-    public fun resume(document: Document) {
-        changeRealTimeSync(document, true)
-    }
-
-    private fun changeRealTimeSync(document: Document, isRealTimeSync: Boolean) {
-        check(isActive) {
-            "client is not active"
-        }
-        val attachment = attachments.value[document.key]
-            ?: throw IllegalArgumentException("document is not attached")
-        attachments.value += document.key to attachment.copy(
-            isRealTimeSync = isRealTimeSync,
-            remoteChangeEventReceived = isRealTimeSync || attachment.remoteChangeEventReceived,
-        )
-    }
-
-    /**
-     * Pauses the synchronization of remote changes,
-     * allowing only local changes to be applied.
-     */
-    public fun pauseRemoteChanges(document: Document) {
-        changeSyncMode(document, SyncMode.PushOnly)
-    }
-
-    /**
-     * Resumes the synchronization of remote changes,
-     * allowing both local and remote changes to be applied.
-     */
-    public fun resumeRemoteChanges(document: Document) {
-        changeSyncMode(document, SyncMode.PushPull)
-    }
-
-    /**
      * Changes the sync mode of the [document].
      */
-    private fun changeSyncMode(document: Document, syncMode: SyncMode) {
+    public fun changeSyncMode(document: Document, syncMode: SyncMode) {
         check(isActive) {
             "client is not active"
         }
         val attachment = attachments.value[document.key]
             ?: throw IllegalArgumentException("document is not attached")
-        attachments.value += document.key to if (syncMode == SyncMode.PushPull) {
+        attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
             attachment.copy(syncMode = syncMode, remoteChangeEventReceived = true)
         } else {
             attachment.copy(syncMode = syncMode)
@@ -699,12 +654,13 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     /**
-     * [SyncMode] is the mode of synchronization. It is used to determine
-     * whether to push and pull changes in PushPullChanges API.
+     * [SyncMode] defines synchronization modes for the PushPullChanges API.
      */
-    public enum class SyncMode {
-        PushPull,
-        PushOnly,
+    public enum class SyncMode(val needRealTimeSync: Boolean) {
+        Realtime(true),
+        RealtimePushOnly(true),
+        RealtimeSyncOff(false),
+        Manual(false),
     }
 
     /**

@@ -320,9 +320,8 @@ public class Document(
                         // them from the online clients and trigger the 'unwatched' event.
                         presences.value[actorID]?.let { presence ->
                             Others.Unwatched(PresenceInfo(actorID, presence))
-                        }.also {
-                            onlineClients.value -= actorID
-                        }
+                        }.takeIf { actorID in onlineClients.value }
+                            ?.also { onlineClients.value -= actorID }
                     }
                 }
             }

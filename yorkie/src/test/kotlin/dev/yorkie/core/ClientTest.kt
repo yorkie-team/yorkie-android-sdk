@@ -12,6 +12,7 @@ import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
+import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
@@ -101,7 +102,7 @@ class ClientTest {
             target.activateAsync().await()
 
             val attachRequestCaptor = argumentCaptor<AttachDocumentRequest>()
-            target.attachAsync(document, isRealTimeSync = false).await()
+            target.attachAsync(document, syncMode = Manual).await()
             verify(service).attachDocument(attachRequestCaptor.capture(), any())
             assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
             assertIsInitialChangePack(attachRequestCaptor.firstValue.changePack)

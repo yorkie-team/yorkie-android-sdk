@@ -2,6 +2,7 @@ package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.assertJsonContentEquals
+import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.json.JsonObject
@@ -208,7 +209,7 @@ class GCTest {
 
     @Test
     fun test_gc_with_tree_for_multi_client() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "t",
@@ -273,7 +274,7 @@ class GCTest {
 
     @Test
     fun test_gc_with_container_type_for_multi_client() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root["1"] = 1
                 root.setNewArray("2").apply {
@@ -327,7 +328,7 @@ class GCTest {
 
     @Test
     fun test_gc_with_text_for_multi_client() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewText("text").edit(0, 0, "Hello World")
                 root.setNewText("textWithAttr").edit(0, 0, "Hello World")
@@ -387,7 +388,7 @@ class GCTest {
     fun test_gc_with_detached_document() {
         withTwoClientsAndDocuments(
             detachDocuments = false,
-            realTimeSync = false,
+            syncMode = Manual,
         ) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root["1"] = 1
@@ -476,7 +477,7 @@ class GCTest {
         val document = Document(documentKey)
 
         client.activateAsync().await()
-        client.attachAsync(document, isRealTimeSync = false).await()
+        client.attachAsync(document, syncMode = Manual).await()
 
         document.updateAsync { root, _ ->
             root["point"] = gson.toJson(Point(0, 0))
@@ -513,7 +514,7 @@ class GCTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            c1.attachAsync(d1, isRealTimeSync = false).await()
+            c1.attachAsync(d1, syncMode = Manual).await()
             d1.updateAsync { root, _ ->
                 root.setNewObject("point").apply {
                     set("x", 0)
@@ -524,7 +525,7 @@ class GCTest {
             assertEquals(1, d1.garbageLength)
             c1.syncAsync().await()
 
-            c2.attachAsync(d2, isRealTimeSync = false).await()
+            c2.attachAsync(d2, syncMode = Manual).await()
             assertEquals(1, d2.garbageLength)
             d2.updateAsync { root, _ ->
                 root.getAs<JsonObject>("point")["x"] = 2
@@ -576,14 +577,14 @@ class GCTest {
             c2.activateAsync().await()
 
             // 1. initial state
-            c1.attachAsync(d1, isRealTimeSync = false).await()
+            c1.attachAsync(d1, syncMode = Manual).await()
             d1.updateAsync { root, _ ->
                 val point = root.setNewObject("point")
                 point["x"] = 0
                 point["y"] = 0
             }.await()
             c1.syncAsync().await()
-            c2.attachAsync(d2, isRealTimeSync = false).await()
+            c2.attachAsync(d2, syncMode = Manual).await()
 
             // 2. client1 updates doc
             d1.updateAsync { root, _ ->

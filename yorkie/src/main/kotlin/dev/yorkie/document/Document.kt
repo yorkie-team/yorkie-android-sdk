@@ -319,9 +319,9 @@ public class Document(
                         // Detached user is no longer participating in the document, we remove
                         // them from the online clients and trigger the 'unwatched' event.
                         presences.value[actorID]?.let { presence ->
-                            onlineClients.value -= actorID
                             Others.Unwatched(PresenceInfo(actorID, presence))
                         }.takeIf { actorID in onlineClients.value }
+                            ?.also { onlineClients.value -= actorID }
                     }
                 }
             }

@@ -176,7 +176,7 @@
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">enum </span><a href="-sync-mode/index.html">SyncMode</a> : <a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-enum/index.html">Enum</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="-sync-mode/index.html">Client.SyncMode</a><span class="token operator">&gt; </span></div><div class="brief "><p class="paragraph"><a href="-sync-mode/index.html">SyncMode</a> is the mode of synchronization. It is used to determine whether to push and pull changes in PushPullChanges API.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">enum </span><a href="-sync-mode/index.html">SyncMode</a> : <a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-enum/index.html">Enum</a><span class="token operator">&lt;</span><span class="token keyword"></span><a href="-sync-mode/index.html">Client.SyncMode</a><span class="token operator">&gt; </span></div><div class="brief "><p class="paragraph"><a href="-sync-mode/index.html">SyncMode</a> defines synchronization modes for the PushPullChanges API.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -264,17 +264,32 @@
               </div>
             </div>
           </div>
-<a data-name="-517373901%2FFunctions%2F-1590045667" anchor-label="attachAsync" id="-517373901%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+<a data-name="-1114672200%2FFunctions%2F-1590045667" anchor-label="attachAsync" id="-1114672200%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
                   <div><a href="attach-async.html"><span>attach</span><wbr></wbr><span><span>Async</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-517373901%2FFunctions%2F-1590045667"></span>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1114672200%2FFunctions%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="attach-async.html"><span class="token function">attachAsync</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a><span class="token punctuation">, </span></span><span class="parameter ">initialPresence<span class="token operator">: </span><a href="../-p/index.html">P</a><span class="token operator"> = </span>emptyMap()<span class="token punctuation">, </span></span><span class="parameter ">isRealTimeSync<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token operator"> = </span><span class="token boolean">true</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Attaches the given <a href="../../dev.yorkie.document/-document/index.html">Document</a> to this <a href="index.html">Client</a>. It tells the server that this <a href="index.html">Client</a> will synchronize the given <a href="attach-async.html">document</a>.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="attach-async.html"><span class="token function">attachAsync</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a><span class="token punctuation">, </span></span><span class="parameter ">initialPresence<span class="token operator">: </span><a href="../-p/index.html">P</a><span class="token operator"> = </span>emptyMap()<span class="token punctuation">, </span></span><span class="parameter ">syncMode<span class="token operator">: </span><a href="-sync-mode/index.html">Client.SyncMode</a><span class="token operator"> = </span>SyncMode.Realtime</span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Attaches the given <a href="../../dev.yorkie.document/-document/index.html">Document</a> to this <a href="index.html">Client</a>. It tells the server that this <a href="index.html">Client</a> will synchronize the given <a href="attach-async.html">document</a>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1138401036%2FFunctions%2F-1590045667" anchor-label="changeSyncMode" id="-1138401036%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="change-sync-mode.html"><span>change</span><wbr></wbr><span>Sync</span><wbr></wbr><span><span>Mode</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1138401036%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="change-sync-mode.html"><span class="token function">changeSyncMode</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a><span class="token punctuation">, </span></span><span class="parameter ">syncMode<span class="token operator">: </span><a href="-sync-mode/index.html">Client.SyncMode</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Changes the sync mode of the <a href="change-sync-mode.html">document</a>.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -324,36 +339,6 @@
               </div>
             </div>
           </div>
-<a data-name="-1463449375%2FFunctions%2F-1590045667" anchor-label="pause" id="-1463449375%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="pause.html"><span><span>pause</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1463449375%2FFunctions%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="pause.html"><span class="token function">pause</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Pauses the realtime synchronization of the given <a href="pause.html">document</a>.</p></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-<a data-name="-1775272332%2FFunctions%2F-1590045667" anchor-label="pauseRemoteChanges" id="-1775272332%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="pause-remote-changes.html"><span>pause</span><wbr></wbr><span>Remote</span><wbr></wbr><span><span>Changes</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1775272332%2FFunctions%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="pause-remote-changes.html"><span class="token function">pauseRemoteChanges</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Pauses the synchronization of remote changes, allowing only local changes to be applied.</p></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
 <a data-name="1189016895%2FFunctions%2F-1590045667" anchor-label="removeAsync" id="1189016895%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
@@ -384,47 +369,17 @@
               </div>
             </div>
           </div>
-<a data-name="2093784654%2FFunctions%2F-1590045667" anchor-label="resume" id="2093784654%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="resume.html"><span><span>resume</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2093784654%2FFunctions%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="resume.html"><span class="token function">resume</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Resumes the realtime synchronization of the given <a href="resume.html">document</a>.</p></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-<a data-name="578904615%2FFunctions%2F-1590045667" anchor-label="resumeRemoteChanges" id="578904615%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="resume-remote-changes.html"><span>resume</span><wbr></wbr><span>Remote</span><wbr></wbr><span><span>Changes</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="578904615%2FFunctions%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="resume-remote-changes.html"><span class="token function">resumeRemoteChanges</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Resumes the synchronization of remote changes, allowing both local and remote changes to be applied.</p></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-<a data-name="1497275924%2FFunctions%2F-1590045667" anchor-label="syncAsync" id="1497275924%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+<a data-name="-32324211%2FFunctions%2F-1590045667" anchor-label="syncAsync" id="-32324211%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
                   <div><a href="sync-async.html"><span>sync</span><wbr></wbr><span><span>Async</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1497275924%2FFunctions%2F-1590045667"></span>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-32324211%2FFunctions%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="sync-async.html"><span class="token function">syncAsync</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">syncMode<span class="token operator">: </span><a href="-sync-mode/index.html">Client.SyncMode</a><span class="token operator"> = </span>SyncMode.PushPull</span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Pushes local changes of the attached documents to the server and receives changes of the remote replica from the server then apply them to local documents.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword"></span><span class="token keyword">fun </span><a href="sync-async.html"><span class="token function">syncAsync</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><span class="token keyword"></span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Pushes local changes of the attached documents to the server and receives changes of the remote replica from the server then apply them to local documents.</p></div></div></div>
                 </div>
               </div>
             </div>

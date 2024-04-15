@@ -332,7 +332,7 @@ internal class CrdtTree(
                 }
             }
         }
-        return changes
+        return changes.reversed()
     }
 
     private fun findRightToken(treeToken: CrdtTreeToken): CrdtTreeToken {

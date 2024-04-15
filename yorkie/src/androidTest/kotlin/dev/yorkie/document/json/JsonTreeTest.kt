@@ -1418,8 +1418,8 @@ class JsonTreeTest {
             assertTreeEditOpInfosEquals(
                 listOf(
                     SimpleTreeEditOpInfo(2, 2, text { "c" }),
-                    SimpleTreeEditOpInfo(1, 2),
                     SimpleTreeEditOpInfo(3, 4),
+                    SimpleTreeEditOpInfo(1, 2),
                 ),
                 ops2,
             )

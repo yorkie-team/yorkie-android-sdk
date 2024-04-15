@@ -25,7 +25,7 @@ fun String.toDocKey(): Document.Key {
 
 fun withTwoClientsAndDocuments(
     detachDocuments: Boolean = true,
-    realTimeSync: Boolean = true,
+    syncMode: Client.SyncMode = Client.SyncMode.Realtime,
     presences: Pair<Map<String, String>, Map<String, String>> = Pair(emptyMap(), emptyMap()),
     callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
 ) {
@@ -41,12 +41,12 @@ fun withTwoClientsAndDocuments(
 
         client1.attachAsync(
             document1,
-            isRealTimeSync = realTimeSync,
+            syncMode = syncMode,
             initialPresence = presences.first,
         ).await()
         client2.attachAsync(
             document2,
-            isRealTimeSync = realTimeSync,
+            syncMode = syncMode,
             initialPresence = presences.second,
         ).await()
 

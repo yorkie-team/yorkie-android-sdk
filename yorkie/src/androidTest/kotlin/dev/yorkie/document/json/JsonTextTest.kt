@@ -2,6 +2,7 @@ package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.assertJsonContentEquals
+import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -11,7 +12,7 @@ class JsonTextTest {
 
     @Test
     fun test_concurrent_insertion_and_deletion() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewText("k1").apply {
                     edit(0, 0, "AB")

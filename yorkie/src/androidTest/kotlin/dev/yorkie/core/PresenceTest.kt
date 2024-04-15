@@ -1,6 +1,8 @@
 package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.yorkie.core.Client.SyncMode.Manual
+import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
@@ -26,7 +28,7 @@ class PresenceTest {
 
     @Test
     fun test_presence_from_snapshot() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             val snapshotThreshold = 500
             repeat(snapshotThreshold) {
                 d1.updateAsync { _, presence ->
@@ -53,7 +55,7 @@ class PresenceTest {
     fun test_presence_with_attach_and_detach() {
         withTwoClientsAndDocuments(
             detachDocuments = false,
-            realTimeSync = false,
+            syncMode = Manual,
             presences = mapOf("key" to "key1") to mapOf("key" to "key2"),
         ) { c1, c2, d1, d2, _ ->
             assertEquals(mapOf("key" to "key1"), d1.allPresences.value[c1.requireClientId()])
@@ -74,7 +76,7 @@ class PresenceTest {
 
     @Test
     fun test_initial_presence_value_without_manual_initialization() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             val emptyMap = emptyMap<String, String>()
             assertEquals(emptyMap, d1.allPresences.value[c1.requireClientId()])
             assertNull(d1.allPresences.value[c2.requireClientId()])
@@ -203,7 +205,7 @@ class PresenceTest {
         val updatedCursor = gson.toJson(Cursor(1, 1))
 
         withTwoClientsAndDocuments(
-            realTimeSync = false,
+            syncMode = Manual,
             presences = mapOf("key" to "key1", "cursor" to previousCursor) to mapOf(
                 "key" to "key2",
                 "cursor" to previousCursor,
@@ -406,7 +408,7 @@ class PresenceTest {
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
-            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
+            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), syncMode = Manual).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched
@@ -423,7 +425,7 @@ class PresenceTest {
             assertNull(d1.presences.value[c3ID])
 
             // 02. c2 pauses the document (in manual sync), c3 resumes the document (in realtime sync).
-            c2.pause(d2)
+            c2.changeSyncMode(d2, Manual)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 unwatched
@@ -433,7 +435,7 @@ class PresenceTest {
             }
 
             assertIs<Others.Unwatched>(d1Events.last())
-            c3.resume(d3)
+            c3.changeSyncMode(d3, Realtime)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c3 watched
@@ -497,7 +499,7 @@ class PresenceTest {
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
             //     c1 receives the watched event from c2.
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
-            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), false).await()
+            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), syncMode = Manual).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched
@@ -541,7 +543,7 @@ class PresenceTest {
             )
 
             // 03-1. c2 pauses the document, c1 receives an unwatched event from c2.
-            c2.pause(d2)
+            c2.changeSyncMode(d2, Manual)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 unwatched
@@ -564,7 +566,7 @@ class PresenceTest {
             c3.syncAsync().await()
             c1.syncAsync().await()
             delay(50)
-            c3.resume(d3)
+            c3.changeSyncMode(d3, Realtime)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c3 watched
@@ -608,7 +610,7 @@ class PresenceTest {
             )
 
             // 05-1. c3 pauses the document, c1 receives an unwatched event from c3.
-            c3.pause(d3)
+            c3.changeSyncMode(d3, Manual)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c3 unwatched
@@ -627,7 +629,7 @@ class PresenceTest {
             c2.syncAsync().await()
             c1.syncAsync().await()
             delay(50)
-            c2.resume(d2)
+            c2.changeSyncMode(d2, Realtime)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched
@@ -661,7 +663,7 @@ class PresenceTest {
     @Test
     fun test_receive_document_events_according_to_presence_changes() {
         withTwoClientsAndDocuments(
-            realTimeSync = false,
+            syncMode = Manual,
             detachDocuments = false,
         ) { c1, c2, d1, d2, _ ->
             val d1Events = mutableListOf<PresenceChange>()
@@ -690,13 +692,13 @@ class PresenceTest {
             }
 
             // c1 in realtime sync
-            c1.resume(d1)
+            c1.changeSyncMode(d1, Realtime)
             d2.updateAsync { _, presence ->
                 presence.put(mapOf("k1" to "v1"))
             }.await()
 
             // c2 in realtime sync
-            c2.resume(d2)
+            c2.changeSyncMode(d2, Realtime)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // watched, presence changed
@@ -726,14 +728,14 @@ class PresenceTest {
 
     @Test
     fun test_emit_the_same_presence_multiple_times() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             val d1Events = mutableListOf<PresenceChange>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }
 
-            c1.resume(d1)
-            c2.resume(d2)
+            c1.changeSyncMode(d1, Realtime)
+            c2.changeSyncMode(d2, Realtime)
 
             d2.updateAsync { _, presence ->
                 presence.put(mapOf("a" to "b"))

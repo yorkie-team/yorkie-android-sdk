@@ -2,6 +2,7 @@ package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.assertJsonContentEquals
+import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
 import dev.yorkie.document.Document.Event
@@ -152,11 +153,11 @@ class DocumentTest {
                 root["key"] = 1
             }.await()
             c1.activateAsync().await()
-            c1.attachAsync(d1, isRealTimeSync = false).await()
+            c1.attachAsync(d1, syncMode = Manual).await()
             assertEquals("""{"key":1}""", d1.toJson())
 
             c2.activateAsync().await()
-            c2.attachAsync(d2, isRealTimeSync = false).await()
+            c2.attachAsync(d2, syncMode = Manual).await()
             assertEquals("""{"key":1}""", d2.toJson())
 
             c1.removeAsync(d1).await()

@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: EditorViewModel by viewModels {
         viewModelFactory {
             initializer {
-                val client = Client(this@MainActivity, "api.yorkie.dev", 443)
+                val client = Client("https://api.yorkie.dev")
                 EditorViewModel(client)
             }
         }

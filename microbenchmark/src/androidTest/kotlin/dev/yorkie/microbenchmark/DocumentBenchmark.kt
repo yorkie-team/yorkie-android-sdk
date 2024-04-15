@@ -22,7 +22,9 @@ class DocumentBenchmark {
     @Test
     fun construct() {
         benchmarkRule.measureRepeated {
-            Document(Document.Key("d1"))
+            Document(Document.Key("d1")).also {
+                it.close()
+            }
         }
     }
 
@@ -44,6 +46,7 @@ class DocumentBenchmark {
 
                 assert(docs[0].toJson() != docs[1].toJson())
                 assert(docs[1].toJson() == docs[2].toJson())
+                docs.forEach(Document::close)
             }
         }
     }
@@ -69,6 +72,7 @@ class DocumentBenchmark {
                     }
                 }.await()
                 assert(document.toJson() == expected)
+                document.close()
             }
         }
     }
@@ -102,6 +106,7 @@ class DocumentBenchmark {
                     root.remove("k2")
                 }.await()
                 assert(document.toJson() == expected)
+                document.close()
             }
         }
     }
@@ -118,6 +123,7 @@ class DocumentBenchmark {
                     root["k1"] = "v2"
                 }.await()
                 assert(document.toJson() == """{"k1":"v2"}""")
+                document.close()
             }
         }
     }
@@ -175,6 +181,7 @@ class DocumentBenchmark {
                         }
                     }
                 }.await()
+                document.close()
             }
         }
     }
@@ -197,6 +204,7 @@ class DocumentBenchmark {
                     "<doc><p></p></doc>"
                 }
                 assert(document.getRoot().getAs<JsonTree>("tree").toXml() == expected)
+                document.close()
             }
         }
     }
@@ -227,6 +235,7 @@ class DocumentBenchmark {
                 assert(document.garbageLength == size)
                 assert(document.garbageCollect(MaxTimeTicket) == size)
                 assert(document.garbageLength == 0)
+                document.close()
             }
         }
     }
@@ -254,6 +263,7 @@ class DocumentBenchmark {
                 assert(document.garbageLength == size)
                 assert(document.garbageCollect(MaxTimeTicket) == size)
                 assert(document.garbageLength == 0)
+                document.close()
             }
         }
     }

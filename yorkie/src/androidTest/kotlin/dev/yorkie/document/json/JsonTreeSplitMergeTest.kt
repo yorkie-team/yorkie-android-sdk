@@ -3,6 +3,7 @@ package dev.yorkie.document.json
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.TreeSplitMergeTest
 import dev.yorkie.TreeTest
+import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
 import kotlin.test.assertEquals
@@ -16,7 +17,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_contained_split_and_split_at_the_same_position() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -48,7 +49,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_contained_split_and_split_at_different_positions_on_the_same_node() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -81,7 +82,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_contained_split_and_insert_into_the_split_position() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -114,7 +115,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_contained_split_and_insert_into_original_node() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -147,7 +148,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_contained_split_and_insert_into_split_node() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -180,7 +181,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_contained_split_and_delete_contents_in_split_node() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
@@ -214,7 +215,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_split_and_merge_with_empty_paragraph_left() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "t",
@@ -245,7 +246,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_split_and_merge_with_empty_paragraph_and_multiple_split_level_left() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "t",
@@ -281,7 +282,7 @@ class JsonTreeSplitMergeTest {
 
     @Test
     fun test_split_same_offset_multiple_times() {
-        withTwoClientsAndDocuments(realTimeSync = false) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "t",

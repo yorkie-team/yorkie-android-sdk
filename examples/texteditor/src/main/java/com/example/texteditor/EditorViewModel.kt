@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import dev.yorkie.core.Client
+import dev.yorkie.core.Client.SyncMode.Realtime
+import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
 import dev.yorkie.core.PresenceInfo
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChange
@@ -137,11 +139,11 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     }
 
     override fun handleHangulCompositionStart() {
-        client.pause(document)
+        client.changeSyncMode(document, RealtimePushOnly)
     }
 
     override fun handleHangulCompositionEnd() {
-        client.resume(document)
+        client.changeSyncMode(document, Realtime)
     }
 
     override fun onCleared() {

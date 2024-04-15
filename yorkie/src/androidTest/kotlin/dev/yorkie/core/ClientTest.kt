@@ -6,10 +6,13 @@ import dev.yorkie.core.Client.DocumentSyncResult
 import dev.yorkie.core.Client.Event.DocumentChanged
 import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.StreamConnectionStatus
+import dev.yorkie.core.Client.SyncMode.Manual
+import dev.yorkie.core.Client.SyncMode.Realtime
+import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
+import dev.yorkie.core.Client.SyncMode.RealtimeSyncOff
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
-import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.json.JsonTree
@@ -173,7 +176,7 @@ class ClientTest {
     }
 
     @Test
-    fun test_change_realtime_sync() {
+    fun test_change_sync_mode_between_realtime_and_manual() {
         runBlocking {
             val client1 = createClient()
             val client2 = createClient()
@@ -186,8 +189,8 @@ class ClientTest {
 
             // 01. c1 and c2 attach the doc with manual sync mode.
             //     c1 updates the doc, but c2 doesn't get until call sync manually.
-            client1.attachAsync(document1, isRealTimeSync = false).await()
-            client2.attachAsync(document2, isRealTimeSync = false).await()
+            client1.attachAsync(document1, syncMode = Manual).await()
+            client2.attachAsync(document2, syncMode = Manual).await()
 
             document1.updateAsync { root, _ ->
                 root["version"] = "v1"
@@ -205,7 +208,7 @@ class ClientTest {
                 client2.events.collect(client2Events::add)
             }
 
-            client2.resume(document2)
+            client2.changeSyncMode(document2, Realtime)
             withTimeout(GENERAL_TIMEOUT) {
                 while (client2Events.isEmpty()) {
                     delay(50)
@@ -228,7 +231,7 @@ class ClientTest {
             collectJob.cancel()
 
             // 03. c2 changes the sync mode to manual sync mode again.
-            client2.pause(document2)
+            client2.changeSyncMode(document2, Manual)
             document1.updateAsync { root, _ ->
                 root["version"] = "v3"
             }.await()
@@ -250,7 +253,7 @@ class ClientTest {
     }
 
     @Test
-    fun test_applying_previous_changes_after_resume() = runBlocking {
+    fun test_applying_previous_changes_after_switching_to_realtime() = runBlocking {
         val client1 = createClient()
         val client2 = createClient()
         val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -276,7 +279,7 @@ class ClientTest {
         }
 
         // 01. c2 attach the doc with realtime sync mode at first.
-        client1.attachAsync(document1, isRealTimeSync = false).await()
+        client1.attachAsync(document1, syncMode = Manual).await()
         client2.attachAsync(document2).await()
         document1.updateAsync { root, _ ->
             root["version"] = "v1"
@@ -286,7 +289,7 @@ class ClientTest {
         assertDocument2IsSynced("""{"version":"v1"}""")
 
         // 02. c2 pauses realtime sync mode. So, c2 doesn't get the changes of c1.
-        client2.pause(document2)
+        client2.changeSyncMode(document2, Manual)
         document1.updateAsync { root, _ ->
             root["version"] = "v2"
         }.await()
@@ -297,7 +300,7 @@ class ClientTest {
         // 03. c2 resumes realtime sync mode.
         // c2 should be able to apply changes made to the document while c2 is not in realtime sync.
         client2Events.clear()
-        client2.resume(document2)
+        client2.changeSyncMode(document2, Realtime)
         assertDocument2IsSynced("""{"version":"v2"}""")
 
         // 04. c2 should automatically synchronize changes.
@@ -319,219 +322,113 @@ class ClientTest {
     }
 
     @Test
-    fun test_change_sync_mode_in_manual_sync() {
-        runBlocking {
-            val client1 = createClient()
-            val client2 = createClient()
-            val client3 = createClient()
-
-            val documentKey = UUID.randomUUID().toString().toDocKey()
-            val document1 = Document(documentKey)
-            val document2 = Document(documentKey)
-            val document3 = Document(documentKey)
-
-            client1.activateAsync().await()
-            client2.activateAsync().await()
-            client3.activateAsync().await()
-
-            // 01. client2, client2, client3 attach to the same document
-            client1.attachAsync(document1, isRealTimeSync = false).await()
-            client2.attachAsync(document2, isRealTimeSync = false).await()
-            client3.attachAsync(document3, isRealTimeSync = false).await()
-
-            // 02. client1 and client2 sync with push-pull mode.
-            document1.updateAsync { root, _ ->
-                root["c1"] = 0
-            }.await()
-            document2.updateAsync { root, _ ->
-                root["c2"] = 0
-            }.await()
-
-            client1.syncAsync().await()
-            client2.syncAsync().await()
-            client1.syncAsync().await()
-            assertJsonContentEquals("""{"c1":0,"c2":0}""", document1.toJson())
-            assertJsonContentEquals("""{"c1":0,"c2":0}""", document2.toJson())
-
-            // 03. client1 and client2 sync with push-only mode.
-            // So, the changes of client1 and client2 are not reflected to each other.
-            // But, client3 can get the changes of client1 and client2,
-            // because client3 sync with push-pull mode.
-            document1.updateAsync { root, _ ->
-                root["c1"] = 1
-            }.await()
-            document2.updateAsync { root, _ ->
-                root["c2"] = 1
-            }.await()
-
-            client1.syncAsync(document1, Client.SyncMode.PushOnly).await()
-            client2.syncAsync(document2, Client.SyncMode.PushOnly).await()
-            client3.syncAsync().await()
-            assertJsonContentEquals("""{"c1":1,"c2":0}""", document1.toJson())
-            assertJsonContentEquals("""{"c1":0,"c2":1}""", document2.toJson())
-            assertJsonContentEquals("""{"c1":1,"c2":1}""", document3.toJson())
-
-            // 04. client1 and client2 sync with push-pull mode.
-            client1.syncAsync().await()
-            client2.syncAsync().await()
-            assertJsonContentEquals("""{"c1":1,"c2":1}""", document1.toJson())
-            assertJsonContentEquals("""{"c1":1,"c2":1}""", document2.toJson())
-
-            client1.detachAsync(document1).await()
-            client2.detachAsync(document2).await()
-            client3.detachAsync(document3).await()
-            client1.deactivateAsync().await()
-            client2.deactivateAsync().await()
-            client3.deactivateAsync().await()
-            document1.close()
-            document2.close()
-            client1.close()
-            client2.close()
-        }
-    }
-
-    @Test
-    fun test_change_sync_mode_in_realtime_sync() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
-            val client3 = createClient()
-            client3.activateAsync().await()
+    fun test_change_sync_mode_in_realtime() {
+        withTwoClientsAndDocuments { c1, c2, d1, d2, key ->
+            val c3 = createClient()
+            c3.activateAsync().await()
 
             // 01. c1, c2, c3 attach to the same document in realtime sync.
-            val document3 = Document(key)
-            client3.attachAsync(document3).await()
+            val d3 = Document(key)
+            c3.attachAsync(d3).await()
 
-            val document1Events = mutableListOf<Document.Event>()
-            val document2Events = mutableListOf<Document.Event>()
-            val document3Ops = mutableListOf<OperationInfo>()
+            val d1Events = mutableListOf<Document.Event>()
+            val d2Events = mutableListOf<Document.Event>()
+            val d3Events = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document1.events.filterNot { it is Document.Event.PresenceChange }
-                        .collect(document1Events::add)
+                    d1.events.filterNot { it is Document.Event.PresenceChange }
+                        .collect(d1Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document2.events.filterNot { it is Document.Event.PresenceChange }
-                        .collect(document2Events::add)
+                    d2.events.filterNot { it is Document.Event.PresenceChange }
+                        .collect(d2Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document3.events.filterIsInstance<RemoteChange>().collect { event ->
-                        document3Ops.addAll(event.changeInfo.operations)
-                    }
+                    d3.events.filterNot { it is Document.Event.PresenceChange }
+                        .collect(d3Events::add)
                 },
             )
 
-            // 02. c1, c2 sync in realtime.
-            document1.updateAsync { root, _ ->
+            // 02. [Step1] c1, c2, c3 sync in realtime.
+            d1.updateAsync { root, _ ->
                 root["c1"] = 0
             }.await()
-            document2.updateAsync { root, _ ->
+            d2.updateAsync { root, _ ->
                 root["c2"] = 0
             }.await()
+            d3.updateAsync { root, _ ->
+                root["c3"] = 0
+            }.await()
             withTimeout(GENERAL_TIMEOUT) {
-                // size should be 2 since it has local-change and remote-change
-                while (document1Events.size < 2 ||
-                    document2Events.size < 2 ||
-                    document3Ops.size < 2
-                ) {
+                // 1 LocalChange, 2 RemoteChanges
+                while (d1Events.size < 3 || d2Events.size < 3 || d3Events.size < 3) {
                     delay(50)
                 }
             }
-            assertJsonContentEquals("""{"c1":0,"c2":0}""", document1.toJson())
-            assertJsonContentEquals("""{"c1":0,"c2":0}""", document2.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":0,"c3":0}""", d1.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":0,"c3":0}""", d2.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":0,"c3":0}""", d3.toJson())
 
-            // 03. c1 and c2 sync with push-only mode. So, the changes of c1 and c2
-            // are not reflected to each other.
-            // But, c3 can get the changes of c1 and c2, because c3 sync with pull-pull mode.
-            client1.pauseRemoteChanges(document1)
-            client2.pauseRemoteChanges(document2)
-            document1.updateAsync { root, _ ->
+            // 03. [Step2] c1 sync with push-only mode, c2 sync with sync-off mode.
+            // c3 can get the changes of c1 and c2, because c3 sync with push-pull mode.
+            c1.changeSyncMode(d1, RealtimePushOnly)
+            c2.changeSyncMode(d2, RealtimeSyncOff)
+            d1.updateAsync { root, _ ->
                 root["c1"] = 1
             }.await()
-            document2.updateAsync { root, _ ->
+            d2.updateAsync { root, _ ->
                 root["c2"] = 1
             }.await()
+            d3.updateAsync { root, _ ->
+                root["c3"] = 1
+            }.await()
             withTimeout(GENERAL_TIMEOUT) {
-                while (document1Events.size < 3 ||
-                    document2Events.size < 3 ||
-                    document3Ops.size < 4
-                ) {
+                while (d1Events.size < 4 || d2Events.size < 4 || d3Events.size < 5) {
                     delay(50)
                 }
             }
-            assertJsonContentEquals("""{"c1":1,"c2":0}""", document1.toJson())
-            assertJsonContentEquals("""{"c1":0,"c2":1}""", document2.toJson())
-            assertJsonContentEquals("""{"c1":1,"c2":1}""", document3.toJson())
+            assertJsonContentEquals("""{"c1":1,"c2":0,"c3":0}""", d1.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":1,"c3":0}""", d2.toJson())
+            assertJsonContentEquals("""{"c1":1,"c2":0,"c3":1}""", d3.toJson())
 
-            // 04. c1 and c2 sync with push-pull mode.
-            client1.resumeRemoteChanges(document1)
-            client2.resumeRemoteChanges(document2)
+            // 04. [Step3] c1 sync with sync-off mode, c2 sync with push-only mode.
+            c1.changeSyncMode(d1, RealtimeSyncOff)
+            c2.changeSyncMode(d2, RealtimePushOnly)
+            d1.updateAsync { root, _ ->
+                root["c1"] = 2
+            }.await()
+            d2.updateAsync { root, _ ->
+                root["c2"] = 2
+            }.await()
+            d3.updateAsync { root, _ ->
+                root["c3"] = 2
+            }.await()
             withTimeout(GENERAL_TIMEOUT) {
-                while (document1Events.size < 4 || document2Events.size < 4) {
+                while (d1Events.size < 5 || d2Events.size < 5 || d3Events.size < 8) {
                     delay(50)
                 }
             }
-            assertJsonContentEquals("""{"c1":1,"c2":1}""", document1.toJson())
-            assertJsonContentEquals("""{"c1":1,"c2":1}""", document2.toJson())
+            assertJsonContentEquals("""{"c1":2,"c2":0,"c3":0}""", d1.toJson())
+            assertJsonContentEquals("""{"c1":0,"c2":2,"c3":0}""", d2.toJson())
+            assertJsonContentEquals("""{"c1":1,"c2":2,"c3":2}""", d3.toJson())
 
-            client3.detachAsync(document3).await()
-            client3.deactivateAsync().await()
+            // 05. [Step4] c1 and c2 sync with push-pull mode.
+            c1.changeSyncMode(d1, Realtime)
+            c2.changeSyncMode(d2, Realtime)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.size < 9 || d2Events.size < 9 || d3Events.size < 9) {
+                    delay(50)
+                }
+            }
+            assertJsonContentEquals("""{"c1":2,"c2":2,"c3":2}""", d1.toJson())
+            assertJsonContentEquals("""{"c1":2,"c2":2,"c3":2}""", d2.toJson())
+            assertJsonContentEquals("""{"c1":2,"c2":2,"c3":2}""", d3.toJson())
+
+            c3.detachAsync(d3).await()
+            c3.deactivateAsync().await()
+            c3.close()
+            d3.close()
             collectJobs.forEach(Job::cancel)
-        }
-    }
-
-    @Test
-    fun test_sync_option_with_mixed_mode() {
-        runBlocking {
-            val client = createClient()
-            val documentKey = UUID.randomUUID().toString().toDocKey()
-            val document = Document(documentKey)
-
-            // 01. cli attach to the document having counter.
-            client.activateAsync().await()
-            client.attachAsync(document, isRealTimeSync = false).await()
-
-            // 02. cli update the document with creating a counter
-            //     and sync with push-pull mode: CP(0, 0) -> CP(1, 1)
-            document.updateAsync { root, _ ->
-                root.setNewCounter("counter", 0)
-            }.await()
-
-            assertEquals(CheckPoint(1, 1u), document.checkPoint)
-            client.syncAsync().await()
-            assertEquals(CheckPoint(2, 2u), document.checkPoint)
-
-            // 03. cli update the document with increasing the counter(0 -> 1)
-            //     and sync with push-only mode: CP(1, 1) -> CP(2, 1)
-            document.updateAsync { root, _ ->
-                root.getAs<JsonCounter>("counter").increase(1)
-            }.await()
-
-            var changePack = document.createChangePack()
-            assertEquals(1, changePack.changes.size)
-
-            client.syncAsync(document, Client.SyncMode.PushOnly).await()
-            assertEquals(CheckPoint(2, 3u), document.checkPoint)
-
-            // 04. cli update the document with increasing the counter(1 -> 2)
-            //     and sync with push-pull mode. CP(2, 1) -> CP(3, 3)
-            document.updateAsync { root, _ ->
-                root.getAs<JsonCounter>("counter").increase(1)
-            }.await()
-
-            // The previous increase(0->1) is already pushed to the server,
-            // so the ChangePack of the request only has the increase(1->2).
-            changePack = document.createChangePack()
-            assertEquals(1, changePack.changes.size)
-
-            client.syncAsync().await()
-
-            assertEquals(CheckPoint(4, 4u), document.checkPoint)
-            assertEquals(2, document.getRoot().getAs<JsonCounter>("counter").value)
-
-            client.detachAsync(document).await()
-            client.deactivateAsync().await()
-
-            document.close()
-            client.close()
         }
     }
 
@@ -578,17 +475,17 @@ class ClientTest {
             // but a response has not yet been received.
             d2Events.clear()
             val deferred = c2.syncAsync()
-            c2.pauseRemoteChanges(d2)
+            c2.changeSyncMode(d2, RealtimePushOnly)
             deferred.await()
 
             // In push-only mode, remote-change events should not occur.
             d2Events.clear()
-            c2.pauseRemoteChanges(d2)
+            c2.changeSyncMode(d2, RealtimePushOnly)
 
             delay(100) // Keep the push-only state.
             assertTrue(d2Events.none { it is RemoteChange })
 
-            c2.resumeRemoteChanges(d2)
+            c2.changeSyncMode(d2, Realtime)
 
             d2.updateAsync { root, _ ->
                 root.rootTree().edit(2, 2, text { "b" })
@@ -608,7 +505,7 @@ class ClientTest {
 
     @Test
     fun test_concurrent_deletions() {
-        withTwoClientsAndDocuments(realTimeSync = true) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
             repeat(10) { repeat ->
                 d1.updateAsync { root, _ ->
                     root.setNewTree(
@@ -627,7 +524,7 @@ class ClientTest {
 
                 listOf(
                     launch {
-                        c1.pauseRemoteChanges(d1)
+                        c1.changeSyncMode(d1, RealtimePushOnly)
                         d1.updateAsync { root, _ ->
                             val tree = root.getAs<JsonTree>("t")
                             val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
@@ -638,10 +535,10 @@ class ClientTest {
                                 )
                             }
                         }.await()
-                        c1.resumeRemoteChanges(d1)
+                        c1.changeSyncMode(d1, Realtime)
                         delay(10)
 
-                        c1.pauseRemoteChanges(d1)
+                        c1.changeSyncMode(d1, RealtimePushOnly)
                         d1.updateAsync { root, _ ->
                             val tree = root.getAs<JsonTree>("t")
                             val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
@@ -652,10 +549,10 @@ class ClientTest {
                                 )
                             }
                         }.await()
-                        c1.resumeRemoteChanges(d1)
+                        c1.changeSyncMode(d1, Realtime)
                         delay(10)
 
-                        c1.pauseRemoteChanges(d1)
+                        c1.changeSyncMode(d1, RealtimePushOnly)
                         d1.updateAsync { root, _ ->
                             val tree = root.getAs<JsonTree>("t")
                             val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
@@ -666,11 +563,11 @@ class ClientTest {
                                 )
                             }
                         }.await()
-                        c1.resumeRemoteChanges(d1)
+                        c1.changeSyncMode(d1, Realtime)
                     },
                     launch {
                         repeat(100) {
-                            c2.pauseRemoteChanges(d2)
+                            c2.changeSyncMode(d2, RealtimePushOnly)
                             d2.updateAsync { root, _ ->
                                 val tree = root.getAs<JsonTree>("t")
                                 val size = (tree.rootTreeNode as JsonTree.ElementNode).children.size
@@ -681,7 +578,7 @@ class ClientTest {
                                     )
                                 }
                             }.await()
-                            c2.resumeRemoteChanges(d2)
+                            c2.changeSyncMode(d2, Realtime)
                             delay(10)
                         }
                     },
@@ -744,6 +641,79 @@ class ClientTest {
 
                 assertEquals(d1.toJson(), d2.toJson())
             }
+        }
+    }
+
+    @Test
+    fun test_not_include_changes_from_push_only_after_switching_to_realtime() {
+        runBlocking {
+            val c1 = createClient()
+            c1.activateAsync().await()
+
+            // 01. cli attach to the document having counter.
+            val docKey = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(docKey)
+            c1.attachAsync(d1, syncMode = Manual).await()
+
+            // 02. cli update the document with creating a counter
+            //     and sync with push-pull mode: CP(1, 1) -> CP(2, 2)
+            d1.updateAsync { root, _ ->
+                root.setNewCounter("counter", 0)
+            }.await()
+
+            var checkPoint = d1.checkPoint
+            assertEquals(1u, checkPoint.clientSeq)
+            assertEquals(1, checkPoint.serverSeq)
+
+            c1.syncAsync().await()
+            checkPoint = d1.checkPoint
+            assertEquals(2u, checkPoint.clientSeq)
+            assertEquals(2, checkPoint.serverSeq)
+
+            // 03. cli update the document with increasing the counter(0 -> 1)
+            //     and sync with push-only mode: CP(2, 2) -> CP(3, 2)
+            val c1Events = mutableListOf<Client.Event>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                c1.events.filterIsInstance<DocumentSynced>().collect(c1Events::add)
+            }
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonCounter>("counter").increase(1)
+            }.await()
+            var changePack = d1.createChangePack()
+            assertEquals(1, changePack.changes.size)
+            c1.changeSyncMode(d1, RealtimePushOnly)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (c1Events.firstOrNull() !is DocumentSynced) {
+                    delay(50)
+                }
+            }
+            checkPoint = d1.checkPoint
+            assertEquals(3u, checkPoint.clientSeq)
+            assertEquals(2, checkPoint.serverSeq)
+            c1.changeSyncMode(d1, Manual)
+
+            // 04. cli update the document with increasing the counter(1 -> 2)
+            //     and sync with push-pull mode. CP(3, 2) -> CP(4, 4)
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonCounter>("counter").increase(1)
+            }.await()
+
+            // The previous increase(0 -> 1) is already pushed to the server,
+            // so the ChangePack of the request only has the increase(1 -> 2).
+            changePack = d1.createChangePack()
+            assertEquals(1, changePack.changes.size)
+
+            c1.syncAsync().await()
+            checkPoint = d1.checkPoint
+            assertEquals(4u, checkPoint.clientSeq)
+            assertEquals(4, checkPoint.serverSeq)
+            assertEquals(2, d1.getRoot().getAs<JsonCounter>("counter").value)
+
+            collectJob.cancel()
+            c1.detachAsync(d1).await()
+            c1.deactivateAsync().await()
+            c1.close()
+            d1.close()
         }
     }
 }

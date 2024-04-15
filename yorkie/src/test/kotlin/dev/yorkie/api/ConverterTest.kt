@@ -261,8 +261,9 @@ class ConverterTest {
                 CrdtTreeNodeID(InitialTimeTicket, 10),
                 CrdtTreeNodeID(InitialTimeTicket, 10),
             ),
-            mapOf("a" to "b"),
             InitialTimeTicket,
+            mapOf("a" to "b"),
+            listOf("a"),
         )
         val converted = listOf(
             addOperation.toPBOperation(),

@@ -383,6 +383,35 @@ internal class CrdtTree(
         }
     }
 
+    fun removeStyle(
+        range: TreePosRange,
+        attributeToRemove: List<String>,
+        executedAt: TimeTicket,
+    ): List<TreeChange> {
+        val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
+        val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
+        return buildList {
+            traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
+                if (!node.isRemoved && !node.isText && attributeToRemove.isNotEmpty()) {
+                    attributeToRemove.forEach { key ->
+                        node.removeAttribute(key, executedAt)
+                    }
+                    add(
+                        TreeChange(
+                            type = TreeChangeType.RemoveStyle,
+                            from = toIndex(fromParent, fromLeft),
+                            to = toIndex(toParent, toLeft),
+                            fromPath = toPath(fromParent, fromLeft),
+                            toPath = toPath(toParent, toLeft),
+                            actorID = executedAt.actorID,
+                            attributesToRemove = attributeToRemove,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     private fun traverseAll(
         node: CrdtTreeNode,
         depth: Int = 0,
@@ -770,6 +799,10 @@ internal data class CrdtTreeNode private constructor(
         executedAt: TimeTicket,
     ) {
         _attributes.set(key, value, executedAt)
+    }
+
+    fun removeAttribute(key: String, executedAt: TimeTicket) {
+        _attributes.remove(key, executedAt)
     }
 
     /**

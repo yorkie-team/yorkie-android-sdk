@@ -106,8 +106,9 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 parentCreatedAt = it.treeStyle.parentCreatedAt.toTimeTicket(),
                 fromPos = it.treeStyle.from.toCrdtTreePos(),
                 toPos = it.treeStyle.to.toCrdtTreePos(),
-                attributes = it.treeStyle.attributesMap.toMap(),
+                attributes = it.treeStyle.attributesMap,
                 executedAt = it.treeStyle.executedAt.toTimeTicket(),
+                attributesToRemove = it.treeStyle.attributesToRemoveList,
             )
 
             else -> throw IllegalArgumentException("unimplemented operation")
@@ -226,9 +227,10 @@ internal fun Operation.toPBOperation(): PBOperation {
                     from = operation.fromPos.toPBTreePos()
                     to = operation.toPos.toPBTreePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
-                    operation.attributes.forEach { (key, value) ->
+                    operation.attributes?.forEach { (key, value) ->
                         attributes[key] = value
                     }
+                    operation.attributesToRemove?.forEach { attributesToRemove.add(it) }
                 }
             }
         }

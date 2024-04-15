@@ -70,8 +70,33 @@ public class JsonTree internal constructor(
                 target.createdAt,
                 range.first,
                 range.second,
-                attributes.toMap(),
                 ticket,
+                attributes.toMap(),
+            ),
+        )
+    }
+
+    public fun removeStyle(
+        fromIndex: Int,
+        toIndex: Int,
+        attributesToRemove: List<String>,
+    ) {
+        require(fromIndex <= toIndex) {
+            "from should be less than or equal to to"
+        }
+
+        val fromPos = target.findPos(fromIndex)
+        val toPos = target.findPos(toIndex)
+        val executedAt = context.issueTimeTicket()
+        target.removeStyle(fromPos to toPos, attributesToRemove, executedAt)
+
+        context.push(
+            TreeStyleOperation(
+                target.createdAt,
+                fromPos,
+                toPos,
+                executedAt,
+                attributesToRemove = attributesToRemove,
             ),
         )
     }

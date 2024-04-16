@@ -8,8 +8,9 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
  * For more details about RHT:
  * @link http://csl.skku.edu/papers/jpdc11.pdf
  */
-internal class Rht : Iterable<Rht.Node> {
+internal class Rht : Collection<Rht.Node> {
     private val nodeMapByKey = mutableMapOf<String, Node>()
+    private var numberOfRemovedElements = 0
 
     val nodeKeyValueMap: Map<String, String>
         get() {
@@ -25,14 +26,41 @@ internal class Rht : Iterable<Rht.Node> {
     ) {
         val prev = nodeMapByKey[key]
         if (prev?.executedAt < executedAt) {
-            val node = Node(key, value, executedAt)
+            if (prev?.isRemoved == false) {
+                numberOfRemovedElements--
+            }
+            val node = Node(key, value, executedAt, false)
             nodeMapByKey[key] = node
+        }
+    }
+
+    /**
+     * Removes the Element of the given [key].
+     */
+    fun remove(key: String, executedAt: TimeTicket): String {
+        val prev = nodeMapByKey[key]
+        return when {
+            prev == null -> {
+                numberOfRemovedElements++
+                nodeMapByKey[key] = Node(key, "", executedAt, true)
+                ""
+            }
+
+            prev.executedAt < executedAt -> {
+                if (!prev.isRemoved) {
+                    numberOfRemovedElements++
+                }
+                nodeMapByKey[key] = Node(key, prev.value, executedAt, true)
+                if (prev.isRemoved) "" else prev.value
+            }
+
+            else -> ""
         }
     }
 
     operator fun get(key: String): String? = nodeMapByKey[key]?.value
 
-    fun has(key: String): Boolean = key in nodeMapByKey
+    fun has(key: String): Boolean = nodeMapByKey[key]?.isRemoved == false
 
     fun deepCopy(): Rht {
         val rht = Rht()
@@ -47,14 +75,22 @@ internal class Rht : Iterable<Rht.Node> {
      * Converts the given [Rht] to XML String.
      */
     fun toXml(): String {
-        return nodeKeyValueMap.entries.joinToString(" ") { (key, value) ->
-            "$key=\"$value\""
-        }
+        return nodeMapByKey.filterValues { !it.isRemoved }.entries
+            .joinToString(" ") { (key, node) ->
+                "$key=\"${node.value}\""
+            }
     }
 
     override fun iterator(): Iterator<Node> {
         return nodeMapByKey.values.iterator()
     }
+
+    override val size: Int
+        get() = nodeMapByKey.size - numberOfRemovedElements
+
+    override fun containsAll(elements: Collection<Node>): Boolean = elements.all { contains(it) }
+
+    override fun contains(element: Node): Boolean = nodeMapByKey[element.key]?.isRemoved == false
 
     override fun equals(other: Any?): Boolean {
         if (other !is Rht) {
@@ -67,5 +103,12 @@ internal class Rht : Iterable<Rht.Node> {
         return nodeMapByKey.hashCode()
     }
 
-    data class Node(val key: String, val value: String, val executedAt: TimeTicket)
+    override fun isEmpty(): Boolean = size == 0
+
+    data class Node(
+        val key: String,
+        val value: String,
+        val executedAt: TimeTicket,
+        val isRemoved: Boolean,
+    )
 }

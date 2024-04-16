@@ -14,8 +14,9 @@ internal data class TreeStyleOperation(
     override val parentCreatedAt: TimeTicket,
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
-    val attributes: Map<String, String>,
     override var executedAt: TimeTicket,
+    val attributes: Map<String, String>? = null,
+    val attributesToRemove: List<String>? = null,
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
 
@@ -29,16 +30,33 @@ internal data class TreeStyleOperation(
             YorkieLogger.e(TAG, "fail to execute, only Tree can execute edit")
             return emptyList()
         }
-        val changes = tree.style(fromPos to toPos, attributes.toMap(), executedAt)
 
-        return changes.map {
-            TreeStyleOpInfo(
-                it.from,
-                it.to,
-                it.fromPath,
-                it.attributes.orEmpty(),
-                root.createPath(parentCreatedAt),
-            )
+        return when {
+            attributes?.isNotEmpty() == true -> {
+                tree.style(fromPos to toPos, attributes, executedAt).map {
+                    TreeStyleOpInfo(
+                        it.from,
+                        it.to,
+                        it.fromPath,
+                        it.attributes.orEmpty(),
+                        path = root.createPath(parentCreatedAt),
+                    )
+                }
+            }
+
+            attributesToRemove?.isNotEmpty() == true -> {
+                tree.removeStyle(fromPos to toPos, attributesToRemove, executedAt).map {
+                    TreeStyleOpInfo(
+                        it.from,
+                        it.to,
+                        it.fromPath,
+                        attributesToRemove = it.attributesToRemove.orEmpty(),
+                        path = root.createPath(parentCreatedAt),
+                    )
+                }
+            }
+
+            else -> emptyList()
         }
     }
 

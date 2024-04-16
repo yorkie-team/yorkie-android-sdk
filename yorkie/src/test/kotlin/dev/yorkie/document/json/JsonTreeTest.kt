@@ -324,7 +324,7 @@ class JsonTreeTest {
                     1,
                     listOf(0),
                     mapOf("a" to "b"),
-                    "$.t",
+                    path = "$.t",
                 ),
             ),
             actualOperationDeferred.await(),
@@ -390,7 +390,7 @@ class JsonTreeTest {
                     3,
                     listOf(0, 0, 0),
                     mapOf("a" to "b"),
-                    "$.t",
+                    path = "$.t",
                 ),
             ),
             actualOperationDeferred.await(),
@@ -706,6 +706,79 @@ class JsonTreeTest {
             root.tree().edit(2, 18)
             assertEquals("<doc><p>af</p></doc>", root.tree().toXml())
         }.await()
+    }
+
+    @Test
+    fun `should handle remove style`() = runTest {
+        val doc = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        doc.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") {
+                        element("span") {
+                            attr { "bold" to "true" }
+                            text { "hello" }
+                        }
+                    }
+                },
+            )
+        }.await()
+        assertEquals(
+            "<doc><p><span bold=\"true\">hello</span></p></doc>",
+            doc.getRoot().tree().toXml(),
+        )
+
+        doc.updateAsync { root, _ ->
+            root.tree().removeStyle(1, 8, listOf("bold"))
+        }.await()
+        assertEquals("<doc><p><span>hello</span></p></doc>", doc.getRoot().tree().toXml())
+    }
+
+    @Test
+    fun `should handle removal of attributes that do not exist`() = runTest {
+        val doc = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        doc.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") {
+                        element("span") {
+                            attr { "bold" to "true" }
+                            text { "hello" }
+                        }
+                        element("span") {
+                            text { "hi" }
+                        }
+                    }
+                },
+            )
+        }.await()
+
+        assertEquals(
+            "<doc><p><span bold=\"true\">hello</span><span>hi</span></p></doc>",
+            doc.getRoot().tree().toXml(),
+        )
+
+        doc.updateAsync { root, _ ->
+            root.tree().removeStyle(1, 12, listOf("italic"))
+        }.await()
+        assertEquals(
+            "<doc><p><span bold=\"true\">hello</span><span>hi</span></p></doc>",
+            doc.getRoot().tree().toXml(),
+        )
+
+        doc.updateAsync { root, _ ->
+            root.tree().removeStyle(1, 8, listOf("italic", "bold"))
+        }.await()
+        assertEquals(
+            "<doc><p><span>hello</span><span>hi</span></p></doc>",
+            doc.getRoot().tree().toXml(),
+        )
     }
 
     companion object {

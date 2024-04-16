@@ -51,6 +51,17 @@ class RhtTest {
         }
     }
 
+    @Test
+    fun `should handle remove`() {
+        target.set(TEST_KEY, TEST_VALUE, TimeTicket.InitialTimeTicket)
+        assertEquals(TEST_VALUE, target[TEST_KEY])
+        assertEquals(1, target.size)
+
+        target.remove(TEST_KEY, TimeTicket.MaxTimeTicket)
+        assertFalse(target.has(TEST_KEY))
+        assertTrue(target.isEmpty())
+    }
+
     private fun Rht.toTestString(): String {
         return nodeKeyValueMap.entries.joinToString("") { "${it.key}:${it.value}" }
     }

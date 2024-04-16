@@ -2070,6 +2070,35 @@ class JsonTreeTest {
         }
     }
 
+    @Test
+    fun test_sync_content_with_remove_style() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                attr { "italic" to "true" }
+                                text { "hello" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p italic=\"true\">hello</p></doc>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().removeStyle(0, 1, listOf("italic"))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>hello</p></doc>", d1, d2)
+        }
+    }
+
     companion object {
 
         fun JsonObject.rootTree() = getAs<JsonTree>("t")

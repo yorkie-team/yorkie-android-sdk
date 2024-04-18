@@ -496,7 +496,7 @@ class GCTest {
         }.await()
 
         assertEquals(3, document.garbageLength)
-        assertEquals(3, document.garbageLengthFromClone)
+        assertEquals(3, document.clone?.root?.getGarbageLength() ?: 0)
 
         document.close()
         client.close()

@@ -94,9 +94,6 @@ public class Document(
     public val garbageLength: Int
         get() = root.getGarbageLength()
 
-    internal val garbageLengthFromClone: Int
-        get() = clone?.root?.getGarbageLength() ?: 0
-
     private val presenceEventQueue = mutableListOf<Event.PresenceChange>()
     internal val pendingPresenceEvents = mutableListOf<Event.PresenceChange>()
 

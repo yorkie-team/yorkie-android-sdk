@@ -1,6 +1,5 @@
 package dev.yorkie.util
 
-import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 
 /**
@@ -215,12 +214,14 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
                 node = parent
                 mutableListOf(sizeOfLeftSiblings + treePos.offset)
             }
+
             node.hasTextChild -> {
                 // TODO(hackerwins): The function does not consider the situation
                 // where Element and Text nodes are mixed in the Element's Children.
                 val sizeOfLeftSiblings = addSizeOfLeftSiblings(node, treePos.offset)
                 mutableListOf(sizeOfLeftSiblings)
             }
+
             else -> {
                 mutableListOf(treePos.offset)
             }
@@ -372,7 +373,7 @@ internal data class TreePos<T : IndexTreeNode<T>>(
 internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableList<T>) {
     abstract val type: String
 
-    protected val childrenInternal: MutableList<T> = children
+    private val childrenInternal: MutableList<T> = children
 
     val isText
         get() = type == DEFAULT_TEXT_TYPE
@@ -397,6 +398,9 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             return parent?.children?.getOrNull(offset + 1)
         }
 
+    private var canUseCachedChildren = false
+    private var cachedChildren: List<T> = emptyList()
+
     /**
      * Returns the children of the node.
      * Tombstone nodes remain awhile in the tree during editing.
@@ -404,12 +408,21 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
      * So, we need to filter out the tombstone nodes to get the real children.
      */
     val children: List<T>
-        get() = childrenInternal.filterNot { it.isRemoved }
+        get() {
+            return if (canUseCachedChildren) {
+                cachedChildren
+            } else {
+                cachedChildren = childrenInternal.filterNotTo(ArrayList(childrenInternal.size)) {
+                    it.isRemoved
+                }
+                canUseCachedChildren = true
+                cachedChildren
+            }
+        }
 
     /**
      * Returns the children of the node including tombstones.
      */
-    @VisibleForTesting
     val allChildren: List<T>
         get() = childrenInternal.toList()
 
@@ -461,6 +474,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         }
 
         childrenInternal.addAll(newNode)
+        canUseCachedChildren = false
         newNode.forEach { node ->
             node.parent = this as T
 
@@ -479,6 +493,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         }
 
         childrenInternal.addAll(0, newNode.toList())
+        canUseCachedChildren = false
         newNode.forEach { node ->
             node.parent = this as T
 
@@ -536,6 +551,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         }
 
         childrenInternal.add(offset, newNode)
+        canUseCachedChildren = false
         newNode.parent = this as T
     }
 
@@ -551,6 +567,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
             ?: throw NoSuchElementException("child not found")
 
         childrenInternal.removeAt(offset)
+        canUseCachedChildren = false
         child.parent = null
     }
 
@@ -579,8 +596,10 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
         val rightChildren = childrenInternal.drop(offset)
         childrenInternal.clear()
         childrenInternal.addAll(leftChildren)
+        canUseCachedChildren = false
         clone.childrenInternal.clear()
         clone.childrenInternal.addAll(rightChildren)
+        clone.canUseCachedChildren = false
         size = childrenInternal.fold(0) { acc, child ->
             acc + child.paddedSize
         }
@@ -614,6 +633,10 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>(children: MutableLis
      * Clones the element node with the given [issueTimeTicket] lambda and value.
      */
     abstract fun cloneElement(issueTimeTicket: () -> TimeTicket): T
+
+    fun childRemoved() {
+        canUseCachedChildren = false
+    }
 
     companion object {
         /**

@@ -720,7 +720,13 @@ internal data class CrdtTreeNode private constructor(
         get() = id.createdAt
 
     var removedAt: TimeTicket? = null
-        private set
+        private set(value) {
+            field = value
+            if (field != null) {
+                parent?.childRemoved()
+                return
+            }
+        }
 
     override val isRemoved: Boolean
         get() = removedAt != null
@@ -835,16 +841,16 @@ internal data class CrdtTreeNode private constructor(
     fun deepCopy(): CrdtTreeNode {
         return copy(
             _value = _value,
-            childNodes = childrenInternal.map { child ->
+            childNodes = allChildren.map { child ->
                 child.deepCopy()
             }.toMutableList(),
             _attributes = _attributes.deepCopy(),
         ).also {
-            it.size = size
-            it.removedAt = removedAt
-            it.childrenInternal.forEach { child ->
+            it.allChildren.forEach { child ->
                 child.parent = it
             }
+            it.size = size
+            it.removedAt = removedAt
             it.insPrevID = insPrevID
             it.insNextID = insNextID
         }

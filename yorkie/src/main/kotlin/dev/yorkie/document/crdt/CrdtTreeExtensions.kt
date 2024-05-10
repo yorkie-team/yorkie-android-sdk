@@ -18,8 +18,8 @@ internal fun CrdtTreeNode.toXml(): String {
  */
 internal fun CrdtTreeNode.toTreeNode(): TreeNode {
     return if (isText) {
-        TreeNode(type, value = value)
+        TreeTextNode(value)
     } else {
-        TreeNode(type, children.map(CrdtTreeNode::toTreeNode), attributes = attributes)
+        TreeElementNode(type, children.map(CrdtTreeNode::toTreeNode), attributes)
     }
 }

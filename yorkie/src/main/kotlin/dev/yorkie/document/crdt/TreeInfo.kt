@@ -8,23 +8,14 @@ import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
  * [TreeNode] represents the JSON representation of a node in the tree.
  * It is used to serialize and deserialize the tree.
  */
-internal data class TreeNode(
-    val type: String,
-    val children: List<TreeNode>? = null,
-    val value: String? = null,
-    val attributes: Map<String, String>? = null,
-) {
+internal sealed class TreeNode {
+    abstract val type: String
+    abstract val childNodes: List<TreeNode>?
+    abstract val value: String?
+    abstract val attributes: Map<String, String>?
 
     fun toJsonTreeNode(): JsonTree.TreeNode {
-        return if (type == DEFAULT_TEXT_TYPE) {
-            JsonTree.TextNode(value.orEmpty())
-        } else {
-            JsonTree.ElementNode(
-                type,
-                attributes.orEmpty(),
-                children?.map(TreeNode::toJsonTreeNode).orEmpty(),
-            )
-        }
+        return this as JsonTree.TreeNode
     }
 
     override fun toString(): String {
@@ -33,9 +24,10 @@ internal data class TreeNode(
         } else {
             val ssb = StringBuilder(
                 """{"type":"$type","children":[${
-                    children.orEmpty().joinToString(",")
+                    childNodes.orEmpty().joinToString(",")
                 }]""",
             )
+            val attributes = attributes
             if (attributes?.isNotEmpty() == true) {
                 ssb.append(",")
                 ssb.append(
@@ -50,6 +42,25 @@ internal data class TreeNode(
             ssb.toString()
         }
     }
+}
+
+internal data class TreeElementNode(
+    override val type: String,
+    override val childNodes: List<TreeNode> = emptyList(),
+    override val attributes: Map<String, String> = emptyMap(),
+) : TreeNode(), JsonTree.ElementNode {
+    override val value: String? = null
+
+    @Suppress("UNCHECKED_CAST")
+    override val children: List<JsonTree.TreeNode> = childNodes as List<JsonTree.TreeNode>
+}
+
+internal data class TreeTextNode(override val value: String = "") : TreeNode(), JsonTree.TextNode {
+    override val type: String = DEFAULT_TEXT_TYPE
+
+    override val childNodes: List<TreeNode>? = null
+
+    override val attributes: Map<String, String>? = null
 }
 
 internal data class TreeChange(

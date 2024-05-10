@@ -8,7 +8,10 @@ import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.Rht
+import dev.yorkie.document.crdt.TreeElementNode
+import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.crdt.TreePosRange
+import dev.yorkie.document.crdt.TreeTextNode
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
@@ -351,13 +354,33 @@ public class JsonTree internal constructor(
         public val type: String
     }
 
-    public data class ElementNode(
-        public override val type: String,
-        public val attributes: Map<String, String> = emptyMap(),
-        public val children: List<TreeNode> = emptyList(),
-    ) : TreeNode
+    public interface ElementNode : TreeNode {
+        public val children: List<TreeNode>
+        public val attributes: Map<String, String>
 
-    public data class TextNode(val value: String) : TreeNode {
-        public override val type: String = DEFAULT_TEXT_TYPE
+        companion object {
+            operator fun invoke(
+                type: String,
+                children: List<TreeNode> = emptyList(),
+                attributes: Map<String, String> = emptyMap(),
+            ): ElementNode {
+                @Suppress("UNCHECKED_CAST")
+                return TreeElementNode(
+                    type,
+                    children as List<dev.yorkie.document.crdt.TreeNode>,
+                    attributes,
+                )
+            }
+        }
+    }
+
+    public interface TextNode : TreeNode {
+        public val value: String
+
+        companion object {
+            operator fun invoke(value: String): TextNode {
+                return TreeTextNode(value)
+            }
+        }
     }
 }

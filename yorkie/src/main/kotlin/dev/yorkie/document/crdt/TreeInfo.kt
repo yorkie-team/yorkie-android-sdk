@@ -53,6 +53,10 @@ internal data class TreeElementNode(
 
     @Suppress("UNCHECKED_CAST")
     override val children: List<JsonTree.TreeNode> = childNodes as List<JsonTree.TreeNode>
+
+    override fun toString(): String {
+        return super.toString()
+    }
 }
 
 internal data class TreeTextNode(override val value: String = "") : TreeNode(), JsonTree.TextNode {
@@ -61,6 +65,9 @@ internal data class TreeTextNode(override val value: String = "") : TreeNode(), 
     override val childNodes: List<TreeNode>? = null
 
     override val attributes: Map<String, String>? = null
+    override fun toString(): String {
+        return super.toString()
+    }
 }
 
 internal data class TreeChange(

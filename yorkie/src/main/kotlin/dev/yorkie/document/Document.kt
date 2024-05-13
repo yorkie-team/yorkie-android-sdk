@@ -421,7 +421,7 @@ public class Document(
     }
 
     public suspend fun getRoot(): JsonObject = withContext(dispatcher) {
-        val clone = ensureClone()
+        val clone = ensureClone().deepCopy()
         val context = ChangeContext(changeID.next(), clone.root)
         JsonObject(context, clone.root.rootObject)
     }
@@ -554,8 +554,8 @@ public class Document(
         public val disableGC: Boolean = false,
     )
 
-    internal data class RootClone(
-        val root: CrdtRoot,
-        val presences: Presences,
-    )
+    internal data class RootClone(val root: CrdtRoot, val presences: Presences) {
+
+        fun deepCopy() = copy(root = root.deepCopy(), presences = presences.asPresences())
+    }
 }

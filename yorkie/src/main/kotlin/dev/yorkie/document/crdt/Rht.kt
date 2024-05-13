@@ -14,7 +14,7 @@ internal class Rht : Collection<Rht.Node> {
 
     val nodeKeyValueMap: Map<String, String>
         get() {
-            return nodeMapByKey.entries.associate { (key, node) ->
+            return nodeMapByKey.filterValues { !it.isRemoved }.entries.associate { (key, node) ->
                 key to node.value
             }
         }
@@ -23,13 +23,14 @@ internal class Rht : Collection<Rht.Node> {
         key: String,
         value: String,
         executedAt: TimeTicket,
+        isRemoved: Boolean = false,
     ) {
         val prev = nodeMapByKey[key]
         if (prev?.executedAt < executedAt) {
             if (prev?.isRemoved == false) {
                 numberOfRemovedElements--
             }
-            val node = Node(key, value, executedAt, false)
+            val node = Node(key, value, executedAt, isRemoved)
             nodeMapByKey[key] = node
         }
     }
@@ -66,7 +67,7 @@ internal class Rht : Collection<Rht.Node> {
         val rht = Rht()
         nodeMapByKey.forEach {
             val node = it.value
-            rht.set(node.key, node.value, node.executedAt)
+            rht.set(node.key, node.value, node.executedAt, node.isRemoved)
         }
         return rht
     }

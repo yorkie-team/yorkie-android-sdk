@@ -1595,8 +1595,8 @@ class JsonTreeTest {
                     tree.editByPath(
                         listOf(0),
                         listOf(0),
-                        ElementNode("t", mapOf("id" to "1", "value" to "init")),
-                        ElementNode("t", mapOf("id" to "2", "value" to "init")),
+                        ElementNode("t", attributes = mapOf("id" to "1", "value" to "init")),
+                        ElementNode("t", attributes = mapOf("id" to "2", "value" to "init")),
                     )
                 },
                 Updater(client2, document2),
@@ -1720,8 +1720,8 @@ class JsonTreeTest {
                         listOf(0),
                         listOf(0),
                         listOf(
-                            ElementNode("t", mapOf("id" to "1", "value" to "init")),
-                            ElementNode("t", mapOf("id" to "2", "value" to "init")),
+                            ElementNode("t", attributes = mapOf("id" to "1", "value" to "init")),
+                            ElementNode("t", attributes = mapOf("id" to "2", "value" to "init")),
                         ),
                         0,
                         "$.t",

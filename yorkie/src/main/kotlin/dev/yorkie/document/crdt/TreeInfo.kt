@@ -8,47 +8,50 @@ import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
  * [TreeNode] represents the JSON representation of a node in the tree.
  * It is used to serialize and deserialize the tree.
  */
-internal data class TreeNode(
-    val type: String,
-    val children: List<TreeNode>? = null,
-    val value: String? = null,
-    val attributes: Map<String, String>? = null,
-) {
+internal sealed class TreeNode {
+    abstract val type: String
 
     fun toJsonTreeNode(): JsonTree.TreeNode {
-        return if (type == DEFAULT_TEXT_TYPE) {
-            JsonTree.TextNode(value.orEmpty())
-        } else {
-            JsonTree.ElementNode(
-                type,
-                attributes.orEmpty(),
-                children?.map(TreeNode::toJsonTreeNode).orEmpty(),
-            )
-        }
+        return this as JsonTree.TreeNode
     }
+}
+
+internal data class TreeElementNode(
+    override val type: String,
+    val childNodes: List<TreeNode> = emptyList(),
+    override val attributes: Map<String, String> = emptyMap(),
+) : TreeNode(), JsonTree.ElementNode {
+
+    @Suppress("UNCHECKED_CAST")
+    override val children: List<JsonTree.TreeNode> = childNodes as List<JsonTree.TreeNode>
 
     override fun toString(): String {
-        return if (type == DEFAULT_TEXT_TYPE) {
-            """{"type":"$type","value":"$value"}"""
-        } else {
-            val ssb = StringBuilder(
-                """{"type":"$type","children":[${
-                    children.orEmpty().joinToString(",")
-                }]""",
+        val ssb = StringBuilder(
+            """{"type":"$type","children":[${
+                childNodes.joinToString(",")
+            }]""",
+        )
+        val attributes = attributes
+        if (attributes.isNotEmpty()) {
+            ssb.append(",")
+            ssb.append(
+                """"attributes":{${
+                    attributes.entries.joinToString(",") { (key, value) ->
+                        """"$key":"$value""""
+                    }
+                }}""",
             )
-            if (attributes?.isNotEmpty() == true) {
-                ssb.append(",")
-                ssb.append(
-                    """"attributes":{${
-                        attributes.entries.joinToString(",") { (key, value) ->
-                            """"$key":"$value""""
-                        }
-                    }}""",
-                )
-            }
-            ssb.append("}")
-            ssb.toString()
         }
+        ssb.append("}")
+        return ssb.toString()
+    }
+}
+
+internal data class TreeTextNode(override val value: String = "") : TreeNode(), JsonTree.TextNode {
+    override val type: String = DEFAULT_TEXT_TYPE
+
+    override fun toString(): String {
+        return """{"type":"$type","value":"$value"}"""
     }
 }
 

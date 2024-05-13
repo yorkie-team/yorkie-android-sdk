@@ -11,6 +11,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.IndexTreeNodeList
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
@@ -706,9 +707,9 @@ internal data class CrdtTreeNode private constructor(
     val id: CrdtTreeNodeID,
     override val type: String,
     private val _value: String? = null,
-    private val childNodes: MutableList<CrdtTreeNode> = mutableListOf(),
+    override val childNodes: IndexTreeNodeList<CrdtTreeNode> = IndexTreeNodeList(mutableListOf()),
     private val _attributes: Rht = Rht(),
-) : IndexTreeNode<CrdtTreeNode>(childNodes) {
+) : IndexTreeNode<CrdtTreeNode>() {
 
     val attributes: Map<String, String>
         get() = _attributes.nodeKeyValueMap
@@ -720,7 +721,13 @@ internal data class CrdtTreeNode private constructor(
         get() = id.createdAt
 
     var removedAt: TimeTicket? = null
-        private set
+        private set(value) {
+            val removed = field == null && value != null
+            field = value
+            if (removed) {
+                onRemovedListener?.onRemoved(this)
+            }
+        }
 
     override val isRemoved: Boolean
         get() = removedAt != null
@@ -768,7 +775,7 @@ internal data class CrdtTreeNode private constructor(
         return copy(
             id = CrdtTreeNodeID(createdAt, offset),
             _value = null,
-            childNodes = mutableListOf(),
+            childNodes = IndexTreeNodeList(mutableListOf()),
         ).apply {
             removedAt = this@CrdtTreeNode.removedAt
         }
@@ -835,16 +842,18 @@ internal data class CrdtTreeNode private constructor(
     fun deepCopy(): CrdtTreeNode {
         return copy(
             _value = _value,
-            childNodes = childrenInternal.map { child ->
-                child.deepCopy()
-            }.toMutableList(),
+            childNodes = IndexTreeNodeList(
+                allChildren.map { child ->
+                    child.deepCopy()
+                }.toMutableList(),
+            ),
             _attributes = _attributes.deepCopy(),
         ).also {
-            it.size = size
-            it.removedAt = removedAt
-            it.childrenInternal.forEach { child ->
+            it.allChildren.forEach { child ->
                 child.parent = it
             }
+            it.size = size
+            it.removedAt = removedAt
             it.insPrevID = insPrevID
             it.insNextID = insNextID
             if (it.isText) {
@@ -872,7 +881,7 @@ internal data class CrdtTreeNode private constructor(
             type: String,
             children: List<CrdtTreeNode> = emptyList(),
             attributes: Rht = Rht(),
-        ) = CrdtTreeNode(id, type, null, children.toMutableList(), attributes)
+        ) = CrdtTreeNode(id, type, null, IndexTreeNodeList(children.toMutableList()), attributes)
     }
 }
 

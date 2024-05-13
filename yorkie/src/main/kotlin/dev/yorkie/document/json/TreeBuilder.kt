@@ -86,8 +86,8 @@ public object TreeBuilder {
         internal fun build(): ElementNode {
             return ElementNode(
                 type,
-                if (lazyAttributes.isInitialized()) attributes else emptyMap(),
                 if (lazyChildren.isInitialized()) children else emptyList(),
+                if (lazyAttributes.isInitialized()) attributes else emptyMap(),
             )
         }
     }

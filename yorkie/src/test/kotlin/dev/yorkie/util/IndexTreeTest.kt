@@ -363,7 +363,7 @@ class IndexTreeTest {
     private fun CrdtTreeNode.toDiagnostic() = if (isText) value else type
 
     private fun createIndexTree(root: CrdtTreeNode): IndexTree<CrdtTreeNode> {
-        root.children.forEach { child ->
+        root.children.toList().forEach { child ->
             buildDescendants(child, root)
         }
         return IndexTree(root)
@@ -374,7 +374,7 @@ class IndexTreeTest {
             parent.removeChild(node)
         }
         parent.append(node)
-        node.children.forEach { child ->
+        node.children.toList().forEach { child ->
             buildDescendants(child, node)
         }
     }

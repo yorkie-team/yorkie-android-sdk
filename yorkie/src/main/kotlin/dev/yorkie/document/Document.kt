@@ -57,11 +57,14 @@ import kotlinx.coroutines.withContext
  * A single-threaded, [Closeable] [dispatcher] is used as default.
  * Therefore you need to [close] the document, when the document is no longer needed.
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
+ * [snapshotDispatcher] can be set differently from [dispatcher],
+ * as snapshot operation can be much heavier than other operations.
  */
 public class Document(
     public val key: Key,
     private val options: Options = Options(),
     private val dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Document($key)"),
+    private val snapshotDispatcher: CoroutineDispatcher = dispatcher,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
@@ -246,7 +249,7 @@ public class Document(
      * 2. Update the checkpoint.
      * 3. Do Garbage collection.
      */
-    internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
+    internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(snapshotDispatcher) {
         if (pack.hasSnapshot) {
             applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
         } else if (pack.hasChanges) {

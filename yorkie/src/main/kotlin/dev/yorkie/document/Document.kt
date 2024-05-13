@@ -420,7 +420,20 @@ public class Document(
         // TODO: also apply to root
     }
 
+    /**
+     * Returns a new proxy of cloned root.
+     */
     public suspend fun getRoot(): JsonObject = withContext(dispatcher) {
+        val clone = ensureClone()
+        val context = ChangeContext(changeID.next(), clone.root)
+        JsonObject(context, clone.root.rootObject)
+    }
+
+    /**
+     * Returns a new proxy of deep-copied root.
+     * It ensures thread-safety by avoiding reuse of [clone].
+     */
+    public suspend fun getRootThreadSafe(): JsonObject = withContext(dispatcher) {
         val clone = ensureClone().deepCopy()
         val context = ChangeContext(changeID.next(), clone.root)
         JsonObject(context, clone.root.rootObject)

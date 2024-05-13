@@ -49,7 +49,7 @@ class DocumentTest {
                     put(2)
                 }
             }.await()
-            assertTrue(result)
+            assertTrue(result.isSuccess)
 
             result = target.updateAsync { root, _ ->
                 root.remove("k1")
@@ -58,7 +58,7 @@ class DocumentTest {
                 root.remove("k2")
                 array.removeAt(2)
             }.await()
-            assertTrue(result)
+            assertTrue(result.isSuccess)
         }
     }
 

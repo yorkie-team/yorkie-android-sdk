@@ -191,14 +191,14 @@ $dokka.location:dev.yorkie.document.json/JsonText/style/#kotlin.Int#kotlin.Int#k
 $dokka.location:dev.yorkie.document.json/JsonText/toString/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/to-string.html
 $dokka.location:dev.yorkie.document.json/JsonText/values/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-text/values.html
 $dokka.location:dev.yorkie.document.json/JsonTree.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-companion/index.html
+$dokka.location:dev.yorkie.document.json/JsonTree.ElementNode.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-element-node/-companion/index.html
+$dokka.location:dev.yorkie.document.json/JsonTree.ElementNode.Companion/invoke/#kotlin.String#kotlin.collections.List[dev.yorkie.document.json.JsonTree.TreeNode]#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-element-node/-companion/invoke.html
 $dokka.location:dev.yorkie.document.json/JsonTree.ElementNode///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-element-node/index.html
-$dokka.location:dev.yorkie.document.json/JsonTree.ElementNode/ElementNode/#kotlin.String#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.collections.List[dev.yorkie.document.json.JsonTree.TreeNode]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-element-node/-element-node.html
 $dokka.location:dev.yorkie.document.json/JsonTree.ElementNode/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-element-node/attributes.html
 $dokka.location:dev.yorkie.document.json/JsonTree.ElementNode/children/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-element-node/children.html
-$dokka.location:dev.yorkie.document.json/JsonTree.ElementNode/type/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-element-node/type.html
+$dokka.location:dev.yorkie.document.json/JsonTree.TextNode.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-text-node/-companion/index.html
+$dokka.location:dev.yorkie.document.json/JsonTree.TextNode.Companion/invoke/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-text-node/-companion/invoke.html
 $dokka.location:dev.yorkie.document.json/JsonTree.TextNode///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-text-node/index.html
-$dokka.location:dev.yorkie.document.json/JsonTree.TextNode/TextNode/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-text-node/-text-node.html
-$dokka.location:dev.yorkie.document.json/JsonTree.TextNode/type/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-text-node/type.html
 $dokka.location:dev.yorkie.document.json/JsonTree.TextNode/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-text-node/value.html
 $dokka.location:dev.yorkie.document.json/JsonTree.TreeNode///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-tree-node/index.html
 $dokka.location:dev.yorkie.document.json/JsonTree.TreeNode/type/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-tree-node/type.html
@@ -376,7 +376,7 @@ $dokka.location:dev.yorkie.document/Document.Options///PointingToDeclaration/yo
 $dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
 $dokka.location:dev.yorkie.document/Document.Options/disableGC/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/disable-g-c.html
 $dokka.location:dev.yorkie.document/Document///PointingToDeclaration/yorkie/dev.yorkie.document/-document/index.html
-$dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key#dev.yorkie.document.Document.Options#kotlinx.coroutines.CoroutineDispatcher/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
+$dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key#dev.yorkie.document.Document.Options#kotlinx.coroutines.CoroutineDispatcher#kotlinx.coroutines.CoroutineDispatcher/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
 $dokka.location:dev.yorkie.document/Document/close/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/close.html
 $dokka.location:dev.yorkie.document/Document/events/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
 $dokka.location:dev.yorkie.document/Document/events/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html

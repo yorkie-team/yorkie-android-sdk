@@ -383,6 +383,7 @@ $dokka.location:dev.yorkie.document/Document/events/#kotlin.String/PointingToDec
 $dokka.location:dev.yorkie.document/Document/garbageCollect/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document/-document/garbage-collect.html
 $dokka.location:dev.yorkie.document/Document/garbageLength/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/garbage-length.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
+$dokka.location:dev.yorkie.document/Document/getRootThreadSafe/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root-thread-safe.html
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
 $dokka.location:dev.yorkie.document/Document/myPresence/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/my-presence.html

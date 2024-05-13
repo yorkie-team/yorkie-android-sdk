@@ -157,7 +157,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             val element = pair.element as CrdtGCElement
 
             val removedNodeCount = element.deleteRemovedNodesBefore(executedAt)
-            if (removedNodeCount > 0) {
+            if (element.removedNodesLength == 0) {
                 elementGarbageIterator.remove()
             }
             count += removedNodeCount

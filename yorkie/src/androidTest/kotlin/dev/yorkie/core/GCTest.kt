@@ -624,6 +624,113 @@ class GCTest {
         }
     }
 
+    @Test
+    fun test_multiple_nodes_gc_in_text_type() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewText("t").edit(0, 0, "z")
+            }.await()
+
+            fun JsonObject.rootText() = getAs<JsonText>("t")
+
+            d1.updateAsync { root, _ ->
+                root.rootText().edit(0, 1, "a")
+            }.await()
+            d1.updateAsync { root, _ ->
+                root.rootText().edit(1, 1, "b")
+            }.await()
+            d1.updateAsync { root, _ ->
+                root.rootText().edit(2, 2, "d")
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals("abd", d1.getRoot().rootText().toString())
+            assertEquals("abd", d2.getRoot().rootText().toString())
+            assertEquals(1, d1.garbageLength)
+
+            d1.updateAsync { root, _ ->
+                root.rootText().edit(2, 2, "c")
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals("abcd", d1.getRoot().rootText().toString())
+            assertEquals("abcd", d2.getRoot().rootText().toString())
+
+            d1.updateAsync { root, _ ->
+                root.rootText().edit(1, 3, "")
+            }.await()
+
+            c1.syncAsync().await()
+            assertEquals("ad", d1.getRoot().rootText().toString())
+            assertEquals(2, d1.garbageLength)
+
+            c2.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+            assertEquals("ad", d2.getRoot().rootText().toString())
+            assertEquals(0, d1.garbageLength)
+        }
+    }
+
+    @Test
+    fun test_multiple_nodes_gc_in_tree_type() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("r") {
+                        text { "z" }
+                    },
+                )
+            }.await()
+
+            fun JsonObject.rootTree() = getAs<JsonTree>("t")
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().editByPath(listOf(0), listOf(1), text { "a" })
+            }.await()
+            d1.updateAsync { root, _ ->
+                root.rootTree().editByPath(listOf(1), listOf(1), text { "b" })
+            }.await()
+            d1.updateAsync { root, _ ->
+                root.rootTree().editByPath(listOf(2), listOf(2), text { "d" })
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals("<r>abd</r>", d1.getRoot().rootTree().toXml())
+            assertEquals("<r>abd</r>", d2.getRoot().rootTree().toXml())
+            assertEquals(1, d1.garbageLength)
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().editByPath(listOf(2), listOf(2), text { "c" })
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals("<r>abcd</r>", d1.getRoot().rootTree().toXml())
+            assertEquals("<r>abcd</r>", d2.getRoot().rootTree().toXml())
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().editByPath(listOf(1), listOf(3))
+            }.await()
+
+            c1.syncAsync().await()
+            assertEquals("<r>ad</r>", d1.getRoot().rootTree().toXml())
+            assertEquals(2, d1.garbageLength)
+
+            c2.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+            assertEquals("<r>ad</r>", d2.getRoot().rootTree().toXml())
+            assertEquals(0, d1.garbageLength)
+        }
+    }
+
     private fun getNodeLength(root: IndexTreeNode<CrdtTreeNode>): Int {
         return root.allChildren.fold(root.allChildren.size) { acc, child ->
             acc + getNodeLength(child)

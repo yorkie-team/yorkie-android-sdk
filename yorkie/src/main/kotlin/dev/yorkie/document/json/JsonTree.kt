@@ -9,7 +9,6 @@ import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TreeElementNode
-import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.crdt.TreePosRange
 import dev.yorkie.document.crdt.TreeTextNode
 import dev.yorkie.document.operation.TreeEditOperation
@@ -66,7 +65,7 @@ public class JsonTree internal constructor(
 
     private fun styleByRange(range: TreePosRange, attributes: Map<String, String>) {
         val ticket = context.issueTimeTicket()
-        target.style(range, attributes, ticket)
+        val (_, maxCreatedAtMapByActor) = target.style(range, attributes, ticket)
 
         context.push(
             TreeStyleOperation(
@@ -74,6 +73,7 @@ public class JsonTree internal constructor(
                 range.first,
                 range.second,
                 ticket,
+                maxCreatedAtMapByActor,
                 attributes.toMap(),
             ),
         )

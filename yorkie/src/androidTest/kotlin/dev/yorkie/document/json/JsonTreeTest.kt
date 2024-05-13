@@ -20,7 +20,9 @@ import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
+import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.gson
+import junit.framework.TestCase.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlinx.coroutines.CoroutineScope
@@ -2096,6 +2098,66 @@ class JsonTreeTest {
                 Updater(c2, d2),
             )
             assertTreesXmlEquals("<doc><p>hello</p></doc>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_tree_style_events_concurrency() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                text { "hello" }
+                                attr { "italic" to true }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("""<doc><p italic="true">hello</p></doc>""", d1, d2)
+
+            val d1Events = mutableListOf<TreeStyleOpInfo>()
+            val d2Events = mutableListOf<TreeStyleOpInfo>()
+
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<RemoteChange>()
+                        .map {
+                            it.changeInfo.operations.filterIsInstance<TreeStyleOpInfo>()
+                        }
+                        .collect(d1Events::addAll)
+                }
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filterIsInstance<RemoteChange>()
+                        .map {
+                            it.changeInfo.operations.filterIsInstance<TreeStyleOpInfo>()
+                        }
+                        .collect(d2Events::addAll)
+                }
+            }
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().style(0, 1, mapOf("bold" to "true"))
+            }.await()
+
+            d2.updateAsync { root, _ ->
+                root.rootTree().style(0, 1, mapOf("bold" to "false"))
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+
+            assertEquals("false", d1Events.single().attributes["bold"])
+            assertTrue(d2Events.isEmpty())
+
+            collectJob.cancel()
         }
     }
 

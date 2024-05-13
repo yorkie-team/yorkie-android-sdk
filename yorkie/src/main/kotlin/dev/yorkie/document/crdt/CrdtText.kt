@@ -33,7 +33,7 @@ internal data class CrdtText(
         value: String,
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): TextOperationResult {
         val textValue = if (value.isNotEmpty()) {
             TextValue(value).apply {
@@ -43,11 +43,11 @@ internal data class CrdtText(
             null
         }
 
-        val (caretPos, latestCreatedAtMap, contentChanges) = rgaTreeSplit.edit(
+        val (caretPos, maxCreatedAtMap, contentChanges) = rgaTreeSplit.edit(
             range,
             executedAt,
             textValue,
-            latestCreatedAtMapByActor,
+            maxCreatedAtMapByActor,
         )
 
         val changes = contentChanges.map {
@@ -63,7 +63,7 @@ internal data class CrdtText(
         if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        return TextOperationResult(latestCreatedAtMap, changes, caretPos to caretPos)
+        return TextOperationResult(maxCreatedAtMap, changes, caretPos to caretPos)
     }
 
     /**
@@ -75,7 +75,7 @@ internal data class CrdtText(
         range: RgaTreeSplitPosRange,
         attributes: Map<String, String>,
         executedAt: TimeTicket,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): TextOperationResult {
         // 1. Split nodes with from and to.
         val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
@@ -86,18 +86,18 @@ internal data class CrdtText(
         val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val toBeStyleds = nodes.mapNotNull { node ->
             val actorID = node.createdAt.actorID
-            val latestCreatedAt = if (latestCreatedAtMapByActor?.isNotEmpty() == true) {
-                latestCreatedAtMapByActor[actorID] ?: TimeTicket.InitialTimeTicket
+            val maxCreatedAt = if (maxCreatedAtMapByActor?.isNotEmpty() == true) {
+                maxCreatedAtMapByActor[actorID] ?: TimeTicket.InitialTimeTicket
             } else {
                 TimeTicket.MaxTimeTicket
             }
 
             node.takeIf {
-                it.canStyle(executedAt, latestCreatedAt)
+                it.canStyle(executedAt, maxCreatedAt)
             }?.also {
-                val updatedLatestCreatedAt = createdAtMapByActor[actorID]
+                val updatedMaxCreatedAt = createdAtMapByActor[actorID]
                 val updatedCreatedAt = node.createdAt
-                if (updatedLatestCreatedAt == null || updatedLatestCreatedAt < updatedCreatedAt) {
+                if (updatedMaxCreatedAt == null || updatedMaxCreatedAt < updatedCreatedAt) {
                     createdAtMapByActor[actorID] = updatedCreatedAt
                 }
             }

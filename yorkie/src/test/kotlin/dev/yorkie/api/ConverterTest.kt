@@ -262,6 +262,7 @@ class ConverterTest {
                 CrdtTreeNodeID(InitialTimeTicket, 10),
             ),
             InitialTimeTicket,
+            mapOf(INITIAL_ACTOR_ID to InitialTimeTicket),
             mapOf("a" to "b"),
             listOf("a"),
         )

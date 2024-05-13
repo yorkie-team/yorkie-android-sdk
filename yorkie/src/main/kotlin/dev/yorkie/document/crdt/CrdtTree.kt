@@ -20,7 +20,7 @@ public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
 
 internal typealias CrdtTreeToken = TreeToken<CrdtTreeNode>
 
-internal class CrdtTree(
+internal data class CrdtTree(
     val root: CrdtTreeNode,
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket? = null,
@@ -556,7 +556,7 @@ internal class CrdtTree(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {
-        return CrdtTree(root.deepCopy(), createdAt, movedAt, removedAt)
+        return copy(root = root.deepCopy())
     }
 
     /**
@@ -847,6 +847,9 @@ internal data class CrdtTreeNode private constructor(
             }
             it.insPrevID = insPrevID
             it.insNextID = insNextID
+            if (it.isText) {
+                it.value = value
+            }
         }
     }
 

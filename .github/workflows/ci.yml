@@ -12,14 +12,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: 17
           distribution: 'zulu'
           cache: 'gradle'
       - run: chmod +x gradlew
-      - uses: gradle/gradle-build-action@v2
+      - uses: gradle/actions/setup-gradle@v3
       - run: ./gradlew lintKotlin
       - run: ./gradlew lint
 
@@ -28,17 +28,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: 17
           distribution: 'zulu'
           cache: 'gradle'
       - run: chmod +x gradlew
-      - uses: gradle/gradle-build-action@v2
+      - uses: gradle/actions/setup-gradle@v3
       - run: ./gradlew yorkie:testDebugUnitTest
       - run: ./gradlew yorkie:jacocoDebugTestReport
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: unit-test-artifact
           path: yorkie/build/reports/jacoco/jacocoDebugTestReport/jacocoDebugTestReport.xml
@@ -53,18 +53,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: 17
           distribution: 'zulu'
           cache: 'gradle'
       - run: chmod +x gradlew
-      - uses: gradle/gradle-build-action@v2
+      - uses: gradle/actions/setup-gradle@v3
       - run: |
           docker system prune --all --force
           docker-compose -f docker/docker-compose-ci.yml up --build -d
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         id: avd-cache
         with:
           path: |
@@ -101,7 +101,7 @@ jobs:
       - if: ${{ matrix.api-level == 24 }}
         run: ./gradlew yorkie:jacocoDebugTestReport
       - if: ${{ matrix.api-level == 24 }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: android-test-artifact
           path: yorkie/build/reports/jacoco/jacocoDebugTestReport/jacocoDebugTestReport.xml
@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v2
       - uses: codecov/codecov-action@v3
         with:
@@ -126,15 +126,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: 17
           distribution: 'zulu'
           cache: 'gradle'
       - run: chmod +x gradlew
-      - uses: gradle/gradle-build-action@v2
-      - uses: actions/cache@v3
+      - uses: gradle/actions/setup-gradle@v3
+      - uses: actions/cache@v4
         id: avd-cache
         with:
           path: |
@@ -169,7 +169,7 @@ jobs:
             adb shell find /sdcard/Download -name "*-benchmarkData.json" | tr -d '\r' | xargs -n1 adb pull
       - run: |
           echo "$(cat dev.yorkie.microbenchmark.test-benchmarkData.json)"
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: microbenchmark-artifact
           path: dev.yorkie.microbenchmark.test-benchmarkData.json

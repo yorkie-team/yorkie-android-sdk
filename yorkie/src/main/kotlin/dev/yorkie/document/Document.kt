@@ -27,6 +27,7 @@ import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.util.OperationResult
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
@@ -130,7 +131,7 @@ public class Document(
     public fun updateAsync(
         message: String? = null,
         updater: suspend (root: JsonObject, presence: Presence) -> Unit,
-    ): Deferred<Result<Unit>> {
+    ): Deferred<OperationResult> {
         return scope.async {
             check(status != DocumentStatus.Removed) {
                 "document is removed"

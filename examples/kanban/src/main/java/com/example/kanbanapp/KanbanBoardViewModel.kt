@@ -25,7 +25,7 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
     init {
         viewModelScope.launch {
             if (client.activateAsync().await().isSuccess &&
-                client.attachAsync(document).await().isFailure
+                client.attachAsync(document).await().isSuccess
             ) {
                 client.syncAsync().await()
             }

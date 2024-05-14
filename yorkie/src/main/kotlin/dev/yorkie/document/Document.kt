@@ -100,7 +100,7 @@ public class Document(
         get() = root.getGarbageLength()
 
     private val presenceEventQueue = mutableListOf<Event.PresenceChange>()
-    internal val pendingPresenceEvents = mutableListOf<Event.PresenceChange>()
+    private val pendingPresenceEvents = mutableListOf<Event.PresenceChange>()
 
     internal val onlineClients = MutableStateFlow(setOf<ActorID>())
 
@@ -466,6 +466,14 @@ public class Document(
         return root.toJson()
     }
 
+    public suspend fun publishEvent(event: Event) {
+        if (event is Event.PresenceChange) {
+            pendingPresenceEvents.add(event)
+        } else {
+            eventStream.emit(event)
+        }
+    }
+
     override fun close() {
         scope.cancel()
         (dispatcher as? Closeable)?.close()
@@ -526,6 +534,23 @@ public class Document(
                  */
                 public data class PresenceChanged(override val changed: PresenceInfo) : Others
             }
+        }
+
+        /**
+         * Means that the document sync status has changed.
+         */
+        public sealed interface SyncStatusChange : Event {
+
+            public data object Synced : SyncStatusChange
+
+            public data class SyncFailed(public val cause: Throwable?) : SyncStatusChange
+        }
+
+        public sealed interface StreamConnectionChange : Event {
+
+            public data object Connected : StreamConnectionChange
+
+            public data object Disconnected : StreamConnectionChange
         }
 
         /**

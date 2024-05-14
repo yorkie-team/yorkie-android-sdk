@@ -23,14 +23,13 @@ import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.watchDocumentRequest
-import dev.yorkie.core.Client.DocumentSyncResult.SyncFailed
-import dev.yorkie.core.Client.DocumentSyncResult.Synced
-import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Presences.Companion.UninitializedPresences
 import dev.yorkie.core.Presences.Companion.asPresences
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
 import dev.yorkie.document.Document.Event.PresenceChange
+import dev.yorkie.document.Document.Event.StreamConnectionChange
+import dev.yorkie.document.Document.Event.SyncStatusChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
@@ -62,10 +61,8 @@ import kotlinx.coroutines.channels.onSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.fold
@@ -93,9 +90,6 @@ public class Client @VisibleForTesting internal constructor(
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val activationJob = SupervisorJob()
 
-    private val eventStream = MutableSharedFlow<Event>()
-    val events = eventStream.asSharedFlow()
-
     private val attachments = MutableStateFlow<Map<Document.Key, Attachment>>(emptyMap())
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
@@ -103,9 +97,6 @@ public class Client @VisibleForTesting internal constructor(
 
     public val isActive: Boolean
         get() = status.value is Status.Activated
-
-    private val _streamConnectionStatus = MutableStateFlow(StreamConnectionStatus.Disconnected)
-    public val streamConnectionStatus = _streamConnectionStatus.asStateFlow()
 
     private val projectBasedRequestHeader = mapOf("x-shard-key" to listOf(options.apiKey.orEmpty()))
 
@@ -175,11 +166,11 @@ public class Client @VisibleForTesting internal constructor(
         scope.launch(activationJob) {
             while (true) {
                 filterRealTimeSyncNeeded().asSyncFlow().collect { (document, result) ->
-                    eventStream.emit(
+                    document.publishEvent(
                         if (result.isSuccess) {
-                            DocumentSynced(Synced(document))
+                            SyncStatusChange.Synced
                         } else {
-                            DocumentSynced(SyncFailed(document, result.exceptionOrNull()))
+                            SyncStatusChange.SyncFailed(result.exceptionOrNull())
                         },
                     )
                 }
@@ -210,15 +201,15 @@ public class Client @VisibleForTesting internal constructor(
                 )
             } ?: attachments.value.values
             attachments.asSyncFlow().collect { (document, result) ->
-                eventStream.emit(
+                document.publishEvent(
                     if (result.isSuccess) {
-                        DocumentSynced(Synced(document))
+                        SyncStatusChange.Synced
                     } else {
                         val exception = result.exceptionOrNull()
                         if (failure == null && exception != null) {
                             failure = exception
                         }
-                        DocumentSynced(SyncFailed(document, exception))
+                        SyncStatusChange.SyncFailed(exception)
                     },
                 )
             }
@@ -306,7 +297,7 @@ public class Client @VisibleForTesting internal constructor(
                     while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
                         val receiveResult = channel.receiveCatching()
                         receiveResult.onSuccess {
-                            _streamConnectionStatus.emit(StreamConnectionStatus.Connected)
+                            attachment.document.publishEvent(StreamConnectionChange.Connected)
                             handleWatchDocumentsResponse(attachment.document.key, it)
                             retry = 0
                         }.onFailure {
@@ -314,9 +305,10 @@ public class Client @VisibleForTesting internal constructor(
                                 return@onFailure
                             }
                             retry++
-                            handleWatchStreamFailure(stream, it, retry > 3)
+                            handleWatchStreamFailure(attachment.document, stream, it, retry > 3)
                         }.onClosed {
                             handleWatchStreamFailure(
+                                attachment.document,
                                 stream,
                                 it ?: ClosedReceiveChannelException("Channel was closed"),
                                 true,
@@ -342,11 +334,12 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private suspend fun handleWatchStreamFailure(
+        document: Document,
         stream: ServerOnlyStreamInterface<*, *>,
         cause: Throwable?,
         closeStream: Boolean,
     ) {
-        _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
+        document.publishEvent(StreamConnectionChange.Disconnected)
         if (closeStream) {
             stream.safeClose()
         }
@@ -396,7 +389,7 @@ public class Client @VisibleForTesting internal constructor(
         if (response.hasInitialization()) {
             val document = attachments.value[documentKey]?.document ?: return
             val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
-            document.pendingPresenceEvents.add(
+            document.publishEvent(
                 PresenceChange.MyPresence.Initialized(
                     document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
                 ),
@@ -418,7 +411,7 @@ public class Client @VisibleForTesting internal constructor(
                 // unless we also know their initial presence data at this point.
                 val presence = document.allPresences.value[publisher]
                 if (presence != null) {
-                    document.pendingPresenceEvents.add(
+                    document.publishEvent(
                         PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
                     )
                 }
@@ -430,7 +423,7 @@ public class Client @VisibleForTesting internal constructor(
                 // when PresenceChange(clear) is applied before unwatching. In that case,
                 // the 'unwatched' event is triggered while handling the PresenceChange.
                 val presence = document.presences.value[publisher] ?: return
-                document.pendingPresenceEvents.add(
+                document.publishEvent(
                     PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
                 )
                 document.onlineClients.value -= publisher
@@ -440,7 +433,6 @@ public class Client @VisibleForTesting internal constructor(
                 attachments.value += documentKey to attachment.copy(
                     remoteChangeEventReceived = true,
                 )
-                eventStream.emit(Event.DocumentChanged(listOf(documentKey)))
             }
 
             DocEventType.UNRECOGNIZED, DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST -> {
@@ -550,7 +542,6 @@ public class Client @VisibleForTesting internal constructor(
                 return@async SUCCESS
             }
             activationJob.cancelChildren()
-            _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
 
             service.deactivateClient(
                 deactivateClientRequest {
@@ -650,15 +641,6 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     /**
-     * Represents whether the stream connection between the client
-     * and the server is connected or not.
-     */
-    public enum class StreamConnectionStatus {
-        Connected,
-        Disconnected,
-    }
-
-    /**
      * [SyncMode] defines synchronization modes for the PushPullChanges API.
      */
     public enum class SyncMode(val needRealTimeSync: Boolean) {
@@ -666,24 +648,6 @@ public class Client @VisibleForTesting internal constructor(
         RealtimePushOnly(true),
         RealtimeSyncOff(false),
         Manual(false),
-    }
-
-    /**
-     * Represents the result of synchronizing the document with the server.
-     */
-    public sealed class DocumentSyncResult(public val document: Document) {
-        /**
-         * Type when [document] synced successfully.
-         */
-        public class Synced(document: Document) : DocumentSyncResult(document)
-
-        /**
-         * Type when [document] sync failed.
-         */
-        public class SyncFailed(
-            document: Document,
-            @Suppress("unused") public val cause: Throwable?,
-        ) : DocumentSyncResult(document)
     }
 
     /**
@@ -716,20 +680,4 @@ public class Client @VisibleForTesting internal constructor(
          */
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
     )
-
-    /**
-     * Represents the type of the events that the client can emit.
-     * It can be delivered by [Client.events].
-     */
-    public interface Event {
-        /**
-         * Means that the documents of the client has changed.
-         */
-        public class DocumentChanged(public val documentKeys: List<Document.Key>) : Event
-
-        /**
-         * Means that the document has synced with the server.
-         */
-        public class DocumentSynced(public val result: DocumentSyncResult) : Event
-    }
 }

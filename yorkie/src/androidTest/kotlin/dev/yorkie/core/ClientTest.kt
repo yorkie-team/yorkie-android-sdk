@@ -2,10 +2,6 @@ package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.assertJsonContentEquals
-import dev.yorkie.core.Client.DocumentSyncResult
-import dev.yorkie.core.Client.Event.DocumentChanged
-import dev.yorkie.core.Client.Event.DocumentSynced
-import dev.yorkie.core.Client.StreamConnectionStatus
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
@@ -13,6 +9,7 @@ import dev.yorkie.core.Client.SyncMode.RealtimeSyncOff
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
+import dev.yorkie.document.Document.Event.SyncStatusChange
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.json.JsonTree
@@ -22,7 +19,6 @@ import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import java.util.UUID
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -31,9 +27,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.filterNot
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -48,128 +43,113 @@ class ClientTest {
     @Test
     fun test_multiple_clients_working_on_same_document() {
         runBlocking {
-            val client1 = createClient()
-            val client2 = createClient()
-            val documentKey = UUID.randomUUID().toString().toDocKey()
-            val document1 = Document(documentKey)
-            val document2 = Document(documentKey)
+            val c1 = createClient()
+            val c2 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+            val d2 = Document(key)
 
-            val client1Events = mutableListOf<Client.Event>()
-            val client2Events = mutableListOf<Client.Event>()
-            val document1Events = mutableListOf<Document.Event>()
-            val document2Events = mutableListOf<Document.Event>()
+            val d1SyncEvents = mutableListOf<SyncStatusChange>()
+            val d2SyncEvents = mutableListOf<SyncStatusChange>()
+            val d1ChangeEvents = mutableListOf<Document.Event>()
+            val d2ChangeEvents = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client1.events.collect(client1Events::add)
+                    d1.events.filterIsInstance<SyncStatusChange>().collect(d1SyncEvents::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    client2.events.collect(client2Events::add)
+                    d2.events.filterIsInstance<SyncStatusChange>().collect(d2SyncEvents::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document1.events.filterNot {
-                        it is Document.Event.PresenceChange
-                    }.collect(document1Events::add)
+                    d1.events.filter { it is RemoteChange || it is LocalChange }
+                        .collect(d1ChangeEvents::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    document2.events.filterNot {
-                        it is Document.Event.PresenceChange
-                    }.collect(document2Events::add)
+                    d2.events.filter { it is RemoteChange || it is LocalChange }
+                        .collect(d2ChangeEvents::add)
                 },
             )
 
-            client1.activateAsync().await()
-            client2.activateAsync().await()
+            c1.activateAsync().await()
+            c2.activateAsync().await()
 
-            assertIs<Client.Status.Activated>(client1.status.value)
-            assertIs<Client.Status.Activated>(client2.status.value)
+            assertIs<Client.Status.Activated>(c1.status.value)
+            assertIs<Client.Status.Activated>(c2.status.value)
 
-            client1.attachAsync(document1).await()
-            client2.attachAsync(document2).await()
+            c1.attachAsync(d1).await()
+            c2.attachAsync(d2).await()
 
-            withTimeout(GENERAL_TIMEOUT) {
-                client1.streamConnectionStatus.first { it == StreamConnectionStatus.Connected }
-                client2.streamConnectionStatus.first { it == StreamConnectionStatus.Connected }
-            }
-
-            document1.updateAsync { root, _ ->
+            d1.updateAsync { root, _ ->
                 root["k1"] = "v1"
             }.await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (client2Events.none { it is DocumentSynced }) {
+                while (d2SyncEvents.none { it is SyncStatusChange.Synced }) {
                     delay(50)
                 }
             }
-            val changeEvent = assertIs<DocumentChanged>(
-                client2Events.first { it is DocumentChanged },
-            )
-            assertContentEquals(listOf(documentKey), changeEvent.documentKeys)
-            var syncEvent = assertIs<DocumentSynced>(client2Events.first { it is DocumentSynced })
-            assertIs<DocumentSyncResult.Synced>(syncEvent.result)
 
-            val localSetEvent = assertIs<LocalChange>(document1Events.last())
+            val localSetEvent = assertIs<LocalChange>(d1ChangeEvents.last())
             val localSetOperation = assertIs<OperationInfo.SetOpInfo>(
                 localSetEvent.changeInfo.operations.first(),
             )
             assertEquals("k1", localSetOperation.key)
             assertEquals("$", localSetEvent.changeInfo.operations.first().path)
-            document1Events.clear()
+            d1ChangeEvents.clear()
 
-            val remoteSetEvent = assertIs<RemoteChange>(document2Events.last())
+            val remoteSetEvent = assertIs<RemoteChange>(d2ChangeEvents.last())
             val remoteSetOperation = assertIs<OperationInfo.SetOpInfo>(
                 remoteSetEvent.changeInfo.operations.first(),
             )
             assertEquals("k1", remoteSetOperation.key)
-            document2Events.clear()
+            d2ChangeEvents.clear()
 
-            val root2 = document2.getRoot()
+            val root2 = d2.getRoot()
             assertEquals("v1", root2.getAs<JsonPrimitive>("k1").value)
 
-            client1Events.clear()
-            client2Events.clear()
+            d1SyncEvents.clear()
+            d2SyncEvents.clear()
 
-            document2.updateAsync { root, _ ->
+            d2.updateAsync { root, _ ->
                 root.remove("k1")
             }.await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (client1Events.none { it is DocumentSynced }) {
+                while (d1SyncEvents.none { it is SyncStatusChange.Synced }) {
                     delay(50)
                 }
             }
             withTimeout(GENERAL_TIMEOUT) {
-                while (client2Events.isEmpty()) {
+                while (d2SyncEvents.isEmpty()) {
                     delay(50)
                 }
             }
-            syncEvent = assertIs(client2Events.first { it is DocumentSynced })
-            assertIs<DocumentSyncResult.Synced>(syncEvent.result)
-            val root1 = document1.getRoot()
+            val root1 = d1.getRoot()
             assertTrue(root1.keys.isEmpty())
 
-            val remoteRemoveEvent = assertIs<RemoteChange>(document1Events.first())
+            val remoteRemoveEvent = assertIs<RemoteChange>(d1ChangeEvents.first())
             val remoteRemoveOperation = assertIs<OperationInfo.RemoveOpInfo>(
                 remoteRemoveEvent.changeInfo.operations.first(),
             )
             assertEquals(localSetOperation.executedAt, remoteRemoveOperation.executedAt)
 
-            val localRemoveEvent = assertIs<LocalChange>(document2Events.first())
+            val localRemoveEvent = assertIs<LocalChange>(d2ChangeEvents.first())
             val localRemoveOperation = assertIs<OperationInfo.RemoveOpInfo>(
                 localRemoveEvent.changeInfo.operations.first(),
             )
             assertEquals(remoteSetOperation.executedAt, localRemoveOperation.executedAt)
 
-            assertEquals(1, document1.clone?.root?.getGarbageLength())
-            assertEquals(1, document2.clone?.root?.getGarbageLength())
+            assertEquals(1, d1.clone?.root?.getGarbageLength())
+            assertEquals(1, d2.clone?.root?.getGarbageLength())
 
-            client1.detachAsync(document1).await()
-            client2.detachAsync(document2).await()
-            client1.deactivateAsync().await()
-            client2.deactivateAsync().await()
-            document1.close()
-            document2.close()
-            client1.close()
-            client2.close()
+            c1.detachAsync(d1).await()
+            c2.detachAsync(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
 
             collectJobs.forEach(Job::cancel)
         }
@@ -178,77 +158,78 @@ class ClientTest {
     @Test
     fun test_change_sync_mode_between_realtime_and_manual() {
         runBlocking {
-            val client1 = createClient()
-            val client2 = createClient()
-            val documentKey = UUID.randomUUID().toString().toDocKey()
-            val document1 = Document(documentKey)
-            val document2 = Document(documentKey)
+            val c1 = createClient()
+            val c2 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+            val d2 = Document(key)
 
-            client1.activateAsync().await()
-            client2.activateAsync().await()
+            c1.activateAsync().await()
+            c2.activateAsync().await()
 
             // 01. c1 and c2 attach the doc with manual sync mode.
             //     c1 updates the doc, but c2 doesn't get until call sync manually.
-            client1.attachAsync(document1, syncMode = Manual).await()
-            client2.attachAsync(document2, syncMode = Manual).await()
+            c1.attachAsync(d1, syncMode = Manual).await()
+            c2.attachAsync(d2, syncMode = Manual).await()
 
-            document1.updateAsync { root, _ ->
+            d1.updateAsync { root, _ ->
                 root["version"] = "v1"
             }.await()
-            assertJsonContentEquals("""{"version":"v1"}""", document1.toJson())
-            assertJsonContentEquals("""{}""", document2.toJson())
+            assertJsonContentEquals("""{"version":"v1"}""", d1.toJson())
+            assertJsonContentEquals("""{}""", d2.toJson())
 
-            client1.syncAsync().await()
-            client2.syncAsync().await()
-            assertEquals(document1.toJson(), document2.toJson())
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(d1.toJson(), d2.toJson())
 
             // 02. c2 changes the sync mode to realtime sync mode.
-            val client2Events = mutableListOf<Client.Event>()
+            val d2SyncEvents = mutableListOf<SyncStatusChange>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                client2.events.collect(client2Events::add)
+                d2.events.filterIsInstance<SyncStatusChange>().collect(d2SyncEvents::add)
             }
 
-            client2.changeSyncMode(document2, Realtime)
+            c2.changeSyncMode(d2, Realtime)
             withTimeout(GENERAL_TIMEOUT) {
-                while (client2Events.isEmpty()) {
+                while (d2SyncEvents.isEmpty()) {
                     delay(50)
                 }
             }
-            assertIs<DocumentSynced>(client2Events.first())
+            assertIs<SyncStatusChange.Synced>(d2SyncEvents.first())
+            d2SyncEvents.clear()
 
-            document1.updateAsync { root, _ ->
+            d1.updateAsync { root, _ ->
                 root["version"] = "v2"
             }.await()
-            client1.syncAsync().await()
+            c1.syncAsync().await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (client2Events.size < 3) {
+                while (d2SyncEvents.isEmpty()) {
                     delay(50)
                 }
             }
-            assertIs<DocumentSynced>(client2Events.last())
-            assertEquals(document1.toJson(), document2.toJson())
+            assertIs<SyncStatusChange.Synced>(d2SyncEvents.last())
+            assertEquals(d1.toJson(), d2.toJson())
             collectJob.cancel()
 
             // 03. c2 changes the sync mode to manual sync mode again.
-            client2.changeSyncMode(document2, Manual)
-            document1.updateAsync { root, _ ->
+            c2.changeSyncMode(d2, Manual)
+            d1.updateAsync { root, _ ->
                 root["version"] = "v3"
             }.await()
-            assertNotEquals(document1.toJson(), document2.toJson())
+            assertNotEquals(d1.toJson(), d2.toJson())
 
-            client1.syncAsync().await()
-            client2.syncAsync().await()
-            assertEquals(document1.toJson(), document2.toJson())
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(d1.toJson(), d2.toJson())
 
-            client1.detachAsync(document1).await()
-            client2.detachAsync(document2).await()
-            client1.deactivateAsync().await()
-            client2.deactivateAsync().await()
-            document1.close()
-            document2.close()
-            client1.close()
-            client2.close()
+            c1.detachAsync(d1).await()
+            c2.detachAsync(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
         }
     }
 
@@ -263,18 +244,18 @@ class ClientTest {
         client1.activateAsync().await()
         client2.activateAsync().await()
 
-        val client2Events = mutableListOf<Client.Event>()
+        val document2Events = mutableListOf<Document.Event>()
         val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-            client2.events.filterIsInstance<DocumentSynced>().collect(client2Events::add)
+            document2.events.filterIsInstance<SyncStatusChange>().collect(document2Events::add)
         }
 
         suspend fun assertDocument2IsSynced(expected: String) {
             withTimeout(GENERAL_TIMEOUT) {
-                while (client2Events.isEmpty()) {
+                while (document2Events.isEmpty()) {
                     delay(50)
                 }
             }
-            assertIs<DocumentSynced>(client2Events.first())
+            assertIs<SyncStatusChange.Synced>(document2Events.first())
             assertJsonContentEquals(expected, document2.toJson())
         }
 
@@ -299,12 +280,12 @@ class ClientTest {
 
         // 03. c2 resumes realtime sync mode.
         // c2 should be able to apply changes made to the document while c2 is not in realtime sync.
-        client2Events.clear()
+        document2Events.clear()
         client2.changeSyncMode(document2, Realtime)
         assertDocument2IsSynced("""{"version":"v2"}""")
 
         // 04. c2 should automatically synchronize changes.
-        client2Events.clear()
+        document2Events.clear()
         document1.updateAsync { root, _ ->
             root["version"] = "v3"
         }.await()
@@ -336,15 +317,15 @@ class ClientTest {
             val d3Events = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    d1.events.filterNot { it is Document.Event.PresenceChange }
+                    d1.events.filter { it is RemoteChange || it is LocalChange }
                         .collect(d1Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    d2.events.filterNot { it is Document.Event.PresenceChange }
+                    d2.events.filter { it is RemoteChange || it is LocalChange }
                         .collect(d2Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    d3.events.filterNot { it is Document.Event.PresenceChange }
+                    d3.events.filter { it is RemoteChange || it is LocalChange }
                         .collect(d3Events::add)
                 },
             )
@@ -439,11 +420,11 @@ class ClientTest {
             val d2Events = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    d1.events.filterNot { it is Document.Event.PresenceChange }
+                    d1.events.filter { it is RemoteChange || it is LocalChange }
                         .collect(d1Events::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    d2.events.filterNot { it is Document.Event.PresenceChange }
+                    d2.events.filter { it is RemoteChange || it is LocalChange }
                         .collect(d2Events::add)
                 },
             )
@@ -672,9 +653,9 @@ class ClientTest {
 
             // 03. cli update the document with increasing the counter(0 -> 1)
             //     and sync with push-only mode: CP(2, 2) -> CP(3, 2)
-            val c1Events = mutableListOf<Client.Event>()
+            val d1Events = mutableListOf<Document.Event>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                c1.events.filterIsInstance<DocumentSynced>().collect(c1Events::add)
+                d1.events.filterIsInstance<SyncStatusChange>().collect(d1Events::add)
             }
             d1.updateAsync { root, _ ->
                 root.getAs<JsonCounter>("counter").increase(1)
@@ -683,7 +664,7 @@ class ClientTest {
             assertEquals(1, changePack.changes.size)
             c1.changeSyncMode(d1, RealtimePushOnly)
             withTimeout(GENERAL_TIMEOUT) {
-                while (c1Events.firstOrNull() !is DocumentSynced) {
+                while (d1Events.firstOrNull() !is SyncStatusChange.Synced) {
                     delay(50)
                 }
             }

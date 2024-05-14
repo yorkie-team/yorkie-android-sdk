@@ -10,8 +10,6 @@ import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.assertJsonContentEquals
-import dev.yorkie.core.Client.Event.DocumentChanged
-import dev.yorkie.core.Client.Event.DocumentSynced
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
@@ -21,6 +19,8 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.StreamConnectionChange
+import dev.yorkie.document.Document.Event.SyncStatusChange
 import dev.yorkie.document.Document.Key
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
@@ -35,6 +35,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -133,32 +134,17 @@ class ClientTest {
             target.activateAsync().await()
 
             target.attachAsync(document).await()
-            val event = target.events.first { it is DocumentChanged }
-            val changeEvent = assertIs<DocumentChanged>(event)
-            verify(service, atLeastOnce()).watchDocument(any())
-            assertEquals(1, changeEvent.documentKeys.size)
-            assertEquals(NORMAL_DOCUMENT_KEY, changeEvent.documentKeys.first().value)
 
             val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
-            val syncEvent = assertIs<DocumentSynced>(target.events.first())
+            assertIs<SyncStatusChange.Synced>(
+                document.events.filterIsInstance<SyncStatusChange>().first(),
+            )
             verify(service, atLeastOnce()).pushPullChanges(syncRequestCaptor.capture(), any())
             assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
-            val synced = assertIs<Client.DocumentSyncResult.Synced>(syncEvent.result)
-            assertEquals(document, synced.document)
             assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
-
-            assertEquals(
-                Client.StreamConnectionStatus.Connected,
-                target.streamConnectionStatus.value,
-            )
 
             target.detachAsync(document).await()
             target.deactivateAsync().await()
-
-            assertEquals(
-                Client.StreamConnectionStatus.Disconnected,
-                target.streamConnectionStatus.value,
-            )
         }
     }
 
@@ -170,23 +156,18 @@ class ClientTest {
             target.attachAsync(document).await()
 
             val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                target.events.first()
+                document.events.filterIsInstance<SyncStatusChange>().first()
+            }
+            val connectionEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<StreamConnectionChange>().first()
             }
 
             document.updateAsync { root, _ ->
                 root["k1"] = 1
             }.await()
 
-            val syncEvent = assertIs<DocumentSynced>(syncEventDeferred.await())
-            val failed = assertIs<Client.DocumentSyncResult.SyncFailed>(syncEvent.result)
-            assertEquals(document, failed.document)
-
-            assertEquals(
-                Client.StreamConnectionStatus.Disconnected,
-                target.streamConnectionStatus.first {
-                    it == Client.StreamConnectionStatus.Disconnected
-                },
-            )
+            assertIs<SyncStatusChange.SyncFailed>(syncEventDeferred.await())
+            assertIs<StreamConnectionChange.Disconnected>(connectionEventDeferred.await())
 
             target.detachAsync(document).await()
             target.deactivateAsync().await()

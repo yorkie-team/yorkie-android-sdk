@@ -143,7 +143,7 @@ jobs:
       - if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 28
+          api-level: 30
           target: google_apis
           arch: x86_64
           force-avd-creation: false
@@ -153,7 +153,7 @@ jobs:
           script: echo "Generated AVD snapshot for caching."
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 28
+          api-level: 30
           target: google_apis
           arch: x86_64
           force-avd-creation: false

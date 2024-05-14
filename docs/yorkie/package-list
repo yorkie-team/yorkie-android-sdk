@@ -408,9 +408,11 @@ $dokka.location:dev.yorkie.document/TimeTicketStruct/delimiter/#/PointingToDecla
 $dokka.location:dev.yorkie.document/TimeTicketStruct/lamport/#/PointingToDeclaration/yorkie/dev.yorkie.document/-time-ticket-struct/lamport.html
 $dokka.location:dev.yorkie.document/TimeTicketStruct/toOriginal/#/PointingToDeclaration/yorkie/dev.yorkie.document/-time-ticket-struct/to-original.html
 $dokka.location:dev.yorkie.util////PointingToDeclaration/yorkie/dev.yorkie.util/index.html
+$dokka.location:dev.yorkie.util//SUCCESS/#/PointingToDeclaration/yorkie/dev.yorkie.util/-s-u-c-c-e-s-s.html
 $dokka.location:dev.yorkie.util/Logger///PointingToDeclaration/yorkie/dev.yorkie.util/-logger/index.html
 $dokka.location:dev.yorkie.util/Logger/d/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-logger/d.html
 $dokka.location:dev.yorkie.util/Logger/e/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-logger/e.html
+$dokka.location:dev.yorkie.util/OperationResult///PointingToDeclaration/yorkie/dev.yorkie.util/-operation-result/index.html
 $dokka.location:dev.yorkie.util/YorkieLogger///PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-logger/index.html
 $dokka.location:dev.yorkie.util/YorkieLogger/d/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-logger/d.html
 $dokka.location:dev.yorkie.util/YorkieLogger/e/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-logger/e.html

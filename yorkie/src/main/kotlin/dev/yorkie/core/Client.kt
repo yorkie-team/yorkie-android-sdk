@@ -32,6 +32,8 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
 import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.OperationResult
+import dev.yorkie.util.SUCCESS
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
@@ -148,10 +150,10 @@ public class Client @VisibleForTesting internal constructor(
      * and receives a unique ID from the server. The given ID is used to
      * distinguish different clients.
      */
-    public fun activateAsync(): Deferred<Boolean> {
+    public fun activateAsync(): Deferred<OperationResult> {
         return scope.async {
             if (isActive) {
-                return@async true
+                return@async SUCCESS
             }
             val activateResponse = service.activateClient(
                 activateClientRequest {
@@ -159,13 +161,13 @@ public class Client @VisibleForTesting internal constructor(
                 },
                 projectBasedRequestHeader,
             ).getOrElse {
-                YorkieLogger.e("Client.activate", it.toString())
-                return@async false
+                ensureActive()
+                return@async Result.failure(it)
             }
             _status.emit(Status.Activated(ActorID(activateResponse.clientId)))
             runSyncLoop()
             runWatchLoop()
-            true
+            SUCCESS
         }
     }
 
@@ -198,9 +200,9 @@ public class Client @VisibleForTesting internal constructor(
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
      */
-    public fun syncAsync(document: Document? = null): Deferred<Boolean> {
+    public fun syncAsync(document: Document? = null): Deferred<OperationResult> {
         return scope.async {
-            var isAllSuccess = true
+            var failure: Throwable? = null
             val attachments = document?.let {
                 listOf(
                     attachments.value[it.key]?.copy(syncMode = SyncMode.Realtime)
@@ -212,12 +214,15 @@ public class Client @VisibleForTesting internal constructor(
                     if (result.isSuccess) {
                         DocumentSynced(Synced(document))
                     } else {
-                        isAllSuccess = false
-                        DocumentSynced(SyncFailed(document, result.exceptionOrNull()))
+                        val exception = result.exceptionOrNull()
+                        if (failure == null && exception != null) {
+                            failure = exception
+                        }
+                        DocumentSynced(SyncFailed(document, exception))
                     },
                 )
             }
-            isAllSuccess
+            failure?.let { Result.failure(it) } ?: SUCCESS
         }
     }
 
@@ -452,7 +457,7 @@ public class Client @VisibleForTesting internal constructor(
         document: Document,
         initialPresence: P = emptyMap(),
         syncMode: SyncMode = SyncMode.Realtime,
-    ): Deferred<Boolean> {
+    ): Deferred<OperationResult> {
         return scope.async {
             check(isActive) {
                 "client is not active"
@@ -473,14 +478,14 @@ public class Client @VisibleForTesting internal constructor(
                 request,
                 document.key.documentBasedRequestHeader,
             ).getOrElse {
-                YorkieLogger.e("Client.attach", it.toString())
-                return@async false
+                ensureActive()
+                return@async Result.failure(it)
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
 
             if (document.status == DocumentStatus.Removed) {
-                return@async true
+                return@async SUCCESS
             }
 
             document.status = DocumentStatus.Attached
@@ -490,7 +495,7 @@ public class Client @VisibleForTesting internal constructor(
                 syncMode,
             )
             waitForInitialization(document.key)
-            true
+            SUCCESS
         }
     }
 
@@ -502,7 +507,7 @@ public class Client @VisibleForTesting internal constructor(
      * the changes should be applied to other replicas before GC time. For this,
      * if the [document] is no longer used by this [Client], it should be detached.
      */
-    public fun detachAsync(document: Document): Deferred<Boolean> {
+    public fun detachAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
             check(isActive) {
                 "client is not active"
@@ -523,8 +528,8 @@ public class Client @VisibleForTesting internal constructor(
                 request,
                 document.key.documentBasedRequestHeader,
             ).getOrElse {
-                YorkieLogger.e("Client.detach", it.toString())
-                return@async false
+                ensureActive()
+                return@async Result.failure(it)
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
@@ -532,17 +537,17 @@ public class Client @VisibleForTesting internal constructor(
                 document.status = DocumentStatus.Detached
                 attachments.value -= document.key
             }
-            true
+            SUCCESS
         }
     }
 
     /**
      * Deactivates this [Client].
      */
-    public fun deactivateAsync(): Deferred<Boolean> {
+    public fun deactivateAsync(): Deferred<OperationResult> {
         return scope.async {
             if (!isActive) {
-                return@async true
+                return@async SUCCESS
             }
             activationJob.cancelChildren()
             _streamConnectionStatus.emit(StreamConnectionStatus.Disconnected)
@@ -553,18 +558,18 @@ public class Client @VisibleForTesting internal constructor(
                 },
                 projectBasedRequestHeader,
             ).getOrElse {
-                YorkieLogger.e("Client.deactivate", it.toString())
-                return@async false
+                ensureActive()
+                return@async Result.failure(it)
             }
             _status.emit(Status.Deactivated)
-            true
+            SUCCESS
         }
     }
 
     /**
      * Removes the given [document].
      */
-    public fun removeAsync(document: Document): Deferred<Boolean> {
+    public fun removeAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
             check(isActive) {
                 "client is not active"
@@ -581,13 +586,13 @@ public class Client @VisibleForTesting internal constructor(
                 request,
                 document.key.documentBasedRequestHeader,
             ).getOrElse {
-                YorkieLogger.e("Client.remove", it.toString())
-                return@async false
+                ensureActive()
+                return@async Result.failure(it)
             }
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
             attachments.value -= document.key
-            true
+            SUCCESS
         }
     }
 
@@ -623,7 +628,7 @@ public class Client @VisibleForTesting internal constructor(
         streamClient.dispatcher.executorService.shutdown()
     }
 
-    private data class SyncResult(val document: Document, val result: Result<Unit>)
+    private data class SyncResult(val document: Document, val result: OperationResult)
 
     private class WatchJobHolder(val documentID: String, val job: Job)
 

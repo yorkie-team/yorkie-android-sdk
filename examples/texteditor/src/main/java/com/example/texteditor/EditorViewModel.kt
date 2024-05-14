@@ -56,7 +56,9 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
                 }.await()
             }
 
-            if (client.activateAsync().await() && client.attachAsync(document).await()) {
+            if (client.activateAsync().await().isSuccess &&
+                client.attachAsync(document).await().isSuccess
+            ) {
                 client.syncAsync().await()
             }
         }

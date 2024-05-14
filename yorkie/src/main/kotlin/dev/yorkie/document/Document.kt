@@ -27,6 +27,7 @@ import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.util.OperationResult
 import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
@@ -36,6 +37,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -129,7 +131,7 @@ public class Document(
     public fun updateAsync(
         message: String? = null,
         updater: suspend (root: JsonObject, presence: Presence) -> Unit,
-    ): Deferred<Boolean> {
+    ): Deferred<OperationResult> {
         return scope.async {
             check(status != DocumentStatus.Removed) {
                 "document is removed"
@@ -143,7 +145,7 @@ public class Document(
             )
             val actorID = changeID.actor
 
-            runCatching {
+            val result = runCatching {
                 val proxy = JsonObject(context, clone.root.rootObject)
                 updater.invoke(
                     proxy,
@@ -151,12 +153,14 @@ public class Document(
                 )
             }.onFailure {
                 this@Document.clone = null
-                YorkieLogger.e("Document.update", it.message.orEmpty())
-                return@async false
+                ensureActive()
+            }
+            if (result.isFailure) {
+                return@async result
             }
 
             if (!context.hasChange) {
-                return@async true
+                return@async result
             }
             val change = context.getChange()
             val (operationInfos, newPresences) = change.execute(root, _presences.value)
@@ -169,12 +173,12 @@ public class Document(
             }
             if (change.hasPresenceChange) {
                 val presence =
-                    newPresences?.get(actorID) ?: _presences.value[actorID] ?: return@async false
+                    newPresences?.get(actorID) ?: _presences.value[actorID] ?: return@async result
                 newPresences?.let {
                     emitPresences(it, createPresenceChangedEvent(actorID, presence))
                 }
             }
-            true
+            result
         }
     }
 

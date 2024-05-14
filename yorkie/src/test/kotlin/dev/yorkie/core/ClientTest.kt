@@ -78,7 +78,7 @@ class ClientTest {
         runTest {
             assertFalse(target.isActive)
             val activateRequestCaptor = argumentCaptor<ActivateClientRequest>()
-            assertTrue(target.activateAsync().await())
+            assertTrue(target.activateAsync().await().isSuccess)
             verify(service).activateClient(activateRequestCaptor.capture(), any())
             assertEquals(TEST_KEY, activateRequestCaptor.firstValue.clientKey)
             assertTrue(target.isActive)
@@ -87,7 +87,7 @@ class ClientTest {
             assertEquals(TEST_ACTOR_ID, activatedStatus.clientId)
 
             val deactivateRequestCaptor = argumentCaptor<DeactivateClientRequest>()
-            assertTrue(target.deactivateAsync().await())
+            assertTrue(target.deactivateAsync().await().isSuccess)
             verify(service).deactivateClient(deactivateRequestCaptor.capture(), any())
             assertIsTestActorID(deactivateRequestCaptor.firstValue.clientId)
             assertFalse(target.isActive)
@@ -200,12 +200,12 @@ class ClientTest {
             target.activateAsync().await()
             target.attachAsync(success).await()
 
-            assertTrue(target.syncAsync().await())
+            assertTrue(target.syncAsync().await().isSuccess)
             target.detachAsync(success).await()
 
             val failing = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
             target.attachAsync(failing).await()
-            assertFalse(target.syncAsync().await())
+            assertFalse(target.syncAsync().await().isSuccess)
 
             target.detachAsync(failing).await()
             target.deactivateAsync().await()
@@ -218,7 +218,7 @@ class ClientTest {
             val document = Document(Key(ATTACH_ERROR_DOCUMENT_KEY))
             target.activateAsync().await()
 
-            assertFalse(target.attachAsync(document).await())
+            assertFalse(target.attachAsync(document).await().isSuccess)
 
             target.deactivateAsync().await()
         }
@@ -231,7 +231,7 @@ class ClientTest {
             target.activateAsync().await()
             target.attachAsync(document).await()
 
-            assertFalse(target.detachAsync(document).await())
+            assertFalse(target.detachAsync(document).await().isSuccess)
 
             target.deactivateAsync().await()
         }
@@ -240,11 +240,11 @@ class ClientTest {
     @Test
     fun `should handle activating and deactivating multiple times`() {
         runTest {
-            assertTrue(target.activateAsync().await())
-            assertTrue(target.activateAsync().await())
+            assertTrue(target.activateAsync().await().isSuccess)
+            assertTrue(target.activateAsync().await().isSuccess)
             delay(500)
-            assertTrue(target.deactivateAsync().await())
-            assertTrue(target.deactivateAsync().await())
+            assertTrue(target.deactivateAsync().await().isSuccess)
+            assertTrue(target.deactivateAsync().await().isSuccess)
         }
     }
 
@@ -275,7 +275,7 @@ class ClientTest {
             target.activateAsync().await()
             target.attachAsync(document).await()
 
-            assertFalse(target.removeAsync(document).await())
+            assertFalse(target.removeAsync(document).await().isSuccess)
 
             target.detachAsync(document).await()
             target.deactivateAsync().await()

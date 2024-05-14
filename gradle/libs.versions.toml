@@ -2,14 +2,14 @@
 minSdk = "24"
 compileSdk = "34"
 targetSdk = "34"
-agp = "8.3.2"
-connectKotlin = "0.6.0"
+agp = "8.4.0"
+connectKotlin = "0.6.1"
 okhttp = "4.12.0"
-coroutines = "1.8.0"
+coroutines = "1.8.1"
 androidxActivity = "1.9.0"
 androidxLifecycle = "2.7.0"
-androidxBenchmark = "1.2.3"
-androidxComposeCompiler = "1.5.11"
+androidxBenchmark = "1.2.4"
+androidxComposeCompiler = "1.5.13"
 
 [libraries]
 androidx-annotation = { module = "androidx.annotation:annotation", version = "1.7.1" }
@@ -24,7 +24,7 @@ kotlinx-collections-immutable = { group = "org.jetbrains.kotlinx", name = "kotli
 
 apache-commons-collections = { group = "org.apache.commons", name = "commons-collections4", version = "4.4" }
 
-androidx-core = { group = "androidx.core", name = "core-ktx", version = "1.13.0" }
+androidx-core = { group = "androidx.core", name = "core-ktx", version = "1.13.1" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version = "1.6.1" }
 androidx-activity = { group = "androidx.activity", name = "activity-ktx", version.ref = "androidxActivity" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "androidxActivity" }
@@ -33,14 +33,14 @@ androidx-lifecycle-viewmodel = { group = "androidx.lifecycle", name = "lifecycle
 androidx-lifecycle-runtime = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "androidxLifecycle" }
 androidx-benchmark = { group = "androidx.benchmark", name = "benchmark-junit4", version.ref = "androidxBenchmark" }
 
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2024.04.01" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2024.05.00" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 androidx-compose-material = { module = "androidx.compose.material:material" }
 
-material = { group = "com.google.android.material", name = "material", version = "1.11.0" }
+material = { group = "com.google.android.material", name = "material", version = "1.12.0" }
 
 gson = { group = "com.google.code.gson", name = "gson", version = "2.10.1" }
 

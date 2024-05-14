@@ -56,34 +56,46 @@ internal data class CrdtTree(
         range: TreePosRange,
         attributes: Map<String, String>?,
         executedAt: TimeTicket,
-    ): List<TreeChange> {
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+    ): Pair<List<TreeChange>, Map<ActorID, TimeTicket>> {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
-        return buildList {
-            traverseInPosRange(
-                fromParent = fromParent,
-                fromLeft = fromLeft,
-                toParent = toParent,
-                toLeft = toLeft,
-            ) { (node, _), _ ->
-                if (!node.isRemoved && attributes != null && !node.isText) {
-                    attributes.forEach { (key, value) ->
-                        node.setAttribute(key, value, executedAt)
-                    }
-                    add(
-                        TreeChange(
-                            type = TreeChangeType.Style,
-                            from = toIndex(fromParent, fromLeft),
-                            to = toIndex(toParent, toLeft),
-                            fromPath = toPath(fromParent, fromLeft),
-                            toPath = toPath(toParent, toLeft),
-                            actorID = executedAt.actorID,
-                            attributes = attributes,
-                        ),
-                    )
+        val changes = mutableListOf<TreeChange>()
+        val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
+
+        traverseInPosRange(
+            fromParent = fromParent,
+            fromLeft = fromLeft,
+            toParent = toParent,
+            toLeft = toLeft,
+        ) { (node, _), _ ->
+            val actorID = node.createdAt.actorID
+            val maxCreatedAt = maxCreatedAtMapByActor?.let {
+                maxCreatedAtMapByActor[actorID] ?: InitialTimeTicket
+            } ?: MaxTimeTicket
+
+            if (node.canStyle(executedAt, maxCreatedAt) && attributes != null) {
+                val max = createdAtMapByActor[actorID]
+                val createdAt = node.createdAt
+                if (max == null || max < createdAt) {
+                    createdAtMapByActor[actorID] = createdAt
+                }
+
+                val affectedKeys = node.setAttributes(attributes, executedAt)
+                if (affectedKeys.isNotEmpty()) {
+                    TreeChange(
+                        type = TreeChangeType.Style,
+                        from = toIndex(fromParent, fromLeft),
+                        to = toIndex(toParent, toLeft),
+                        fromPath = toPath(fromParent, fromLeft),
+                        toPath = toPath(toParent, toLeft),
+                        actorID = executedAt.actorID,
+                        attributes = attributes.filterKeys { it in affectedKeys },
+                    ).let(changes::add)
                 }
             }
         }
+        return changes to createdAtMapByActor
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {
@@ -133,7 +145,7 @@ internal data class CrdtTree(
         splitLevel: Int,
         executedAt: TimeTicket,
         issueTimeTicket: (() -> TimeTicket)? = null,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): Pair<List<TreeChange>, Map<ActorID, TimeTicket>> {
         // 01. find nodes from the given range and split nodes.
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
@@ -145,7 +157,7 @@ internal data class CrdtTree(
         val nodesToBeRemoved = mutableListOf<CrdtTreeNode>()
         val tokensToBeRemoved = mutableListOf<CrdtTreeToken>()
         val toBeMovedToFromParents = mutableListOf<CrdtTreeNode>()
-        val latestCreatedAtMap = mutableMapOf<ActorID, TimeTicket>()
+        val maxCreatedAtMap = mutableMapOf<ActorID, TimeTicket>()
 
         traverseInPosRange(
             fromParent = fromParent,
@@ -160,16 +172,16 @@ internal data class CrdtTree(
             }
 
             val actorID = node.createdAt.actorID
-            val latestCreatedAt = latestCreatedAtMapByActor?.let {
-                latestCreatedAtMapByActor[actorID] ?: InitialTimeTicket
+            val maxCreatedAt = maxCreatedAtMapByActor?.let {
+                maxCreatedAtMapByActor[actorID] ?: InitialTimeTicket
             } ?: MaxTimeTicket
 
-            if (node.canDelete(executedAt, latestCreatedAt) || node.parent in nodesToBeRemoved) {
-                val latest = latestCreatedAtMap[actorID]
+            if (node.canDelete(executedAt, maxCreatedAt) || node.parent in nodesToBeRemoved) {
+                val max = maxCreatedAtMap[actorID]
                 val createdAt = node.createdAt
 
-                if (latest == null || latest < createdAt) {
-                    latestCreatedAtMap[actorID] = createdAt
+                if (max == null || max < createdAt) {
+                    maxCreatedAtMap[actorID] = createdAt
                 }
 
                 if (tokenType == TokenType.Text || tokenType == TokenType.Start) {
@@ -265,7 +277,7 @@ internal data class CrdtTree(
                 }
             }
         }
-        return changes to latestCreatedAtMap
+        return changes to maxCreatedAtMap
     }
 
     /**
@@ -806,12 +818,10 @@ internal data class CrdtTreeNode private constructor(
         return split
     }
 
-    fun setAttribute(
-        key: String,
-        value: String,
-        executedAt: TimeTicket,
-    ) {
-        _attributes.set(key, value, executedAt)
+    fun setAttributes(attributes: Map<String, String>, executedAt: TimeTicket): Set<String> {
+        return attributes.filter { (key, value) ->
+            _attributes.set(key, value, executedAt)
+        }.keys.toSet()
     }
 
     fun removeAttribute(key: String, executedAt: TimeTicket) {
@@ -865,8 +875,15 @@ internal data class CrdtTreeNode private constructor(
     /**
      * Checks if node is able to delete.
      */
-    fun canDelete(executedAt: TimeTicket, latestCreatedAt: TimeTicket): Boolean {
-        return createdAt <= latestCreatedAt && (removedAt == null || removedAt < executedAt)
+    fun canDelete(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
+        return createdAt <= maxCreatedAt && (removedAt == null || removedAt < executedAt)
+    }
+
+    fun canStyle(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
+        if (isText) {
+            return false
+        }
+        return createdAt <= maxCreatedAt && (removedAt == null || removedAt < executedAt)
     }
 
     @Suppress("FunctionName")

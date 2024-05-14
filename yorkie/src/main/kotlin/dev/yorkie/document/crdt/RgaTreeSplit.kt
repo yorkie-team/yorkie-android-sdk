@@ -47,7 +47,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         range: RgaTreeSplitPosRange,
         executedAt: TimeTicket,
         value: T?,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): Triple<RgaTreeSplitPos, Map<ActorID, TimeTicket>, List<ContentChange>> {
         // 1. Split nodes.
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
@@ -55,10 +55,10 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
 
         // 2. Delete between from and to.
         val nodesToDelete = findBetween(fromRight, toRight)
-        val (changes, latestCreatedAtMap, removedNodeMapByNodeKey) = deleteNodes(
+        val (changes, maxCreatedAtMap, removedNodeMapByNodeKey) = deleteNodes(
             nodesToDelete,
             executedAt,
-            latestCreatedAtMapByActor,
+            maxCreatedAtMapByActor,
         )
         val caretID = toRight?.id ?: toLeft.id
         var caretPos = RgaTreeSplitPos(caretID, 0)
@@ -93,7 +93,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
             removedNodeMap[it.key] = it.value
         }
 
-        return Triple(caretPos, latestCreatedAtMap, changes)
+        return Triple(caretPos, maxCreatedAtMap, changes)
     }
 
     /**
@@ -187,7 +187,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     private fun deleteNodes(
         candidates: List<RgaTreeSplitNode<T>>,
         executedAt: TimeTicket,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
     ): Triple<
         MutableList<ContentChange>,
         Map<ActorID, TimeTicket>,
@@ -203,7 +203,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         val (nodesToDelete, nodesToKeep) = filterNodes(
             candidates,
             executedAt,
-            latestCreatedAtMapByActor,
+            maxCreatedAtMapByActor,
         )
         val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val removedNodeMap = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
@@ -230,9 +230,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     private fun filterNodes(
         candidates: List<RgaTreeSplitNode<T>>,
         executedAt: TimeTicket,
-        latestCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
     ): Pair<List<RgaTreeSplitNode<T>>, List<RgaTreeSplitNode<T>?>> {
-        val isRemote = latestCreatedAtMapByActor != null
+        val isRemote = maxCreatedAtMapByActor != null
         val nodesToDelete = mutableListOf<RgaTreeSplitNode<T>>()
         val nodesToKeep = mutableListOf<RgaTreeSplitNode<T>?>()
 
@@ -241,12 +241,12 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
 
         candidates.forEach { node ->
             val actorID = node.createdAt.actorID
-            val latestCreatedAt = if (isRemote) {
-                latestCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+            val maxCreatedAt = if (isRemote) {
+                maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
             } else {
                 MaxTimeTicket
             }
-            if (node.canDelete(executedAt, latestCreatedAt)) {
+            if (node.canDelete(executedAt, maxCreatedAt)) {
                 nodesToDelete.add(node)
             } else {
                 nodesToKeep.add(node)
@@ -529,15 +529,15 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
-    fun canDelete(executedAt: TimeTicket, latestCreatedAt: TimeTicket): Boolean {
-        return createdAt <= latestCreatedAt && (isRemoved || _removedAt < executedAt)
+    fun canDelete(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
+        return createdAt <= maxCreatedAt && (isRemoved || _removedAt < executedAt)
     }
 
     /**
      * Checks if node is able to set style.
      */
-    fun canStyle(executedAt: TimeTicket, latestCreatedAt: TimeTicket): Boolean {
-        return createdAt <= latestCreatedAt && removedAt < executedAt
+    fun canStyle(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
+        return createdAt <= maxCreatedAt && removedAt < executedAt
     }
 
     /**

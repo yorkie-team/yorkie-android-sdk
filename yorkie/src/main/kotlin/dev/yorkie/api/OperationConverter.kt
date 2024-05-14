@@ -109,6 +109,8 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.treeStyle.attributesMap,
                 executedAt = it.treeStyle.executedAt.toTimeTicket(),
                 attributesToRemove = it.treeStyle.attributesToRemoveList,
+                maxCreatedAtMapByActor = it.treeStyle.createdAtMapByActorMap.entries
+                    .associate { (key, value) -> ActorID(key) to value.toTimeTicket() },
             )
 
             else -> throw IllegalArgumentException("unimplemented operation")
@@ -231,6 +233,9 @@ internal fun Operation.toPBOperation(): PBOperation {
                         attributes[key] = value
                     }
                     operation.attributesToRemove?.forEach { attributesToRemove.add(it) }
+                    operation.maxCreatedAtMapByActor?.forEach {
+                        createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
+                    }
                 }
             }
         }

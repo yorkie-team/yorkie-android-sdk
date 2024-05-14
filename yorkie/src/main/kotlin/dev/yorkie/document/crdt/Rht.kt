@@ -24,7 +24,7 @@ internal class Rht : Collection<Rht.Node> {
         value: String,
         executedAt: TimeTicket,
         isRemoved: Boolean = false,
-    ) {
+    ): Boolean {
         val prev = nodeMapByKey[key]
         if (prev?.executedAt < executedAt) {
             if (prev?.isRemoved == false) {
@@ -32,7 +32,9 @@ internal class Rht : Collection<Rht.Node> {
             }
             val node = Node(key, value, executedAt, isRemoved)
             nodeMapByKey[key] = node
+            return true
         }
+        return false
     }
 
     /**

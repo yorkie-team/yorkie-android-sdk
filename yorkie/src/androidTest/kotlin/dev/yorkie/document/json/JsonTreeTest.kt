@@ -22,9 +22,9 @@ import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.gson
-import junit.framework.TestCase.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi

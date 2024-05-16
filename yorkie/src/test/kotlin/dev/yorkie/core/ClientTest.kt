@@ -19,8 +19,8 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.Event.StreamConnectionChange
-import dev.yorkie.document.Document.Event.SyncStatusChange
+import dev.yorkie.document.Document.Event.StreamConnectionChanged
+import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.Document.Key
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
@@ -136,8 +136,8 @@ class ClientTest {
             target.attachAsync(document).await()
 
             val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
-            assertIs<SyncStatusChange.Synced>(
-                document.events.filterIsInstance<SyncStatusChange>().first(),
+            assertIs<SyncStatusChanged.Synced>(
+                document.events.filterIsInstance<SyncStatusChanged>().first(),
             )
             verify(service, atLeastOnce()).pushPullChanges(syncRequestCaptor.capture(), any())
             assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
@@ -156,18 +156,18 @@ class ClientTest {
             target.attachAsync(document).await()
 
             val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                document.events.filterIsInstance<SyncStatusChange>().first()
+                document.events.filterIsInstance<SyncStatusChanged>().first()
             }
             val connectionEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                document.events.filterIsInstance<StreamConnectionChange>().first()
+                document.events.filterIsInstance<StreamConnectionChanged>().first()
             }
 
             document.updateAsync { root, _ ->
                 root["k1"] = 1
             }.await()
 
-            assertIs<SyncStatusChange.SyncFailed>(syncEventDeferred.await())
-            assertIs<StreamConnectionChange.Disconnected>(connectionEventDeferred.await())
+            assertIs<SyncStatusChanged.SyncFailed>(syncEventDeferred.await())
+            assertIs<StreamConnectionChanged.Disconnected>(connectionEventDeferred.await())
 
             target.detachAsync(document).await()
             target.deactivateAsync().await()

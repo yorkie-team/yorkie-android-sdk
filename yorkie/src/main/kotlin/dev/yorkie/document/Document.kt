@@ -10,8 +10,9 @@ import dev.yorkie.core.PresenceInfo
 import dev.yorkie.core.Presences
 import dev.yorkie.core.Presences.Companion.UninitializedPresences
 import dev.yorkie.core.Presences.Companion.asPresences
-import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
-import dev.yorkie.document.Document.Event.PresenceChange.Others
+import dev.yorkie.document.Document.Event.PresenceChanged
+import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
+import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
@@ -99,15 +100,15 @@ public class Document(
     public val garbageLength: Int
         get() = root.getGarbageLength()
 
-    private val presenceEventQueue = mutableListOf<Event.PresenceChange>()
-    private val pendingPresenceEvents = mutableListOf<Event.PresenceChange>()
+    private val presenceEventQueue = mutableListOf<PresenceChanged>()
+    private val pendingPresenceEvents = mutableListOf<PresenceChanged>()
 
-    internal val onlineClients = MutableStateFlow(setOf<ActorID>())
+    private val onlineClients = MutableStateFlow(setOf<ActorID>())
 
     private val _presences = MutableStateFlow(UninitializedPresences)
     public val presences: StateFlow<Presences> =
         combine(_presences, onlineClients) { presences, onlineClients ->
-            presences.filterKeys { it in onlineClients }.asPresences()
+            presences.filterKeys { it in onlineClients + changeID.actor }.asPresences()
         }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences()).also {
             scope.launch {
                 it.collect { presences ->
@@ -182,7 +183,7 @@ public class Document(
         }
     }
 
-    private fun createPresenceChangedEvent(actorID: ActorID, presence: P): Event.PresenceChange {
+    private fun createPresenceChangedEvent(actorID: ActorID, presence: P): PresenceChanged {
         return if (actorID == changeID.actor) {
             MyPresence.PresenceChanged(PresenceInfo(actorID, presence))
         } else {
@@ -231,7 +232,7 @@ public class Document(
     /**
      * Returns the [JsonElement] corresponding to the [path].
      */
-    public suspend fun getValueByPath(path: String): JsonElement? {
+    public suspend fun getValueByPath(path: String): JsonElement? = withContext(dispatcher) {
         require(path.startsWith("$")) {
             "the path must start with \"$\""
         }
@@ -241,10 +242,10 @@ public class Document(
             value = when (value) {
                 is JsonObject -> (value as JsonObject).getOrNull(key)
                 is JsonArray -> (value as JsonArray)[key.toInt()]
-                else -> return null
+                else -> return@withContext null
             }
         }
-        return value
+        value
     }
 
     /**
@@ -301,7 +302,7 @@ public class Document(
                 this.clone = clone.copy(presences = newPresences ?: return@also)
             }
             val actorID = change.id.actor
-            var presenceEvent: Event.PresenceChange? = null
+            var presenceEvent: PresenceChanged? = null
             if (change.hasPresenceChange && actorID in onlineClients.value) {
                 val presenceChange = change.presenceChange ?: return@forEach
                 presenceEvent = when (presenceChange) {
@@ -325,7 +326,7 @@ public class Document(
                         presences.value[actorID]?.let { presence ->
                             Others.Unwatched(PresenceInfo(actorID, presence))
                         }.takeIf { actorID in onlineClients.value }
-                            ?.also { onlineClients.value -= actorID }
+                            ?.also { removeOnlineClient(actorID) }
                     }
                 }
             }
@@ -343,20 +344,10 @@ public class Document(
         clone ?: RootClone(root.deepCopy(), _presences.value.asPresences()).also { clone = it }
     }
 
-    private suspend fun emitPresences(newPresences: Presences, event: Event.PresenceChange?) {
-        if (newPresences == _presences.value) {
-            event?.let {
-                if (presenceEventReadyToBePublished(it, newPresences)) {
-                    eventStream.emit(it)
-                } else {
-                    pendingPresenceEvents.add(it)
-                }
-            }
-        } else {
-            event?.let(pendingPresenceEvents::add)
-            _presences.emit(newPresences)
-            clone = ensureClone().copy(presences = newPresences)
-        }
+    private suspend fun emitPresences(newPresences: Presences, event: PresenceChanged?) {
+        event?.let(pendingPresenceEvents::add)
+        _presences.emit(newPresences)
+        clone = ensureClone().copy(presences = newPresences)
     }
 
     /**
@@ -379,7 +370,7 @@ public class Document(
     }
 
     private fun presenceEventReadyToBePublished(
-        event: Event.PresenceChange,
+        event: PresenceChanged,
         presences: Presences,
     ): Boolean {
         return when (event) {
@@ -446,6 +437,18 @@ public class Document(
         JsonObject(context, clone.root.rootObject)
     }
 
+    internal fun setOnlineClients(actorIDs: Set<ActorID>) {
+        onlineClients.value = actorIDs
+    }
+
+    internal fun addOnlineClient(actorID: ActorID) {
+        onlineClients.value += actorID
+    }
+
+    internal fun removeOnlineClient(actorID: ActorID) {
+        onlineClients.value -= actorID
+    }
+
     /**
      * Deletes elements that were removed before the given time.
      */
@@ -467,7 +470,7 @@ public class Document(
     }
 
     public suspend fun publishEvent(event: Event) {
-        if (event is Event.PresenceChange) {
+        if (event is PresenceChanged) {
             pendingPresenceEvents.add(event)
         } else {
             eventStream.emit(event)
@@ -500,9 +503,9 @@ public class Document(
             public val changeInfo: ChangeInfo,
         ) : Event
 
-        public sealed interface PresenceChange : Event {
+        public sealed interface PresenceChanged : Event {
 
-            public sealed interface MyPresence : PresenceChange {
+            public sealed interface MyPresence : PresenceChanged {
 
                 /**
                  * Means that online clients have been loaded from the server.
@@ -515,7 +518,7 @@ public class Document(
                 public data class PresenceChanged(public val changed: PresenceInfo) : MyPresence
             }
 
-            public sealed interface Others : PresenceChange {
+            public sealed interface Others : PresenceChanged {
                 public val changed: PresenceInfo
 
                 /**
@@ -539,18 +542,18 @@ public class Document(
         /**
          * Means that the document sync status has changed.
          */
-        public sealed interface SyncStatusChange : Event {
+        public sealed interface SyncStatusChanged : Event {
 
-            public data object Synced : SyncStatusChange
+            public data object Synced : SyncStatusChanged
 
-            public data class SyncFailed(public val cause: Throwable?) : SyncStatusChange
+            public data class SyncFailed(public val cause: Throwable?) : SyncStatusChanged
         }
 
-        public sealed interface StreamConnectionChange : Event {
+        public sealed interface StreamConnectionChanged : Event {
 
-            public data object Connected : StreamConnectionChange
+            public data object Connected : StreamConnectionChanged
 
-            public data object Disconnected : StreamConnectionChange
+            public data object Disconnected : StreamConnectionChanged
         }
 
         /**

@@ -10,7 +10,7 @@ import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
 import dev.yorkie.core.PresenceInfo
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.Event.PresenceChange
+import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
@@ -39,7 +39,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     private val _selections = MutableSharedFlow<Selection>()
     val selections = _selections.asSharedFlow()
 
-    val removedPeers = document.events.filterIsInstance<PresenceChange.Others.Unwatched>()
+    val removedPeers = document.events.filterIsInstance<PresenceChanged.Others.Unwatched>()
         .map { it.changed.actorID }
 
     private val _selectionColors = mutableMapOf<ActorID, Int>()
@@ -70,7 +70,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
                     is Document.Event.RemoteChange -> emitEditOpInfos(event.changeInfo)
 
-                    is PresenceChange.Others.PresenceChanged -> event.changed.emitSelection()
+                    is PresenceChanged.Others.PresenceChanged -> event.changed.emitSelection()
 
                     else -> {}
                 }

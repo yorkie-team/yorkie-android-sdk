@@ -4,9 +4,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.Event.PresenceChange
-import dev.yorkie.document.Document.Event.PresenceChange.MyPresence
-import dev.yorkie.document.Document.Event.PresenceChange.Others
+import dev.yorkie.document.Document.Event.PresenceChanged
+import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
+import dev.yorkie.document.Document.Event.PresenceChanged.Others
+import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.gson
 import java.util.UUID
 import junit.framework.TestCase.assertEquals
@@ -14,6 +15,7 @@ import junit.framework.TestCase.assertNull
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
@@ -100,7 +102,7 @@ class PresenceTest {
             c2.activateAsync().await()
 
             val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<PresenceChange>()
+                d1.events.filterIsInstance<PresenceChanged>()
                     .collect(d1Events::add)
             }
             c1.attachAsync(d1, initialPresence = mapOf("name" to "a")).await()
@@ -114,7 +116,7 @@ class PresenceTest {
             d1Events.clear()
 
             val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d2.events.filterIsInstance<PresenceChange>()
+                d2.events.filterIsInstance<PresenceChanged>()
                     .collect(d2Events::add)
             }
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
@@ -251,7 +253,7 @@ class PresenceTest {
             val c2ID = c2.requireClientId()
 
             val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<PresenceChange>().collect(d1Events::add)
+                d1.events.filterIsInstance<PresenceChanged>().collect(d1Events::add)
             }
             c1.attachAsync(d1, mapOf("name" to "a", "cursor" to previousCursor)).await()
 
@@ -364,7 +366,7 @@ class PresenceTest {
             )
 
             assertEquals(mapOf(c1ID to mapOf("name" to "a")), d1.presences.value.toMap())
-            assertEquals(d1.presences.value.entries, d2.presences.value.entries)
+            assertTrue(d2.presences.value.isEmpty())
 
             d1CollectJob.cancel()
             c1.detachAsync(d1).await()
@@ -666,7 +668,7 @@ class PresenceTest {
             syncMode = Manual,
             detachDocuments = false,
         ) { c1, c2, d1, d2, _ ->
-            val d1Events = mutableListOf<PresenceChange>()
+            val d1Events = mutableListOf<PresenceChanged>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>()
                     .collect { event ->
@@ -729,7 +731,7 @@ class PresenceTest {
     @Test
     fun test_emit_the_same_presence_multiple_times() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            val d1Events = mutableListOf<PresenceChange>()
+            val d1Events = mutableListOf<PresenceChanged>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }
@@ -765,6 +767,64 @@ class PresenceTest {
                 )
             }
             collectJob.cancel()
+        }
+    }
+
+    @Test
+    fun test_presence_access_after_stream_disconnection() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+            val d2 = Document(key)
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            c1.attachAsync(d1, initialPresence = mapOf("name" to "a")).await()
+            val d1PresenceEvents = mutableListOf<Others>()
+            val d1ConnectionEvents = mutableListOf<StreamConnectionChanged>()
+            val jobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<Others>().collect(d1PresenceEvents::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<StreamConnectionChanged>()
+                        .collect(d1ConnectionEvents::add)
+                },
+            )
+
+            c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1PresenceEvents.isEmpty()) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(
+                Others.Watched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
+                d1PresenceEvents.last(),
+            )
+
+            println(d1ConnectionEvents)
+            c1.changeSyncMode(d1, Manual)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1ConnectionEvents.none { it is StreamConnectionChanged.Disconnected }) {
+                    delay(50)
+                }
+            }
+            assertNull(d1.presences.value[c2.requireClientId()])
+
+            jobs.forEach(Job::cancel)
+            c1.detachAsync(d1).await()
+            c2.detachAsync(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c1.close()
+            c2.close()
+            d1.close()
+            d2.close()
         }
     }
 

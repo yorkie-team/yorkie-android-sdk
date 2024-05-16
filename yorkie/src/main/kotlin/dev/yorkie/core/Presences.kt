@@ -18,9 +18,9 @@ public class Presences private constructor(
 
     public operator fun minus(actorID: ActorID): Presences = (map - actorID).asPresences()
 
-    override fun hashCode(): Int = map.hashCode()
-
-    override fun equals(other: Any?): Boolean = map == (other as? Presences)?.map
+    override fun toString(): String {
+        return map.entries.toString()
+    }
 
     companion object {
         public fun Map<ActorID, P>.asPresences(): Presences {

@@ -17,7 +17,6 @@ import dev.yorkie.core.Client
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger
-import dev.yorkie.util.YorkieLogger
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -115,16 +114,27 @@ class MainActivity : AppCompatActivity() {
         private const val SELECTION_END = "selection end"
 
         init {
-            YorkieLogger.logger = object : Logger {
+            Logger.init(
+                object : Logger {
+                    override val minimumPriority: Int = Log.DEBUG
 
-                override fun d(tag: String, message: String) {
-                    Log.d(tag, message)
-                }
+                    override fun d(
+                        tag: String,
+                        message: String?,
+                        throwable: Throwable?,
+                    ) {
+                        Log.d(tag, message, throwable)
+                    }
 
-                override fun e(tag: String, message: String) {
-                    Log.e(tag, message)
-                }
-            }
+                    override fun e(
+                        tag: String,
+                        message: String?,
+                        throwable: Throwable?,
+                    ) {
+                        Log.e(tag, message, throwable)
+                    }
+                },
+            )
         }
     }
 }

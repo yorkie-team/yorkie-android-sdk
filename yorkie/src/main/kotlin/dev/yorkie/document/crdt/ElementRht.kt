@@ -1,7 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [ElementRht] is a hashtable with logical clock(Replicated hashtable).
@@ -75,7 +75,7 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
     fun delete(element: T) {
         val node = nodeMapByCreatedAt[element.createdAt]
         if (node == null) {
-            YorkieLogger.e(logTag, "fail to find ${element.createdAt}")
+            logError(logTag, "fail to find ${element.createdAt}")
             return
         }
 

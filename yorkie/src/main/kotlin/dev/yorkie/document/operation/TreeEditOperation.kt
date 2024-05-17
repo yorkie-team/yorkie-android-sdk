@@ -7,7 +7,7 @@ import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [TreeEditOperation] is an operation representing Tree editing.
@@ -26,15 +26,15 @@ internal data class TreeEditOperation(
     override fun execute(root: CrdtRoot): List<OperationInfo> {
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
-            YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "fail to find $parentCreatedAt")
             return emptyList()
         }
         if (tree !is CrdtTree) {
-            YorkieLogger.e(TAG, "fail to execute, only Tree can execute edit")
+            logError(TAG, "fail to execute, only Tree can execute edit")
             return emptyList()
         }
         if (!tree.checkPosRangeValid(fromPos to toPos)) {
-            YorkieLogger.e(TAG, "has invalid pos range, skip executing the operation")
+            logError(TAG, "has invalid pos range, skip executing the operation")
             return emptyList()
         }
 

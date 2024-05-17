@@ -6,7 +6,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 internal data class StyleOperation(
     val fromPos: RgaTreeSplitPos,
@@ -38,8 +38,8 @@ internal data class StyleOperation(
                 )
             }
         } else {
-            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            YorkieLogger.e(TAG, "fail to execute, only Text can execute style")
+            parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "fail to execute, only Text can execute style")
             emptyList()
         }
     }

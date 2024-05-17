@@ -3,7 +3,7 @@ package dev.yorkie.document.crdt
 import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [CrdtRoot] is a structure that represents the root. It has a hash table of
@@ -64,7 +64,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             val currentCreatedAt = pair.element.createdAt
             val subPath = parent.subPathOf(currentCreatedAt)
             if (subPath == null) {
-                YorkieLogger.e(TAG, "fail to find the given element: $currentCreatedAt")
+                logError(TAG, "fail to find the given element: $currentCreatedAt")
             } else {
                 subPaths.add(0, subPath)
             }

@@ -7,7 +7,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [EditOperation] is an operations representing editing rich text.
@@ -51,9 +51,9 @@ internal data class EditOperation(
             }
         } else {
             if (parentObject == null) {
-                YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
+                logError(TAG, "fail to find $parentCreatedAt")
             }
-            YorkieLogger.e(TAG, "fail to execute, only Text can execute edit")
+            logError(TAG, "fail to execute, only Text can execute edit")
             emptyList()
         }
     }

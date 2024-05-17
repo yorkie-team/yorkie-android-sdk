@@ -4,7 +4,7 @@ import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [RemoveOperation] is an operation that removes an element from [CrdtContainer].
@@ -33,8 +33,8 @@ internal data class RemoveOperation(
             val index = if (parentObject is CrdtArray) key?.toInt() else null
             listOf(OperationInfo.RemoveOpInfo(key, index, root.createPath(parentCreatedAt)))
         } else {
-            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            YorkieLogger.e(TAG, "only object and array can execute remove: $parentObject")
+            parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "only object and array can execute remove: $parentObject")
             emptyList()
         }
     }

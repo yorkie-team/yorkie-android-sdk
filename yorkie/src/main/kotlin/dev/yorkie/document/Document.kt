@@ -27,8 +27,8 @@ import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.OperationResult
-import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineDispatcher
@@ -285,7 +285,9 @@ public class Document(
         val (root, presences) = snapshot.toSnapshot()
         this.root = CrdtRoot(root)
         _presences.value = presences.asPresences()
-        YorkieLogger.d("Document.snapshot", "Snapshot: ${snapshot.toSnapshot()}")
+        logDebug("Document.snapshot") {
+            "Snapshot: ${snapshot.toSnapshot()}"
+        }
         changeID = changeID.syncLamport(serverSeq)
         clone = null
         eventStream.emit(Event.Snapshot(snapshot))

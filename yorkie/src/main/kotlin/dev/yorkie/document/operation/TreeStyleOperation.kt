@@ -6,7 +6,7 @@ import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [TreeStyleOperation] represents an operation that modifies the style of the node in the Tree.
@@ -25,11 +25,11 @@ internal data class TreeStyleOperation(
     override fun execute(root: CrdtRoot): List<OperationInfo> {
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
-            YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "fail to find $parentCreatedAt")
             return emptyList()
         }
         if (tree !is CrdtTree) {
-            YorkieLogger.e(TAG, "fail to execute, only Tree can execute edit")
+            logError(TAG, "fail to execute, only Tree can execute edit")
             return emptyList()
         }
 

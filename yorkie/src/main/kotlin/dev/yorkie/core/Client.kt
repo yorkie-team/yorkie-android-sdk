@@ -1,5 +1,6 @@
 package dev.yorkie.core
 
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
@@ -31,9 +32,9 @@ import dev.yorkie.document.Document.Event.PresenceChange
 import dev.yorkie.document.Document.Event.StreamConnectionChange
 import dev.yorkie.document.Document.Event.SyncStatusChange
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
-import dev.yorkie.util.YorkieLogger
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
 import java.io.InterruptedIOException
@@ -356,19 +357,19 @@ public class Client @VisibleForTesting internal constructor(
             }
 
             is ConnectException -> {
-                if (t.cause is InterruptedIOException) {
-                    YorkieLogger.d(tag, t.toString())
-                } else {
-                    YorkieLogger.e(tag, t.toString())
-                }
-            }
-
-            is ClosedReceiveChannelException -> {
-                YorkieLogger.d(tag, t.message ?: "stream closed")
+                log(
+                    if (t.cause is InterruptedIOException) Log.DEBUG else Log.ERROR,
+                    tag,
+                    throwable = t,
+                )
             }
 
             else -> {
-                YorkieLogger.e(tag, t.message.orEmpty())
+                log(
+                    if (t is ClosedReceiveChannelException) Log.DEBUG else Log.ERROR,
+                    tag,
+                    throwable = t,
+                )
             }
         }
     }

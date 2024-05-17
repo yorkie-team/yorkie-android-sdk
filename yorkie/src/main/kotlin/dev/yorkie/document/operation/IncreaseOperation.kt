@@ -6,7 +6,7 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtPrimitive.Type
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [IncreaseOperation] represents an operation that increments a numeric value to [CrdtCounter].
@@ -39,8 +39,8 @@ internal data class IncreaseOperation(
             }
             listOf(OperationInfo.IncreaseOpInfo(increasedValue, root.createPath(parentCreatedAt)))
         } else {
-            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            YorkieLogger.e(TAG, "fail to execute, only Counter can execute increase")
+            parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "fail to execute, only Counter can execute increase")
             emptyList()
         }
     }

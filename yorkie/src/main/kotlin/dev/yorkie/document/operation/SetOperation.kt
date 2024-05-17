@@ -4,7 +4,7 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [SetOperation] represents an operation that stores the value corresponding to the
@@ -35,8 +35,8 @@ internal data class SetOperation(
             root.registerElement(copiedValue, parentObject)
             listOf(OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)))
         } else {
-            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            YorkieLogger.e(TAG, "fail to execute, only object can execute set")
+            parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "fail to execute, only object can execute set")
             emptyList()
         }
     }

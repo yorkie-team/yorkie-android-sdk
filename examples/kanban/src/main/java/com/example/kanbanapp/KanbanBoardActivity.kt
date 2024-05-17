@@ -15,7 +15,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.yorkie.core.Client
 import dev.yorkie.util.Logger
-import dev.yorkie.util.YorkieLogger
 
 class KanbanBoardActivity : ComponentActivity() {
     private val viewModel: KanbanBoardViewModel by viewModels {
@@ -53,16 +52,19 @@ class KanbanBoardActivity : ComponentActivity() {
     companion object {
 
         init {
-            YorkieLogger.logger = object : Logger {
+            Logger.init(
+                object : Logger {
+                    override val minimumPriority: Int = Log.DEBUG
 
-                override fun d(tag: String, message: String) {
-                    Log.d(tag, message)
-                }
+                    override fun d(tag: String, message: String?, throwable: Throwable?) {
+                        Log.d(tag, message, throwable)
+                    }
 
-                override fun e(tag: String, message: String) {
-                    Log.e(tag, message)
-                }
-            }
+                    override fun e(tag: String, message: String?, throwable: Throwable?) {
+                        Log.e(tag, message, throwable)
+                    }
+                },
+            )
         }
     }
 }

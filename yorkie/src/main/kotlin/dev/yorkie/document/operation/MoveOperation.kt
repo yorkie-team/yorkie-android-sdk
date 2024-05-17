@@ -3,7 +3,7 @@ package dev.yorkie.document.operation
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [MoveOperation] is an operation representing moving an element to an [CrdtArray].
@@ -38,8 +38,8 @@ internal data class MoveOperation(
                 ),
             )
         } else {
-            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            YorkieLogger.e(TAG, "fail to execute, only array can execute move")
+            parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "fail to execute, only array can execute move")
             emptyList()
         }
     }

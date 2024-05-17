@@ -6,7 +6,8 @@ import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.StyleOperation
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logDebug
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.document.RgaTreeSplitPosStruct as TextPosStruct
 
 public typealias TextPosStructRange = Pair<TextPosStruct, TextPosStruct>
@@ -35,16 +36,13 @@ public class JsonText internal constructor(
         attributes: Map<String, String>? = null,
     ): Pair<Int, Int>? {
         if (fromIndex > toIndex) {
-            YorkieLogger.e(TAG, "fromIndex should be less than or equal to toIndex")
+            logError(TAG, "fromIndex should be less than or equal to toIndex")
             return null
         }
 
         val range = createRange(fromIndex, toIndex) ?: return null
 
-        YorkieLogger.d(
-            TAG,
-            "EDIT: f:$fromIndex->${range.first}, t:$toIndex->${range.second} c:$content",
-        )
+        logDebug(TAG, "EDIT: f:$fromIndex->${range.first}, t:$toIndex->${range.second} c:$content")
 
         val executedAt = context.issueTimeTicket()
         val (maxCreatedAtMapByActor, _, rangeAfterEdit) = runCatching {
@@ -52,7 +50,7 @@ public class JsonText internal constructor(
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
-                    YorkieLogger.e(TAG, "can't style text")
+                    logError(TAG, "can't style text")
                     return null
                 }
 
@@ -87,13 +85,13 @@ public class JsonText internal constructor(
         attributes: Map<String, String>,
     ): Boolean {
         if (fromIndex > toIndex) {
-            YorkieLogger.e(TAG, "fromIndex should be less than or equal to toIndex")
+            logError(TAG, "fromIndex should be less than or equal to toIndex")
             return false
         }
 
         val range = createRange(fromIndex, toIndex) ?: return false
 
-        YorkieLogger.d(
+        logDebug(
             TAG,
             "STYL: f:$fromIndex->${range.first}, t:$toIndex->${range.second} a:$attributes",
         )
@@ -115,7 +113,7 @@ public class JsonText internal constructor(
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
-                    YorkieLogger.e(TAG, "can't style text")
+                    logError(TAG, "can't style text")
                     return false
                 }
 
@@ -131,7 +129,7 @@ public class JsonText internal constructor(
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IndexOutOfBoundsException -> {
-                    YorkieLogger.e(TAG, "can't create range")
+                    logError(TAG, "can't create range")
                     null
                 }
 

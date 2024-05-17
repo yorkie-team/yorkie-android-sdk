@@ -4,7 +4,7 @@ import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.YorkieLogger
+import dev.yorkie.util.Logger.Companion.logError
 
 /**
  * [AddOperation] is an operation representing adding an element to an [CrdtArray].
@@ -38,8 +38,8 @@ internal data class AddOperation(
                 ),
             )
         } else {
-            parentObject ?: YorkieLogger.e(TAG, "fail to find $parentCreatedAt")
-            YorkieLogger.e(TAG, "fail to execute, only array can execute add")
+            parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
+            logError(TAG, "fail to execute, only array can execute add")
             emptyList()
         }
     }

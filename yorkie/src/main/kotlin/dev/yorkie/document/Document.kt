@@ -51,6 +51,8 @@ import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -125,6 +127,8 @@ public class Document(
         get() = allPresences.value[changeID.actor]
             .takeIf { status == DocumentStatus.Attached }
             .orEmpty()
+
+    private val changeMutex = Mutex()
 
     /**
      * Executes the given [updater] to update this document.
@@ -254,28 +258,30 @@ public class Document(
      * 2. Update the checkpoint.
      * 3. Do Garbage collection.
      */
-    internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(snapshotDispatcher) {
-        if (pack.hasSnapshot) {
-            applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
-        } else if (pack.hasChanges) {
-            applyChanges(pack.changes)
-        }
-
-        val iterator = localChanges.iterator()
-        while (iterator.hasNext()) {
-            val change = iterator.next()
-            if (change.id.clientSeq > pack.checkPoint.clientSeq) {
-                break
+    internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
+        changeMutex.withLock {
+            if (pack.hasSnapshot) {
+                applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
+            } else if (pack.hasChanges) {
+                applyChanges(pack.changes)
             }
-            iterator.remove()
-        }
 
-        checkPoint = checkPoint.forward(pack.checkPoint)
+            val iterator = localChanges.iterator()
+            while (iterator.hasNext()) {
+                val change = iterator.next()
+                if (change.id.clientSeq > pack.checkPoint.clientSeq) {
+                    break
+                }
+                iterator.remove()
+            }
 
-        pack.minSyncedTicket?.let(::garbageCollect)
+            checkPoint = checkPoint.forward(pack.checkPoint)
 
-        if (pack.isRemoved) {
-            status = DocumentStatus.Removed
+            pack.minSyncedTicket?.let(::garbageCollect)
+
+            if (pack.isRemoved) {
+                status = DocumentStatus.Removed
+            }
         }
     }
 
@@ -283,9 +289,12 @@ public class Document(
      * Applies the given [snapshot] into this document.
      */
     private suspend fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
-        val (root, presences) = snapshot.toSnapshot()
-        this.root = CrdtRoot(root)
-        _presences.value = presences.asPresences()
+        val (root, presences) = withContext(snapshotDispatcher) {
+            val (root, p) = snapshot.toSnapshot()
+            CrdtRoot(root) to p.asPresences()
+        }
+        this.root = root
+        _presences.value = presences
         logDebug("Document.snapshot") {
             "Snapshot: ${snapshot.toSnapshot()}"
         }

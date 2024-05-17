@@ -159,7 +159,7 @@ class ClientTest {
                 document.events.filterIsInstance<SyncStatusChanged>().first()
             }
             val connectionEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                document.events.filterIsInstance<StreamConnectionChanged>().first()
+                document.events.filterIsInstance<StreamConnectionChanged.Disconnected>().first()
             }
 
             document.updateAsync { root, _ ->

@@ -351,7 +351,7 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private suspend fun onWatchStreamCanceled(document: Document) {
-        if (document.status == DocumentStatus.Attached) {
+        if (document.status == DocumentStatus.Attached && status.value is Status.Activated) {
             document.publishEvent(
                 Initialized((requireClientId() to document.myPresence).asPresences()),
             )

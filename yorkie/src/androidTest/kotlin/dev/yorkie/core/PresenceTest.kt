@@ -341,7 +341,6 @@ class PresenceTest {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
-            c1.syncAsync().await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
@@ -367,7 +366,7 @@ class PresenceTest {
             )
 
             assertEquals(mapOf(c1ID to mapOf("name" to "a")), d1.presences.value.toMap())
-            assertTrue(d2.presences.value.isEmpty())
+            assertEquals(d1.presences.value.entries, d2.presences.value.entries)
 
             d1CollectJob.cancel()
             c1.detachAsync(d1).await()
@@ -797,7 +796,6 @@ class PresenceTest {
             )
 
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
-            c1.syncAsync().await()
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1PresenceEvents.isEmpty()) {
                     delay(50)

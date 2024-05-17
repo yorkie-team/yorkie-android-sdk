@@ -341,6 +341,7 @@ class PresenceTest {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
             }
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
+            c1.syncAsync().await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
@@ -796,6 +797,7 @@ class PresenceTest {
             )
 
             c2.attachAsync(d2, initialPresence = mapOf("name" to "b")).await()
+            c1.syncAsync().await()
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1PresenceEvents.isEmpty()) {
                     delay(50)
@@ -807,7 +809,6 @@ class PresenceTest {
                 d1PresenceEvents.last(),
             )
 
-            println(d1ConnectionEvents)
             c1.changeSyncMode(d1, Manual)
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1ConnectionEvents.none { it is StreamConnectionChanged.Disconnected }) {

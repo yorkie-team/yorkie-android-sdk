@@ -291,7 +291,6 @@ public class Client @VisibleForTesting internal constructor(
                     attachment.document.key.documentBasedRequestHeader,
                 ).also {
                     latestStream = it
-                    attachment.document.publishEvent(StreamConnectionChanged.Connected)
                 }
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
@@ -299,6 +298,7 @@ public class Client @VisibleForTesting internal constructor(
                     while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
                         val receiveResult = channel.receiveCatching()
                         receiveResult.onSuccess {
+                            attachment.document.publishEvent(StreamConnectionChanged.Connected)
                             handleWatchDocumentsResponse(attachment.document.key, it)
                             retry = 0
                         }.onFailure {

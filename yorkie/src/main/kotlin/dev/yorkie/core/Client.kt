@@ -351,7 +351,9 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private suspend fun onWatchStreamCanceled(document: Document) {
-        document.publishEvent(Initialized((requireClientId() to document.myPresence).asPresences()))
+        if (status.value is Status.Activated) {
+            document.publishEvent(Initialized((requireClientId() to document.myPresence).asPresences()))
+        }
         document.setOnlineClients(emptySet())
         document.publishEvent(StreamConnectionChanged.Disconnected)
     }

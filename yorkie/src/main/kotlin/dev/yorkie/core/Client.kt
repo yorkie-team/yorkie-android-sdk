@@ -28,9 +28,10 @@ import dev.yorkie.core.Presences.Companion.UninitializedPresences
 import dev.yorkie.core.Presences.Companion.asPresences
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
-import dev.yorkie.document.Document.Event.PresenceChange
-import dev.yorkie.document.Document.Event.StreamConnectionChange
-import dev.yorkie.document.Document.Event.SyncStatusChange
+import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
+import dev.yorkie.document.Document.Event.PresenceChanged.Others
+import dev.yorkie.document.Document.Event.StreamConnectionChanged
+import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.OperationResult
@@ -169,9 +170,9 @@ public class Client @VisibleForTesting internal constructor(
                 filterRealTimeSyncNeeded().asSyncFlow().collect { (document, result) ->
                     document.publishEvent(
                         if (result.isSuccess) {
-                            SyncStatusChange.Synced
+                            SyncStatusChanged.Synced
                         } else {
-                            SyncStatusChange.SyncFailed(result.exceptionOrNull())
+                            SyncStatusChanged.SyncFailed(result.exceptionOrNull())
                         },
                     )
                 }
@@ -204,13 +205,13 @@ public class Client @VisibleForTesting internal constructor(
             attachments.asSyncFlow().collect { (document, result) ->
                 document.publishEvent(
                     if (result.isSuccess) {
-                        SyncStatusChange.Synced
+                        SyncStatusChanged.Synced
                     } else {
                         val exception = result.exceptionOrNull()
                         if (failure == null && exception != null) {
                             failure = exception
                         }
-                        SyncStatusChange.SyncFailed(exception)
+                        SyncStatusChanged.SyncFailed(exception)
                     },
                 )
             }
@@ -298,7 +299,7 @@ public class Client @VisibleForTesting internal constructor(
                     while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
                         val receiveResult = channel.receiveCatching()
                         receiveResult.onSuccess {
-                            attachment.document.publishEvent(StreamConnectionChange.Connected)
+                            attachment.document.publishEvent(StreamConnectionChanged.Connected)
                             handleWatchDocumentsResponse(attachment.document.key, it)
                             retry = 0
                         }.onFailure {
@@ -328,6 +329,7 @@ public class Client @VisibleForTesting internal constructor(
         }.also {
             it.invokeOnCompletion {
                 scope.launch {
+                    onWatchStreamCanceled(attachment.document)
                     latestStream.safeClose()
                 }
             }
@@ -340,13 +342,23 @@ public class Client @VisibleForTesting internal constructor(
         cause: Throwable?,
         closeStream: Boolean,
     ) {
-        document.publishEvent(StreamConnectionChange.Disconnected)
+        onWatchStreamCanceled(document)
         if (closeStream) {
             stream.safeClose()
         }
         cause?.let(::sendWatchStreamException)
         coroutineContext.ensureActive()
         delay(options.reconnectStreamDelay.inWholeMilliseconds)
+    }
+
+    private suspend fun onWatchStreamCanceled(document: Document) {
+        if (document.status == DocumentStatus.Attached && status.value is Status.Activated) {
+            document.publishEvent(
+                Initialized((requireClientId() to document.myPresence).asPresences()),
+            )
+            document.setOnlineClients(emptySet())
+            document.publishEvent(StreamConnectionChanged.Disconnected)
+        }
     }
 
     private fun sendWatchStreamException(t: Throwable) {
@@ -391,11 +403,11 @@ public class Client @VisibleForTesting internal constructor(
             val document = attachments.value[documentKey]?.document ?: return
             val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
             document.publishEvent(
-                PresenceChange.MyPresence.Initialized(
+                Initialized(
                     document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
                 ),
             )
-            document.onlineClients.value += clientIDs
+            document.setOnlineClients(clientIDs.toSet())
             return
         }
 
@@ -412,11 +424,9 @@ public class Client @VisibleForTesting internal constructor(
                 // unless we also know their initial presence data at this point.
                 val presence = document.allPresences.value[publisher]
                 if (presence != null) {
-                    document.publishEvent(
-                        PresenceChange.Others.Watched(PresenceInfo(publisher, presence)),
-                    )
+                    document.publishEvent(Others.Watched(PresenceInfo(publisher, presence)))
                 }
-                document.onlineClients.value += publisher
+                document.addOnlineClient(publisher)
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
@@ -424,10 +434,8 @@ public class Client @VisibleForTesting internal constructor(
                 // when PresenceChange(clear) is applied before unwatching. In that case,
                 // the 'unwatched' event is triggered while handling the PresenceChange.
                 val presence = document.presences.value[publisher] ?: return
-                document.publishEvent(
-                    PresenceChange.Others.Unwatched(PresenceInfo(publisher, presence)),
-                )
-                document.onlineClients.value -= publisher
+                document.publishEvent(Others.Unwatched(PresenceInfo(publisher, presence)))
+                document.removeOnlineClient(publisher)
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {

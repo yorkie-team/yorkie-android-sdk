@@ -9,7 +9,7 @@ import dev.yorkie.core.Client.SyncMode.RealtimeSyncOff
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
-import dev.yorkie.document.Document.Event.SyncStatusChange
+import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.json.JsonTree
@@ -49,16 +49,16 @@ class ClientTest {
             val d1 = Document(key)
             val d2 = Document(key)
 
-            val d1SyncEvents = mutableListOf<SyncStatusChange>()
-            val d2SyncEvents = mutableListOf<SyncStatusChange>()
+            val d1SyncEvents = mutableListOf<SyncStatusChanged>()
+            val d2SyncEvents = mutableListOf<SyncStatusChanged>()
             val d1ChangeEvents = mutableListOf<Document.Event>()
             val d2ChangeEvents = mutableListOf<Document.Event>()
             val collectJobs = listOf(
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    d1.events.filterIsInstance<SyncStatusChange>().collect(d1SyncEvents::add)
+                    d1.events.filterIsInstance<SyncStatusChanged>().collect(d1SyncEvents::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
-                    d2.events.filterIsInstance<SyncStatusChange>().collect(d2SyncEvents::add)
+                    d2.events.filterIsInstance<SyncStatusChanged>().collect(d2SyncEvents::add)
                 },
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     d1.events.filter { it is RemoteChange || it is LocalChange }
@@ -84,7 +84,7 @@ class ClientTest {
             }.await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (d2SyncEvents.none { it is SyncStatusChange.Synced }) {
+                while (d2SyncEvents.none { it is SyncStatusChanged.Synced }) {
                     delay(50)
                 }
             }
@@ -115,7 +115,7 @@ class ClientTest {
             }.await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (d1SyncEvents.none { it is SyncStatusChange.Synced }) {
+                while (d1SyncEvents.none { it is SyncStatusChanged.Synced }) {
                     delay(50)
                 }
             }
@@ -183,9 +183,9 @@ class ClientTest {
             assertEquals(d1.toJson(), d2.toJson())
 
             // 02. c2 changes the sync mode to realtime sync mode.
-            val d2SyncEvents = mutableListOf<SyncStatusChange>()
+            val d2SyncEvents = mutableListOf<SyncStatusChanged>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                d2.events.filterIsInstance<SyncStatusChange>().collect(d2SyncEvents::add)
+                d2.events.filterIsInstance<SyncStatusChanged>().collect(d2SyncEvents::add)
             }
 
             c2.changeSyncMode(d2, Realtime)
@@ -194,7 +194,7 @@ class ClientTest {
                     delay(50)
                 }
             }
-            assertIs<SyncStatusChange.Synced>(d2SyncEvents.first())
+            assertIs<SyncStatusChanged.Synced>(d2SyncEvents.first())
             d2SyncEvents.clear()
 
             d1.updateAsync { root, _ ->
@@ -207,7 +207,7 @@ class ClientTest {
                     delay(50)
                 }
             }
-            assertIs<SyncStatusChange.Synced>(d2SyncEvents.last())
+            assertIs<SyncStatusChanged.Synced>(d2SyncEvents.last())
             assertEquals(d1.toJson(), d2.toJson())
             collectJob.cancel()
 
@@ -246,7 +246,7 @@ class ClientTest {
 
         val document2Events = mutableListOf<Document.Event>()
         val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-            document2.events.filterIsInstance<SyncStatusChange>().collect(document2Events::add)
+            document2.events.filterIsInstance<SyncStatusChanged>().collect(document2Events::add)
         }
 
         suspend fun assertDocument2IsSynced(expected: String) {
@@ -255,7 +255,7 @@ class ClientTest {
                     delay(50)
                 }
             }
-            assertIs<SyncStatusChange.Synced>(document2Events.first())
+            assertIs<SyncStatusChanged.Synced>(document2Events.first())
             assertJsonContentEquals(expected, document2.toJson())
         }
 
@@ -655,7 +655,7 @@ class ClientTest {
             //     and sync with push-only mode: CP(2, 2) -> CP(3, 2)
             val d1Events = mutableListOf<Document.Event>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<SyncStatusChange>().collect(d1Events::add)
+                d1.events.filterIsInstance<SyncStatusChanged>().collect(d1Events::add)
             }
             d1.updateAsync { root, _ ->
                 root.getAs<JsonCounter>("counter").increase(1)
@@ -664,7 +664,7 @@ class ClientTest {
             assertEquals(1, changePack.changes.size)
             c1.changeSyncMode(d1, RealtimePushOnly)
             withTimeout(GENERAL_TIMEOUT) {
-                while (d1Events.firstOrNull() !is SyncStatusChange.Synced) {
+                while (d1Events.firstOrNull() !is SyncStatusChanged.Synced) {
                     delay(50)
                 }
             }

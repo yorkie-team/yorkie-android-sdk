@@ -283,7 +283,7 @@ class DocumentTest {
                 }
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document2Ops.size < 4) {
                     delay(50)
                 }
@@ -300,7 +300,7 @@ class DocumentTest {
                 root.getAs<JsonText>("content").style(0, 5, mapOf("bold" to "true"))
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.size < 3) {
                     delay(50)
                 }
@@ -386,7 +386,7 @@ class DocumentTest {
                 }
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 // ops: counter, todos, todoOps: todos
                 while (document1Ops.size < 2 || document1TodosOps.isEmpty()) {
                     delay(50)
@@ -416,7 +416,7 @@ class DocumentTest {
                 root.getAs<JsonCounter>("counter").increase(10)
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty() || document1CounterOps.isEmpty()) {
                     delay(50)
                 }
@@ -434,7 +434,7 @@ class DocumentTest {
                 root.getAs<JsonArray>("todos").put("todo3")
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty() || document1TodosOps.isEmpty()) {
                     delay(50)
                 }
@@ -450,7 +450,7 @@ class DocumentTest {
                 root.getAs<JsonArray>("todos").put("todo4")
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty()) {
                     delay(50)
                 }
@@ -465,7 +465,7 @@ class DocumentTest {
                 root.getAs<JsonCounter>("counter").increase(10)
             }.await()
 
-            withTimeout(2_000) {
+            withTimeout(GENERAL_TIMEOUT) {
                 while (document1Ops.isEmpty()) {
                     delay(50)
                 }

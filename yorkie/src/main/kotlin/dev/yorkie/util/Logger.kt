@@ -9,9 +9,17 @@ public interface Logger {
      */
     val minimumPriority: Int
 
-    fun d(tag: String, message: String? = null, throwable: Throwable? = null)
+    fun d(
+        tag: String,
+        message: String? = null,
+        throwable: Throwable? = null,
+    )
 
-    fun e(tag: String, message: String? = null, throwable: Throwable? = null)
+    fun e(
+        tag: String,
+        message: String? = null,
+        throwable: Throwable? = null,
+    )
 
     companion object {
         private var instance: Logger? = null

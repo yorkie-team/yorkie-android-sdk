@@ -56,11 +56,19 @@ class KanbanBoardActivity : ComponentActivity() {
                 object : Logger {
                     override val minimumPriority: Int = Log.DEBUG
 
-                    override fun d(tag: String, message: String?, throwable: Throwable?) {
+                    override fun d(
+                        tag: String,
+                        message: String?,
+                        throwable: Throwable?,
+                    ) {
                         Log.d(tag, message, throwable)
                     }
 
-                    override fun e(tag: String, message: String?, throwable: Throwable?) {
+                    override fun e(
+                        tag: String,
+                        message: String?,
+                        throwable: Throwable?,
+                    ) {
                         Log.e(tag, message, throwable)
                     }
                 },

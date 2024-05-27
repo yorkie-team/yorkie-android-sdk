@@ -1,7 +1,6 @@
 package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import dev.yorkie.TreeSplitMergeTest
 import dev.yorkie.TreeTest
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
@@ -11,7 +10,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @TreeTest
-@TreeSplitMergeTest
 @RunWith(AndroidJUnit4::class)
 class JsonTreeSplitMergeTest {
 
@@ -35,10 +33,10 @@ class JsonTreeSplitMergeTest {
 
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(2, 2, splitLevel = 1)
+                    root.rootTree().edit(2, 2, 1)
                 },
                 JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
-                    root.rootTree().edit(2, 2, splitLevel = 1)
+                    root.rootTree().edit(2, 2, 1)
                 },
             ) {
                 JsonTreeTest.assertTreesXmlEquals("<r><p>a</p><p>b</p></r>", d1, d2)
@@ -67,10 +65,10 @@ class JsonTreeSplitMergeTest {
 
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(2, 2, splitLevel = 1)
+                    root.rootTree().edit(2, 2, 1)
                 },
                 JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
-                    root.rootTree().edit(3, 3, splitLevel = 1)
+                    root.rootTree().edit(3, 3, 1)
                 },
             ) {
                 JsonTreeTest.assertTreesXmlEquals("<r><p>a</p><p>bc</p></r>", d1)
@@ -100,7 +98,7 @@ class JsonTreeSplitMergeTest {
 
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(2, 2, splitLevel = 1)
+                    root.rootTree().edit(2, 2, 1)
                 },
                 JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(2, 2, TreeBuilder.text { "c" })
@@ -133,7 +131,7 @@ class JsonTreeSplitMergeTest {
 
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(2, 2, splitLevel = 1)
+                    root.rootTree().edit(2, 2, 1)
                 },
                 JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(1, 1, TreeBuilder.text { "c" })
@@ -166,7 +164,7 @@ class JsonTreeSplitMergeTest {
 
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(2, 2, splitLevel = 1)
+                    root.rootTree().edit(2, 2, 1)
                 },
                 JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(3, 3, TreeBuilder.text { "c" })
@@ -199,7 +197,7 @@ class JsonTreeSplitMergeTest {
 
             JsonTreeTest.updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
-                    root.rootTree().edit(2, 2, splitLevel = 1)
+                    root.rootTree().edit(2, 2, 1)
                 },
                 JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
                     root.rootTree().edit(2, 3)
@@ -230,7 +228,7 @@ class JsonTreeSplitMergeTest {
             JsonTreeTest.assertTreesXmlEquals("<doc><p>ab</p></doc>", d1)
 
             d1.updateAsync { root, _ ->
-                root.rootTree().edit(1, 1, splitLevel = 1)
+                root.rootTree().edit(1, 1, 1)
             }.await()
             JsonTreeTest.assertTreesXmlEquals("<doc><p></p><p>ab</p></doc>", d1)
 
@@ -263,7 +261,7 @@ class JsonTreeSplitMergeTest {
             assertEquals("<doc><p><p>ab</p></p></doc>", d1.getRoot().rootTree().toXml())
 
             d1.updateAsync { root, _ ->
-                root.rootTree().edit(2, 2, splitLevel = 2)
+                root.rootTree().edit(2, 2, 2)
             }.await()
             assertEquals(
                 "<doc><p><p></p></p><p><p>ab</p></p></doc>",
@@ -297,7 +295,7 @@ class JsonTreeSplitMergeTest {
             assertEquals("<doc><p>ab</p></doc>", d1.getRoot().rootTree().toXml())
 
             d1.updateAsync { root, _ ->
-                root.rootTree().edit(2, 2, splitLevel = 1)
+                root.rootTree().edit(2, 2, 1)
             }.await()
             assertEquals("<doc><p>a</p><p>b</p></doc>", d1.getRoot().rootTree().toXml())
 
@@ -307,7 +305,7 @@ class JsonTreeSplitMergeTest {
             assertEquals("<doc><p>ac</p><p>b</p></doc>", d1.getRoot().rootTree().toXml())
 
             d1.updateAsync { root, _ ->
-                root.rootTree().edit(2, 2, splitLevel = 1)
+                root.rootTree().edit(2, 2, 1)
             }.await()
             assertEquals("<doc><p>a</p><p>c</p><p>b</p></doc>", d1.getRoot().rootTree().toXml())
 

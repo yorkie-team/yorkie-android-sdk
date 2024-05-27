@@ -128,7 +128,11 @@ public class JsonTree internal constructor(
     /**
      * Edits this tree with the given node.
      */
-    public fun edit(fromIndex: Int, toIndex: Int, vararg content: TreeNode) {
+    public fun edit(
+        fromIndex: Int,
+        toIndex: Int,
+        vararg content: TreeNode,
+    ) {
         edit(fromIndex, toIndex, 0, *content)
     }
 

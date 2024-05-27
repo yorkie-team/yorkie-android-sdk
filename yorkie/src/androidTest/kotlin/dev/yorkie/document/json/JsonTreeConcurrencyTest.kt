@@ -10,7 +10,6 @@ import dev.yorkie.document.json.TestOperation.StyleOperationType
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import kotlin.test.assertEquals
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
@@ -235,7 +234,6 @@ class JsonTreeConcurrencyTest {
                 text { "d" }
                 attrs { mapOf("italic" to "true") }
             }
-
 
             val ranges = listOf(
                 // equal: <p>b</p> - <p>b</p>

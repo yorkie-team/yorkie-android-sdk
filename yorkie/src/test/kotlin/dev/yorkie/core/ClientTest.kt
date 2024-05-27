@@ -75,192 +75,172 @@ class ClientTest {
     }
 
     @Test
-    fun `should activate and deactivate`() {
-        runTest {
-            assertFalse(target.isActive)
-            val activateRequestCaptor = argumentCaptor<ActivateClientRequest>()
-            assertTrue(target.activateAsync().await().isSuccess)
-            verify(service).activateClient(activateRequestCaptor.capture(), any())
-            assertEquals(TEST_KEY, activateRequestCaptor.firstValue.clientKey)
-            assertTrue(target.isActive)
+    fun `should activate and deactivate`() = runTest {
+        assertFalse(target.isActive)
+        val activateRequestCaptor = argumentCaptor<ActivateClientRequest>()
+        assertTrue(target.activateAsync().await().isSuccess)
+        verify(service).activateClient(activateRequestCaptor.capture(), any())
+        assertEquals(TEST_KEY, activateRequestCaptor.firstValue.clientKey)
+        assertTrue(target.isActive)
 
-            val activatedStatus = assertIs<Client.Status.Activated>(target.status.value)
-            assertEquals(TEST_ACTOR_ID, activatedStatus.clientId)
+        val activatedStatus = assertIs<Client.Status.Activated>(target.status.value)
+        assertEquals(TEST_ACTOR_ID, activatedStatus.clientId)
 
-            val deactivateRequestCaptor = argumentCaptor<DeactivateClientRequest>()
-            assertTrue(target.deactivateAsync().await().isSuccess)
-            verify(service).deactivateClient(deactivateRequestCaptor.capture(), any())
-            assertIsTestActorID(deactivateRequestCaptor.firstValue.clientId)
-            assertFalse(target.isActive)
-            assertIs<Client.Status.Deactivated>(target.status.value)
-        }
+        val deactivateRequestCaptor = argumentCaptor<DeactivateClientRequest>()
+        assertTrue(target.deactivateAsync().await().isSuccess)
+        verify(service).deactivateClient(deactivateRequestCaptor.capture(), any())
+        assertIsTestActorID(deactivateRequestCaptor.firstValue.clientId)
+        assertFalse(target.isActive)
+        assertIs<Client.Status.Deactivated>(target.status.value)
     }
 
     @Test
-    fun `should sync when document is attached and on manual sync requests`() {
-        runTest {
-            val document = Document(Key(NORMAL_DOCUMENT_KEY))
-            target.activateAsync().await()
+    fun `should sync when document is attached and on manual sync requests`() = runTest {
+        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+        target.activateAsync().await()
 
-            val attachRequestCaptor = argumentCaptor<AttachDocumentRequest>()
-            target.attachAsync(document, syncMode = Manual).await()
-            verify(service).attachDocument(attachRequestCaptor.capture(), any())
-            assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
-            assertIsInitialChangePack(attachRequestCaptor.firstValue.changePack)
-            assertJsonContentEquals("""{"k1": 4}""", document.toJson())
+        val attachRequestCaptor = argumentCaptor<AttachDocumentRequest>()
+        target.attachAsync(document, syncMode = Manual).await()
+        verify(service).attachDocument(attachRequestCaptor.capture(), any())
+        assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
+        assertIsInitialChangePack(attachRequestCaptor.firstValue.changePack)
+        assertJsonContentEquals("""{"k1": 4}""", document.toJson())
 
-            val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
-            target.syncAsync().await()
-            verify(service).pushPullChanges(syncRequestCaptor.capture(), any())
-            assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
-            assertIsInitialChangePack(syncRequestCaptor.firstValue.changePack)
-            assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
+        val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
+        target.syncAsync().await()
+        verify(service).pushPullChanges(syncRequestCaptor.capture(), any())
+        assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
+        assertIsInitialChangePack(syncRequestCaptor.firstValue.changePack)
+        assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
-            val detachRequestCaptor = argumentCaptor<DetachDocumentRequest>()
-            target.detachAsync(document).await()
-            verify(service).detachDocument(detachRequestCaptor.capture(), any())
-            assertIsTestActorID(detachRequestCaptor.firstValue.clientId)
-            val detachmentChange =
-                detachRequestCaptor.firstValue.changePack.toChangePack().changes.last()
-            assertIs<PresenceChange.Clear>(detachmentChange.presenceChange)
-            target.deactivateAsync().await()
-        }
+        val detachRequestCaptor = argumentCaptor<DetachDocumentRequest>()
+        target.detachAsync(document).await()
+        verify(service).detachDocument(detachRequestCaptor.capture(), any())
+        assertIsTestActorID(detachRequestCaptor.firstValue.clientId)
+        val detachmentChange =
+            detachRequestCaptor.firstValue.changePack.toChangePack().changes.last()
+        assertIs<PresenceChange.Clear>(detachmentChange.presenceChange)
+        target.deactivateAsync().await()
     }
 
     @Test
-    fun `should run watch and sync when document is attached`() {
-        runTest {
-            val document = Document(Key(NORMAL_DOCUMENT_KEY))
-            target.activateAsync().await()
+    fun `should run watch and sync when document is attached`() = runTest {
+        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+        target.activateAsync().await()
 
-            target.attachAsync(document).await()
+        target.attachAsync(document).await()
 
-            val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
-            assertIs<SyncStatusChanged.Synced>(
-                document.events.filterIsInstance<SyncStatusChanged>().first(),
-            )
-            verify(service, atLeastOnce()).pushPullChanges(syncRequestCaptor.capture(), any())
-            assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
-            assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
+        val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
+        assertIs<SyncStatusChanged.Synced>(
+            document.events.filterIsInstance<SyncStatusChanged>().first(),
+        )
+        verify(service, atLeastOnce()).pushPullChanges(syncRequestCaptor.capture(), any())
+        assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
+        assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
-            target.detachAsync(document).await()
-            target.deactivateAsync().await()
-        }
+        target.detachAsync(document).await()
+        target.deactivateAsync().await()
     }
 
     @Test
-    fun `should emit according event when watch stream fails`() {
-        runTest {
-            val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
-            target.activateAsync().await()
-            target.attachAsync(document).await()
+    fun `should emit according event when watch stream fails`() = runTest {
+        val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
+        target.activateAsync().await()
+        target.attachAsync(document).await()
 
-            val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                document.events.filterIsInstance<SyncStatusChanged>().first()
-            }
-            val connectionEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                document.events.filterIsInstance<StreamConnectionChanged.Disconnected>().first()
-            }
-
-            document.updateAsync { root, _ ->
-                root["k1"] = 1
-            }.await()
-
-            assertIs<SyncStatusChanged.SyncFailed>(syncEventDeferred.await())
-            assertIs<StreamConnectionChanged.Disconnected>(connectionEventDeferred.await())
-
-            target.detachAsync(document).await()
-            target.deactivateAsync().await()
+        val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<SyncStatusChanged>().first()
         }
+        val connectionEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<StreamConnectionChanged.Disconnected>().first()
+        }
+
+        document.updateAsync { root, _ ->
+            root["k1"] = 1
+        }.await()
+
+        assertIs<SyncStatusChanged.SyncFailed>(syncEventDeferred.await())
+        assertIs<StreamConnectionChanged.Disconnected>(connectionEventDeferred.await())
+
+        target.detachAsync(document).await()
+        target.deactivateAsync().await()
     }
 
     @Test
-    fun `should return sync result according to server response`() {
-        runTest {
-            val success = Document(Key(NORMAL_DOCUMENT_KEY))
-            target.activateAsync().await()
-            target.attachAsync(success).await()
+    fun `should return sync result according to server response`() = runTest {
+        val success = Document(Key(NORMAL_DOCUMENT_KEY))
+        target.activateAsync().await()
+        target.attachAsync(success).await()
 
-            assertTrue(target.syncAsync().await().isSuccess)
-            target.detachAsync(success).await()
+        assertTrue(target.syncAsync().await().isSuccess)
+        target.detachAsync(success).await()
 
-            val failing = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
-            target.attachAsync(failing).await()
-            assertFalse(target.syncAsync().await().isSuccess)
+        val failing = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
+        target.attachAsync(failing).await()
+        assertFalse(target.syncAsync().await().isSuccess)
 
-            target.detachAsync(failing).await()
-            target.deactivateAsync().await()
-        }
+        target.detachAsync(failing).await()
+        target.deactivateAsync().await()
     }
 
     @Test
-    fun `should return false on attach failure without exceptions`() {
-        runTest {
-            val document = Document(Key(ATTACH_ERROR_DOCUMENT_KEY))
-            target.activateAsync().await()
+    fun `should return false on attach failure without exceptions`() = runTest {
+        val document = Document(Key(ATTACH_ERROR_DOCUMENT_KEY))
+        target.activateAsync().await()
 
-            assertFalse(target.attachAsync(document).await().isSuccess)
+        assertFalse(target.attachAsync(document).await().isSuccess)
 
-            target.deactivateAsync().await()
-        }
+        target.deactivateAsync().await()
     }
 
     @Test
-    fun `should return false on detach failure without exceptions`() {
-        runTest {
-            val document = Document(Key(DETACH_ERROR_DOCUMENT_KEY))
-            target.activateAsync().await()
-            target.attachAsync(document).await()
+    fun `should return false on detach failure without exceptions`() = runTest {
+        val document = Document(Key(DETACH_ERROR_DOCUMENT_KEY))
+        target.activateAsync().await()
+        target.attachAsync(document).await()
 
-            assertFalse(target.detachAsync(document).await().isSuccess)
+        assertFalse(target.detachAsync(document).await().isSuccess)
 
-            target.deactivateAsync().await()
-        }
+        target.deactivateAsync().await()
     }
 
     @Test
-    fun `should handle activating and deactivating multiple times`() {
-        runTest {
-            assertTrue(target.activateAsync().await().isSuccess)
-            assertTrue(target.activateAsync().await().isSuccess)
-            delay(500)
-            assertTrue(target.deactivateAsync().await().isSuccess)
-            assertTrue(target.deactivateAsync().await().isSuccess)
-        }
+    fun `should handle activating and deactivating multiple times`() = runTest {
+        assertTrue(target.activateAsync().await().isSuccess)
+        assertTrue(target.activateAsync().await().isSuccess)
+        delay(500)
+        assertTrue(target.deactivateAsync().await().isSuccess)
+        assertTrue(target.deactivateAsync().await().isSuccess)
     }
 
     @Test
-    fun `should remove document`() {
-        runTest {
-            val document = Document(Key(NORMAL_DOCUMENT_KEY))
-            target.activateAsync().await()
-            target.attachAsync(document).await()
+    fun `should remove document`() = runTest {
+        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+        target.activateAsync().await()
+        target.attachAsync(document).await()
 
-            val removeDocumentRequestCaptor = argumentCaptor<RemoveDocumentRequest>()
-            target.removeAsync(document).await()
-            verify(service).removeDocument(removeDocumentRequestCaptor.capture(), any())
-            assertIsTestActorID(removeDocumentRequestCaptor.firstValue.clientId)
-            assertEquals(
-                InitialChangePack.copy(isRemoved = true),
-                removeDocumentRequestCaptor.firstValue.changePack.toChangePack(),
-            )
+        val removeDocumentRequestCaptor = argumentCaptor<RemoveDocumentRequest>()
+        target.removeAsync(document).await()
+        verify(service).removeDocument(removeDocumentRequestCaptor.capture(), any())
+        assertIsTestActorID(removeDocumentRequestCaptor.firstValue.clientId)
+        assertEquals(
+            InitialChangePack.copy(isRemoved = true),
+            removeDocumentRequestCaptor.firstValue.changePack.toChangePack(),
+        )
 
-            target.deactivateAsync().await()
-        }
+        target.deactivateAsync().await()
     }
 
     @Test
-    fun `should return false on remove document error without exceptions`() {
-        runTest {
-            val document = Document(Key(REMOVE_ERROR_DOCUMENT_KEY))
-            target.activateAsync().await()
-            target.attachAsync(document).await()
+    fun `should return false on remove document error without exceptions`() = runTest {
+        val document = Document(Key(REMOVE_ERROR_DOCUMENT_KEY))
+        target.activateAsync().await()
+        target.attachAsync(document).await()
 
-            assertFalse(target.removeAsync(document).await().isSuccess)
+        assertFalse(target.removeAsync(document).await().isSuccess)
 
-            target.detachAsync(document).await()
-            target.deactivateAsync().await()
-        }
+        target.detachAsync(document).await()
+        target.deactivateAsync().await()
     }
 
     private fun assertIsTestActorID(clientId: String) {

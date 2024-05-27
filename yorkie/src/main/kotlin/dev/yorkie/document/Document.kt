@@ -94,7 +94,7 @@ public class Document(
 
     @Volatile
     public var status = DocumentStatus.Detached
-        internal set
+        private set
 
     @VisibleForTesting
     public val garbageLength: Int
@@ -449,6 +449,10 @@ public class Document(
 
     internal fun removeOnlineClient(actorID: ActorID) {
         onlineClients.value -= actorID
+    }
+
+    internal fun setStatus(newStatus: DocumentStatus) {
+        this.status = newStatus
     }
 
     /**

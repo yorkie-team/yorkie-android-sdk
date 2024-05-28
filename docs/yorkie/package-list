@@ -180,7 +180,8 @@ $dokka.location:dev.yorkie.document.json/JsonTree.TextNode/value/#/PointingToDec
 $dokka.location:dev.yorkie.document.json/JsonTree.TreeNode///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-tree-node/index.html
 $dokka.location:dev.yorkie.document.json/JsonTree.TreeNode/type/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/-tree-node/type.html
 $dokka.location:dev.yorkie.document.json/JsonTree///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/index.html
-$dokka.location:dev.yorkie.document.json/JsonTree/edit/#kotlin.Int#kotlin.Int#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit.html
+$dokka.location:dev.yorkie.document.json/JsonTree/edit/#kotlin.Int#kotlin.Int#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit.html
+$dokka.location:dev.yorkie.document.json/JsonTree/edit/#kotlin.Int#kotlin.Int#kotlin.Int#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit.html
 $dokka.location:dev.yorkie.document.json/JsonTree/editByPath/#kotlin.collections.List[kotlin.Int]#kotlin.collections.List[kotlin.Int]#kotlin.Array[dev.yorkie.document.json.JsonTree.TreeNode]#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/edit-by-path.html
 $dokka.location:dev.yorkie.document.json/JsonTree/indexRangeToPosRange/#kotlin.Pair[kotlin.Int,kotlin.Int]/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/index-range-to-pos-range.html
 $dokka.location:dev.yorkie.document.json/JsonTree/indexToPath/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-tree/index-to-path.html

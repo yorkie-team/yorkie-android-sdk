@@ -597,9 +597,10 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private suspend fun waitForInitialization(documentKey: Document.Key) {
-        val attachment = attachments.value[documentKey] ?: return
-        if (attachment.syncMode == SyncMode.Realtime) {
-            attachment.document.presences.first { it != UninitializedPresences }
+        val attachment = attachments.first { documentKey in it.keys }[documentKey] ?: return
+        attachment.document.presences.first { it != UninitializedPresences }
+        if (attachment.syncMode != SyncMode.Manual) {
+            attachment.document.events.first { it is Initialized }
         }
     }
 

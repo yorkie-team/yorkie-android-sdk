@@ -131,8 +131,19 @@ public class JsonTree internal constructor(
     public fun edit(
         fromIndex: Int,
         toIndex: Int,
+        vararg content: TreeNode,
+    ) {
+        edit(fromIndex, toIndex, 0, *content)
+    }
+
+    /**
+     * Edits this tree with the given node.
+     */
+    public fun edit(
+        fromIndex: Int,
+        toIndex: Int,
+        splitLevel: Int,
         vararg contents: TreeNode,
-        splitLevel: Int = 0,
     ) {
         require(fromIndex <= toIndex) {
             "from should be less than or equal to to"

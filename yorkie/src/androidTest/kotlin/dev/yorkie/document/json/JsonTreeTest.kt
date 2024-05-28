@@ -2,7 +2,6 @@ package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.reflect.TypeToken
-import dev.yorkie.TreeBasicTest
 import dev.yorkie.TreeTest
 import dev.yorkie.core.Client
 import dev.yorkie.core.Client.SyncMode.Manual
@@ -44,7 +43,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @TreeTest
-@TreeBasicTest
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class JsonTreeTest {

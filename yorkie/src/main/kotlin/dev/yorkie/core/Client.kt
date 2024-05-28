@@ -489,7 +489,7 @@ public class Client @VisibleForTesting internal constructor(
                 return@async SUCCESS
             }
 
-            document.setStatus(DocumentStatus.Attached)
+            document.status = DocumentStatus.Attached
             attachments.value += document.key to Attachment(
                 document,
                 response.documentId,
@@ -535,7 +535,7 @@ public class Client @VisibleForTesting internal constructor(
             val pack = response.changePack.toChangePack()
             document.applyChangePack(pack)
             if (document.status != DocumentStatus.Removed) {
-                document.setStatus(DocumentStatus.Detached)
+                document.status = DocumentStatus.Detached
                 attachments.value -= document.key
             }
             SUCCESS

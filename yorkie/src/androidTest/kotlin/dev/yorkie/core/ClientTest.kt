@@ -11,7 +11,9 @@ import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.json.JsonCounter
+import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonPrimitive
+import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTreeTest.Companion.assertTreesXmlEquals
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
@@ -695,6 +697,76 @@ class ClientTest {
             c1.deactivateAsync().await()
             c1.close()
             d1.close()
+        }
+    }
+
+    @Test
+    fun test_avoid_unnecessary_syncs_in_push_only() {
+        withTwoClientsAndDocuments { c1, _, d1, d2, _ ->
+            val d1SyncEvents = mutableListOf<SyncStatusChanged>()
+            val d2SyncEvents = mutableListOf<SyncStatusChanged>()
+            val collectJobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<SyncStatusChanged>().collect(d1SyncEvents::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filterIsInstance<SyncStatusChanged>().collect(d2SyncEvents::add)
+                },
+            )
+
+            d1.updateAsync { root, _ ->
+                root.setNewText("t").edit(0, 0, "a")
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d2SyncEvents.isEmpty()) {
+                    delay(50)
+                }
+            }
+
+            fun JsonObject.rootText() = getAs<JsonText>("t")
+
+            assertIs<SyncStatusChanged.Synced>(d2SyncEvents.last())
+            assertEquals("a", d1.getRoot().rootText().toString())
+            assertEquals("a", d2.getRoot().rootText().toString())
+
+            d1SyncEvents.clear()
+            c1.changeSyncMode(d1, RealtimePushOnly)
+            d2.updateAsync { root, _ ->
+                root.rootText().edit(1, 1, "b")
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d2SyncEvents.size < 2) {
+                    delay(50)
+                }
+            }
+            assertIs<SyncStatusChanged.Synced>(d2SyncEvents.last())
+
+            d2.updateAsync { root, _ ->
+                root.rootText().edit(2, 2, "c")
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d2SyncEvents.size < 3) {
+                    delay(50)
+                }
+            }
+            assertIs<SyncStatusChanged.Synced>(d2SyncEvents.last())
+
+            assertTrue(d1SyncEvents.isEmpty())
+            c1.changeSyncMode(d1, Realtime)
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1SyncEvents.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<SyncStatusChanged.Synced>(d1SyncEvents.last())
+            assertEquals("abc", d1.getRoot().rootText().toString())
+            assertEquals("abc", d2.getRoot().rootText().toString())
+
+            collectJobs.forEach(Job::cancel)
         }
     }
 

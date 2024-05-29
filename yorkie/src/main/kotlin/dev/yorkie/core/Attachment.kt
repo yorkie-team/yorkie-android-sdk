@@ -7,4 +7,13 @@ internal data class Attachment(
     val documentID: String,
     val syncMode: Client.SyncMode = Client.SyncMode.Realtime,
     val remoteChangeEventReceived: Boolean = false,
-)
+) {
+
+    fun needRealTimeSync(): Boolean {
+        return if (syncMode == Client.SyncMode.RealtimePushOnly) {
+            document.hasLocalChanges
+        } else {
+            syncMode.needRealTimeSync
+        }
+    }
+}

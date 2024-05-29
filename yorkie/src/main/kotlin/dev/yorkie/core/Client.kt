@@ -182,7 +182,7 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private fun filterRealTimeSyncNeeded() = attachments.value.filterValues { attachment ->
-        attachment.syncMode.needRealTimeSync &&
+        attachment.needRealTimeSync() &&
             (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
     }.map { (key, attachment) ->
         attachments.value += key to attachment.copy(remoteChangeEventReceived = false)

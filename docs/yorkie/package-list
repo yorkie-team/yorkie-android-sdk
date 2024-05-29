@@ -74,6 +74,17 @@ $dokka.location:dev.yorkie.document.crdt/RgaTreeSplitPos/absoluteID/#/PointingTo
 $dokka.location:dev.yorkie.document.crdt/RgaTreeSplitPos/id/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rga-tree-split-pos/id.html
 $dokka.location:dev.yorkie.document.crdt/RgaTreeSplitPos/relativeOffSet/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rga-tree-split-pos/relative-off-set.html
 $dokka.location:dev.yorkie.document.crdt/RgaTreeSplitPos/toStruct/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rga-tree-split-pos/to-struct.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/index.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode/RhtNode/#kotlin.String#kotlin.String#dev.yorkie.document.time.TimeTicket#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/-rht-node.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode/executedAt/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/executed-at.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode/isRemoved/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/is-removed.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode/key/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/key.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode/removedAt/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/removed-at.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/value.html
+$dokka.location:dev.yorkie.document.crdt/RhtSetResult///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/index.html
+$dokka.location:dev.yorkie.document.crdt/RhtSetResult/RhtSetResult/#dev.yorkie.document.crdt.RhtNode?#dev.yorkie.document.crdt.RhtNode?/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/-rht-set-result.html
+$dokka.location:dev.yorkie.document.crdt/RhtSetResult/new/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/new.html
+$dokka.location:dev.yorkie.document.crdt/RhtSetResult/prev/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/prev.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/index.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/TextWithAttributes/#kotlin.Pair[kotlin.String,kotlin.collections.Map[kotlin.String,kotlin.String]]/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/-text-with-attributes.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/attributes.html

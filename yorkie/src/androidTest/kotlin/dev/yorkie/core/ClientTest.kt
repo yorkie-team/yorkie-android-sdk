@@ -769,4 +769,75 @@ class ClientTest {
             collectJobs.forEach(Job::cancel)
         }
     }
+
+    @Test
+    fun test_prevent_remote_changes_in_sync_off() {
+        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+            val d1Events = mutableListOf<Document.Event>()
+            val d2Events = mutableListOf<Document.Event>()
+            val collectJobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filter { it is RemoteChange || it is LocalChange }
+                        .collect(d1Events::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filter { it is RemoteChange || it is LocalChange }
+                        .collect(d2Events::add)
+                },
+            )
+
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("doc") {
+                        element("p") { text { "12" } }
+                        element("p") { text { "34" } }
+                    },
+                )
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d2Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<RemoteChange>(d2Events.first())
+            assertTreesXmlEquals("<doc><p>12</p><p>34</p></doc>", d1, d2)
+
+            d1.updateAsync { root, _ ->
+                root.rootTree().edit(2, 2, text { "a" })
+            }.await()
+            c1.syncAsync().await()
+
+            // Simulate the situation in the runSyncLoop where a pushpull request has been sent
+            // but a response has not yet been received.
+            d2Events.clear()
+            val deferred = c2.syncAsync()
+            c2.changeSyncMode(d2, RealtimeSyncOff)
+            deferred.await()
+
+            // In push-only mode, remote-change events should not occur.
+            d2Events.clear()
+            c2.changeSyncMode(d2, RealtimeSyncOff)
+
+            delay(100) // Keep the sync-off state.
+            assertTrue(d2Events.none { it is RemoteChange })
+
+            c2.changeSyncMode(d2, Realtime)
+
+            d2.updateAsync { root, _ ->
+                root.rootTree().edit(2, 2, text { "b" })
+            }.await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.size < 3) {
+                    delay(50)
+                }
+            }
+            assertIs<RemoteChange>(d1Events.last())
+            assertTreesXmlEquals("<doc><p>1ba2</p><p>34</p></doc>", d1)
+
+            collectJobs.forEach(Job::cancel)
+        }
+    }
 }

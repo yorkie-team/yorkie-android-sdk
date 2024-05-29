@@ -237,8 +237,10 @@ public class Client @VisibleForTesting internal constructor(
                         val responsePack = response.changePack.toChangePack()
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
                         // PushPull, ignore the response when the syncMode is PushOnly.
+                        val currentSyncMode = attachments.value[document.key]?.syncMode
                         if (responsePack.hasChanges &&
-                            attachments.value[document.key]?.syncMode == SyncMode.RealtimePushOnly
+                            currentSyncMode == SyncMode.RealtimePushOnly ||
+                            currentSyncMode == SyncMode.RealtimeSyncOff
                         ) {
                             return@runCatching
                         }

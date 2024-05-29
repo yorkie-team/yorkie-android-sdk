@@ -26,13 +26,21 @@ internal data class CrdtTree(
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket? = null,
     override var _removedAt: TimeTicket? = null,
-) : CrdtGCElement() {
+) : CrdtElement(), GCParent<CrdtTreeNode>, GCCrdtElement {
+
+    override val gcPairs: List<GCPair<*>>
+        get() = buildList {
+            indexTree.traverse { node, _ ->
+                if (node.removedAt != null) {
+                    add(GCPair(this@CrdtTree, node))
+                }
+                addAll(node.gcPairs)
+            }
+        }
 
     internal val indexTree = IndexTree(root)
 
     private val nodeMapByID = TreeMap<CrdtTreeNodeID, CrdtTreeNode>()
-
-    private val removedNodeMap = mutableMapOf<Pair<TimeTicket, Int>, CrdtTreeNode>()
 
     val rootTreeNode: TreeNode
         get() = indexTree.root.toTreeNode()
@@ -42,9 +50,6 @@ internal data class CrdtTree(
             nodeMapByID[node.id] = node
         }
     }
-
-    override val removedNodesLength: Int
-        get() = removedNodeMap.size
 
     val size: Int
         get() = indexTree.size
@@ -57,12 +62,13 @@ internal data class CrdtTree(
         attributes: Map<String, String>?,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Pair<List<TreeChange>, Map<ActorID, TimeTicket>> {
+    ): TreeOperationResult {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
         val changes = mutableListOf<TreeChange>()
         val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
 
+        val gcPairs = mutableListOf<GCPair<RhtNode>>()
         traverseInPosRange(
             fromParent = fromParent,
             fromLeft = fromLeft,
@@ -81,8 +87,12 @@ internal data class CrdtTree(
                     createdAtMapByActor[actorID] = createdAt
                 }
 
-                val affectedKeys = node.setAttributes(attributes, executedAt)
-                if (affectedKeys.isNotEmpty()) {
+                val updatedAttrPairs = node.setAttributes(attributes, executedAt)
+                val affectedAttrs = updatedAttrPairs.fold(emptyMap<String, String>()) { acc, pair ->
+                    val curr = pair.new
+                    acc + curr?.let { mapOf(curr.key to attributes[curr.key].orEmpty()) }.orEmpty()
+                }
+                if (affectedAttrs.isNotEmpty()) {
                     TreeChange(
                         type = TreeChangeType.Style,
                         from = toIndex(fromParent, fromLeft),
@@ -90,12 +100,18 @@ internal data class CrdtTree(
                         fromPath = toPath(fromParent, fromLeft),
                         toPath = toPath(toParent, toLeft),
                         actorID = executedAt.actorID,
-                        attributes = attributes.filterKeys { it in affectedKeys },
+                        attributes = attributes.filterKeys { it in affectedAttrs },
                     ).let(changes::add)
+                }
+
+                updatedAttrPairs.forEach { (prev, _) ->
+                    prev?.let {
+                        gcPairs.add(GCPair(node, prev))
+                    }
                 }
             }
         }
-        return changes to createdAtMapByActor
+        return TreeOperationResult(changes, gcPairs, createdAtMapByActor)
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {
@@ -146,7 +162,7 @@ internal data class CrdtTree(
         executedAt: TimeTicket,
         issueTimeTicket: (() -> TimeTicket)? = null,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Pair<List<TreeChange>, Map<ActorID, TimeTicket>> {
+    ): TreeOperationResult {
         // 01. find nodes from the given range and split nodes.
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
@@ -196,10 +212,11 @@ internal data class CrdtTree(
         val changes = makeDeletionChanges(tokensToBeRemoved, executedAt).toMutableList()
 
         // 02. Delete: delete the nodes that are marked as removed.
+        val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
         nodesToBeRemoved.forEach { node ->
             node.remove(executedAt)
             if (node.isRemoved) {
-                removedNodeMap[node.createdAt to node.id.offset] = node
+                gcPairs.add(GCPair(this, node))
             }
         }
 
@@ -248,7 +265,7 @@ internal data class CrdtTree(
                     // make new nodes as tombstone immediately
                     if (fromParent.isRemoved) {
                         node.remove(executedAt)
-                        removedNodeMap[node.id.createdAt to node.id.offset] = node
+                        gcPairs.add(GCPair(this, node))
                     }
                     nodeMapByID[node.id] = node
                 }
@@ -277,7 +294,7 @@ internal data class CrdtTree(
                 }
             }
         }
-        return changes to maxCreatedAtMap
+        return TreeOperationResult(changes, gcPairs, maxCreatedAtMap)
     }
 
     /**
@@ -400,29 +417,31 @@ internal data class CrdtTree(
         range: TreePosRange,
         attributeToRemove: List<String>,
         executedAt: TimeTicket,
-    ): List<TreeChange> {
+    ): TreeOperationResult {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
-        return buildList {
-            traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
-                if (!node.isRemoved && !node.isText && attributeToRemove.isNotEmpty()) {
-                    attributeToRemove.forEach { key ->
-                        node.removeAttribute(key, executedAt)
-                    }
-                    add(
-                        TreeChange(
-                            type = TreeChangeType.RemoveStyle,
-                            from = toIndex(fromParent, fromLeft),
-                            to = toIndex(toParent, toLeft),
-                            fromPath = toPath(fromParent, fromLeft),
-                            toPath = toPath(toParent, toLeft),
-                            actorID = executedAt.actorID,
-                            attributesToRemove = attributeToRemove,
-                        ),
-                    )
+
+        val changes = mutableListOf<TreeChange>()
+        val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
+            if (!node.isRemoved && !node.isText && attributeToRemove.isNotEmpty()) {
+                attributeToRemove.forEach { key ->
+                    node.removeAttribute(key, executedAt)
+                        .map { rhtNode -> GCPair(node, rhtNode) }
+                        .let(gcPairs::addAll)
                 }
+                TreeChange(
+                    type = TreeChangeType.RemoveStyle,
+                    from = toIndex(fromParent, fromLeft),
+                    to = toIndex(toParent, toLeft),
+                    fromPath = toPath(fromParent, fromLeft),
+                    toPath = toPath(toParent, toLeft),
+                    actorID = executedAt.actorID,
+                    attributesToRemove = attributeToRemove,
+                ).let(changes::add)
             }
         }
+        return TreeOperationResult(changes, gcPairs)
     }
 
     private fun traverseAll(
@@ -520,27 +539,12 @@ internal data class CrdtTree(
     }
 
     /**
-     * Physically deletes nodes that have been removed.
-     */
-    override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
-        val nodesToBeRemoved = removedNodeMap.filterValues { node ->
-            node.removedAt != null && node.removedAt <= executedAt
-        }.values.toMutableSet()
-
-        nodesToBeRemoved.forEach { node ->
-            node.parent?.removeChild(node)
-            nodeMapByID.remove(node.id)
-            delete(node)
-            removedNodeMap.remove(node.createdAt to node.id.offset)
-        }
-
-        return nodesToBeRemoved.size
-    }
-
-    /**
      * Physically deletes the given [node] from [IndexTree].
      */
-    private fun delete(node: CrdtTreeNode) {
+    override fun delete(node: CrdtTreeNode) {
+        node.parent?.removeChild(node)
+        nodeMapByID.remove(node.id)
+
         val insPrevID = node.insPrevID
         val insNextID = node.insNextID
 
@@ -721,7 +725,12 @@ internal data class CrdtTreeNode private constructor(
     private val _value: String? = null,
     override val childNodes: IndexTreeNodeList<CrdtTreeNode> = IndexTreeNodeList(mutableListOf()),
     private val _attributes: Rht = Rht(),
-) : IndexTreeNode<CrdtTreeNode>() {
+) : IndexTreeNode<CrdtTreeNode>(), GCChild, GCParent<RhtNode> {
+
+    val gcPairs: List<GCPair<*>>
+        get() = _attributes
+            .filter { node -> node.removedAt != null }
+            .map { node -> GCPair(this, node) }
 
     val attributes: Map<String, String>
         get() = _attributes.nodeKeyValueMap
@@ -732,7 +741,7 @@ internal data class CrdtTreeNode private constructor(
     val createdAt: TimeTicket
         get() = id.createdAt
 
-    var removedAt: TimeTicket? = null
+    override var removedAt: TimeTicket? = null
         private set(value) {
             val removed = field == null && value != null
             field = value
@@ -766,7 +775,7 @@ internal data class CrdtTreeNode private constructor(
 
     var insNextID: CrdtTreeNodeID? = null
 
-    val rhtNodes: List<Rht.Node>
+    val rhtNodes: List<RhtNode>
         get() = _attributes.toList()
 
     init {
@@ -818,14 +827,15 @@ internal data class CrdtTreeNode private constructor(
         return split
     }
 
-    fun setAttributes(attributes: Map<String, String>, executedAt: TimeTicket): Set<String> {
-        return attributes.filter { (key, value) ->
-            _attributes.set(key, value, executedAt)
-        }.keys.toSet()
+    fun setAttributes(
+        attributes: Map<String, String>,
+        executedAt: TimeTicket,
+    ): List<RhtSetResult> {
+        return attributes.map { (key, value) -> _attributes.set(key, value, executedAt) }
     }
 
-    fun removeAttribute(key: String, executedAt: TimeTicket) {
-        _attributes.remove(key, executedAt)
+    fun removeAttribute(key: String, executedAt: TimeTicket): List<RhtNode> {
+        return _attributes.remove(key, executedAt)
     }
 
     /**
@@ -884,6 +894,10 @@ internal data class CrdtTreeNode private constructor(
             return false
         }
         return createdAt <= maxCreatedAt && (removedAt == null || removedAt < executedAt)
+    }
+
+    override fun delete(node: RhtNode) {
+        _attributes.delete(node)
     }
 
     @Suppress("FunctionName")

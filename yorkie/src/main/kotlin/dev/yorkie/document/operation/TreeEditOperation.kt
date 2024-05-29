@@ -39,7 +39,7 @@ internal data class TreeEditOperation(
         }
 
         val editedAt = executedAt
-        val changes =
+        val (changes, gcPairs) =
             tree.edit(
                 fromPos to toPos,
                 contents?.map(CrdtTreeNode::deepCopy),
@@ -47,11 +47,8 @@ internal data class TreeEditOperation(
                 editedAt,
                 issueTimeTicket(editedAt),
                 maxCreatedAtMapByActor,
-            ).first
-
-        if (fromPos != toPos) {
-            root.registerElementHasRemovedNodes(tree)
-        }
+            )
+        gcPairs.forEach(root::registerGCPair)
 
         return changes.map {
             OperationInfo.TreeEditOpInfo(

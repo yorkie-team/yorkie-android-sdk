@@ -100,7 +100,7 @@ public class Document(
 
     @VisibleForTesting
     public val garbageLength: Int
-        get() = root.getGarbageLength()
+        get() = root.garbageLength
 
     private val presenceEventQueue = mutableListOf<PresenceChanged>()
     private val pendingPresenceEvents = mutableListOf<PresenceChanged>()

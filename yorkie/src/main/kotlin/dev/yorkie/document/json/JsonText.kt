@@ -45,7 +45,7 @@ public class JsonText internal constructor(
         logDebug(TAG, "EDIT: f:$fromIndex->${range.first}, t:$toIndex->${range.second} c:$content")
 
         val executedAt = context.issueTimeTicket()
-        val (maxCreatedAtMapByActor, _, rangeAfterEdit) = runCatching {
+        val (maxCreatedAtMapByActor, _, rangeAfterEdit, gcPairs) = runCatching {
             target.edit(range, content, executedAt, attributes)
         }.getOrElse {
             when (it) {
@@ -57,6 +57,7 @@ public class JsonText internal constructor(
                 else -> throw it
             }
         }
+        gcPairs.forEach(context::registerGCPair)
 
         context.push(
             EditOperation(
@@ -70,10 +71,7 @@ public class JsonText internal constructor(
             ),
         )
 
-        if (range.first != range.second) {
-            context.registerElementHasRemovedNodes(target)
-        }
-        return rangeAfterEdit?.let(target::findIndexesFromRange)
+        return rangeAfterEdit.let(target::findIndexesFromRange)
     }
 
     /**
@@ -98,8 +96,7 @@ public class JsonText internal constructor(
 
         val executedAt = context.issueTimeTicket()
         runCatching {
-            val maxCreatedAtMapByActor =
-                target.style(range, attributes, executedAt).createdAtMapByActor
+            val (maxCreatedAtMapByActor, _, gcPairs) = target.style(range, attributes, executedAt)
             context.push(
                 StyleOperation(
                     parentCreatedAt = target.createdAt,
@@ -110,6 +107,7 @@ public class JsonText internal constructor(
                     maxCreatedAtMapByActor = maxCreatedAtMapByActor,
                 ),
             )
+            gcPairs.forEach(context::registerGCPair)
         }.getOrElse {
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {

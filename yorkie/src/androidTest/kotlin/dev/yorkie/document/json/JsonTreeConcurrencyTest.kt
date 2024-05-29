@@ -2,7 +2,6 @@ package dev.yorkie.document.json
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.TreeTest
-import dev.yorkie.core.GENERAL_TIMEOUT
 import dev.yorkie.core.createClient
 import dev.yorkie.document.json.OpCode.EditOpCode
 import dev.yorkie.document.json.TestOperation.EditOperationType
@@ -344,7 +343,7 @@ class JsonTreeConcurrencyTest {
                 op1s.forEach { op1 ->
                     op2s.forEach { op2 ->
                         val testDesc = "$desc-${range.desc}(${op1.desc},${op2.desc})"
-                        val result = withTimeout(GENERAL_TIMEOUT) {
+                        val result = withTimeout(10_000) {
                             runTest(c1, c2, root, initialXml, range, op1, op2, testDesc)
                         }
                         assertEquals(result.after.first, result.after.second)

@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 
 class CrdtTreeTest {
@@ -104,14 +105,8 @@ class CrdtTreeTest {
         // 02. delete b from first paragraph
         //       0   1 2    3   4 5 6    7
         // <root> <p> a </p> <p> c d </p> </root>
-        target.edit(2 to 6, null)
-        // TODO(7hong13): should be resolved after the JS SDK implementation
-        // assertEquals("<root><p>ad</p></root>", target.toXml())
-
-        // 03. insert a new text node at the start of the first paragraph.
-        target.edit(1 to 1, CrdtTreeText(issuePos(), "@").toList())
-        // TODO(7hong13): should be resolved after the JS SDK implementation
-        // assertEquals("root><p>@ad</p></root>", target.toXml())
+        target.edit(2 to 3, null)
+        assertEquals("<root><p>a</p><p>cd</p></root>", target.toXml())
     }
 
     @Test
@@ -192,62 +187,62 @@ class CrdtTreeTest {
     }
 
     @Test
+    @Ignore("should be resolved after the JS SDK implementation")
     fun `should merge and edit different levels with edit`() {
-        // TODO(7hong13): should be resolved after the JS SDK implementation
-//        fun initializeTree() {
-//            setUp()
-//            target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList(), issueTime())
-//            target.edit(1 to 1, CrdtTreeElement(issuePos(), "b").toList(), issueTime())
-//            target.edit(2 to 2, CrdtTreeElement(issuePos(), "i").toList(), issueTime())
-//            target.edit(3 to 3, CrdtTreeText(issuePos(), "ab").toList(), issueTime())
-//            assertEquals("<root><p><b><i>ab</i></b></p></root>", target.toXml())
-//        }
-//
-//        // 01. edit between two element nodes in the same hierarchy.
-//        //       0   1   2   3 4 5    6    7    8
-//        // <root> <p> <b> <i> a b </i> </b> </p> </root>
-//        initializeTree()
-//        target.edit(5 to 6, null, issueTime())
-//        assertEquals("<root><p><b>ab</b></p></root>", target.toXml())
-//
-//        // 02. edit between two element nodes in same hierarchy.
-//        initializeTree()
-//        target.edit(6 to 7, null, issueTime())
-//        assertEquals("<root><p><i>ab</i></p></root>", target.toXml())
-//
-//        // 03. edit between text and element node in different hierarchy.
-//        initializeTree()
-//        target.edit(4 to 6, null, issueTime())
-//        assertEquals("<root><p><b>a</b></p></root>", target.toXml())
-//
-//        // 04. edit between text and element node in different hierarchy.
-//        initializeTree()
-//        target.edit(5 to 7, null, issueTime())
-//        assertEquals("<root><p>ab</p></root>", target.toXml())
-//
-//        // 05. edit between text and element node in different hierarchy.
-//        initializeTree()
-//        target.edit(4 to 7, null, issueTime())
-//        assertEquals("<root><p>a</p></root>", target.toXml())
-//
-//        // 06. edit between text and element node in different hierarchy.
-//        initializeTree()
-//        target.edit(3 to 7, null, issueTime())
-//        assertEquals("<root><p></p></root>", target.toXml())
-//
-//        // 07. edit between text and element node in same hierarchy.
-//        setUp()
-//        target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList(), issueTime())
-//        target.edit(1 to 1, CrdtTreeText(issuePos(), "ab").toList(), issueTime())
-//        target.edit(4 to 4, CrdtTreeElement(issuePos(), "p").toList(), issueTime())
-//        target.edit(5 to 5, CrdtTreeElement(issuePos(), "b").toList(), issueTime())
-//        target.edit(6 to 6, CrdtTreeText(issuePos(), "cd").toList(), issueTime())
-//        target.edit(10 to 10, CrdtTreeElement(issuePos(), "p").toList(), issueTime())
-//        target.edit(11 to 11, CrdtTreeText(issuePos(), "ef").toList(), issueTime())
-//        assertEquals("<root><p>ab</p><p><b>cd</b></p><p>ef</p></root>", target.toXml())
-//
-//        target.edit(9 to 10, null, issueTime())
-//        assertEquals("<root><p>ab</p><b>cd</b><p>ef</p></root>", target.toXml())
+        fun initializeTree() {
+            setUp()
+            target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+            target.edit(1 to 1, CrdtTreeElement(issuePos(), "b").toList())
+            target.edit(2 to 2, CrdtTreeElement(issuePos(), "i").toList())
+            target.edit(3 to 3, CrdtTreeText(issuePos(), "ab").toList())
+            assertEquals("<root><p><b><i>ab</i></b></p></root>", target.toXml())
+        }
+
+        // 01. edit between two element nodes in the same hierarchy.
+        //       0   1   2   3 4 5    6    7    8
+        // <root> <p> <b> <i> a b </i> </b> </p> </root>
+        initializeTree()
+        target.edit(5 to 6, null)
+        assertEquals("<root><p><b>ab</b></p></root>", target.toXml())
+
+        // 02. edit between two element nodes in same hierarchy.
+        initializeTree()
+        target.edit(6 to 7, null)
+        assertEquals("<root><p><i>ab</i></p></root>", target.toXml())
+
+        // 03. edit between text and element node in different hierarchy.
+        initializeTree()
+        target.edit(4 to 6, null)
+        assertEquals("<root><p><b>a</b></p></root>", target.toXml())
+
+        // 04. edit between text and element node in different hierarchy.
+        initializeTree()
+        target.edit(5 to 7, null)
+        assertEquals("<root><p>ab</p></root>", target.toXml())
+
+        // 05. edit between text and element node in different hierarchy.
+        initializeTree()
+        target.edit(4 to 7, null)
+        assertEquals("<root><p>a</p></root>", target.toXml())
+
+        // 06. edit between text and element node in different hierarchy.
+        initializeTree()
+        target.edit(3 to 7, null)
+        assertEquals("<root><p></p></root>", target.toXml())
+
+        // 07. edit between text and element node in same hierarchy.
+        setUp()
+        target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+        target.edit(1 to 1, CrdtTreeText(issuePos(), "ab").toList())
+        target.edit(4 to 4, CrdtTreeElement(issuePos(), "p").toList())
+        target.edit(5 to 5, CrdtTreeElement(issuePos(), "b").toList())
+        target.edit(6 to 6, CrdtTreeText(issuePos(), "cd").toList())
+        target.edit(10 to 10, CrdtTreeElement(issuePos(), "p").toList())
+        target.edit(11 to 11, CrdtTreeText(issuePos(), "ef").toList())
+        assertEquals("<root><p>ab</p><p><b>cd</b></p><p>ef</p></root>", target.toXml())
+
+        target.edit(9 to 10, null)
+        assertEquals("<root><p>ab</p><b>cd</b><p>ef</p></root>", target.toXml())
     }
 
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)

@@ -28,14 +28,23 @@ internal data class TestOperation(val code: OpCode, val key: String, val value: 
 internal interface OpCode {
 
     enum class RhtCode : OpCode {
-        NoOp, Set, Remove
+        NoOp,
+        Set,
+        Remove,
     }
 
     enum class TreeCode : OpCode {
-        NoOp, Style, RemoveStyle, DeleteNode, GC
+        NoOp,
+        Style,
+        RemoveStyle,
+        DeleteNode,
+        GC,
     }
 
     enum class TextCode : OpCode {
-        NoOp, Style, DeleteNode, GC,
+        NoOp,
+        Style,
+        DeleteNode,
+        GC,
     }
 }

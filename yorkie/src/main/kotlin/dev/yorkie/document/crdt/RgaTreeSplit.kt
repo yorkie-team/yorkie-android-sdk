@@ -19,7 +19,8 @@ internal typealias RgaTreeSplitPosRange = Pair<RgaTreeSplitPos, RgaTreeSplitPos>
  * reduce the size of CRDT metadata. When an edit occurs on a block,
  * the block is split.
  */
-internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNode<T>>,
+internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
+    Iterable<RgaTreeSplitNode<T>>,
     GCParent<RgaTreeSplitNode<T>> {
     @Suppress("UNCHECKED_CAST")
     val head = RgaTreeSplitNode(InitialNodeID, InitialNodeValue) as RgaTreeSplitNode<T>

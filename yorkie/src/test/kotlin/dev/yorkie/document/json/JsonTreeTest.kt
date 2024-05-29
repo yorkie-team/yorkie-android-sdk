@@ -3,10 +3,6 @@ package dev.yorkie.document.json
 import dev.yorkie.DummyContext
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
-import dev.yorkie.document.change.ChangeContext
-import dev.yorkie.document.change.ChangeID
-import dev.yorkie.document.crdt.CrdtObject
-import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement

@@ -1,7 +1,5 @@
 package dev.yorkie.document.crdt
 
-import dev.yorkie.document.change.ChangeContext
-import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.time.TimeTicket
@@ -252,7 +250,6 @@ class CrdtTreeTest {
     }
 
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)
-
 
     private fun CrdtTreeNode.toList() = listOf(this)
 

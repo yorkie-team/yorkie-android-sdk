@@ -181,13 +181,11 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private fun filterRealTimeSyncNeeded() = attachments.value.filterValues { attachment ->
-        attachment.syncMode.needRealTimeSync &&
-            (attachment.document.hasLocalChanges || attachment.remoteChangeEventReceived)
-    }.map { (key, attachment) ->
-        attachments.value += key to attachment.copy(remoteChangeEventReceived = false)
-        attachment
-    }
+    private fun filterRealTimeSyncNeeded() =
+        attachments.value.filterValues(Attachment::needRealTimeSync).map { (key, attachment) ->
+            attachments.value += key to attachment.copy(remoteChangeEventReceived = false)
+            attachment
+        }
 
     /**
      * Pushes local changes of the attached documents to the server and

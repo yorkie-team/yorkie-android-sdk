@@ -831,9 +831,7 @@ internal data class CrdtTreeNode private constructor(
         attributes: Map<String, String>,
         executedAt: TimeTicket,
     ): List<RhtSetResult> {
-        return attributes.map { (key, value) ->
-            _attributes.set(key, value, executedAt)
-        }
+        return attributes.map { (key, value) -> _attributes.set(key, value, executedAt) }
     }
 
     fun removeAttribute(key: String, executedAt: TimeTicket): List<RhtNode> {

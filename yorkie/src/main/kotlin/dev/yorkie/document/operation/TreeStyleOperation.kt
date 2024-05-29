@@ -35,12 +35,14 @@ internal data class TreeStyleOperation(
 
         return when {
             attributes?.isNotEmpty() == true -> {
-                tree.style(
+                val (changes, gcPairs) = tree.style(
                     fromPos to toPos,
                     attributes,
                     executedAt,
                     maxCreatedAtMapByActor,
-                ).first.map {
+                )
+                gcPairs.forEach(root::registerGCPair)
+                changes.map {
                     TreeStyleOpInfo(
                         it.from,
                         it.to,
@@ -52,7 +54,13 @@ internal data class TreeStyleOperation(
             }
 
             attributesToRemove?.isNotEmpty() == true -> {
-                tree.removeStyle(fromPos to toPos, attributesToRemove, executedAt).map {
+                val (changes, gcPairs) = tree.removeStyle(
+                    fromPos to toPos,
+                    attributesToRemove,
+                    executedAt,
+                )
+                gcPairs.forEach(root::registerGCPair)
+                changes.map {
                     TreeStyleOpInfo(
                         it.from,
                         it.to,

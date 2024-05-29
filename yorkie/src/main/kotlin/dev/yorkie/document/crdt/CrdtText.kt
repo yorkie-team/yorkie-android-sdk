@@ -11,9 +11,17 @@ internal data class CrdtText(
     override val createdAt: TimeTicket,
     override var _movedAt: TimeTicket? = null,
     override var _removedAt: TimeTicket? = null,
-) : CrdtGCElement() {
-    override val removedNodesLength: Int
-        get() = rgaTreeSplit.removedNodesLength
+) : CrdtElement(), GCCrdtElement {
+
+    override val gcPairs: List<GCPair<*>>
+        get() = buildList {
+            rgaTreeSplit.forEach { node ->
+                if (node.removedAt != null) {
+                    add(GCPair(rgaTreeSplit, node))
+                }
+                addAll(node.value.gcPairs)
+            }
+        }
 
     val values: List<TextWithAttributes>
         get() = rgaTreeSplit.filterNot {
@@ -34,7 +42,7 @@ internal data class CrdtText(
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): TextOperationResult {
+    ): TextEditResult {
         val textValue = if (value.isNotEmpty()) {
             TextValue(value).apply {
                 attributes?.forEach { setAttribute(it.key, it.value, executedAt) }
@@ -43,7 +51,7 @@ internal data class CrdtText(
             null
         }
 
-        val (caretPos, maxCreatedAtMap, contentChanges) = rgaTreeSplit.edit(
+        val (caretPos, maxCreatedAtMap, contentChanges, gcPairs) = rgaTreeSplit.edit(
             range,
             executedAt,
             textValue,
@@ -63,7 +71,7 @@ internal data class CrdtText(
         if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        return TextOperationResult(maxCreatedAtMap, changes, caretPos to caretPos)
+        return TextEditResult(maxCreatedAtMap, changes, caretPos to caretPos, gcPairs)
     }
 
     /**
@@ -76,7 +84,7 @@ internal data class CrdtText(
         attributes: Map<String, String>,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): TextOperationResult {
+    ): TextStyleResult {
         // 1. Split nodes with from and to.
         val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
         val fromRight = rgaTreeSplit.findNodeWithSplit(range.first, executedAt).second
@@ -102,11 +110,18 @@ internal data class CrdtText(
                 }
             }
         }
+
+        val gcPairs = mutableListOf<GCPair<RhtNode>>()
         val changes = toBeStyleds
             .filterNot { it.isRemoved }
             .map { node ->
                 val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
-                attributes.forEach { node.value.setAttribute(it.key, it.value, executedAt) }
+                attributes.forEach {
+                    val prev = node.value.setAttribute(it.key, it.value, executedAt).prev
+                    prev?.let {
+                        gcPairs.add(GCPair(node.value, prev))
+                    }
+                }
                 TextChange(
                     TextChangeType.Style,
                     executedAt.actorID,
@@ -117,7 +132,7 @@ internal data class CrdtText(
                 )
             }
 
-        return TextOperationResult(createdAtMapByActor, changes)
+        return TextStyleResult(createdAtMapByActor, changes, gcPairs)
     }
 
     /**
@@ -137,10 +152,6 @@ internal data class CrdtText(
      */
     fun findIndexesFromRange(range: RgaTreeSplitPosRange): Pair<Int, Int> {
         return rgaTreeSplit.findIndexesFromRange(range)
-    }
-
-    override fun deleteRemovedNodesBefore(executedAt: TimeTicket): Int {
-        return rgaTreeSplit.deleteRemovedNodesBefore(executedAt)
     }
 
     override fun deepCopy(): CrdtElement {

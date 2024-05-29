@@ -19,7 +19,8 @@ internal typealias RgaTreeSplitPosRange = Pair<RgaTreeSplitPos, RgaTreeSplitPos>
  * reduce the size of CRDT metadata. When an edit occurs on a block,
  * the block is split.
  */
-internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNode<T>> {
+internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNode<T>>,
+    GCParent<RgaTreeSplitNode<T>> {
     @Suppress("UNCHECKED_CAST")
     val head = RgaTreeSplitNode(InitialNodeID, InitialNodeValue) as RgaTreeSplitNode<T>
     private val treeByIndex = SplayTreeSet<RgaTreeSplitNode<T>> {
@@ -28,13 +29,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     private val treeByID = TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>().apply {
         put(head.id, head)
     }
-    private val removedNodeMap = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
 
     val length
         get() = treeByIndex.length
-
-    val removedNodesLength
-        get() = removedNodeMap.size
 
     /**
      * Does following stpes.
@@ -48,14 +45,14 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         executedAt: TimeTicket,
         value: T?,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-    ): Triple<RgaTreeSplitPos, Map<ActorID, TimeTicket>, List<ContentChange>> {
+    ): RgaTreeSplitEditResult<T> {
         // 1. Split nodes.
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
         val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
 
         // 2. Delete between from and to.
         val nodesToDelete = findBetween(fromRight, toRight)
-        val (changes, maxCreatedAtMap, removedNodeMapByNodeKey) = deleteNodes(
+        val (changes, maxCreatedAtMap, removedNodes) = deleteNodes(
             nodesToDelete,
             executedAt,
             maxCreatedAtMapByActor,
@@ -89,11 +86,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
         }
 
         // 4. Add removed nodes.
-        removedNodeMapByNodeKey.forEach {
-            removedNodeMap[it.key] = it.value
-        }
+        val gcPairs = removedNodes.map { (_, node) -> GCPair(this, node) }
 
-        return Triple(caretPos, maxCreatedAtMap, changes)
+        return RgaTreeSplitEditResult(caretPos, maxCreatedAtMap, changes, gcPairs)
     }
 
     /**
@@ -206,7 +201,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
             maxCreatedAtMapByActor,
         )
         val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
-        val removedNodeMap = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
+        val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
 
         // First, we need to collect indexes for change.
         val changes = makeChanges(nodesToKeep, executedAt).toMutableList()
@@ -218,13 +213,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
             ) {
                 createdAtMapByActor[actorID] = node.id.createdAt
             }
-            removedNodeMap[node.id] = node
+            removedNodes[node.id] = node
             node.remove(executedAt)
         }
         // Finally, remove index nodes of tombstones.
         deleteIndexNodes(nodesToKeep)
 
-        return Triple(changes, createdAtMapByActor, removedNodeMap)
+        return Triple(changes, createdAtMapByActor, removedNodes)
     }
 
     private fun filterNodes(
@@ -346,27 +341,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> : Iterable<RgaTreeSplitNod
     }
 
     /**
-     * Physically deletes nodes that have been removed.
-     */
-    fun deleteRemovedNodesBefore(ticket: TimeTicket): Int {
-        var count = 0
-        removedNodeMap.toMap().forEach {
-            val node = it.value
-            if (node.isRemoved && node.removedAt <= ticket) {
-                treeByIndex.delete(node)
-                delete(node)
-                treeByID.remove(node.id)
-                removedNodeMap.remove(node.id)
-                count++
-            }
-        }
-        return count
-    }
-
-    /**
      * Physically deletes the given node from this [RgaTreeSplit].
      */
-    fun delete(node: RgaTreeSplitNode<T>) {
+    override fun delete(node: RgaTreeSplitNode<T>) {
         val prev = node.prev
         val next = node.next
         val insertionPrev = node.insertionPrev
@@ -458,7 +435,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     val id: RgaTreeSplitNodeID,
     private var _value: T,
     private var _removedAt: TimeTicket? = null,
-) {
+) : GCChild {
     var prev: RgaTreeSplitNode<T>? = null
         private set
     var next: RgaTreeSplitNode<T>? = null
@@ -486,7 +463,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     val isRemoved: Boolean
         get() = _removedAt != null
 
-    val removedAt: TimeTicket?
+    override val removedAt: TimeTicket?
         get() = _removedAt
 
     val value
@@ -530,7 +507,11 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
     fun canDelete(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
-        return createdAt <= maxCreatedAt && (isRemoved || _removedAt < executedAt)
+        val justRemoved = removedAt == null
+        if (createdAt <= maxCreatedAt && _removedAt < executedAt) {
+            return justRemoved
+        }
+        return false
     }
 
     /**

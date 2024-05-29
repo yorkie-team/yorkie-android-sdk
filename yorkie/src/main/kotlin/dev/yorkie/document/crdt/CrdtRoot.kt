@@ -21,26 +21,33 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         mutableMapOf(rootObject.createdAt to CrdtElementPair(rootObject))
 
     /**
-     * A hash set that contains the creation time of the removed element.
-     * It is used to find the removed element when executing garbage collection.
-     */
-    private val removedElementSetByCreatedAt = mutableSetOf<TimeTicket>()
-
-    /**
      * A hash set that contains the creation time of the element that has removed nodes.
      * It is used to find the element that has removed nodes when executing garbage collection.
      */
-    private val elementHasRemovedNodesSetByCreatedAt = mutableSetOf<TimeTicket>()
+    private val gcElementSetByCreatedAt = mutableSetOf<TimeTicket>()
+
+    /**
+     * A hash table that maps the IDString of GCChild to the
+     * element itself and its parent.
+     */
+    private val gcPairMap = mutableMapOf<GCChild, GCPair<*>>()
 
     val elementMapSize
         get() = elementPairMapByCreatedAt.size
 
-    val removedElementSetSize
-        get() = removedElementSetByCreatedAt.size
+    val garbageLength: Int
+        get() = getGarbageElementSetSize() + gcPairMap.size
 
     init {
-        rootObject.getDescendants { element: CrdtElement, parent: CrdtContainer ->
-            registerElement(element, parent)
+        registerElement(rootObject, null)
+
+        rootObject.getDescendants { element, _ ->
+            if (element.removedAt != null) {
+                registerRemovedElement(element)
+            }
+            if (element is GCCrdtElement) {
+                element.gcPairs.forEach(::registerGCPair)
+            }
             false
         }
     }
@@ -85,31 +92,39 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     /**
      * Registers the given [element] to the hash table.
      */
-    fun registerElement(element: CrdtElement, parent: CrdtContainer) {
+    fun registerElement(element: CrdtElement, parent: CrdtContainer?) {
         elementPairMapByCreatedAt[element.createdAt] = CrdtElementPair(element, parent)
+
+        if (element is CrdtContainer) {
+            element.getDescendants { _element, _parent ->
+                registerElement(_element, _parent)
+                false
+            }
+        }
     }
 
     /**
      * Registers the given [element] to the hash set.
      */
     fun registerRemovedElement(element: CrdtElement) {
-        removedElementSetByCreatedAt.add(element.createdAt)
+        gcElementSetByCreatedAt.add(element.createdAt)
     }
 
     /**
-     * Registers the given GC element to the hash set.
+     * Registers the given pair to hash table.
      */
-    fun registerElementHasRemovedNodes(element: CrdtGCElement) {
-        elementHasRemovedNodesSetByCreatedAt.add(element.createdAt)
+    fun registerGCPair(pair: GCPair<*>) {
+        val prev = gcPairMap[pair.child]
+        if (prev != null) {
+            gcPairMap.remove(pair.child)
+            return
+        }
+        gcPairMap[pair.child] = pair
     }
 
-    /**
-     * Returns length of nodes which can be garbage collected.
-     */
-    fun getGarbageLength(): Int {
-        var count = 0
+    private fun getGarbageElementSetSize(): Int {
         val seen = mutableSetOf<TimeTicket>()
-        removedElementSetByCreatedAt.forEach { createdAt ->
+        gcElementSetByCreatedAt.forEach { createdAt ->
             seen += createdAt
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
             if (pair.element is CrdtContainer) {
@@ -119,15 +134,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
                 }
             }
         }
-        count += seen.size
-
-        elementHasRemovedNodesSetByCreatedAt.forEach { createdAt ->
-            val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
-            val element = pair.element as CrdtGCElement
-            count += element.removedNodesLength
-        }
-
-        return count
+        return seen.size
     }
 
     /**
@@ -142,7 +149,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     fun garbageCollect(executedAt: TimeTicket): Int {
         var count = 0
-        removedElementSetByCreatedAt.toSet().forEach { createdAt ->
+        gcElementSetByCreatedAt.toSet().forEach { createdAt ->
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
             if (pair.element.isRemoved && pair.element.removedAt <= executedAt) {
                 pair.parent?.delete(pair.element)
@@ -150,17 +157,15 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             }
         }
 
-        val elementGarbageIterator = elementHasRemovedNodesSetByCreatedAt.iterator()
-        while (elementGarbageIterator.hasNext()) {
-            val createdAt = elementGarbageIterator.next()
-            val pair = elementPairMapByCreatedAt[createdAt] ?: continue
-            val element = pair.element as CrdtGCElement
-
-            val removedNodeCount = element.deleteRemovedNodesBefore(executedAt)
-            if (element.removedNodesLength == 0) {
-                elementGarbageIterator.remove()
+        val iterator = gcPairMap.values.iterator()
+        while (iterator.hasNext()) {
+            val pair = iterator.next()
+            val removedAt = pair.child.removedAt
+            if (removedAt <= executedAt) {
+                pair.parent.deleteChild(pair.child)
+                iterator.remove()
+                count++
             }
-            count += removedNodeCount
         }
 
         return count
@@ -183,7 +188,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     @VisibleForTesting
     fun deregisterElement(element: CrdtElement) {
         elementPairMapByCreatedAt.remove(element.createdAt)
-        removedElementSetByCreatedAt.remove(element.createdAt)
+        gcElementSetByCreatedAt.remove(element.createdAt)
     }
 
     /**

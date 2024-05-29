@@ -1,5 +1,6 @@
 package dev.yorkie.document.json
 
+import dev.yorkie.DummyContext
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.change.ChangeContext
@@ -782,11 +783,6 @@ class JsonTreeTest {
     }
 
     companion object {
-        private val DummyContext = ChangeContext(
-            ChangeID.InitialChangeID,
-            CrdtRoot(CrdtObject(InitialTimeTicket)),
-        )
-
         private val rootCrdtTree: CrdtTree
             get() = CrdtTree(rootCrdtTreeNode, InitialTimeTicket)
 

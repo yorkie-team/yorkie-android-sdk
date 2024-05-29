@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 
@@ -8,8 +9,8 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
  * For more details about RHT:
  * @link http://csl.skku.edu/papers/jpdc11.pdf
  */
-internal class Rht : Collection<Rht.Node> {
-    private val nodeMapByKey = mutableMapOf<String, Node>()
+internal class Rht : Collection<RhtNode> {
+    private val nodeMapByKey = mutableMapOf<String, RhtNode>()
     private var numberOfRemovedElements = 0
 
     val nodeKeyValueMap: Map<String, String>
@@ -24,41 +25,57 @@ internal class Rht : Collection<Rht.Node> {
         value: String,
         executedAt: TimeTicket,
         isRemoved: Boolean = false,
-    ): Boolean {
+    ): RhtSetResult {
         val prev = nodeMapByKey[key]
-        if (prev?.executedAt < executedAt) {
-            if (prev?.isRemoved == false) {
-                numberOfRemovedElements--
-            }
-            val node = Node(key, value, executedAt, isRemoved)
-            nodeMapByKey[key] = node
-            return true
+        if (prev?.isRemoved == true && prev.executedAt < executedAt) {
+            numberOfRemovedElements--
         }
-        return false
+
+        if (prev?.executedAt < executedAt) {
+            val node = RhtNode(key, value, executedAt, isRemoved)
+            nodeMapByKey[key] = node
+            if (prev?.isRemoved == true) {
+                return RhtSetResult(prev, node)
+            }
+            return RhtSetResult(null, node)
+        }
+
+        if (prev?.isRemoved == true) {
+            return RhtSetResult(prev, null)
+        }
+        return RhtSetResult(null, null)
     }
 
     /**
      * Removes the Element of the given [key].
      */
-    fun remove(key: String, executedAt: TimeTicket): String {
+    fun remove(key: String, executedAt: TimeTicket): List<RhtNode> {
         val prev = nodeMapByKey[key]
-        return when {
-            prev == null -> {
+        return buildList {
+            if (prev == null) {
                 numberOfRemovedElements++
-                nodeMapByKey[key] = Node(key, "", executedAt, true)
-                ""
-            }
-
-            prev.executedAt < executedAt -> {
-                if (!prev.isRemoved) {
+                nodeMapByKey[key] = RhtNode(key, "", executedAt, true).also { add(it) }
+            } else if (prev.executedAt < executedAt) {
+                if (prev.isRemoved) {
+                    add(prev)
+                } else {
                     numberOfRemovedElements++
                 }
-                nodeMapByKey[key] = Node(key, prev.value, executedAt, true)
-                if (prev.isRemoved) "" else prev.value
+                nodeMapByKey[key] = RhtNode(key, prev.value, executedAt, true).also { add(it) }
             }
-
-            else -> ""
         }
+    }
+
+    /**
+     * Deletes the given child node.
+     */
+    fun delete(child: RhtNode) {
+        val node = nodeMapByKey[child.key] ?: return
+        if (node != child) {
+            return
+        }
+        nodeMapByKey.remove(child.key)
+        numberOfRemovedElements--
     }
 
     operator fun get(key: String): String? = nodeMapByKey[key]?.value
@@ -84,16 +101,23 @@ internal class Rht : Collection<Rht.Node> {
             }
     }
 
-    override fun iterator(): Iterator<Node> {
+    fun toJson(): String {
+        return nodeMapByKey.filterValues { !it.isRemoved }.entries
+            .joinToString(",", "{", "}") { (key, node) ->
+                "\"${escapeString(key)}\":\"${escapeString(node.value)}\""
+            }
+    }
+
+    override fun iterator(): Iterator<RhtNode> {
         return nodeMapByKey.values.iterator()
     }
 
     override val size: Int
         get() = nodeMapByKey.size - numberOfRemovedElements
 
-    override fun containsAll(elements: Collection<Node>): Boolean = elements.all { contains(it) }
+    override fun containsAll(elements: Collection<RhtNode>): Boolean = elements.all { contains(it) }
 
-    override fun contains(element: Node): Boolean = nodeMapByKey[element.key]?.isRemoved == false
+    override fun contains(element: RhtNode): Boolean = nodeMapByKey[element.key]?.isRemoved == false
 
     override fun equals(other: Any?): Boolean {
         if (other !is Rht) {
@@ -107,11 +131,16 @@ internal class Rht : Collection<Rht.Node> {
     }
 
     override fun isEmpty(): Boolean = size == 0
-
-    data class Node(
-        val key: String,
-        val value: String,
-        val executedAt: TimeTicket,
-        val isRemoved: Boolean,
-    )
 }
+
+data class RhtNode(
+    val key: String,
+    val value: String,
+    val executedAt: TimeTicket,
+    val isRemoved: Boolean,
+) : GCChild {
+
+    override val removedAt: TimeTicket? = executedAt.takeIf { isRemoved }
+}
+
+data class RhtSetResult(val prev: RhtNode?, val new: RhtNode?)

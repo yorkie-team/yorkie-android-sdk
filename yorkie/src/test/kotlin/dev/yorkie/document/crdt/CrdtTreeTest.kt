@@ -5,6 +5,7 @@ import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.issueTime
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -252,7 +253,6 @@ class CrdtTreeTest {
 
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)
 
-    private fun issueTime() = DummyContext.issueTimeTicket()
 
     private fun CrdtTreeNode.toList() = listOf(this)
 
@@ -264,10 +264,5 @@ class CrdtTreeTest {
 
     companion object {
         private val DIP = CrdtTreeNodeID(TimeTicket.InitialTimeTicket, 0)
-
-        private val DummyContext = ChangeContext(
-            ChangeID.InitialChangeID,
-            CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket)),
-        )
     }
 }

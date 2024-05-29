@@ -24,7 +24,12 @@ internal enum class TextChangeType {
 internal data class TextValue(
     val content: String,
     private val _attributes: Rht = Rht(),
-) : RgaTreeSplitValue<TextValue> {
+) : RgaTreeSplitValue<TextValue>, GCParent<RhtNode> {
+
+    val gcPairs: List<GCPair<RhtNode>>
+        get() = _attributes
+            .filter { node -> node.removedAt != null }
+            .map { node -> GCPair(this, node) }
 
     val attributes
         get() = _attributes.nodeKeyValueMap
@@ -48,8 +53,15 @@ internal data class TextValue(
         key: String,
         value: String,
         executedAt: TimeTicket,
-    ) {
-        _attributes.set(key, value, executedAt)
+    ): RhtSetResult {
+        return _attributes.set(key, value, executedAt)
+    }
+
+    /**
+     * Deletes the given child node.
+     */
+    override fun delete(node: RhtNode) {
+        _attributes.delete(node)
     }
 
     fun toJson(): String {
@@ -77,8 +89,15 @@ public value class TextWithAttributes(private val value: Pair<String, Map<String
         get() = value.second
 }
 
-internal data class TextOperationResult(
+internal data class TextEditResult(
     val createdAtMapByActor: Map<ActorID, TimeTicket>,
     val textChanges: List<TextChange>,
-    val posRange: RgaTreeSplitPosRange? = null,
+    val posRange: RgaTreeSplitPosRange,
+    val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
+)
+
+internal data class TextStyleResult(
+    val createdAtMapByActor: Map<ActorID, TimeTicket>,
+    val textChanges: List<TextChange>,
+    val gcPairs: List<GCPair<RhtNode>>,
 )

@@ -65,7 +65,7 @@ public class JsonTree internal constructor(
 
     private fun styleByRange(range: TreePosRange, attributes: Map<String, String>) {
         val ticket = context.issueTimeTicket()
-        val (_, maxCreatedAtMapByActor) = target.style(range, attributes, ticket)
+        val (_, gcPairs, maxCreatedAtMapByActor) = target.style(range, attributes, ticket)
 
         context.push(
             TreeStyleOperation(
@@ -77,6 +77,7 @@ public class JsonTree internal constructor(
                 attributes.toMap(),
             ),
         )
+        gcPairs.forEach(context::registerGCPair)
     }
 
     public fun removeStyle(
@@ -176,13 +177,14 @@ public class JsonTree internal constructor(
         } else {
             contents.map { createCrdtTreeNode(context, it) }
         }
-        val (_, maxCreatedAtMapByActor) = target.edit(
+        val (_, gcPairs, maxCreatedAtMapByActor) = target.edit(
             fromPos to toPos,
             crdtNodes.map(CrdtTreeNode::deepCopy).ifEmpty { null },
             splitLevel,
             ticket,
             context::issueTimeTicket,
         )
+        gcPairs.forEach(context::registerGCPair)
 
         context.push(
             TreeEditOperation(
@@ -195,10 +197,6 @@ public class JsonTree internal constructor(
                 ticket,
             ),
         )
-
-        if (fromPos != toPos) {
-            context.registerElementHasRemovedNodes(target)
-        }
     }
 
     /**

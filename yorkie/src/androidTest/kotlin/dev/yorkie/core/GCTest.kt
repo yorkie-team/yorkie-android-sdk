@@ -5,6 +5,7 @@ import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
@@ -496,7 +497,7 @@ class GCTest {
         }.await()
 
         assertEquals(3, document.garbageLength)
-        assertEquals(3, document.clone?.root?.getGarbageLength() ?: 0)
+        assertEquals(3, document.clone?.root?.garbageLength ?: 0)
 
         document.close()
         client.close()
@@ -728,6 +729,112 @@ class GCTest {
             c1.syncAsync().await()
             assertEquals("<r>ad</r>", d2.getRoot().rootTree().toXml())
             assertEquals(0, d1.garbageLength)
+        }
+    }
+
+    @Test
+    fun test_gc_big_array() {
+        runBlocking {
+            val document = Document(UUID.randomUUID().toString().toDocKey())
+            val size = 10000
+            document.updateAsync { root, _ ->
+                root.setNewArray("1").apply {
+                    repeat(size) {
+                        put(0)
+                    }
+                }
+            }.await()
+
+            document.updateAsync { root, _ ->
+                root.remove("1")
+            }.await()
+            assertEquals(size + 1, document.garbageCollect(MaxTimeTicket))
+        }
+    }
+
+    @Test
+    fun test_gc_for_nested_elements() {
+        runBlocking {
+            val document = Document(UUID.randomUUID().toString().toDocKey())
+            assertEquals("{}", document.toJson())
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("list").apply {
+                    put(1)
+                    put(2)
+                    put(3)
+                }
+            }.await()
+            assertEquals("""{"list":[1,2,3]}""", document.toJson())
+
+            document.updateAsync { root, _ ->
+                root.getAs<JsonArray>("list").removeAt(1)
+            }.await()
+            assertEquals("""{"list":[1,3]}""", document.toJson())
+
+            assertEquals(1, document.garbageLength)
+            assertEquals(1, document.garbageCollect(MaxTimeTicket))
+            assertEquals(0, document.garbageLength)
+        }
+    }
+
+    @Test
+    fun test_gc_for_nested_object() {
+        runBlocking {
+            val document = Document(UUID.randomUUID().toString().toDocKey())
+            assertEquals("{}", document.toJson())
+
+            document.updateAsync { root, _ ->
+                root.setNewObject("shape").setNewObject("point").apply {
+                    set("x", 0)
+                    set("y", 0)
+                }
+                root.remove("shape")
+            }.await()
+
+            assertEquals(4, document.garbageLength)
+            assertEquals(4, document.garbageCollect(MaxTimeTicket))
+        }
+    }
+
+    @Test
+    fun test_gc_with_already_removed_tree_node() {
+        runBlocking {
+            val doc = Document(UUID.randomUUID().toString().toDocKey())
+            assertEquals("{}", doc.toJson())
+
+            doc.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("doc") {
+                        element("p") {
+                            element("tn") {
+                                text { "abc" }
+                            }
+                        }
+                    },
+                )
+            }.await()
+
+            fun JsonObject.rootTree() = getAs<JsonTree>("t")
+
+            assertEquals("<doc><p><tn>abc</tn></p></doc>", doc.getRoot().rootTree().toXml())
+            assertEquals(0, doc.garbageLength)
+
+            doc.updateAsync { root, _ ->
+                root.rootTree().edit(3, 4)
+            }.await()
+            assertEquals("<doc><p><tn>ac</tn></p></doc>", doc.getRoot().rootTree().toXml())
+            assertEquals(1, doc.garbageLength)
+
+            doc.updateAsync { root, _ ->
+                root.rootTree().edit(2, 4)
+            }.await()
+            assertEquals("<doc><p><tn></tn></p></doc>", doc.getRoot().rootTree().toXml())
+            assertEquals(3, doc.garbageLength)
+
+            assertEquals(3, doc.garbageCollect(MaxTimeTicket))
+            assertEquals(0, doc.garbageLength)
         }
     }
 

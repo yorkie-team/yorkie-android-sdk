@@ -31,17 +31,15 @@ internal data class EditOperation(
     override fun execute(root: CrdtRoot): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
-            val changes = parentObject.edit(
+            val result = parentObject.edit(
                 RgaTreeSplitPosRange(fromPos, toPos),
                 content,
                 executedAt,
                 attributes,
                 maxCreatedAtMapByActor,
-            ).textChanges
-            if (fromPos != toPos) {
-                root.registerElementHasRemovedNodes(parentObject)
-            }
-            changes.map { (_, _, from, to, content, attributes) ->
+            )
+            result.gcPairs.forEach(root::registerGCPair)
+            result.textChanges.map { (_, _, from, to, content, attributes) ->
                 OperationInfo.EditOpInfo(
                     from,
                     to,

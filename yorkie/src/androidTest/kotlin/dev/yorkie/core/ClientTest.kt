@@ -139,8 +139,8 @@ class ClientTest {
             )
             assertEquals(remoteSetOperation.executedAt, localRemoveOperation.executedAt)
 
-            assertEquals(1, d1.clone?.root?.getGarbageLength())
-            assertEquals(1, d2.clone?.root?.getGarbageLength())
+            assertEquals(1, d1.clone?.root?.garbageLength)
+            assertEquals(1, d2.clone?.root?.garbageLength)
 
             c1.detachAsync(d1).await()
             c2.detachAsync(d2).await()

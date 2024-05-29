@@ -10,10 +10,11 @@ internal data class Attachment(
 ) {
 
     fun needRealTimeSync(): Boolean {
-        return if (syncMode == Client.SyncMode.RealtimePushOnly) {
+        val needRealTimeSyncMode = if (syncMode == Client.SyncMode.RealtimePushOnly) {
             document.hasLocalChanges
         } else {
             syncMode.needRealTimeSync
         }
+        return needRealTimeSyncMode && (document.hasLocalChanges || remoteChangeEventReceived)
     }
 }

@@ -59,15 +59,15 @@ tasks.withType<KotlinCompile> {
     dependsOn("bufGenerate")
 }
 
-signing {
-    useInMemoryPgpKeys(
-        System.getenv("PGP_KEY_ID"),
-        System.getenv("PGP_SECRET_KEY"),
-        System.getenv("PGP_PASSWORD"),
-    )
-    sign(tasks["stuffZip"])
-    sign(publishing.publications)
-}
+//signing {
+//    useInMemoryPgpKeys(
+//        System.getenv("PGP_KEY_ID"),
+//        System.getenv("PGP_SECRET_KEY"),
+//        System.getenv("PGP_PASSWORD"),
+//    )
+//    sign(tasks["stuffZip"])
+//    sign(publishing.publications)
+//}
 
 android {
     namespace = "dev.yorkie"

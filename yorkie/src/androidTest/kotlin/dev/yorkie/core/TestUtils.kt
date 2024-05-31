@@ -5,14 +5,13 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
 
 const val GENERAL_TIMEOUT = 3_000L
 
 fun createClient() = Client(
-    "http://10.0.2.2:8080",
+    "https://api.yorkie.dev",
     unaryClient = OkHttpClient.Builder()
-        .protocols(listOf(Protocol.HTTP_1_1))
+//        .protocols(listOf(Protocol.HTTP_1_1))
         .build(),
 )
 

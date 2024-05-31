@@ -218,10 +218,10 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
     }
     val nodes = map { it.toCrdtTreeNode() }
     val root = nodes.last()
-    for (i in nodes.size - 2 downTo 0) {
-        val parentIndex = ((i + 1)..nodes.lastIndex).find {
-            this[i].depth - 1 == this[it].depth
-        } ?: continue
+    for (i in size - 2 downTo 0) {
+        val parentIndex = subList(i + 1, size).indexOfFirst {
+            this[i].depth - 1 == it.depth
+        }.takeIf { it > -1 }?.plus(i + 1) ?: continue
         nodes[parentIndex].prepend(nodes[i])
     }
     return CrdtTree(root, InitialTimeTicket).root

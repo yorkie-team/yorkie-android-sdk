@@ -170,9 +170,14 @@ public class JsonTree internal constructor(
 
         val ticket = context.lastTimeTicket
         val crdtNodes = if (contents.firstOrNull()?.type == DEFAULT_TEXT_TYPE) {
-            val compVal = contents
-                .filterIsInstance<TextNode>()
-                .joinToString("") { it.value }
+            val textNodes = contents.filterIsInstance<TextNode>()
+            val compVal = if (textNodes.size == 1) {
+                textNodes.single().value
+            } else {
+                textNodes.joinTo(StringBuilder(textNodes.sumOf { it.value.length }), "") {
+                    it.value
+                }.toString()
+            }
             listOf(CrdtTreeText(CrdtTreeNodeID(context.issueTimeTicket(), 0), compVal))
         } else {
             contents.map { createCrdtTreeNode(context, it) }

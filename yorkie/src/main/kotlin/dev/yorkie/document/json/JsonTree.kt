@@ -123,7 +123,7 @@ public class JsonTree internal constructor(
 
         val fromPos = target.pathToPos(fromPath)
         val toPos = target.pathToPos(toPath)
-        editInternal(fromPos, toPos, contents.toList(), splitLevel)
+        editInternal(fromPos, toPos, splitLevel, *contents)
     }
 
     /**
@@ -152,19 +152,19 @@ public class JsonTree internal constructor(
 
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
-        editInternal(fromPos, toPos, contents.toList(), splitLevel)
+        editInternal(fromPos, toPos, splitLevel, *contents)
     }
 
     private fun editInternal(
         fromPos: CrdtTreePos,
         toPos: CrdtTreePos,
-        contents: List<TreeNode>,
         splitLevel: Int = 0,
+        vararg contents: TreeNode,
     ) {
         if (contents.isNotEmpty()) {
-            validateTreeNodes(contents)
+            validateTreeNodes(*contents)
             if (contents.first().type != DEFAULT_TEXT_TYPE) {
-                contents.forEach { validateTreeNodes(listOf(it)) }
+                contents.forEach { validateTreeNodes(it) }
             }
         }
 
@@ -207,7 +207,7 @@ public class JsonTree internal constructor(
     /**
      * Ensures that treeNodes consists of only one type.
      */
-    private fun validateTreeNodes(treeNodes: List<TreeNode>) {
+    private fun validateTreeNodes(vararg treeNodes: TreeNode) {
         if (treeNodes.isEmpty()) return
 
         val firstTreeNodeType = treeNodes.first().type

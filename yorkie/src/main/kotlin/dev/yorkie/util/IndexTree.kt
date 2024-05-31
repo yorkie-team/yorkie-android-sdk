@@ -238,7 +238,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     }
 
     private fun addSizeOfLeftSiblings(parent: T, offset: Int): Int {
-        return parent.children.take(offset).fold(0) { acc, leftSibling ->
+        return parent.children.subList(0, offset).fold(0) { acc, leftSibling ->
             acc + if (leftSibling.isRemoved) 0 else leftSibling.paddedSize
         }
     }
@@ -411,7 +411,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
      * Returns the children of the node including tombstones.
      */
     val allChildren: List<T>
-        get() = childNodes.toList()
+        get() = childNodes
 
     /**
      * Returns true if the node's children consist of only text children.
@@ -443,7 +443,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
 
             // If nodes are removed, the offset of the removed node is the number of
             // nodes before the node excluding the removed nodes.
-            return allChildren.take(index).filterNot { it.isRemoved }.size
+            return allChildren.subList(0, index).filterNot { it.isRemoved }.size
         }
         return children.indexOf(node)
     }
@@ -467,20 +467,18 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
     }
 
     /**
-     * Prepends the given nodes to the children.
+     * Prepends the given node to the children.
      */
-    fun prepend(vararg newNode: T) {
+    fun prepend(newNode: T) {
         check(!isText) {
             "Text node cannot have children"
         }
 
-        childNodes.addAll(0, newNode.toList())
-        newNode.forEach { node ->
-            node.parent = this as T
+        childNodes.add(0, newNode)
+        newNode.parent = this as T
 
-            if (!node.isRemoved) {
-                node.updateAncestorSize()
-            }
+        if (!newNode.isRemoved) {
+            newNode.updateAncestorSize()
         }
     }
 
@@ -571,21 +569,17 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
         parent?.insertAfterInternal(this as T, clone)
         clone.updateAncestorSize()
 
-        val leftChildren = childNodes.take(offset)
-        val rightChildren = childNodes.drop(offset)
-        childNodes.clear()
-        childNodes.addAll(leftChildren)
         clone.childNodes.clear()
-        clone.childNodes.addAll(rightChildren)
+        repeat(childNodes.size - offset) {
+            val rightChild = childNodes.removeAt(offset + it)
+            clone.childNodes.add(rightChild)
+            rightChild.parent = clone
+        }
         size = childNodes.fold(0) { acc, child ->
             acc + child.paddedSize
         }
         clone.size = clone.childNodes.fold(0) { acc, child ->
             acc + child.paddedSize
-        }
-
-        clone.childNodes.forEach { child ->
-            child.parent = clone
         }
 
         return clone

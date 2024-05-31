@@ -12,8 +12,8 @@ internal data class CrdtObject(
     override var _removedAt: TimeTicket? = null,
     private val rht: ElementRht<CrdtElement> = ElementRht(),
 ) : CrdtContainer(), Iterable<Pair<String, CrdtElement>> {
-    val memberNodes
-        get() = rht.toList()
+    val memberNodes: Iterable<ElementRht.Node<CrdtElement>>
+        get() = rht
 
     /**
      * Returns the array of keys in this object.

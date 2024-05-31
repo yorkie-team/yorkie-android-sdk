@@ -18,12 +18,9 @@ internal data class ChangeContext(
     val root: CrdtRoot,
     val message: String? = null,
     var presenceChange: PresenceChange? = null,
-    private val _operations: MutableList<Operation> = mutableListOf(),
+    private val operations: MutableList<Operation> = mutableListOf(),
     private var delimiter: UInt = TimeTicket.INITIAL_DELIMITER,
 ) {
-    val operations: List<Operation>
-        get() = _operations.toList()
-
     /**
      * Returns whether this context has change or not.
      */
@@ -40,7 +37,7 @@ internal data class ChangeContext(
      * Pushes the given operation to this context.
      */
     fun push(operation: Operation) {
-        _operations.add(operation)
+        operations.add(operation)
     }
 
     /**

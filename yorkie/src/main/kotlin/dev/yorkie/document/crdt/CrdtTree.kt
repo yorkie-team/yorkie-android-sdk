@@ -775,8 +775,8 @@ internal data class CrdtTreeNode private constructor(
 
     var insNextID: CrdtTreeNodeID? = null
 
-    val rhtNodes: List<RhtNode>
-        get() = _attributes.toList()
+    val rhtNodes: Iterable<RhtNode>
+        get() = _attributes
 
     init {
         _value?.let { value = it }
@@ -860,13 +860,13 @@ internal data class CrdtTreeNode private constructor(
      * Copies itself deeply.
      */
     fun deepCopy(): CrdtTreeNode {
+        val childNodes = mutableListOf<CrdtTreeNode>()
+        allChildren.forEach {
+            childNodes.add(it.deepCopy())
+        }
         return copy(
             _value = _value,
-            childNodes = IndexTreeNodeList(
-                allChildren.map { child ->
-                    child.deepCopy()
-                }.toMutableList(),
-            ),
+            childNodes = IndexTreeNodeList(childNodes),
             _attributes = _attributes.deepCopy(),
         ).also {
             it.allChildren.forEach { child ->

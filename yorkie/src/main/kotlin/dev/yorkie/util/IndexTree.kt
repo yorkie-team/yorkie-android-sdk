@@ -443,7 +443,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
 
             // If nodes are removed, the offset of the removed node is the number of
             // nodes before the node excluding the removed nodes.
-            return allChildren.subList(0, index).filterNot { it.isRemoved }.size
+            return allChildren.take(index).filterNot { it.isRemoved }.size
         }
         return children.indexOf(node)
     }
@@ -467,18 +467,20 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
     }
 
     /**
-     * Prepends the given node to the children.
+     * Prepends the given nodes to the children.
      */
-    fun prepend(newNode: T) {
+    fun prepend(vararg newNode: T) {
         check(!isText) {
             "Text node cannot have children"
         }
 
-        childNodes.add(0, newNode)
-        newNode.parent = this as T
+        childNodes.addAll(0, newNode.toList())
+        newNode.forEach { node ->
+            node.parent = this as T
 
-        if (!newNode.isRemoved) {
-            newNode.updateAncestorSize()
+            if (!node.isRemoved) {
+                node.updateAncestorSize()
+            }
         }
     }
 
@@ -571,7 +573,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
 
         clone.childNodes.clear()
         repeat(childNodes.size - offset) {
-            val rightChild = childNodes.removeAt(offset + it)
+            val rightChild = childNodes.removeAt(offset)
             clone.childNodes.add(rightChild)
             rightChild.parent = clone
         }

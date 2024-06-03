@@ -449,38 +449,34 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
     }
 
     /**
-     * Appends the given nodes to the children.
+     * Appends the given node to the children.
      */
-    fun append(vararg newNode: T) {
+    fun append(node: T) {
         check(!isText) {
             "Text node cannot have children"
         }
 
-        childNodes.addAll(newNode)
-        newNode.forEach { node ->
-            node.parent = this as T
+        childNodes.add(node)
+        node.parent = this as T
 
-            if (!node.isRemoved) {
-                node.updateAncestorSize()
-            }
+        if (!node.isRemoved) {
+            node.updateAncestorSize()
         }
     }
 
     /**
-     * Prepends the given nodes to the children.
+     * Prepends the given node to the children.
      */
-    fun prepend(vararg newNode: T) {
+    fun prepend(node: T) {
         check(!isText) {
             "Text node cannot have children"
         }
 
-        childNodes.addAll(0, newNode.toList())
-        newNode.forEach { node ->
-            node.parent = this as T
+        childNodes.add(0, node)
+        node.parent = this as T
 
-            if (!node.isRemoved) {
-                node.updateAncestorSize()
-            }
+        if (!node.isRemoved) {
+            node.updateAncestorSize()
         }
     }
 

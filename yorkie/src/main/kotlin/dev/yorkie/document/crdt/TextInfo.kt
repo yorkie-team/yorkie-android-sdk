@@ -34,8 +34,8 @@ internal data class TextValue(
     val attributes
         get() = _attributes.nodeKeyValueMap
 
-    val attributesWithTimeTicket
-        get() = _attributes.toList()
+    val attributesWithTimeTicket: Iterable<RhtNode>
+        get() = _attributes
 
     override val length: Int by content::length
 

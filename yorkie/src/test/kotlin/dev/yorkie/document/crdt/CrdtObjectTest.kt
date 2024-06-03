@@ -56,7 +56,7 @@ class CrdtObjectTest {
     @Test
     fun `should handle delete operations`() {
         setTargetSampleValues()
-        assertEquals(5, target.memberNodes.size)
+        assertEquals(5, target.memberNodes.toList().size)
 
         target.delete(crdtElements[0])
         assertEquals("B1C2D3E4", getTestString())
@@ -68,7 +68,7 @@ class CrdtObjectTest {
     @Test
     fun `should handle remove operations`() {
         setTargetSampleValues()
-        assertEquals(5, target.memberNodes.size)
+        assertEquals(5, target.memberNodes.toList().size)
 
         target.remove(timeTickets[0], timeTickets[1])
         assertEquals("B1C2D3E4", getTestString())
@@ -82,7 +82,7 @@ class CrdtObjectTest {
     @Test
     fun `should handle removeByKey operations`() {
         setTargetSampleValues()
-        assertEquals(5, target.memberNodes.size)
+        assertEquals(5, target.memberNodes.toList().size)
 
         target.removeByKey(actorIDs[0], timeTickets[1])
         assertEquals("B1C2D3E4", getTestString())

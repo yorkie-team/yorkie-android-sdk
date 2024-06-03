@@ -285,7 +285,7 @@ internal fun CrdtObject.toPBJsonObject(): PBJsonElement {
     }
 }
 
-internal fun List<ElementRht.Node<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
+internal fun Iterable<ElementRht.Node<CrdtElement>>.toPBRhtNodes(): List<PBRhtNode> {
     return map {
         rHTNode {
             key = it.strKey

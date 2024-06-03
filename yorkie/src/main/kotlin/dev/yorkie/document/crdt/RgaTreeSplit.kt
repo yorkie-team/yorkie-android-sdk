@@ -205,7 +205,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
 
         // First, we need to collect indexes for change.
-        val changes = makeChanges(nodesToKeep, executedAt).toMutableList()
+        val changes = makeChanges(nodesToKeep, executedAt)
         nodesToDelete.forEach { node ->
             // Then, make nodes be tombstones and map that.
             val actorID = node.createdAt.actorID
@@ -269,26 +269,27 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     private fun makeChanges(
         boundaries: List<RgaTreeSplitNode<T>?>,
         executedAt: TimeTicket,
-    ): List<ContentChange> {
-        return buildList {
-            var (fromIndex, toIndex) = 0 to 0
-            for (index in 0 until boundaries.lastIndex) {
-                val leftBoundary = boundaries[index]
-                val rightBoundary = boundaries[index + 1]
-                if (leftBoundary?.next == rightBoundary) continue
+    ): MutableList<ContentChange> {
+        val changes = mutableListOf<ContentChange>()
+        var (fromIndex, toIndex) = 0 to 0
+        for (index in 0 until boundaries.lastIndex) {
+            val leftBoundary = boundaries[index]
+            val rightBoundary = boundaries[index + 1]
+            if (leftBoundary?.next == rightBoundary) continue
 
-                fromIndex =
-                    findIndexesFromRange(requireNotNull(leftBoundary?.next).createPosRange()).first
-                toIndex = if (rightBoundary == null) {
-                    treeByIndex.length
-                } else {
-                    findIndexesFromRange(requireNotNull(rightBoundary.prev).createPosRange()).second
-                }
+            fromIndex =
+                findIndexesFromRange(requireNotNull(leftBoundary?.next).createPosRange()).first
+            toIndex = if (rightBoundary == null) {
+                treeByIndex.length
+            } else {
+                findIndexesFromRange(requireNotNull(rightBoundary.prev).createPosRange()).second
             }
-            if (fromIndex < toIndex) {
-                add(ContentChange(executedAt.actorID, fromIndex, toIndex))
-            }
-        }.reversed()
+        }
+        if (fromIndex < toIndex) {
+            changes.add(ContentChange(executedAt.actorID, fromIndex, toIndex))
+        }
+        changes.reverse()
+        return changes
     }
 
     fun findIndexesFromRange(range: RgaTreeSplitPosRange): Pair<Int, Int> {

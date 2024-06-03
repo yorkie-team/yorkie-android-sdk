@@ -123,7 +123,7 @@ public class JsonTree internal constructor(
 
         val fromPos = target.pathToPos(fromPath)
         val toPos = target.pathToPos(toPath)
-        editInternal(fromPos, toPos, contents.toList(), splitLevel)
+        editInternal(fromPos, toPos, splitLevel, *contents)
     }
 
     /**
@@ -152,30 +152,29 @@ public class JsonTree internal constructor(
 
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
-        editInternal(fromPos, toPos, contents.toList(), splitLevel)
+        editInternal(fromPos, toPos, splitLevel, *contents)
     }
 
     private fun editInternal(
         fromPos: CrdtTreePos,
         toPos: CrdtTreePos,
-        contents: List<TreeNode>,
         splitLevel: Int = 0,
+        vararg contents: TreeNode,
     ) {
         if (contents.isNotEmpty()) {
-            validateTreeNodes(contents)
-            if (contents.first().type != DEFAULT_TEXT_TYPE) {
-                contents.forEach { validateTreeNodes(listOf(it)) }
-            }
+            validateTreeNodes(*contents)
         }
 
         val ticket = context.lastTimeTicket
         val crdtNodes = if (contents.firstOrNull()?.type == DEFAULT_TEXT_TYPE) {
-            val textNodes = contents.filterIsInstance<TextNode>()
-            val compVal = if (textNodes.size == 1) {
-                textNodes.single().value
+            val compVal = if (contents.size == 1) {
+                (contents.single() as TextNode).value
             } else {
-                textNodes.joinTo(StringBuilder(textNodes.sumOf { it.value.length }), "") {
-                    it.value
+                contents.joinTo(
+                    StringBuilder(contents.sumOf { (it as TextNode).value.length }),
+                    "",
+                ) {
+                    (it as TextNode).value
                 }.toString()
             }
             listOf(CrdtTreeText(CrdtTreeNodeID(context.issueTimeTicket(), 0), compVal))
@@ -207,7 +206,7 @@ public class JsonTree internal constructor(
     /**
      * Ensures that treeNodes consists of only one type.
      */
-    private fun validateTreeNodes(treeNodes: List<TreeNode>) {
+    private fun validateTreeNodes(vararg treeNodes: TreeNode) {
         if (treeNodes.isEmpty()) return
 
         val firstTreeNodeType = treeNodes.first().type
@@ -215,10 +214,13 @@ public class JsonTree internal constructor(
             require(treeNodes.all { it.type == DEFAULT_TEXT_TYPE }) {
                 "element node and text node cannot be passed together"
             }
-            treeNodes.filterIsInstance<TextNode>().forEach(::validateTextNode)
+            validateTextNodes(treeNodes)
         } else {
             require(treeNodes.none { it.type == DEFAULT_TEXT_TYPE }) {
                 "element node and text node cannot be passed together"
+            }
+            treeNodes.forEach {
+                (it as ElementNode).children.forEach(::validateTreeNodes)
             }
         }
     }
@@ -226,10 +228,12 @@ public class JsonTree internal constructor(
     /**
      * Ensures that a text node has a non-empty string value.
      */
-    private fun validateTextNode(textNode: TextNode) {
-        require(textNode.value.isNotEmpty()) {
-            "text node cannot have empty value"
-        }
+    private fun validateTextNodes(nodes: Array<out TreeNode>) {
+        require(
+            nodes.all {
+                it is TextNode && it.value.isNotEmpty()
+            },
+        )
     }
 
     /**

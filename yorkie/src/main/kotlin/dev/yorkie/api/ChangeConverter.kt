@@ -48,6 +48,7 @@ internal fun PBChangeID.toChangeID(): ChangeID {
         clientSeq.toUInt(),
         lamport,
         actorId.toActorID(),
+        serverSeq,
     )
 }
 
@@ -57,6 +58,7 @@ internal fun ChangeID.toPBChangeID(): PBChangeID {
         clientSeq = changeID.clientSeq.toInt()
         lamport = changeID.lamport
         actorId = changeID.actor.toByteString()
+        serverSeq = changeID.serverSeq
     }
 }
 

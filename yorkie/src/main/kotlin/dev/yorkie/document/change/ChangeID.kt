@@ -11,6 +11,7 @@ internal data class ChangeID(
     val clientSeq: UInt,
     val lamport: Long,
     val actor: ActorID,
+    val serverSeq: Long = 0,
 ) {
 
     /**

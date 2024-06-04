@@ -40,6 +40,7 @@ import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
 import java.io.InterruptedIOException
 import java.util.UUID
+import kotlin.collections.Map.Entry
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -212,7 +213,9 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    private suspend fun Collection<Map.Entry<Document.Key, Attachment>>.asSyncFlow(realTimeOnly: Boolean): Flow<SyncResult> {
+    private suspend fun Collection<Entry<Document.Key, Attachment>>.asSyncFlow(
+        realTimeOnly: Boolean,
+    ): Flow<SyncResult> {
         return asFlow()
             .mapNotNull { (key, attachment) ->
                 val (document, documentID, syncMode) = if (realTimeOnly) {
@@ -641,7 +644,7 @@ public class Client @VisibleForTesting internal constructor(
     private class AttachmentEntry(
         override val key: Document.Key,
         override val value: Attachment,
-    ) : Map.Entry<Document.Key, Attachment>
+    ) : Entry<Document.Key, Attachment>
 
     private data class SyncResult(val document: Document, val result: OperationResult)
 

@@ -154,7 +154,7 @@ class JsonTreeTest {
                 Updater(c2, d2),
             )
             assertTreesXmlEquals(
-                """<doc><p italic="true" bold="true">hello</p></doc>""",
+                """<doc><p bold="true" italic="true">hello</p></doc>""",
                 d1,
                 d2,
             )
@@ -2222,8 +2222,76 @@ class JsonTreeTest {
             // insert event is sent with path [0]
             assertEquals(listOf(0), d1Events.single().fromPath)
 
-            // but here test fails.
-            // style event should be sent with path [1], but path [0] is given.
+            d2Events.forEach {
+                assertEquals(listOf(1), it.fromPath)
+            }
+
+            collectJob.cancel()
+        }
+    }
+
+    @Test
+    fun test_concurrent_tree_remove_style_and_insertion() {
+        withTwoClientsAndDocuments(syncMode = Client.SyncMode.Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                attrs { mapOf("key" to "a") }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("""<doc><p key="a"></p></doc>""", d1, d2)
+
+            val d1Events = mutableListOf<TreeEditOpInfo>()
+            val d2Events = mutableListOf<TreeStyleOpInfo>()
+
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<RemoteChange>()
+                        .map {
+                            it.changeInfo.operations.filterIsInstance<TreeEditOpInfo>()
+                        }
+                        .collect(d1Events::addAll)
+                }
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filterIsInstance<RemoteChange>()
+                        .map {
+                            it.changeInfo.operations.filterIsInstance<TreeStyleOpInfo>()
+                        }
+                        .collect(d2Events::addAll)
+                }
+            }
+
+            listOf(
+                launch {
+                    repeat(10) {
+                        d1.updateAsync { root, _ ->
+                            root.rootTree().removeStyle(0, 1, listOf("key"))
+                        }.await()
+                    }
+                },
+                launch {
+                    d2.updateAsync { root, _ ->
+                        root.rootTree().edit(0, 0, element("p2"))
+                    }.await()
+                },
+            ).joinAll()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            // the resulting trees are the same.
+            assertEquals(d1.getRoot().rootTree().toXml(), d2.getRoot().rootTree().toXml())
+
+            // insert event is sent with path [0]
+            assertEquals(listOf(0), d1Events.single().fromPath)
             d2Events.forEach {
                 assertEquals(listOf(1), it.fromPath)
             }

@@ -81,5 +81,5 @@ internal enum class TreeChangeType {
 internal data class TreeOperationResult(
     val changes: List<TreeChange>,
     val gcPairs: List<GCPair<*>> = emptyList(),
-    val maxCreatedAtMap: Map<ActorID, TimeTicket> = emptyMap(),
+    val maxCreatedAtMap: Map<ActorID, TimeTicket>,
 )

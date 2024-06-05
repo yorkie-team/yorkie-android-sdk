@@ -313,10 +313,10 @@ class JsonTreeConcurrencyTest {
                 }
             }
             val initialXml =
-                "<r><p color=\"red\">a</p><p color=\"red\">b</p><p color=\"red\">c</p></r>"
+                """<r><p color="red">a</p><p color="red">b</p><p color="red">c</p></r>"""
             val content = element("p") {
                 text { "d" }
-                attrs { mapOf("italic" to "true") }
+                attrs { mapOf("italic" to "true", "color" to "blue") }
             }
 
             val ranges = listOf(
@@ -387,7 +387,7 @@ class JsonTreeConcurrencyTest {
                     StyleOpCode.StyleRemove,
                     "color",
                     "",
-                    "remove-bold",
+                    "remove-color",
                 ),
                 StyleOperationType(
                     RangeSelector.RangeAll,

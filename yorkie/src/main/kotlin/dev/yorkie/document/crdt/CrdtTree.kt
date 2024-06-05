@@ -23,6 +23,8 @@ public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
 
 internal typealias CrdtTreeToken = TreeToken<CrdtTreeNode>
 
+internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
+
 internal data class CrdtTree(
     val root: CrdtTreeNode,
     override val createdAt: TimeTicket,
@@ -93,6 +95,9 @@ internal data class CrdtTree(
                     createdAtMapByActor[actorID] = createdAt
                 }
 
+                val parentOfNode = requireNotNull(node.parent)
+                val previousNode = node.prevSibling ?: parentOfNode
+
                 val updatedAttrPairs = node.setAttributes(attributes, executedAt)
                 val affectedAttrs = updatedAttrPairs.fold(emptyMap<String, String>()) { acc, pair ->
                     val curr = pair.new
@@ -101,10 +106,10 @@ internal data class CrdtTree(
                 if (affectedAttrs.isNotEmpty()) {
                     TreeChange(
                         type = TreeChangeType.Style,
-                        from = toIndex(fromParent, fromLeft),
-                        to = toIndex(toParent, toLeft),
-                        fromPath = toPath(fromParent, fromLeft),
-                        toPath = toPath(toParent, toLeft),
+                        from = toIndex(parentOfNode, previousNode),
+                        to = toIndex(node, node),
+                        fromPath = toPath(parentOfNode, previousNode),
+                        toPath = toPath(node, node),
                         actorID = executedAt.actorID,
                         attributes = attributes.filterKeys { it in affectedAttrs },
                     ).let(changes::add)
@@ -423,31 +428,48 @@ internal data class CrdtTree(
         range: TreePosRange,
         attributeToRemove: List<String>,
         executedAt: TimeTicket,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     ): TreeOperationResult {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
 
         val changes = mutableListOf<TreeChange>()
+        val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
-            if (!node.isRemoved && !node.isText && attributeToRemove.isNotEmpty()) {
+            val actorID = node.createdAt.actorID
+            val maxCreatedAt = maxCreatedAtMapByActor?.let {
+                maxCreatedAtMapByActor[actorID] ?: InitialTimeTicket
+            } ?: MaxTimeTicket
+
+            if (node.canStyle(executedAt, maxCreatedAt) && attributeToRemove.isNotEmpty()) {
+                val max = createdAtMapByActor[actorID]
+                val createdAt = node.createdAt
+                if (max < createdAt) {
+                    createdAtMapByActor[actorID] = createdAt
+                }
+
                 attributeToRemove.forEach { key ->
                     node.removeAttribute(key, executedAt)
                         .map { rhtNode -> GCPair(node, rhtNode) }
                         .let(gcPairs::addAll)
                 }
+
+                val parentOfNode = requireNotNull(node.parent)
+                val previousNode = node.prevSibling ?: parentOfNode
+
                 TreeChange(
                     type = TreeChangeType.RemoveStyle,
-                    from = toIndex(fromParent, fromLeft),
-                    to = toIndex(toParent, toLeft),
-                    fromPath = toPath(fromParent, fromLeft),
-                    toPath = toPath(toParent, toLeft),
+                    from = toIndex(parentOfNode, previousNode),
+                    to = toIndex(node, node),
+                    fromPath = toPath(parentOfNode, previousNode),
+                    toPath = toPath(node, node),
                     actorID = executedAt.actorID,
                     attributesToRemove = attributeToRemove,
                 ).let(changes::add)
             }
         }
-        return TreeOperationResult(changes, gcPairs)
+        return TreeOperationResult(changes, gcPairs, createdAtMapByActor)
     }
 
     private fun traverseInPosRange(
@@ -475,12 +497,9 @@ internal data class CrdtTree(
      * If [executedAt] is given, then it is used to find the appropriate left node
      * for concurrent insertion.
      */
-    fun findNodesAndSplitText(
-        pos: CrdtTreePos,
-        executedAt: TimeTicket? = null,
-    ): Pair<CrdtTreeNode, CrdtTreeNode> {
+    fun findNodesAndSplitText(pos: CrdtTreePos, executedAt: TimeTicket? = null): TreeNodePair {
         // 01. Find the parent and left sibling node of the given position.
-        val (parent, leftSibling) = pos.toTreeNodes(this)
+        val (parent, leftSibling) = pos.toTreeNodePair(this)
 
         // 02. Determine whether the position is left-most and the exact parent
         // in the current tree.
@@ -661,7 +680,7 @@ internal data class CrdtTree(
     /**
      * Converts the pos to parent and left sibling nodes.
      */
-    private fun CrdtTreePos.toTreeNodes(tree: CrdtTree): Pair<CrdtTreeNode, CrdtTreeNode> {
+    private fun CrdtTreePos.toTreeNodePair(tree: CrdtTree): TreeNodePair {
         val parentNode = tree.findFloorNode(parentID)
         val leftNode = tree.findFloorNode(leftSiblingID)
         require(parentNode != null && leftNode != null) {
@@ -888,7 +907,7 @@ internal data class CrdtTreeNode private constructor(
         if (isText) {
             return false
         }
-        return createdAt <= maxCreatedAt && (removedAt == null || removedAt < executedAt)
+        return createdAt <= maxCreatedAt && removedAt < executedAt
     }
 
     override fun delete(node: RhtNode) {

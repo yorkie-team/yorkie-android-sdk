@@ -96,6 +96,7 @@ internal class Rht : Collection<RhtNode> {
      */
     fun toXml(): String {
         return nodeMapByKey.filterValues { !it.isRemoved }.entries
+            .sortedBy { it.key }
             .joinToString(" ") { (key, node) ->
                 "$key=\"${node.value}\""
             }

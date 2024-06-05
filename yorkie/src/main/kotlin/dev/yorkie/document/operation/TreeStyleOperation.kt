@@ -47,6 +47,7 @@ internal data class TreeStyleOperation(
                         it.from,
                         it.to,
                         it.fromPath,
+                        it.toPath,
                         it.attributes.orEmpty(),
                         path = root.createPath(parentCreatedAt),
                     )
@@ -58,6 +59,7 @@ internal data class TreeStyleOperation(
                     fromPos to toPos,
                     attributesToRemove,
                     executedAt,
+                    maxCreatedAtMapByActor,
                 )
                 gcPairs.forEach(root::registerGCPair)
                 changes.map {
@@ -65,6 +67,7 @@ internal data class TreeStyleOperation(
                         it.from,
                         it.to,
                         it.fromPath,
+                        it.toPath,
                         attributesToRemove = it.attributesToRemove.orEmpty(),
                         path = root.createPath(parentCreatedAt),
                     )

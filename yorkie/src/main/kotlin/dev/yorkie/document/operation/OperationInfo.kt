@@ -92,6 +92,7 @@ public sealed class OperationInfo {
         val from: Int,
         val to: Int,
         val fromPath: List<Int>,
+        val toPath: List<Int>,
         val attributes: Map<String, String> = emptyMap(),
         val attributesToRemove: List<String> = emptyList(),
         override var path: String = INITIAL_PATH,

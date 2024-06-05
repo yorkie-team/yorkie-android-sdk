@@ -405,6 +405,12 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             return parent?.children?.getOrNull(offset + 1)
         }
 
+    val prevSibling: T?
+        get() {
+            val offset = parent?.findOffset(this as T) ?: return null
+            return parent?.children?.getOrNull(offset - 1)
+        }
+
     /**
      * Returns the children of the node.
      * Tombstone nodes remain awhile in the tree during editing.

@@ -92,7 +92,12 @@ public class JsonTree internal constructor(
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
         val executedAt = context.issueTimeTicket()
-        target.removeStyle(fromPos to toPos, attributesToRemove, executedAt)
+        val (_, gcPairs, maxCreatedAtMapByActor) = target.removeStyle(
+            fromPos to toPos,
+            attributesToRemove,
+            executedAt,
+        )
+        gcPairs.forEach(context::registerGCPair)
 
         context.push(
             TreeStyleOperation(
@@ -100,6 +105,7 @@ public class JsonTree internal constructor(
                 fromPos,
                 toPos,
                 executedAt,
+                maxCreatedAtMapByActor,
                 attributesToRemove = attributesToRemove,
             ),
         )

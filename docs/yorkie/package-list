@@ -328,10 +328,12 @@ $dokka.location:dev.yorkie.document/Document.DocumentStatus/entries/#/PointingTo
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/value-of.html
 $dokka.location:dev.yorkie.document/Document.DocumentStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document-status/values.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/index.html
-$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/ChangeInfo/#kotlin.String#kotlin.collections.List[dev.yorkie.document.operation.OperationInfo]#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/-change-info.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/ChangeInfo/#kotlin.String#kotlin.collections.List[dev.yorkie.document.operation.OperationInfo]#dev.yorkie.document.time.ActorID#kotlin.UInt#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/-change-info.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/actorID/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/actor-i-d.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/clientSeq/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/client-seq.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/message/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/message.html
 $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/operations/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/operations.html
+$dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/serverSeq/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-change-info/server-seq.html
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/index.html
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange/changeInfo/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/change-info.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.Initialized///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-initialized/index.html

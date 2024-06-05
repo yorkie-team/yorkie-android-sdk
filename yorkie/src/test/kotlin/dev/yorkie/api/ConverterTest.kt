@@ -4,6 +4,7 @@ import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.operation
 import dev.yorkie.core.PresenceChange
+import dev.yorkie.document.Document
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
@@ -25,6 +26,9 @@ import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPos
+import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.json.JsonTree
+import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.IncreaseOperation
@@ -44,6 +48,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import java.util.Date
 import kotlin.test.assertEquals
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -411,6 +416,31 @@ class ConverterTest {
         crdtElements.forEach {
             assertEquals(it.toJson(), it.toPBJsonElementSimple().toCrdtElement().toJson())
         }
+    }
+
+    @Test
+    fun `should encode and decode tree properly`() = runTest {
+        val document = Document(Document.Key(""))
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("r") {
+                    element("p") { text { "12" } }
+                    element("p") { text { "34" } }
+                },
+            ).editByPath(listOf(0, 1), listOf(1, 1))
+        }.await()
+
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        assertEquals("<r><p>14</p></r>", document.getRoot().tree().toXml())
+        assertEquals(4, document.getRoot().tree().size)
+
+        val tree = document.getRoot().target["t"]
+        val bytes = tree.toByteString()
+        val obj = bytes.toCrdtTree()
+        assertEquals(document.getRoot().tree().target.nodeSize, obj.nodeSize)
+        assertEquals(document.getRoot().tree().size, obj.size)
     }
 
     private class TestOperation(

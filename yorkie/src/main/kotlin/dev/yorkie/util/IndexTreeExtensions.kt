@@ -11,6 +11,17 @@ internal fun <T : IndexTreeNode<T>> traverse(
     action.invoke(node, depth)
 }
 
+internal fun <T : IndexTreeNode<T>> traverseAll(
+    node: T,
+    depth: Int = 0,
+    action: ((T, Int) -> Unit),
+) {
+    node.allChildren.forEach { child ->
+        traverseAll(child, depth + 1, action)
+    }
+    action.invoke(node, depth)
+}
+
 internal fun <T : IndexTreeNode<T>> findCommonAncestor(node1: T, node2: T): T? {
     if (node1 == node2) {
         return node1

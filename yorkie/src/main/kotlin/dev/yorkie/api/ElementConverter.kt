@@ -48,7 +48,7 @@ import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
-import dev.yorkie.util.traverse
+import dev.yorkie.util.traverseAll
 
 internal typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
 internal typealias PBJsonElementSimple = dev.yorkie.api.v1.JSONElementSimple
@@ -224,6 +224,7 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
         }.takeIf { it > -1 }?.plus(i + 1) ?: continue
         nodes[parentIndex].prepend(nodes[i])
     }
+    root.updateDescendantSize()
     return CrdtTree(root, InitialTimeTicket).root
 }
 
@@ -315,7 +316,7 @@ internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
 internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
     val treeNode = this
     return buildList {
-        traverse(treeNode) { node, nodeDepth ->
+        traverseAll(treeNode) { node, nodeDepth ->
             val pbTreeNode = treeNode {
                 id = node.id.toPBTreeNodeID()
                 type = node.type

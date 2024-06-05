@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.CrdtTreeNodeIDStruct
 import dev.yorkie.document.CrdtTreePosStruct
 import dev.yorkie.document.JsonSerializable
@@ -15,6 +16,7 @@ import dev.yorkie.util.IndexTreeNodeList
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
+import dev.yorkie.util.traverseAll
 import java.util.TreeMap
 
 public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
@@ -46,13 +48,17 @@ internal data class CrdtTree(
         get() = indexTree.root.toTreeNode()
 
     init {
-        indexTree.traverse { node, _ ->
+        indexTree.traverseAll { node, _ ->
             nodeMapByID[node.id] = node
         }
     }
 
     val size: Int
         get() = indexTree.size
+
+    @VisibleForTesting
+    val nodeSize: Int
+        get() = nodeMapByID.size
 
     /**
      * Applies the given [attributes] of the given [range].
@@ -442,17 +448,6 @@ internal data class CrdtTree(
             }
         }
         return TreeOperationResult(changes, gcPairs)
-    }
-
-    private fun traverseAll(
-        node: CrdtTreeNode,
-        depth: Int = 0,
-        action: ((CrdtTreeNode, Int) -> Unit),
-    ) {
-        node.allChildren.forEach { child ->
-            traverseAll(child, depth + 1, action)
-        }
-        action.invoke(node, depth)
     }
 
     private fun traverseInPosRange(

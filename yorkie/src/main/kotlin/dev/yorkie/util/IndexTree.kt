@@ -139,6 +139,13 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     }
 
     /**
+     * Traverses the whole tree (include tombstones) with postorder traversal.
+     */
+    fun traverseAll(action: ((T, Int) -> Unit)) {
+        traverseAll(root, 0, action)
+    }
+
+    /**
      * Finds the position of the given [index] in the tree.
      */
     fun findTreePos(index: Int, preferText: Boolean = true): TreePos<T> {
@@ -370,7 +377,7 @@ internal data class TreePos<T : IndexTreeNode<T>>(
  * document of text-based editors.
  */
 @Suppress("UNCHECKED_CAST")
-internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
+internal abstract class IndexTreeNode<T : IndexTreeNode<T>> {
     abstract val type: String
 
     protected abstract val childNodes: IndexTreeNodeList<T>
@@ -422,7 +429,8 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
     var onRemovedListener: OnRemovedListener<T>? = null
 
     /**
-     * Updates the size of the ancestors.
+     * Updates the size of the ancestors. It is used when
+     * the size of the node is changed.
      */
     fun updateAncestorSize() {
         var parent = parent
@@ -432,6 +440,20 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
             parent.size += paddedSize * sign
             parent = parent.parent
         }
+    }
+
+    /**
+     * Updates the size of the descendants. It is used when
+     * the tree is newly created and the size of the descendants is not calculated.
+     */
+    fun updateDescendantSize(): Int {
+        if (isRemoved) {
+            size = 0
+            return 0
+        }
+
+        size += children.sumOf { it.updateDescendantSize() }
+        return paddedSize
     }
 
     fun findOffset(node: T): Int {
@@ -474,10 +496,6 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>>() {
 
         childNodes.add(0, node)
         node.parent = this as T
-
-        if (!node.isRemoved) {
-            node.updateAncestorSize()
-        }
     }
 
     /**

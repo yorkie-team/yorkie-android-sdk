@@ -575,7 +575,7 @@ public class Document(
             public val operations: List<OperationInfo>,
             public val actorID: ActorID,
             public val clientSeq: UInt,
-            public val serverSeq: Long?,
+            public val serverSeq: Long,
         )
     }
 

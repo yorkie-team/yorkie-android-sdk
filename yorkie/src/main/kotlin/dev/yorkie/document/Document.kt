@@ -111,7 +111,7 @@ public class Document(
     public val presences: StateFlow<Presences> =
         combine(_presences, onlineClients) { presences, onlineClients ->
             presences.filterKeys { it in onlineClients + changeID.actor }.asPresences()
-        }.stateIn(scope, SharingStarted.Eagerly, _presences.value.asPresences()).also {
+        }.stateIn(scope, SharingStarted.Eagerly, _presences.value).also {
             scope.launch {
                 it.collect { presences ->
                     presenceEventQueue.addAll(pendingPresenceEvents)

@@ -421,6 +421,9 @@ class ConverterTest {
     @Test
     fun `should encode and decode tree properly`() = runTest {
         val document = Document(Document.Key(""))
+
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
         document.updateAsync { root, _ ->
             root.setNewTree(
                 "t",
@@ -429,11 +432,14 @@ class ConverterTest {
                     element("p") { text { "34" } }
                 },
             ).editByPath(listOf(0, 1), listOf(1, 1))
+
+            root.tree().style(0, 1, mapOf("b" to "t", "i" to "t"))
+            assertEquals("""<r><p b="t" i="t">14</p></r>""", root.tree().toXml())
+
+            root.tree().removeStyle(0, 1, listOf("i"))
         }.await()
 
-        fun JsonObject.tree() = getAs<JsonTree>("t")
-
-        assertEquals("<r><p>14</p></r>", document.getRoot().tree().toXml())
+        assertEquals("""<r><p b="t">14</p></r>""", document.getRoot().tree().toXml())
         assertEquals(4, document.getRoot().tree().size)
 
         val tree = document.getRoot().target["t"]
@@ -441,6 +447,7 @@ class ConverterTest {
         val obj = bytes.toCrdtTree()
         assertEquals(document.getRoot().tree().target.nodeSize, obj.nodeSize)
         assertEquals(document.getRoot().tree().size, obj.size)
+        assertEquals(document.getRoot().tree().toXml(), obj.toXml())
     }
 
     private class TestOperation(

@@ -46,6 +46,19 @@ internal class Rht : Collection<RhtNode> {
         return RhtSetResult(null, null)
     }
 
+    fun setInternal(
+        key: String,
+        value: String,
+        executedAt: TimeTicket,
+        removed: Boolean,
+    ) {
+        val node = RhtNode(key, value, executedAt, removed)
+        nodeMapByKey[key] = node
+        if (removed) {
+            numberOfRemovedElements++
+        }
+    }
+
     /**
      * Removes the Element of the given [key].
      */
@@ -84,9 +97,8 @@ internal class Rht : Collection<RhtNode> {
 
     fun deepCopy(): Rht {
         val rht = Rht()
-        nodeMapByKey.forEach {
-            val node = it.value
-            rht.set(node.key, node.value, node.executedAt, node.isRemoved)
+        nodeMapByKey.values.forEach { node ->
+            rht.setInternal(node.key, node.value, node.executedAt, node.isRemoved)
         }
         return rht
     }

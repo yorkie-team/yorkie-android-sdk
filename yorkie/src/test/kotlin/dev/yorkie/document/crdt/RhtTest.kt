@@ -231,6 +231,16 @@ class RhtTest {
         }
     }
 
+    @Test
+    fun `should deepcopy correctly`() {
+        target.set("key1", "value1", issueTime())
+        target.remove("key2", issueTime())
+
+        val copiedRht = target.deepCopy()
+        assertEquals(target.toJson(), copiedRht.toJson())
+        assertEquals(target.size, copiedRht.size)
+    }
+
     private fun Rht.toTestString(): String {
         return nodeKeyValueMap.entries.joinToString("") { "${it.key}:${it.value}" }
     }

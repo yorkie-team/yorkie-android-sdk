@@ -670,7 +670,7 @@ internal data class CrdtTree(
         val parentNode = tree.findFloorNode(parentID)
         val leftNode = tree.findFloorNode(leftSiblingID)
         require(parentNode != null && leftNode != null) {
-            "cannot find node at $this"
+            "cannot find node of CrdtTreePos($parentID, $leftSiblingID)"
         }
 
         /**

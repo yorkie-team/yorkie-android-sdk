@@ -474,7 +474,7 @@ public class Document(
     }
 
     private fun Change.toChangeInfo(operationInfos: List<OperationInfo>) =
-        Event.ChangeInfo(message.orEmpty(), operationInfos, id.actor)
+        Event.ChangeInfo(message.orEmpty(), operationInfos, id.actor, id.clientSeq, id.serverSeq)
 
     public fun toJson(): String {
         return root.toJson()
@@ -574,6 +574,8 @@ public class Document(
             public val message: String,
             public val operations: List<OperationInfo>,
             public val actorID: ActorID,
+            public val clientSeq: UInt,
+            public val serverSeq: Long,
         )
     }
 

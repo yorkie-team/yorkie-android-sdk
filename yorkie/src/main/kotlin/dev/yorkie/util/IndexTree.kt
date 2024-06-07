@@ -444,6 +444,9 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
         while (parent != null) {
             parent.size += paddedSize * sign
+            if (parent.isRemoved) {
+                break
+            }
             parent = parent.parent
         }
     }
@@ -453,12 +456,7 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>> {
      * the tree is newly created and the size of the descendants is not calculated.
      */
     fun updateDescendantSize(): Int {
-        if (isRemoved) {
-            size = 0
-            return 0
-        }
-
-        size += children.sumOf { it.updateDescendantSize() }
+        size += children.sumOf { if (it.isRemoved) 0 else it.updateDescendantSize() }
         return paddedSize
     }
 

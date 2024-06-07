@@ -862,11 +862,7 @@ internal data class CrdtTreeNode private constructor(
             removedAt = executedAt
         }
         if (alived) {
-            if (parent?.removedAt == null) {
-                updateAncestorSize()
-            } else {
-                requireNotNull(parent).size -= paddedSize
-            }
+            updateAncestorSize()
         }
     }
 

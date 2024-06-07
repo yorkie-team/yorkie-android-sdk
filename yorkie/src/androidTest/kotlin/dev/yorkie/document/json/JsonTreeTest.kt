@@ -3,6 +3,8 @@ package dev.yorkie.document.json
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.reflect.TypeToken
 import dev.yorkie.TreeTest
+import dev.yorkie.api.toByteString
+import dev.yorkie.api.toCrdtTree
 import dev.yorkie.core.Client
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.GENERAL_TIMEOUT
@@ -12,6 +14,7 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.LocalChange
 import dev.yorkie.document.Document.Event.RemoteChange
+import dev.yorkie.document.crdt.toXml
 import dev.yorkie.document.json.JsonTree.ElementNode
 import dev.yorkie.document.json.JsonTree.TreeNode
 import dev.yorkie.document.json.TreeBuilder.element
@@ -2297,6 +2300,97 @@ class JsonTreeTest {
             }
 
             collectJob.cancel()
+        }
+    }
+
+    @Test
+    fun test_calculating_index_tree_size_during_concurrent_editing() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                text { "hello" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>hello</p></doc>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(0, 7)
+                },
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(1, 2, text { "p" })
+                },
+            ) {
+                assertTreesXmlEquals("<doc></doc>", d1)
+                assertEquals(0, d1.getRoot().rootTree().size)
+
+                assertTreesXmlEquals("<doc><p>pello</p></doc>", d2)
+                assertEquals(7, d2.getRoot().rootTree().size)
+            }
+
+            assertTreesXmlEquals("<doc></doc>", d1, d2)
+            assertEquals(d1.getRoot().rootTree().size, d2.getRoot().rootTree().size)
+        }
+    }
+
+    @Test
+    fun test_index_tree_consistency_from_snapshot() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("p")
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<r><p></p></r>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(0, 2)
+                },
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(1, 1, element("i") { text { "a" } })
+                    root.rootTree().edit(2, 3, text { "b" })
+                },
+            ) {
+                assertTreesXmlEquals("<r></r>", d1)
+                assertEquals(0, d1.getRoot().rootTree().size)
+
+                assertTreesXmlEquals("<r><p><i>b</i></p></r>", d2)
+                assertEquals(5, d2.getRoot().rootTree().size)
+            }
+            assertTreesXmlEquals("<r></r>", d1, d2)
+
+            val d1Nodes = mutableListOf<Triple<String, Int, Boolean>>()
+            val d2Nodes = mutableListOf<Triple<String, Int, Boolean>>()
+            val sNodes = mutableListOf<Triple<String, Int, Boolean>>()
+
+            d1.getRoot().rootTree().indexTree.traverseAll { node, _ ->
+                d1Nodes.add(Triple(node.toXml(), node.size, node.isRemoved))
+            }
+            d2.getRoot().rootTree().indexTree.traverseAll { node, _ ->
+                d2Nodes.add(Triple(node.toXml(), node.size, node.isRemoved))
+            }
+            val sRoot = d1.getRoot().target["t"].toByteString().toCrdtTree()
+            sRoot.indexTree.traverseAll { node, _ ->
+                sNodes.add(Triple(node.toXml(), node.size, node.isRemoved))
+            }
+
+            assertEquals(d1Nodes, d2Nodes)
+            assertEquals(d1Nodes, sNodes)
         }
     }
 

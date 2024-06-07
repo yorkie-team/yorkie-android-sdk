@@ -8,6 +8,7 @@ import dev.yorkie.api.v1.JSONElementKt.jSONObject
 import dev.yorkie.api.v1.JSONElementKt.primitive
 import dev.yorkie.api.v1.JSONElementKt.text
 import dev.yorkie.api.v1.JSONElementKt.tree
+import dev.yorkie.api.v1.NodeAttr
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.movedAtOrNull
@@ -44,6 +45,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitNode
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.Rht
+import dev.yorkie.document.crdt.RhtNode
 import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -237,11 +239,7 @@ internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
         CrdtTreeElement(
             id,
             type,
-            attributes = Rht().also {
-                attributesMap.forEach { (key, value) ->
-                    it.set(key, value.value, value.updatedAt.toTimeTicket())
-                }
-            },
+            attributes = attributesMap.toRht(),
         )
     }.apply {
         convertedRemovedAt?.let(::remove)
@@ -260,6 +258,24 @@ internal fun PBTreePos.toCrdtTreePos(): CrdtTreePos {
 
 internal fun PBTreeNodeID.toCrdtTreeNodeID(): CrdtTreeNodeID {
     return CrdtTreeNodeID(createdAt.toTimeTicket(), offset)
+}
+
+private fun Iterable<RhtNode>.toPBRht(): Map<String, NodeAttr> {
+    return associate { node ->
+        node.key to nodeAttr {
+            value = node.value
+            updatedAt = node.executedAt.toPBTimeTicket()
+            isRemoved = node.isRemoved
+        }
+    }
+}
+
+private fun Map<String, NodeAttr>.toRht(): Rht {
+    return Rht().apply {
+        entries.forEach { (key, node) ->
+            setInternal(key, node.value, node.updatedAt.toTimeTicket(), node.isRemoved)
+        }
+    }
 }
 
 internal fun CrdtElement.toPBJsonElement(): PBJsonElement {
@@ -333,14 +349,7 @@ internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
                     removedAt = it
                 }
                 depth = nodeDepth
-                attributes.putAll(
-                    node.rhtNodes.associate {
-                        it.key to nodeAttr {
-                            value = it.value
-                            updatedAt = it.executedAt.toPBTimeTicket()
-                        }
-                    },
-                )
+                attributes.putAll(node.rhtNodes.toPBRht())
             }
             add(pbTreeNode)
         }

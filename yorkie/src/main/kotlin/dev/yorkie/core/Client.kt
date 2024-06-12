@@ -270,6 +270,7 @@ public class Client @VisibleForTesting internal constructor(
                             // be disconnected to not receive an event for that document.
                             if (document.status == DocumentStatus.Removed) {
                                 attachments.value -= document.key
+                                mutexForDocuments.remove(document.key)
                             }
                         }
                     }.onFailure {
@@ -561,6 +562,7 @@ public class Client @VisibleForTesting internal constructor(
                 if (document.status != DocumentStatus.Removed) {
                     document.status = DocumentStatus.Detached
                     attachments.value -= document.key
+                    mutexForDocuments.remove(document.key)
                 }
             }
             SUCCESS
@@ -618,6 +620,7 @@ public class Client @VisibleForTesting internal constructor(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
                 attachments.value -= document.key
+                mutexForDocuments.remove(document.key)
             }
             SUCCESS
         }

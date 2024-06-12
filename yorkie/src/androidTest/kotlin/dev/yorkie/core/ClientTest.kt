@@ -840,4 +840,54 @@ class ClientTest {
             collectJobs.forEach(Job::cancel)
         }
     }
+
+    @Test
+    fun test_duplicated_local_changes_not_sent_to_server() {
+        withTwoClientsAndDocuments(detachDocuments = false) { c1, c2, d1, d2, _ ->
+            val d1Events = mutableListOf<Document.Event>()
+            val d2Events = mutableListOf<Document.Event>()
+            val collectJobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filter { it is RemoteChange || it is LocalChange }
+                        .collect(d1Events::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filter { it is RemoteChange || it is LocalChange }
+                        .collect(d2Events::add)
+                },
+            )
+
+            listOf(
+                d1.updateAsync { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") { text { "12" } }
+                            element("p") { text { "34" } }
+                        },
+                    )
+                },
+                c1.syncAsync(),
+                c1.syncAsync(),
+                c1.syncAsync(),
+                c1.detachAsync(d1),
+            )
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d2Events.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertIs<RemoteChange>(d2Events.first())
+            assertTreesXmlEquals("<doc><p>12</p><p>34</p></doc>", d1, d2)
+
+            delay(500)
+
+            assert(d2Events.size == 1)
+
+            c2.detachAsync(d2).await()
+
+            collectJobs.forEach(Job::cancel)
+        }
+    }
 }

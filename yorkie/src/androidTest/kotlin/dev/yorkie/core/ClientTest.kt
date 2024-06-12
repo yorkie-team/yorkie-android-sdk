@@ -883,7 +883,7 @@ class ClientTest {
 
             delay(500)
 
-            assert(d2Events.size == 1)
+            assertEquals(1, d2Events.size)
 
             c2.detachAsync(d2).await()
 

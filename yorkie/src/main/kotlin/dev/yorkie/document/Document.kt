@@ -51,8 +51,6 @@ import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -127,8 +125,6 @@ public class Document(
         get() = allPresences.value[changeID.actor]
             .takeIf { status == DocumentStatus.Attached }
             .orEmpty()
-
-    private val changeMutex = Mutex()
 
     /**
      * Executes the given [updater] to update this document.
@@ -259,29 +255,27 @@ public class Document(
      * 3. Do Garbage collection.
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
-        changeMutex.withLock {
-            if (pack.hasSnapshot) {
-                applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
-            } else if (pack.hasChanges) {
-                applyChanges(pack.changes)
+        if (pack.hasSnapshot) {
+            applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
+        } else if (pack.hasChanges) {
+            applyChanges(pack.changes)
+        }
+
+        val iterator = localChanges.iterator()
+        while (iterator.hasNext()) {
+            val change = iterator.next()
+            if (change.id.clientSeq > pack.checkPoint.clientSeq) {
+                break
             }
+            iterator.remove()
+        }
 
-            val iterator = localChanges.iterator()
-            while (iterator.hasNext()) {
-                val change = iterator.next()
-                if (change.id.clientSeq > pack.checkPoint.clientSeq) {
-                    break
-                }
-                iterator.remove()
-            }
+        checkPoint = checkPoint.forward(pack.checkPoint)
 
-            checkPoint = checkPoint.forward(pack.checkPoint)
+        pack.minSyncedTicket?.let(::garbageCollect)
 
-            pack.minSyncedTicket?.let(::garbageCollect)
-
-            if (pack.isRemoved) {
-                status = DocumentStatus.Removed
-            }
+        if (pack.isRemoved) {
+            status = DocumentStatus.Removed
         }
     }
 

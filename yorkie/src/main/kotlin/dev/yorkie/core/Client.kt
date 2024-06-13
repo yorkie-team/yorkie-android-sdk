@@ -72,6 +72,8 @@ import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
@@ -108,6 +110,11 @@ public class Client @VisibleForTesting internal constructor(
         get() = mapOf(
             "x-shard-key" to listOf("${options.apiKey.orEmpty()}/$value"),
         )
+
+    private val mutexForDocuments = mutableMapOf<Document.Key, Mutex>()
+
+    private val Document.mutex
+        get() = mutexForDocuments.getOrPut(key) { Mutex() }
 
     public constructor(
         host: String,
@@ -236,32 +243,35 @@ public class Client @VisibleForTesting internal constructor(
                 SyncResult(
                     document,
                     runCatching {
-                        val request = pushPullChangesRequest {
-                            clientId = requireClientId().value
-                            changePack = document.createChangePack().toPBChangePack()
-                            documentId = documentID
-                            pushOnly = syncMode == SyncMode.RealtimePushOnly
-                        }
-                        val response = service.pushPullChanges(
-                            request,
-                            document.key.documentBasedRequestHeader,
-                        ).getOrThrow()
-                        val responsePack = response.changePack.toChangePack()
-                        // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
-                        // PushPull, ignore the response when the syncMode is PushOnly.
-                        val currentSyncMode = attachments.value[document.key]?.syncMode
-                        if (responsePack.hasChanges &&
-                            currentSyncMode == SyncMode.RealtimePushOnly ||
-                            currentSyncMode == SyncMode.RealtimeSyncOff
-                        ) {
-                            return@runCatching
-                        }
+                        document.mutex.withLock {
+                            val request = pushPullChangesRequest {
+                                clientId = requireClientId().value
+                                changePack = document.createChangePack().toPBChangePack()
+                                documentId = documentID
+                                pushOnly = syncMode == SyncMode.RealtimePushOnly
+                            }
+                            val response = service.pushPullChanges(
+                                request,
+                                document.key.documentBasedRequestHeader,
+                            ).getOrThrow()
+                            val responsePack = response.changePack.toChangePack()
+                            // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
+                            // PushPull, ignore the response when the syncMode is PushOnly.
+                            val currentSyncMode = attachments.value[document.key]?.syncMode
+                            if (responsePack.hasChanges &&
+                                currentSyncMode == SyncMode.RealtimePushOnly ||
+                                currentSyncMode == SyncMode.RealtimeSyncOff
+                            ) {
+                                return@runCatching
+                            }
 
-                        document.applyChangePack(responsePack)
-                        // NOTE(chacha912): If a document has been removed, watchStream should
-                        // be disconnected to not receive an event for that document.
-                        if (document.status == DocumentStatus.Removed) {
-                            attachments.value -= document.key
+                            document.applyChangePack(responsePack)
+                            // NOTE(chacha912): If a document has been removed, watchStream should
+                            // be disconnected to not receive an event for that document.
+                            if (document.status == DocumentStatus.Removed) {
+                                attachments.value -= document.key
+                                mutexForDocuments.remove(document.key)
+                            }
                         }
                     }.onFailure {
                         coroutineContext.ensureActive()
@@ -478,36 +488,38 @@ public class Client @VisibleForTesting internal constructor(
             require(document.status == DocumentStatus.Detached) {
                 "document is not detached"
             }
-            document.setActor(requireClientId())
-            document.updateAsync { _, presence ->
-                presence.put(initialPresence)
-            }.await()
+            document.mutex.withLock {
+                document.setActor(requireClientId())
+                document.updateAsync { _, presence ->
+                    presence.put(initialPresence)
+                }.await()
 
-            val request = attachDocumentRequest {
-                clientId = requireClientId().value
-                changePack = document.createChangePack().toPBChangePack()
-            }
-            val response = service.attachDocument(
-                request,
-                document.key.documentBasedRequestHeader,
-            ).getOrElse {
-                ensureActive()
-                return@async Result.failure(it)
-            }
-            val pack = response.changePack.toChangePack()
-            document.applyChangePack(pack)
+                val request = attachDocumentRequest {
+                    clientId = requireClientId().value
+                    changePack = document.createChangePack().toPBChangePack()
+                }
+                val response = service.attachDocument(
+                    request,
+                    document.key.documentBasedRequestHeader,
+                ).getOrElse {
+                    ensureActive()
+                    return@async Result.failure(it)
+                }
+                val pack = response.changePack.toChangePack()
+                document.applyChangePack(pack)
 
-            if (document.status == DocumentStatus.Removed) {
-                return@async SUCCESS
-            }
+                if (document.status == DocumentStatus.Removed) {
+                    return@async SUCCESS
+                }
 
-            document.status = DocumentStatus.Attached
-            attachments.value += document.key to Attachment(
-                document,
-                response.documentId,
-                syncMode,
-            )
-            waitForInitialization(document.key)
+                document.status = DocumentStatus.Attached
+                attachments.value += document.key to Attachment(
+                    document,
+                    response.documentId,
+                    syncMode,
+                )
+                waitForInitialization(document.key)
+            }
             SUCCESS
         }
     }
@@ -525,30 +537,33 @@ public class Client @VisibleForTesting internal constructor(
             check(isActive) {
                 "client is not active"
             }
-            val attachment = attachments.value[document.key]
-                ?: throw IllegalArgumentException("document is not attached")
+            document.mutex.withLock {
+                val attachment = attachments.value[document.key]
+                    ?: throw IllegalArgumentException("document is not attached")
 
-            document.updateAsync { _, presence ->
-                presence.clear()
-            }.await()
+                document.updateAsync { _, presence ->
+                    presence.clear()
+                }.await()
 
-            val request = detachDocumentRequest {
-                clientId = requireClientId().value
-                changePack = document.createChangePack().toPBChangePack()
-                documentId = attachment.documentID
-            }
-            val response = service.detachDocument(
-                request,
-                document.key.documentBasedRequestHeader,
-            ).getOrElse {
-                ensureActive()
-                return@async Result.failure(it)
-            }
-            val pack = response.changePack.toChangePack()
-            document.applyChangePack(pack)
-            if (document.status != DocumentStatus.Removed) {
-                document.status = DocumentStatus.Detached
-                attachments.value -= document.key
+                val request = detachDocumentRequest {
+                    clientId = requireClientId().value
+                    changePack = document.createChangePack().toPBChangePack()
+                    documentId = attachment.documentID
+                }
+                val response = service.detachDocument(
+                    request,
+                    document.key.documentBasedRequestHeader,
+                ).getOrElse {
+                    ensureActive()
+                    return@async Result.failure(it)
+                }
+                val pack = response.changePack.toChangePack()
+                document.applyChangePack(pack)
+                if (document.status != DocumentStatus.Removed) {
+                    document.status = DocumentStatus.Detached
+                    attachments.value -= document.key
+                    mutexForDocuments.remove(document.key)
+                }
             }
             SUCCESS
         }
@@ -586,24 +601,27 @@ public class Client @VisibleForTesting internal constructor(
             check(isActive) {
                 "client is not active"
             }
-            val attachment = attachments.value[document.key]
-                ?: throw IllegalArgumentException("document is not attached")
+            document.mutex.withLock {
+                val attachment = attachments.value[document.key]
+                    ?: throw IllegalArgumentException("document is not attached")
 
-            val request = removeDocumentRequest {
-                clientId = requireClientId().value
-                changePack = document.createChangePack(forceRemove = true).toPBChangePack()
-                documentId = attachment.documentID
+                val request = removeDocumentRequest {
+                    clientId = requireClientId().value
+                    changePack = document.createChangePack(forceRemove = true).toPBChangePack()
+                    documentId = attachment.documentID
+                }
+                val response = service.removeDocument(
+                    request,
+                    document.key.documentBasedRequestHeader,
+                ).getOrElse {
+                    ensureActive()
+                    return@async Result.failure(it)
+                }
+                val pack = response.changePack.toChangePack()
+                document.applyChangePack(pack)
+                attachments.value -= document.key
+                mutexForDocuments.remove(document.key)
             }
-            val response = service.removeDocument(
-                request,
-                document.key.documentBasedRequestHeader,
-            ).getOrElse {
-                ensureActive()
-                return@async Result.failure(it)
-            }
-            val pack = response.changePack.toChangePack()
-            document.applyChangePack(pack)
-            attachments.value -= document.key
             SUCCESS
         }
     }

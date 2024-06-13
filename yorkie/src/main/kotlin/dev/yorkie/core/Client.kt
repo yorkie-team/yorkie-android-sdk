@@ -312,7 +312,7 @@ public class Client @VisibleForTesting internal constructor(
             while (true) {
                 ensureActive()
                 latestStream.safeClose()
-                val stream = withTimeoutOrNull(1_000) {
+                val stream = withTimeoutOrNull(60_000) {
                     service.watchDocument(
                         attachment.document.key.documentBasedRequestHeader,
                     ).also {
@@ -322,7 +322,7 @@ public class Client @VisibleForTesting internal constructor(
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
                     while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
-                        withTimeoutOrNull(60_000) {
+                        withTimeoutOrNull(180_000) {
                             val receiveResult = channel.receiveCatching()
                             receiveResult.onSuccess {
                                 attachment.document.publishEvent(StreamConnectionChanged.Connected)

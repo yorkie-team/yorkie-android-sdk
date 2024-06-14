@@ -45,6 +45,7 @@ import kotlin.collections.Map.Entry
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -117,6 +118,10 @@ public class Client @VisibleForTesting internal constructor(
 
     private val Document.mutex
         get() = mutexForDocuments.getOrPut(key) { Mutex() }
+
+    private val streamTimeout = with(streamClient) {
+        callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
+    }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
 
     public constructor(
         host: String,
@@ -312,7 +317,7 @@ public class Client @VisibleForTesting internal constructor(
             while (true) {
                 ensureActive()
                 latestStream.safeClose()
-                val stream = withTimeoutOrNull(60_000) {
+                val stream = withTimeoutOrNull(streamTimeout) {
                     service.watchDocument(
                         attachment.document.key.documentBasedRequestHeader,
                     ).also {
@@ -322,7 +327,7 @@ public class Client @VisibleForTesting internal constructor(
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
                     while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
-                        withTimeoutOrNull(180_000) {
+                        withTimeoutOrNull(streamTimeout) {
                             val receiveResult = channel.receiveCatching()
                             receiveResult.onSuccess {
                                 attachment.document.publishEvent(StreamConnectionChanged.Connected)

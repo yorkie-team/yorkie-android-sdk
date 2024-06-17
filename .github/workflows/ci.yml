@@ -115,11 +115,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v2
-      - uses: codecov/codecov-action@v1
+      - uses: codecov/codecov-action@v3
         with:
           fail_ci_if_error: true
           verbose: false
-          file: ./coverage/lcov.info
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 

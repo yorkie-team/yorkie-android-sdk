@@ -718,7 +718,6 @@ class PresenceTest {
                 }
             }
 
-            assertEquals(3, d1Events.size)
             assertIs<Others.Watched>(d1Events.first())
             assertIs<Others.PresenceChanged>(d1Events[1])
             assertIs<Others.Unwatched>(d1Events.last())

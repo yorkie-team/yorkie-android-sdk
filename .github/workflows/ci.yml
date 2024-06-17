@@ -119,6 +119,7 @@ jobs:
         with:
           fail_ci_if_error: true
           verbose: false
+          file: ./coverage/lcov.info
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 

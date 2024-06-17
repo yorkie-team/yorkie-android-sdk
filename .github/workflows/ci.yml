@@ -115,7 +115,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v2
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v1
         with:
           fail_ci_if_error: true
           verbose: false

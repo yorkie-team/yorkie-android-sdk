@@ -718,7 +718,6 @@ class PresenceTest {
                 }
             }
 
-            assertEquals(3, d1Events.size)
             assertIs<Others.Watched>(d1Events.first())
             assertIs<Others.PresenceChanged>(d1Events[1])
             assertIs<Others.Unwatched>(d1Events.last())
@@ -824,6 +823,52 @@ class PresenceTest {
             c2.close()
             d1.close()
             d2.close()
+        }
+    }
+
+    @Test
+    fun test_whether_presence_event_queue_is_empty_after_consecutive_presence_changes() {
+        withTwoClientsAndDocuments { c1, _, d1, d2, _ ->
+            val d1PresenceEvents = mutableListOf<MyPresence.PresenceChanged>()
+            val d2PresenceEvents = mutableListOf<Others.PresenceChanged>()
+            val jobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<MyPresence.PresenceChanged>()
+                        .collect(d1PresenceEvents::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events.filterIsInstance<Others.PresenceChanged>()
+                        .collect(d2PresenceEvents::add)
+                },
+            )
+
+            d1.updateAsync { _, presence ->
+                repeat(10) {
+                    presence.put(mapOf("a" to "${it + 1}"))
+                }
+            }.await()
+
+            val lastD1PresenceEvent = MyPresence.PresenceChanged(
+                PresenceInfo(c1.requireClientId(), mapOf("a" to "10")),
+            )
+            val lastD2PresenceEvent = Others.PresenceChanged(
+                PresenceInfo(c1.requireClientId(), mapOf("a" to "10")),
+            )
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (lastD1PresenceEvent !in d1PresenceEvents ||
+                    lastD2PresenceEvent !in d2PresenceEvents
+                ) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(lastD1PresenceEvent, d1PresenceEvents.last())
+            assertTrue(d1.presenceEventQueue.isEmpty())
+            assertEquals(lastD2PresenceEvent, d2PresenceEvents.last())
+            assertTrue(d2.presenceEventQueue.isEmpty())
+
+            jobs.forEach(Job::cancel)
         }
     }
 

@@ -5,6 +5,7 @@ import dev.yorkie.TreeTest
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
+import dev.yorkie.document.json.JsonTreeTest.Companion.updateAndSync
 import kotlin.test.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,7 +17,7 @@ class JsonTreeSplitMergeTest {
     @Test
     fun test_contained_split_and_split_at_the_same_position() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
@@ -31,7 +32,7 @@ class JsonTreeSplitMergeTest {
             )
             JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 2, 1)
                 },
@@ -48,7 +49,7 @@ class JsonTreeSplitMergeTest {
     @Test
     fun test_contained_split_and_split_at_different_positions_on_the_same_node() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
@@ -63,7 +64,7 @@ class JsonTreeSplitMergeTest {
             )
             JsonTreeTest.assertTreesXmlEquals("<r><p>abc</p></r>", d1, d2)
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 2, 1)
                 },
@@ -81,7 +82,7 @@ class JsonTreeSplitMergeTest {
     @Test
     fun test_contained_split_and_insert_into_the_split_position() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
@@ -96,7 +97,7 @@ class JsonTreeSplitMergeTest {
             )
             JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 2, 1)
                 },
@@ -114,7 +115,7 @@ class JsonTreeSplitMergeTest {
     @Test
     fun test_contained_split_and_insert_into_original_node() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
@@ -129,7 +130,7 @@ class JsonTreeSplitMergeTest {
             )
             JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 2, 1)
                 },
@@ -147,7 +148,7 @@ class JsonTreeSplitMergeTest {
     @Test
     fun test_contained_split_and_insert_into_split_node() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
@@ -162,7 +163,7 @@ class JsonTreeSplitMergeTest {
             )
             JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 2, 1)
                 },
@@ -180,7 +181,7 @@ class JsonTreeSplitMergeTest {
     @Test
     fun test_contained_split_and_delete_contents_in_split_node() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.setNewTree(
                         "t",
@@ -195,7 +196,7 @@ class JsonTreeSplitMergeTest {
             )
             JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 2, 1)
                 },
@@ -232,7 +233,7 @@ class JsonTreeSplitMergeTest {
             }.await()
             JsonTreeTest.assertTreesXmlEquals("<doc><p></p><p>ab</p></doc>", d1)
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(1, 3)
                 },
@@ -268,7 +269,7 @@ class JsonTreeSplitMergeTest {
                 d1.getRoot().rootTree().toXml(),
             )
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 6)
                 },
@@ -309,7 +310,7 @@ class JsonTreeSplitMergeTest {
             }.await()
             assertEquals("<doc><p>a</p><p>c</p><p>b</p></doc>", d1.getRoot().rootTree().toXml())
 
-            JsonTreeTest.updateAndSync(
+            updateAndSync(
                 JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
                     root.rootTree().edit(2, 7)
                 },

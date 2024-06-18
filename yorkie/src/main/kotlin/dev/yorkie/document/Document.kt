@@ -100,7 +100,8 @@ public class Document(
     public val garbageLength: Int
         get() = root.garbageLength
 
-    private val presenceEventQueue = mutableListOf<PresenceChanged>()
+    @VisibleForTesting
+    internal val presenceEventQueue = mutableListOf<PresenceChanged>()
     private val pendingPresenceEvents = mutableListOf<PresenceChanged>()
 
     private val onlineClients = MutableStateFlow(setOf<ActorID>())
@@ -360,6 +361,7 @@ public class Document(
      */
     private suspend fun publishPresenceEvent(presences: Presences) {
         val iterator = presenceEventQueue.listIterator()
+        var clearPresenceEventQueue = false
         while (iterator.hasNext()) {
             val event = iterator.next()
             if (event is Others && event.changed.actorID == changeID.actor) {
@@ -368,9 +370,15 @@ public class Document(
             }
 
             if (presenceEventReadyToBePublished(event, presences)) {
+                if (presenceEventQueue.first() != event) {
+                    clearPresenceEventQueue = true
+                }
                 eventStream.emit(event)
                 iterator.remove()
             }
+        }
+        if (clearPresenceEventQueue) {
+            presenceEventQueue.clear()
         }
     }
 
@@ -382,14 +390,14 @@ public class Document(
             is MyPresence.Initialized -> presences.keys.containsAll(event.initialized.keys)
             is MyPresence.PresenceChanged -> {
                 val actorID = event.changed.actorID
-                actorID !in presences || event.changed.presence == presences[actorID]
+                event.changed.presence == presences[actorID]
             }
 
             is Others.Watched -> event.changed.actorID in presences
             is Others.Unwatched -> event.changed.actorID !in presences
             is Others.PresenceChanged -> {
                 val actorID = event.changed.actorID
-                actorID !in presences || event.changed.presence == presences[actorID]
+                event.changed.presence == presences[actorID]
             }
         }
     }

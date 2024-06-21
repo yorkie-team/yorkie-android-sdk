@@ -3,13 +3,6 @@ package dev.yorkie.document
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
-import dev.yorkie.document.presence.P
-import dev.yorkie.document.presence.Presence
-import dev.yorkie.document.presence.PresenceChange
-import dev.yorkie.document.presence.PresenceInfo
-import dev.yorkie.document.presence.Presences
-import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
-import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
@@ -25,6 +18,13 @@ import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.presence.P
+import dev.yorkie.document.presence.Presence
+import dev.yorkie.document.presence.PresenceChange
+import dev.yorkie.document.presence.PresenceInfo
+import dev.yorkie.document.presence.Presences
+import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
+import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket

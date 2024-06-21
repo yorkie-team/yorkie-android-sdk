@@ -24,8 +24,6 @@ import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.watchDocumentRequest
-import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
-import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocumentStatus
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
@@ -34,6 +32,8 @@ import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
+import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
+import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.OperationResult

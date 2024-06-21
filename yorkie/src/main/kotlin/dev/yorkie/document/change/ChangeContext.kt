@@ -1,11 +1,11 @@
 package dev.yorkie.document.change
 
-import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.GCPair
 import dev.yorkie.document.operation.Operation
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.TimeTicket
 
 /**

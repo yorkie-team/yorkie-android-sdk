@@ -3,7 +3,6 @@ package dev.yorkie.api
 import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.operation
-import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.Document
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
@@ -40,6 +39,7 @@ import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.TimeTicket

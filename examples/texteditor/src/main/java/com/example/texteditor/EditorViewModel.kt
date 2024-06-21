@@ -8,11 +8,11 @@ import com.google.gson.Gson
 import dev.yorkie.core.Client
 import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
-import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.time.ActorID
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope

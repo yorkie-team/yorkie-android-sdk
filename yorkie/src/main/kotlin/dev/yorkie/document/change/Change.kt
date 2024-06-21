@@ -1,7 +1,7 @@
 package dev.yorkie.document.change
 
-import dev.yorkie.core.PresenceChange
-import dev.yorkie.core.Presences
+import dev.yorkie.document.presence.PresenceChange
+import dev.yorkie.document.presence.Presences
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.OperationInfo

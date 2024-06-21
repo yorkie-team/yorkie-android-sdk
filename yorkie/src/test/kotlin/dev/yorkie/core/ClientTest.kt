@@ -26,6 +26,7 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.createSingleThreadDispatcher
 import kotlin.test.assertEquals

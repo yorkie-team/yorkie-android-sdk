@@ -1,6 +1,6 @@
 package dev.yorkie.document.change
 
-import dev.yorkie.core.PresenceChange
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtRoot

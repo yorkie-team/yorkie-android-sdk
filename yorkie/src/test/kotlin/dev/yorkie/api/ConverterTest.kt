@@ -3,7 +3,7 @@ package dev.yorkie.api
 import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.operation
-import dev.yorkie.core.PresenceChange
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.Document
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID

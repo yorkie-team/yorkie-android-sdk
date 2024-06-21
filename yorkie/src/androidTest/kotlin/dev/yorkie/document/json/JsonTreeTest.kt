@@ -8,7 +8,7 @@ import dev.yorkie.api.toCrdtTree
 import dev.yorkie.core.Client
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.GENERAL_TIMEOUT
-import dev.yorkie.core.Presence
+import dev.yorkie.document.presence.Presence
 import dev.yorkie.core.createClient
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document

@@ -1,4 +1,4 @@
-package dev.yorkie.core
+package dev.yorkie.document.presence
 
 import dev.yorkie.document.time.ActorID
 

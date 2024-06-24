@@ -34,21 +34,6 @@ $dokka.location:dev.yorkie.core/Client/removeAsync/#dev.yorkie.document.Document
 $dokka.location:dev.yorkie.core/Client/requireClientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-client-id.html
 $dokka.location:dev.yorkie.core/Client/status/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/status.html
 $dokka.location:dev.yorkie.core/Client/syncAsync/#dev.yorkie.document.Document?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/sync-async.html
-$dokka.location:dev.yorkie.core/P///PointingToDeclaration/yorkie/dev.yorkie.core/-p/index.html
-$dokka.location:dev.yorkie.core/Presence///PointingToDeclaration/yorkie/dev.yorkie.core/-presence/index.html
-$dokka.location:dev.yorkie.core/Presence/clear/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presence/clear.html
-$dokka.location:dev.yorkie.core/Presence/put/#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.core/-presence/put.html
-$dokka.location:dev.yorkie.core/PresenceInfo///PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/index.html
-$dokka.location:dev.yorkie.core/PresenceInfo/PresenceInfo/#dev.yorkie.document.time.ActorID#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/-presence-info.html
-$dokka.location:dev.yorkie.core/PresenceInfo/actorID/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/actor-i-d.html
-$dokka.location:dev.yorkie.core/PresenceInfo/presence/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presence-info/presence.html
-$dokka.location:dev.yorkie.core/Presences.Companion///PointingToDeclaration/yorkie/dev.yorkie.core/-presences/-companion/index.html
-$dokka.location:dev.yorkie.core/Presences.Companion/asPresences/kotlin.Pair[dev.yorkie.document.time.ActorID,kotlin.collections.Map[kotlin.String,kotlin.String]]#/PointingToDeclaration/yorkie/dev.yorkie.core/-presences/-companion/as-presences.html
-$dokka.location:dev.yorkie.core/Presences.Companion/asPresences/kotlin.collections.Map[dev.yorkie.document.time.ActorID,kotlin.collections.Map[kotlin.String,kotlin.String]]#/PointingToDeclaration/yorkie/dev.yorkie.core/-presences/-companion/as-presences.html
-$dokka.location:dev.yorkie.core/Presences///PointingToDeclaration/yorkie/dev.yorkie.core/-presences/index.html
-$dokka.location:dev.yorkie.core/Presences/minus/#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.core/-presences/minus.html
-$dokka.location:dev.yorkie.core/Presences/plus/#kotlin.Pair[dev.yorkie.document.time.ActorID,kotlin.collections.Map[kotlin.String,kotlin.String]]/PointingToDeclaration/yorkie/dev.yorkie.core/-presences/plus.html
-$dokka.location:dev.yorkie.core/Presences/toString/#/PointingToDeclaration/yorkie/dev.yorkie.core/-presences/to-string.html
 $dokka.location:dev.yorkie.document.change////PointingToDeclaration/yorkie/dev.yorkie.document.change/index.html
 $dokka.location:dev.yorkie.document.change/Change///PointingToDeclaration/yorkie/dev.yorkie.document.change/-change/index.html
 $dokka.location:dev.yorkie.document.crdt////PointingToDeclaration/yorkie/dev.yorkie.document.crdt/index.html
@@ -291,6 +276,22 @@ $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeStyleOpInfo/to/#
 $dokka.location:dev.yorkie.document.operation/OperationInfo.TreeStyleOpInfo/toPath/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-tree-style-op-info/to-path.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/path.html
+$dokka.location:dev.yorkie.document.presence////PointingToDeclaration/yorkie/dev.yorkie.document.presence/index.html
+$dokka.location:dev.yorkie.document.presence/P///PointingToDeclaration/yorkie/dev.yorkie.document.presence/-p/index.html
+$dokka.location:dev.yorkie.document.presence/Presence///PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presence/index.html
+$dokka.location:dev.yorkie.document.presence/Presence/clear/#/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presence/clear.html
+$dokka.location:dev.yorkie.document.presence/Presence/put/#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presence/put.html
+$dokka.location:dev.yorkie.document.presence/PresenceInfo///PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presence-info/index.html
+$dokka.location:dev.yorkie.document.presence/PresenceInfo/PresenceInfo/#dev.yorkie.document.time.ActorID#kotlin.collections.Map[kotlin.String,kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presence-info/-presence-info.html
+$dokka.location:dev.yorkie.document.presence/PresenceInfo/actorID/#/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presence-info/actor-i-d.html
+$dokka.location:dev.yorkie.document.presence/PresenceInfo/presence/#/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presence-info/presence.html
+$dokka.location:dev.yorkie.document.presence/Presences.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presences/-companion/index.html
+$dokka.location:dev.yorkie.document.presence/Presences.Companion/asPresences/kotlin.Pair[dev.yorkie.document.time.ActorID,kotlin.collections.Map[kotlin.String,kotlin.String]]#/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presences/-companion/as-presences.html
+$dokka.location:dev.yorkie.document.presence/Presences.Companion/asPresences/kotlin.collections.Map[dev.yorkie.document.time.ActorID,kotlin.collections.Map[kotlin.String,kotlin.String]]#/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presences/-companion/as-presences.html
+$dokka.location:dev.yorkie.document.presence/Presences///PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presences/index.html
+$dokka.location:dev.yorkie.document.presence/Presences/minus/#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presences/minus.html
+$dokka.location:dev.yorkie.document.presence/Presences/plus/#kotlin.Pair[dev.yorkie.document.time.ActorID,kotlin.collections.Map[kotlin.String,kotlin.String]]/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presences/plus.html
+$dokka.location:dev.yorkie.document.presence/Presences/toString/#/PointingToDeclaration/yorkie/dev.yorkie.document.presence/-presences/to-string.html
 $dokka.location:dev.yorkie.document.time////PointingToDeclaration/yorkie/dev.yorkie.document.time/index.html
 $dokka.location:dev.yorkie.document.time/ActorID.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.time/-actor-i-d/-companion/index.html
 $dokka.location:dev.yorkie.document.time/ActorID.Companion/INITIAL_ACTOR_ID/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-actor-i-d/-companion/-i-n-i-t-i-a-l_-a-c-t-o-r_-i-d.html
@@ -338,20 +339,20 @@ $dokka.location:dev.yorkie.document/Document.Event.ChangeInfo/serverSeq/#/Pointi
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/index.html
 $dokka.location:dev.yorkie.document/Document.Event.LocalChange/changeInfo/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-local-change/change-info.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.Initialized///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-initialized/index.html
-$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.Initialized/Initialized/#dev.yorkie.core.Presences/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-initialized/-initialized.html
+$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.Initialized/Initialized/#dev.yorkie.document.presence.Presences/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-initialized/-initialized.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.Initialized/initialized/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-initialized/initialized.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.PresenceChanged///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-presence-changed/index.html
-$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.PresenceChanged/PresenceChanged/#dev.yorkie.core.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-presence-changed/-presence-changed.html
+$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.PresenceChanged/PresenceChanged/#dev.yorkie.document.presence.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-presence-changed/-presence-changed.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence.PresenceChanged/changed/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/-presence-changed/changed.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.MyPresence///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-my-presence/index.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.PresenceChanged///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-presence-changed/index.html
-$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.PresenceChanged/PresenceChanged/#dev.yorkie.core.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-presence-changed/-presence-changed.html
+$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.PresenceChanged/PresenceChanged/#dev.yorkie.document.presence.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-presence-changed/-presence-changed.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.PresenceChanged/changed/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-presence-changed/changed.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Unwatched///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-unwatched/index.html
-$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Unwatched/Unwatched/#dev.yorkie.core.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-unwatched/-unwatched.html
+$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Unwatched/Unwatched/#dev.yorkie.document.presence.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-unwatched/-unwatched.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Unwatched/changed/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-unwatched/changed.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Watched///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-watched/index.html
-$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Watched/Watched/#dev.yorkie.core.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-watched/-watched.html
+$dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Watched/Watched/#dev.yorkie.document.presence.PresenceInfo/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-watched/-watched.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others.Watched/changed/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/-watched/changed.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/index.html
 $dokka.location:dev.yorkie.document/Document.Event.PresenceChanged.Others/changed/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-presence-changed/-others/changed.html
@@ -391,7 +392,7 @@ $dokka.location:dev.yorkie.document/Document/presences/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.document/Document/publishEvent/#dev.yorkie.document.Document.Event/PointingToDeclaration/yorkie/dev.yorkie.document/-document/publish-event.html
 $dokka.location:dev.yorkie.document/Document/status/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/status.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html
-$dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.coroutines.SuspendFunction2[dev.yorkie.document.json.JsonObject,dev.yorkie.core.Presence,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
+$dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.coroutines.SuspendFunction2[dev.yorkie.document.json.JsonObject,dev.yorkie.document.presence.Presence,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
 $dokka.location:dev.yorkie.document/RgaTreeSplitNodeIDStruct///PointingToDeclaration/yorkie/dev.yorkie.document/-rga-tree-split-node-i-d-struct/index.html
 $dokka.location:dev.yorkie.document/RgaTreeSplitNodeIDStruct/RgaTreeSplitNodeIDStruct/#dev.yorkie.document.TimeTicketStruct#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document/-rga-tree-split-node-i-d-struct/-rga-tree-split-node-i-d-struct.html
 $dokka.location:dev.yorkie.document/RgaTreeSplitNodeIDStruct/createdAt/#/PointingToDeclaration/yorkie/dev.yorkie.document/-rga-tree-split-node-i-d-struct/created-at.html
@@ -423,6 +424,7 @@ dev.yorkie.document.change
 dev.yorkie.document.crdt
 dev.yorkie.document.json
 dev.yorkie.document.operation
+dev.yorkie.document.presence
 dev.yorkie.document.time
 dev.yorkie.util
 

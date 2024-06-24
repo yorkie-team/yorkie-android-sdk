@@ -23,7 +23,6 @@ import dev.yorkie.api.v1.treeNode
 import dev.yorkie.api.v1.treeNodeID
 import dev.yorkie.api.v1.treeNodes
 import dev.yorkie.api.v1.treePos
-import dev.yorkie.core.P
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter
 import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
@@ -47,6 +46,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.RhtNode
 import dev.yorkie.document.crdt.TextValue
+import dev.yorkie.document.presence.P
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode

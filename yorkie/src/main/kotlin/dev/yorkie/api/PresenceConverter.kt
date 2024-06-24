@@ -2,8 +2,8 @@ package dev.yorkie.api
 
 import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.presenceChange
-import dev.yorkie.core.P
-import dev.yorkie.core.PresenceChange
+import dev.yorkie.document.presence.P
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 
 internal typealias PBPresence = dev.yorkie.api.v1.Presence

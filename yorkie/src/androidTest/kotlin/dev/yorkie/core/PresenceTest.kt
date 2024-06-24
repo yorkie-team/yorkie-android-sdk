@@ -8,6 +8,7 @@ import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
+import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.gson
 import java.util.UUID
 import junit.framework.TestCase.assertEquals

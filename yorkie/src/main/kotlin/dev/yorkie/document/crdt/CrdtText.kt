@@ -2,6 +2,8 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.SplayTreeSet
+import java.util.TreeMap
 
 /**
  * [CrdtText] is a custom CRDT data type to represent the contents of text editors.
@@ -32,6 +34,12 @@ internal data class CrdtText(
 
     val length: Int
         get() = rgaTreeSplit.length
+
+    val treeByIndex: SplayTreeSet<RgaTreeSplitNode<TextValue>>
+        get() = rgaTreeSplit.treeByIndex
+
+    val treeById: TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<TextValue>>
+        get() = rgaTreeSplit.treeByID
 
     /**
      * Edits the given [range] with the given [value] and [attributes].

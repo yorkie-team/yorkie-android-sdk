@@ -24,10 +24,12 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     GCParent<RgaTreeSplitNode<T>> {
     @Suppress("UNCHECKED_CAST")
     val head = RgaTreeSplitNode(InitialNodeID, InitialNodeValue) as RgaTreeSplitNode<T>
-    private val treeByIndex = SplayTreeSet<RgaTreeSplitNode<T>> {
+
+    val treeByIndex = SplayTreeSet<RgaTreeSplitNode<T>> {
         if (it.isRemoved) 0 else it.contentLength
     }.apply { insert(head) }
-    private val treeByID = TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>().apply {
+
+    val treeByID = TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>().apply {
         put(head.id, head)
     }
 
@@ -346,6 +348,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      * Physically deletes the given node from this [RgaTreeSplit].
      */
     override fun delete(node: RgaTreeSplitNode<T>) {
+        treeByIndex.delete(node)
+        treeByID.remove(node.id)
+
         val prev = node.prev
         val next = node.next
         val insertionPrev = node.insertionPrev

@@ -291,4 +291,30 @@ class DocumentTest {
             JsonParser.parseString(target.toJson()).asJsonObject.get("""it"s""").asString,
         )
     }
+
+    @Test
+    fun `should purge node from indexes during GC`() = runTest {
+        target.updateAsync { root, _ ->
+            root.setNewText("text")
+        }.await()
+        assertEquals(1, target.getRoot().getAs<JsonText>("text").treeById.size)
+
+        target.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").apply {
+                edit(0, 0, "ABC")
+            }
+        }.await()
+        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeById.size)
+
+        target.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").apply {
+                edit(1, 3, "")
+            }
+        }.await()
+        println(target.toJson())
+        assertEquals(3, target.getRoot().getAs<JsonText>("text").treeById.size)
+
+        target.garbageCollect(TimeTicket.MaxTimeTicket)
+        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeById.size)
+    }
 }

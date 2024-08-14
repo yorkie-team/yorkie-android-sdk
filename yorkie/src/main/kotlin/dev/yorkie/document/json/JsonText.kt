@@ -2,12 +2,17 @@ package dev.yorkie.document.json
 
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.RgaTreeSplitNode
+import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
+import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.Logger.Companion.logError
+import dev.yorkie.util.SplayTreeSet
+import java.util.TreeMap
 import dev.yorkie.document.RgaTreeSplitPosStruct as TextPosStruct
 
 public typealias TextPosStructRange = Pair<TextPosStruct, TextPosStruct>
@@ -25,6 +30,12 @@ public class JsonText internal constructor(
 
     public val length: Int
         get() = target.length
+
+    internal val treeByIndex: SplayTreeSet<RgaTreeSplitNode<TextValue>>
+        get() = target.rgaTreeSplit.treeByIndex
+
+    internal val treeById: TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<TextValue>>
+        get() = target.rgaTreeSplit.treeByID
 
     /**
      * Edits this [JsonText] with the given [content] and [attributes].

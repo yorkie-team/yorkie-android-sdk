@@ -503,16 +503,17 @@ public class Client @VisibleForTesting internal constructor(
                 "client is not active"
             }
             require(document.status == DocumentStatus.Detached) {
-                "document is not detached"
+                "document(${document.key} is not detached"
             }
             document.mutex.withLock {
-                document.setActor(requireClientId())
+                val clientID = requireClientId()
+                document.setActor(clientID)
                 document.updateAsync { _, presence ->
                     presence.put(initialPresence)
                 }.await()
 
                 val request = attachDocumentRequest {
-                    clientId = requireClientId().value
+                    clientId = clientID.value
                     changePack = document.createChangePack().toPBChangePack()
                 }
                 val response = service.attachDocument(
@@ -529,7 +530,7 @@ public class Client @VisibleForTesting internal constructor(
                     return@async SUCCESS
                 }
 
-                document.status = DocumentStatus.Attached
+                document.applyDocumentStatus(DocumentStatus.Attached, clientID)
                 attachments.value += document.key to Attachment(
                     document,
                     response.documentId,
@@ -556,14 +557,15 @@ public class Client @VisibleForTesting internal constructor(
             }
             document.mutex.withLock {
                 val attachment = attachments.value[document.key]
-                    ?: throw IllegalArgumentException("document is not attached")
+                    ?: throw IllegalArgumentException("document(${document.key}) is not attached")
 
                 document.updateAsync { _, presence ->
                     presence.clear()
                 }.await()
 
+                val clientID = requireClientId()
                 val request = detachDocumentRequest {
-                    clientId = requireClientId().value
+                    clientId = clientID.value
                     changePack = document.createChangePack().toPBChangePack()
                     documentId = attachment.documentID
                 }
@@ -577,7 +579,7 @@ public class Client @VisibleForTesting internal constructor(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
                 if (document.status != DocumentStatus.Removed) {
-                    document.status = DocumentStatus.Detached
+                    document.applyDocumentStatus(DocumentStatus.Detached, clientID)
                     attachments.value -= document.key
                     mutexForDocuments.remove(document.key)
                 }
@@ -596,16 +598,23 @@ public class Client @VisibleForTesting internal constructor(
             }
             activationJob.cancelChildren()
 
+            val actorID = requireClientId()
             service.deactivateClient(
                 deactivateClientRequest {
-                    clientId = requireClientId().value
+                    clientId = actorID.value
                 },
                 projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
                 return@async Result.failure(it)
             }
+            // detach all documents using attachedments
+            attachments.value.values.forEach {
+                detachAsync(it.document).await()
+                it.document.applyDocumentStatus(DocumentStatus.Detached, actorID)
+            }
             _status.emit(Status.Deactivated)
+
             SUCCESS
         }
     }

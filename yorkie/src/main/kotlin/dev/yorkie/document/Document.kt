@@ -3,6 +3,7 @@ package dev.yorkie.document
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
+import dev.yorkie.document.Document.Event.DocumentStatusChanged
 import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
@@ -276,7 +277,7 @@ public class Document(
         pack.minSyncedTicket?.let(::garbageCollect)
 
         if (pack.isRemoved) {
-            status = DocumentStatus.Removed
+            applyDocumentStatus(DocumentStatus.Removed, null)
         }
     }
 
@@ -344,6 +345,15 @@ public class Document(
             newPresences?.let { emitPresences(it, presenceEvent) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
+    }
+
+    internal suspend fun applyDocumentStatus(status: DocumentStatus, actorID: ActorID?) {
+        if (this.status == status) {
+            return
+        }
+
+        this.status = status
+        publishEvent(DocumentStatusChanged(status, actorID))
     }
 
     private suspend fun ensureClone(): RootClone = withContext(dispatcher) {
@@ -568,6 +578,15 @@ public class Document(
 
             public data object Disconnected : StreamConnectionChanged
         }
+
+        /**
+         * An event that occurs when the document's status has been changed.
+         * @see DocumentStatus
+         */
+        public data class DocumentStatusChanged(
+            val documentStatus: DocumentStatus,
+            val actorID: ActorID?,
+        ) : Event
 
         /**
          * Represents the modification made during a document update and the message passed.

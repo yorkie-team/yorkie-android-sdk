@@ -23,10 +23,7 @@ fun String.toDocKey(): Document.Key {
     )
 }
 
-fun withTwoClientsAndDocuments(
-    detachDocuments: Boolean = true,
-    syncMode: Client.SyncMode = Client.SyncMode.Realtime,
-    presences: Pair<Map<String, String>, Map<String, String>> = Pair(emptyMap(), emptyMap()),
+fun createTwoClientsAndDocuments(
     callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
 ) {
     runBlocking {
@@ -36,6 +33,17 @@ fun withTwoClientsAndDocuments(
         val document1 = Document(documentKey)
         val document2 = Document(documentKey)
 
+        callback.invoke(this, client1, client2, document1, document2, documentKey)
+    }
+}
+
+fun withTwoClientsAndDocuments(
+    detachDocuments: Boolean = true,
+    syncMode: Client.SyncMode = Client.SyncMode.Realtime,
+    presences: Pair<Map<String, String>, Map<String, String>> = Pair(emptyMap(), emptyMap()),
+    callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
+) {
+    createTwoClientsAndDocuments { client1, client2, document1, document2, key ->
         client1.activateAsync().await()
         client2.activateAsync().await()
 
@@ -50,7 +58,7 @@ fun withTwoClientsAndDocuments(
             initialPresence = presences.second,
         ).await()
 
-        callback.invoke(this, client1, client2, document1, document2, documentKey)
+        callback.invoke(this, client1, client2, document1, document2, key)
 
         if (detachDocuments) {
             client1.detachAsync(document1).await()

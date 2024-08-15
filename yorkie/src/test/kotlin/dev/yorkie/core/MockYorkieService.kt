@@ -61,7 +61,9 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class MockYorkieService : YorkieServiceClientInterface {
+class MockYorkieService(
+    val customError: MutableMap<String, Code> = defaultError,
+) : YorkieServiceClientInterface {
 
     override suspend fun activateClient(
         request: ActivateClientRequest,
@@ -88,7 +90,11 @@ class MockYorkieService : YorkieServiceClientInterface {
         headers: Headers,
     ): ResponseMessage<AttachDocumentResponse> {
         if (request.changePack.documentKey == ATTACH_ERROR_DOCUMENT_KEY) {
-            return ResponseMessage.Failure(ConnectException(Code.UNKNOWN), emptyMap(), emptyMap())
+            return ResponseMessage.Failure(
+                ConnectException(customError[ATTACH_ERROR_DOCUMENT_KEY]!!),
+                emptyMap(),
+                emptyMap(),
+            )
         }
         return ResponseMessage.Success(
             attachDocumentResponse {
@@ -121,7 +127,11 @@ class MockYorkieService : YorkieServiceClientInterface {
         headers: Headers,
     ): ResponseMessage<DetachDocumentResponse> {
         if (request.changePack.documentKey == DETACH_ERROR_DOCUMENT_KEY) {
-            return ResponseMessage.Failure(ConnectException(Code.UNKNOWN), emptyMap(), emptyMap())
+            return ResponseMessage.Failure(
+                ConnectException(customError[DETACH_ERROR_DOCUMENT_KEY]!!),
+                emptyMap(),
+                emptyMap(),
+            )
         }
         return ResponseMessage.Success(detachDocumentResponse { }, emptyMap(), emptyMap())
     }
@@ -131,7 +141,11 @@ class MockYorkieService : YorkieServiceClientInterface {
         headers: Headers,
     ): ResponseMessage<PushPullChangesResponse> {
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
-            return ResponseMessage.Failure(ConnectException(Code.UNKNOWN), emptyMap(), emptyMap())
+            return ResponseMessage.Failure(
+                ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!),
+                emptyMap(),
+                emptyMap(),
+            )
         }
         return ResponseMessage.Success(
             pushPullChangesResponse {
@@ -262,7 +276,7 @@ class MockYorkieService : YorkieServiceClientInterface {
     ): ResponseMessage<RemoveDocumentResponse> {
         if (request.documentId == REMOVE_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
-                ConnectException(Code.UNAVAILABLE),
+                ConnectException(customError[REMOVE_ERROR_DOCUMENT_KEY]!!),
                 emptyMap(),
                 emptyMap(),
             )
@@ -300,5 +314,12 @@ class MockYorkieService : YorkieServiceClientInterface {
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000ffff0000000000")
+
+        internal val defaultError: MutableMap<String, Code> = mutableMapOf(
+            ATTACH_ERROR_DOCUMENT_KEY to Code.UNKNOWN,
+            DETACH_ERROR_DOCUMENT_KEY to Code.UNKNOWN,
+            REMOVE_ERROR_DOCUMENT_KEY to Code.UNAVAILABLE,
+            WATCH_SYNC_ERROR_DOCUMENT_KEY to Code.UNKNOWN,
+        )
     }
 }

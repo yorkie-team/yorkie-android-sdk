@@ -39,6 +39,7 @@ import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
 import dev.yorkie.util.createSingleThreadDispatcher
+import dev.yorkie.util.isRetryable
 import java.io.Closeable
 import java.io.InterruptedIOException
 import java.util.UUID
@@ -125,6 +126,12 @@ public class Client @VisibleForTesting internal constructor(
         callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
     }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
 
+    @VisibleForTesting
+    val conditions: MutableMap<ClientCondition, Boolean> = mutableMapOf(
+        ClientCondition.SYNC_LOOP to false,
+        ClientCondition.WATCH_LOOP to false,
+    )
+
     public constructor(
         host: String,
         options: Options = Options(),
@@ -182,15 +189,29 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    /**
+     * runSyncLoop() runs the sync loop. The sync loop pushes local changes to
+     * the server and pulls remote changes from the server.
+     */
     private fun runSyncLoop() {
         scope.launch(activationJob) {
             while (true) {
+                if (!isActive) {
+                    conditions[ClientCondition.SYNC_LOOP] = false
+                    return@launch
+                }
                 attachments.value.entries.asSyncFlow(true).collect { (document, result) ->
                     document.publishEvent(
                         if (result.isSuccess) {
+                            conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.Synced
-                        } else {
+                        } else if (isRetryable(result.exceptionOrNull() as? ConnectException)) {
+                            conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.SyncFailed(result.exceptionOrNull())
+                        } else {
+                            conditions[ClientCondition.SYNC_LOOP] = false
+                            SyncStatusChanged.SyncFailed(result.exceptionOrNull())
+                            return@collect
                         },
                     )
                 }
@@ -289,8 +310,14 @@ public class Client @VisibleForTesting internal constructor(
             }
     }
 
+    /**
+     * runWatchLoop() runs the watch loop for the given document. The watch loop
+     * listens to the events of the given document from the server.
+     */
     private fun runWatchLoop() {
         scope.launch(activationJob) {
+            conditions[ClientCondition.WATCH_LOOP] = true
+
             attachments.map { attachment ->
                 attachment.filterValues { it.syncMode != SyncMode.Manual }
             }.fold(emptyMap<Document.Key, WatchJobHolder>()) { accumulator, attachments ->
@@ -383,8 +410,13 @@ public class Client @VisibleForTesting internal constructor(
         stream.safeClose()
 
         cause?.let(::sendWatchStreamException)
-        coroutineContext.ensureActive()
-        delay(options.reconnectStreamDelay.inWholeMilliseconds)
+
+        if (isRetryable(cause as? ConnectException)) {
+            coroutineContext.ensureActive()
+            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+        } else {
+            conditions[ClientCondition.WATCH_LOOP] = false
+        }
     }
 
     private suspend fun onWatchStreamCanceled(document: Document) {
@@ -751,4 +783,19 @@ public class Client @VisibleForTesting internal constructor(
          */
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
     )
+
+    /**
+     * `ClientCondition` represents the condition of the client.
+     */
+    enum class ClientCondition {
+        /**
+         * `SyncLoop` is a key of the sync loop condition.
+         */
+        SYNC_LOOP,
+
+        /**
+         * `WatchLoop` is a key of the watch loop condition.
+         */
+        WATCH_LOOP,
+    }
 }

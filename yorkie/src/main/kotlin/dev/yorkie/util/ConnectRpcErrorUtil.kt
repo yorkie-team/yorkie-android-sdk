@@ -14,11 +14,12 @@ fun isRetryable(exception: ConnectException?): Boolean {
     }
 
     val errorCode = exception.code
-    println("isRetryable.errorCode: $errorCode")
-    return errorCode === Code.CANCELED ||
+    val isRetryableErrorCode = errorCode === Code.CANCELED ||
         errorCode === Code.UNKNOWN ||
         errorCode === Code.RESOURCE_EXHAUSTED ||
         errorCode === Code.UNAVAILABLE
+
+    return isRetryableErrorCode
 }
 
 

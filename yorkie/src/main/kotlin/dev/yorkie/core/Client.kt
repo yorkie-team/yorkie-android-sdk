@@ -343,7 +343,8 @@ public class Client @VisibleForTesting internal constructor(
     private fun createWatchJob(attachment: Attachment): Job {
         var latestStream: ServerOnlyStreamInterface<*, *>? = null
         return scope.launch(activationJob) {
-            while (true) {
+            var shouldContinue = true
+            while (shouldContinue) {
                 ensureActive()
                 latestStream.safeClose()
                 val stream = withTimeoutOrNull(streamTimeout) {
@@ -355,18 +356,19 @@ public class Client @VisibleForTesting internal constructor(
                 } ?: continue
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
-                    while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
+                    while (!stream.isReceiveClosed() && !channel.isClosedForReceive && shouldContinue) {
                         withTimeoutOrNull(streamTimeout) {
                             val receiveResult = channel.receiveCatching()
                             receiveResult.onSuccess {
                                 attachment.document.publishEvent(StreamConnectionChanged.Connected)
                                 handleWatchDocumentsResponse(attachment.document.key, it)
+                                shouldContinue = true
                             }.onFailure {
                                 if (receiveResult.isClosed) {
                                     stream.safeClose()
+                                    shouldContinue = handleWatchStreamFailure(attachment.document, stream, it)
                                     return@onFailure
                                 }
-                                handleWatchStreamFailure(attachment.document, stream, it)
                             }.onClosed {
                                 handleWatchStreamFailure(
                                     attachment.document,
@@ -380,6 +382,7 @@ public class Client @VisibleForTesting internal constructor(
                                 stream,
                                 TimeoutException("channel timed out"),
                             )
+                            shouldContinue = true
                         }
                     }
                 }
@@ -401,11 +404,15 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    /**
+     * handleWatchStreamFailure() handles the failure of the watch stream.
+     * return true if the stream should be reconnected, false otherwise.
+     */
     private suspend fun handleWatchStreamFailure(
         document: Document,
         stream: ServerOnlyStreamInterface<*, *>,
         cause: Throwable?,
-    ) {
+    ): Boolean {
         onWatchStreamCanceled(document)
         stream.safeClose()
 
@@ -414,8 +421,10 @@ public class Client @VisibleForTesting internal constructor(
         if (isRetryable(cause as? ConnectException)) {
             coroutineContext.ensureActive()
             delay(options.reconnectStreamDelay.inWholeMilliseconds)
+            return true
         } else {
             conditions[ClientCondition.WATCH_LOOP] = false
+            return false
         }
     }
 

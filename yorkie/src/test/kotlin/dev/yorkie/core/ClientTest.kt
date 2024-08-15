@@ -268,6 +268,9 @@ class ClientTest {
 
             client.activateAsync().await()
 
+            delay(500)
+            assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
+
             // 01. Simulate retryable errors.
             val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
             client.attachAsync(document).await()
@@ -320,10 +323,19 @@ class ClientTest {
                     }
                 }.await()
                 delay(500)
+
                 assertFalse(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+                assertFalse(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
             }
 
             client.detachAsync(document).await()
+            client.deactivateAsync().await()
+
+            // 03. Assert watch loop is reactivated after client is reactivated.
+            client.activateAsync().await()
+            delay(500)
+            assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
+
             client.deactivateAsync().await()
             document.close()
             client.close()

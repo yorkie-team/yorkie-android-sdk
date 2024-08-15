@@ -310,8 +310,8 @@ class ClientTest {
             assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
 
             // 02. Simulate FailedPrecondition error which is not retryable.
-            Code.entries.filterNot {
-                isRetryable(ConnectException(it))
+            Code.entries.filterNot { errorCode ->
+                isRetryable(ConnectException(errorCode))
             }.forEach { nonRetryableErrorCode ->
                 mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = nonRetryableErrorCode
                 document.updateAsync { root, _ ->

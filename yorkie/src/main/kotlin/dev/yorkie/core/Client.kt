@@ -38,6 +38,11 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
+import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
+import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
+import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.isRetryable
 import java.io.Closeable
@@ -226,10 +231,12 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun syncAsync(document: Document? = null): Deferred<OperationResult> {
         return scope.async {
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
             var failure: Throwable? = null
             val attachments = document?.let {
                 val attachment = attachments.value[it.key]?.copy(syncMode = SyncMode.Realtime)
-                    ?: throw IllegalArgumentException("document is not attached")
+                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
 
                 listOf(AttachmentEntry(it.key, attachment))
             } ?: attachments.value.entries
@@ -347,6 +354,7 @@ public class Client @VisibleForTesting internal constructor(
             while (shouldContinue) {
                 ensureActive()
                 latestStream.safeClose()
+
                 val stream = withTimeoutOrNull(streamTimeout) {
                     service.watchDocument(
                         attachment.document.key.documentBasedRequestHeader,
@@ -540,12 +548,13 @@ public class Client @VisibleForTesting internal constructor(
         syncMode: SyncMode = SyncMode.Realtime,
     ): Deferred<OperationResult> {
         return scope.async {
-            check(isActive) {
-                "client is not active"
-            }
-            require(document.status == DocumentStatus.Detached) {
-                "document(${document.key} is not detached"
-            }
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
+            checkYorkieError(
+                document.status == DocumentStatus.Detached,
+                YorkieException(ErrDocumentNotDetached, "document(${document.key} is not detached"),
+            )
+
             document.mutex.withLock {
                 val clientID = requireClientId()
                 document.setActor(clientID)
@@ -593,12 +602,11 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun detachAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
-            check(isActive) {
-                "client is not active"
-            }
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
             document.mutex.withLock {
                 val attachment = attachments.value[document.key]
-                    ?: throw IllegalArgumentException("document(${document.key}) is not attached")
+                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
 
                 document.updateAsync { _, presence ->
                     presence.clear()
@@ -665,12 +673,11 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun removeAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
-            check(isActive) {
-                "client is not active"
-            }
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
             document.mutex.withLock {
                 val attachment = attachments.value[document.key]
-                    ?: throw IllegalArgumentException("document is not attached")
+                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
 
                 val request = removeDocumentRequest {
                     clientId = requireClientId().value
@@ -707,11 +714,10 @@ public class Client @VisibleForTesting internal constructor(
      * Changes the sync mode of the [document].
      */
     public fun changeSyncMode(document: Document, syncMode: SyncMode) {
-        check(isActive) {
-            "client is not active"
-        }
+        checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
         val attachment = attachments.value[document.key]
-            ?: throw IllegalArgumentException("document is not attached")
+            ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
         attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
             attachment.copy(syncMode = syncMode, remoteChangeEventReceived = true)
         } else {

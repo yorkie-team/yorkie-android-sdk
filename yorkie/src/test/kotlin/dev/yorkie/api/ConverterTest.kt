@@ -46,6 +46,8 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import java.util.Date
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
@@ -297,16 +299,18 @@ class ConverterTest {
     }
 
     @Test
-    fun `should throw IllegalArgumentException for unsupported operations`() {
-        assertThrows(IllegalArgumentException::class.java) {
+    fun `should throw YorkieException for unsupported operations and it contains ErrUnimplemented code`() {
+        val exception1 = assertThrows(YorkieException::class.java) {
             val operation = TestOperation(InitialTimeTicket, InitialTimeTicket, InitialTimeTicket)
             operation.toPBOperation()
         }
+        assertEquals(ErrUnimplemented, exception1.code)
 
-        assertThrows(IllegalArgumentException::class.java) {
+        val exception2 = assertThrows(YorkieException::class.java) {
             val pbOperation = operation { }
             listOf(pbOperation).toOperations()
         }
+        assertEquals(ErrUnimplemented, exception2.code)
     }
 
     @Test
@@ -376,21 +380,24 @@ class ConverterTest {
     }
 
     @Test
-    fun `should throw IllegalArgumentException for unsupported CrdtElements`() {
-        assertThrows(IllegalArgumentException::class.java) {
+    fun `should throw YorkieException for unsupported CrdtElements and it contains ErrUnimplemented code`() {
+        val exception1 = assertThrows(YorkieException::class.java) {
             val testCrdtElement = TestCrdtElement(InitialTimeTicket)
             testCrdtElement.toPBJsonElement()
         }
+        assertEquals(ErrUnimplemented, exception1.code)
 
-        assertThrows(IllegalArgumentException::class.java) {
+        val exception2 = assertThrows(YorkieException::class.java) {
             val testCrdtElement = TestCrdtElement(InitialTimeTicket)
             testCrdtElement.toPBJsonElementSimple()
         }
+        assertEquals(ErrUnimplemented, exception2.code)
 
-        assertThrows(IllegalArgumentException::class.java) {
+        val exception3 = assertThrows(YorkieException::class.java) {
             val testPBCrdtElement = jSONElement { }
             testPBCrdtElement.toCrdtElement()
         }
+        assertEquals(ErrUnimplemented, exception3.code)
     }
 
     @Test

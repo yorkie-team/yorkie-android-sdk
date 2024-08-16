@@ -20,6 +20,7 @@ import dev.yorkie.document.operation.OperationInfo.MoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.StyleOpInfo
+import dev.yorkie.util.YorkieException
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -45,13 +46,13 @@ class DocumentTest {
             val document = Document(documentKey)
 
             // 01. client is not activated.
-            assertFailsWith(IllegalStateException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
 
             // 02. document is not attached.
             client.activateAsync().await()
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
 
@@ -61,14 +62,14 @@ class DocumentTest {
             assertEquals(DocumentStatus.Removed, document.status)
 
             // 04. try to update a removed document.
-            assertFailsWith(IllegalStateException::class) {
+            assertFailsWith(YorkieException::class) {
                 document.updateAsync { root, _ ->
                     root["key"] = 0
                 }.await()
             }
 
             // 05. try to attach a removed document.
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.attachAsync(document).await()
             }
 
@@ -196,31 +197,31 @@ class DocumentTest {
             client.activateAsync().await()
 
             // 01. abnormal behavior on detached state
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.detachAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.syncAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
 
             // 02. abnormal behavior on attached state
             client.attachAsync(document).await()
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.attachAsync(document).await()
             }
 
             // 03. abnormal behavior on removed state
             client.removeAsync(document).await()
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.syncAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.detachAsync(document).await()
             }
 

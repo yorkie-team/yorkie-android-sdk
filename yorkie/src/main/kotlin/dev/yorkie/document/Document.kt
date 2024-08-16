@@ -31,6 +31,10 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.OperationResult
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrDocumentRemoved
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
+import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineDispatcher
@@ -136,9 +140,10 @@ public class Document(
         updater: suspend (root: JsonObject, presence: Presence) -> Unit,
     ): Deferred<OperationResult> {
         return scope.async {
-            check(status != DocumentStatus.Removed) {
-                "document is removed"
-            }
+            checkYorkieError(
+                status != DocumentStatus.Removed,
+                YorkieException(ErrDocumentRemoved, "document(${key}) is removed"),
+            )
 
             val clone = ensureClone()
             val context = ChangeContext(
@@ -235,9 +240,11 @@ public class Document(
      * Returns the [JsonElement] corresponding to the [path].
      */
     public suspend fun getValueByPath(path: String): JsonElement? = withContext(dispatcher) {
-        require(path.startsWith("$")) {
-            "the path must start with \"$\""
-        }
+        checkYorkieError(
+            path.startsWith("$"),
+            YorkieException(ErrInvalidArgument, "the path must start with \"$\""),
+        )
+
         val paths = path.split(".").drop(1)
         var value: JsonElement? = getRoot()
         paths.forEach { key ->

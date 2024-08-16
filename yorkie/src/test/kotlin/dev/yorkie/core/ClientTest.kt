@@ -268,7 +268,7 @@ class ClientTest {
 
             client.activateAsync().await()
 
-            delay(500)
+            delay(1000)
             assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
 
             // 01. Simulate retryable errors.
@@ -282,7 +282,7 @@ class ClientTest {
                 }
             }.await()
 
-            delay(500)
+            delay(1000)
             assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
 
             mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = Code.CANCELED
@@ -291,7 +291,7 @@ class ClientTest {
                     edit(0, 0, "b")
                 }
             }.await()
-            delay(500)
+            delay(1000)
             assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
 
             mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = Code.RESOURCE_EXHAUSTED
@@ -300,7 +300,7 @@ class ClientTest {
                     edit(0, 0, "b")
                 }
             }.await()
-            delay(500)
+            delay(1000)
             assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
 
             mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = Code.UNAVAILABLE
@@ -309,7 +309,7 @@ class ClientTest {
                     edit(0, 0, "b")
                 }
             }.await()
-            delay(500)
+            delay(1000)
             assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
 
             // 02. Simulate FailedPrecondition error which is not retryable.
@@ -322,7 +322,7 @@ class ClientTest {
                         edit(0, 0, "b")
                     }
                 }.await()
-                delay(500)
+                delay(1000)
 
                 assertFalse(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
                 assertFalse(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
@@ -333,7 +333,7 @@ class ClientTest {
 
             // 03. Assert watch loop is reactivated after client is reactivated.
             client.activateAsync().await()
-            delay(500)
+            delay(1000)
             assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
 
             client.deactivateAsync().await()

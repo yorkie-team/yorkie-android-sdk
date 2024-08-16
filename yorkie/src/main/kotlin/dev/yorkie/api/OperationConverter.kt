@@ -21,6 +21,8 @@ import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
 
@@ -113,7 +115,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                     .associate { (key, value) -> ActorID(key) to value.toTimeTicket() },
             )
 
-            else -> throw IllegalArgumentException("unimplemented operation")
+            else -> throw YorkieException(ErrUnimplemented, "unimplemented operation")
         }
     }
 }
@@ -240,7 +242,7 @@ internal fun Operation.toPBOperation(): PBOperation {
             }
         }
 
-        else -> throw IllegalArgumentException("unimplemented operation $operation")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented operation : $operation")
     }
 }
 

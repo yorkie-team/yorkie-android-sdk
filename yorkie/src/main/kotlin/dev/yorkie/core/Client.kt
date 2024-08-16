@@ -657,11 +657,12 @@ public class Client @VisibleForTesting internal constructor(
                 ensureActive()
                 return@async Result.failure(it)
             }
-            // detach all documents using attachedments
+
             attachments.value.values.forEach {
                 detachAsync(it.document).await()
                 it.document.applyDocumentStatus(DocumentStatus.Detached, actorID)
             }
+            
             _status.emit(Status.Deactivated)
 
             SUCCESS

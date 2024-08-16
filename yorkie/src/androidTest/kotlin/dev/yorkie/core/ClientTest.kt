@@ -20,8 +20,11 @@ import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.*
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
@@ -890,4 +893,42 @@ class ClientTest {
             collectJobs.forEach(Job::cancel)
         }
     }
+
+    @Test
+    fun test_should_throw_exceptions_attach_and_detach_document() {
+        runBlocking {
+            val c1 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+
+            // Test that attaching an already attached document throws an error
+            val activatedException = assertFailsWith<YorkieException> {
+                c1.attachAsync(d1).await()
+            }
+            assertEquals(ErrClientNotActivated, activatedException.code)
+
+            c1.activateAsync().await()
+
+            c1.attachAsync(d1).await()
+
+            // Test that attaching an already attached document throws an error
+            val attachException = assertFailsWith<YorkieException> {
+                c1.attachAsync(d1).await()
+            }
+            assertEquals(ErrDocumentNotDetached, attachException.code)
+
+            c1.detachAsync(d1).await()
+
+            // Test that detaching an already detached document throws an error
+            val detachException = assertFailsWith<YorkieException> {
+                c1.detachAsync(d1).await()
+            }
+            assertEquals(ErrDocumentNotAttached, detachException.code)
+
+            c1.deactivateAsync().await()
+            d1.close()
+            c1.close()
+        }
+    }
+
 }

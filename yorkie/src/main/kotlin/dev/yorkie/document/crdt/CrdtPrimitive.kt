@@ -69,6 +69,7 @@ internal data class CrdtPrimitive private constructor(
             }
             Type.Double -> {
                 ByteBuffer.allocate(Double.SIZE_BYTES)
+                    .order(ByteOrder.LITTLE_ENDIAN)
                     .putDouble(value as Double)
                     .array()
                     .toByteString()
@@ -77,6 +78,7 @@ internal data class CrdtPrimitive private constructor(
             Type.Bytes -> value as ByteString
             Type.Date -> {
                 ByteBuffer.allocate(Long.SIZE_BYTES)
+                    .order(ByteOrder.LITTLE_ENDIAN)
                     .putLong((value as Date).time)
                     .array()
                     .toByteString()

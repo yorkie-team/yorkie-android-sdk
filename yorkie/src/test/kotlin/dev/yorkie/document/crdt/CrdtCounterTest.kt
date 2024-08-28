@@ -3,6 +3,7 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.crdt.CrdtCounter.Companion.asCounterValue
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Date
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
@@ -76,12 +77,18 @@ class CrdtCounterTest {
 
     @Test
     fun `verify converting bytes to counter and vice-versa works properly`() {
-        val intInBytes = ByteBuffer.allocate(Int.SIZE_BYTES).putInt(39).array()
+        val intInBytes = ByteBuffer.allocate(Int.SIZE_BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(39)
+            .array()
         val intValue = intInBytes.asCounterValue(CrdtCounter.CounterType.IntegerCnt)
         assertEquals(39, intValue)
         assertArrayEquals(intInBytes, CrdtCounter(39, InitialTimeTicket).toBytes())
 
-        val longInBytes = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(333L).array()
+        val longInBytes = ByteBuffer.allocate(Long.SIZE_BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .putLong(333L)
+            .array()
         val longValue = longInBytes.asCounterValue(CrdtCounter.CounterType.LongCnt)
         assertEquals(333L, longValue)
         assertArrayEquals(longInBytes, CrdtCounter(333L, InitialTimeTicket).toBytes())

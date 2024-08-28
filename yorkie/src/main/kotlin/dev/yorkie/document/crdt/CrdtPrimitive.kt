@@ -5,6 +5,7 @@ import com.google.protobuf.kotlin.toByteString
 import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Date
 
 /**
@@ -54,12 +55,14 @@ internal data class CrdtPrimitive private constructor(
             Type.Boolean -> byteArrayOf(if (value == true) 1 else 0).toByteString()
             Type.Integer -> {
                 ByteBuffer.allocate(Int.SIZE_BYTES)
+                    .order(ByteOrder.LITTLE_ENDIAN)
                     .putInt(value as Int)
                     .array()
                     .toByteString()
             }
             Type.Long -> {
                 ByteBuffer.allocate(Long.SIZE_BYTES)
+                    .order(ByteOrder.LITTLE_ENDIAN)
                     .putLong(value as Long)
                     .array()
                     .toByteString()
@@ -110,7 +113,7 @@ internal data class CrdtPrimitive private constructor(
         }
 
         fun fromBytes(type: Type, bytes: ByteString): Any? {
-            fun ByteString.asByteBuffer() = ByteBuffer.wrap(toByteArray())
+            fun ByteString.asByteBuffer() = ByteBuffer.wrap(toByteArray()).order(ByteOrder.LITTLE_ENDIAN)
 
             return when (type) {
                 Type.Null -> null

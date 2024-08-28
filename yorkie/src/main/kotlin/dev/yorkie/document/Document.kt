@@ -279,6 +279,10 @@ public class Document(
             iterator.remove()
         }
 
+        if (pack.hasSnapshot) {
+            applyChanges(localChanges)
+        }
+
         checkPoint = checkPoint.forward(pack.checkPoint)
 
         pack.minSyncedTicket?.let(::garbageCollect)

@@ -931,4 +931,34 @@ class ClientTest {
         }
     }
 
+    @Test
+    fun test_should_handle_local_changes_correctly_when_receiving_snapshot() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewCounter("counter", 0)
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            // 01. c1 increases the counter for creating snapshot.
+            repeat(500) {
+                d1.updateAsync { root, _ ->
+                    root.getAs<JsonCounter>("counter").increase(1)
+                }.await()
+            }
+            c1.syncAsync().await()
+
+            // 02. c2 receives the snapshot and increases the counter simultaneously.
+            // The tc in js-sdk, it performed the sync before update, but it is not necessary.
+            // so, it is not implemented in android sdk.
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonCounter>("counter").increase(1)
+            }.await()
+
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+            assertEquals(d1.toJson(), d2.toJson())
+        }
+    }
 }

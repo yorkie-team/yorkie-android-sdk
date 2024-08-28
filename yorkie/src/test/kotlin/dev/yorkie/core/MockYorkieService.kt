@@ -51,6 +51,7 @@ import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -170,6 +171,7 @@ class MockYorkieService(
             value = jSONElementSimple {
                 type = ValueType.VALUE_TYPE_DOUBLE
                 value = ByteBuffer.allocate(Double.SIZE_BYTES)
+                    .order(ByteOrder.LITTLE_ENDIAN)
                     .putDouble(100.0).array()
                     .toByteString()
             }

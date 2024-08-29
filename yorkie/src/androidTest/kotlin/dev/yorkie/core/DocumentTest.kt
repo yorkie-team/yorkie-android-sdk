@@ -655,15 +655,17 @@ class DocumentTest {
             assertEquals(DocumentStatus.Detached, documentStatusChangedList[1].documentStatus)
             assertEquals(actorID, documentStatusChangedList[1].actorID)
 
-            // 3. Can receive DocumentStatus.Removed event when removed after attached again
+            // 3. Attach could fail if the document has been detached
             client.attachAsync(document).await()
-            assertEquals(3, documentStatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, documentStatusChangedList[2].documentStatus)
-            assertEquals(actorID, documentStatusChangedList[2].actorID)
-            client.removeAsync(document).await()
-            assertEquals(4, documentStatusChangedList.size)
-            assertEquals(DocumentStatus.Removed, documentStatusChangedList[3].documentStatus)
-            assertNull(documentStatusChangedList[3].actorID)
+            assertEquals(2, documentStatusChangedList.size)
+            assertEquals(DocumentStatus.Detached, documentStatusChangedList[1].documentStatus)
+            assertEquals(actorID, documentStatusChangedList[1].actorID)
+
+            // 4. Exception should be thrown when trying to remove a detached document
+            val exception = assertFailsWith(YorkieException::class) {
+                client.removeAsync(document).await()
+            }
+            assertEquals(YorkieException.Code.ErrDocumentNotAttached, exception.code)
 
             client.deactivateAsync().await()
             document.close()

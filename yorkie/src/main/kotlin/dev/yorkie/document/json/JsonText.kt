@@ -34,7 +34,7 @@ public class JsonText internal constructor(
     internal val treeByIndex: SplayTreeSet<RgaTreeSplitNode<TextValue>>
         get() = target.rgaTreeSplit.treeByIndex
 
-    internal val treeById: TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<TextValue>>
+    internal val treeByID: TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<TextValue>>
         get() = target.rgaTreeSplit.treeByID
 
     /**

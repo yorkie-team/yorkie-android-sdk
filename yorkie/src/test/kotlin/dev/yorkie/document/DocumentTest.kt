@@ -299,14 +299,14 @@ class DocumentTest {
         target.updateAsync { root, _ ->
             root.setNewText("text")
         }.await()
-        assertEquals(1, target.getRoot().getAs<JsonText>("text").treeById.size)
+        assertEquals(1, target.getRoot().getAs<JsonText>("text").treeByID.size)
 
         target.updateAsync { root, _ ->
             root.getAs<JsonText>("text").apply {
                 edit(0, 0, "ABC")
             }
         }.await()
-        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeById.size)
+        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeByID.size)
 
         target.updateAsync { root, _ ->
             root.getAs<JsonText>("text").apply {
@@ -314,9 +314,9 @@ class DocumentTest {
             }
         }.await()
         println(target.toJson())
-        assertEquals(3, target.getRoot().getAs<JsonText>("text").treeById.size)
+        assertEquals(3, target.getRoot().getAs<JsonText>("text").treeByID.size)
 
         target.garbageCollect(TimeTicket.MaxTimeTicket)
-        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeById.size)
+        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeByID.size)
     }
 }

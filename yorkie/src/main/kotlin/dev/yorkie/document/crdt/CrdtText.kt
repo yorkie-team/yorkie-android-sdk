@@ -38,7 +38,7 @@ internal data class CrdtText(
     val treeByIndex: SplayTreeSet<RgaTreeSplitNode<TextValue>>
         get() = rgaTreeSplit.treeByIndex
 
-    val treeById: TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<TextValue>>
+    val treeByID: TreeMap<RgaTreeSplitNodeID, RgaTreeSplitNode<TextValue>>
         get() = rgaTreeSplit.treeByID
 
     /**

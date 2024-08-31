@@ -8,7 +8,7 @@ import com.connectrpc.ConnectException
  * `handleConnectError` handles the given error. If the given error can be
  * retried after handling, it returns true.
  */
-fun isRetryable(exception: ConnectException?): Boolean {
+public fun isRetryable(exception: ConnectException?): Boolean {
     if (exception == null) {
         return false
     }

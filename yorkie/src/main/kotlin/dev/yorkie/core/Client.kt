@@ -374,9 +374,9 @@ public class Client @VisibleForTesting internal constructor(
                             }.onFailure {
                                 if (receiveResult.isClosed) {
                                     stream.safeClose()
-                                    shouldContinue = handleWatchStreamFailure(attachment.document, stream, it)
                                     return@onFailure
                                 }
+                                shouldContinue = handleWatchStreamFailure(attachment.document, stream, it)
                             }.onClosed {
                                 handleWatchStreamFailure(
                                     attachment.document,

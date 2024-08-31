@@ -662,7 +662,7 @@ public class Client @VisibleForTesting internal constructor(
                 detachAsync(it.document).await()
                 it.document.applyDocumentStatus(DocumentStatus.Detached, actorID)
             }
-            
+
             _status.emit(Status.Deactivated)
 
             SUCCESS
@@ -803,7 +803,7 @@ public class Client @VisibleForTesting internal constructor(
     /**
      * `ClientCondition` represents the condition of the client.
      */
-    enum class ClientCondition {
+    public enum class ClientCondition {
         /**
          * `SyncLoop` is a key of the sync loop condition.
          */

@@ -7,7 +7,7 @@ import kotlin.contracts.contract
  * `YorkieError` is an error returned by a Yorkie operation.
  */
 data class YorkieException(val code: Code, val errorMessage: String) : RuntimeException(errorMessage) {
-    enum class Code {
+    public enum class Code {
         // Ok is returned when the operation completed successfully.
         Ok,
 

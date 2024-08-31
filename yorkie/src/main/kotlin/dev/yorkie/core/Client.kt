@@ -132,7 +132,7 @@ public class Client @VisibleForTesting internal constructor(
     }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
 
     @VisibleForTesting
-    val conditions: MutableMap<ClientCondition, Boolean> = mutableMapOf(
+    internal val conditions: MutableMap<ClientCondition, Boolean> = mutableMapOf(
         ClientCondition.SYNC_LOOP to false,
         ClientCondition.WATCH_LOOP to false,
     )

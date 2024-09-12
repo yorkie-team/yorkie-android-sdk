@@ -801,16 +801,16 @@ public class Client @VisibleForTesting internal constructor(
     )
 
     /**
-     * `ClientCondition` represents the condition of the client.
+     * [ClientCondition] represents the condition of the client.
      */
     public enum class ClientCondition {
         /**
-         * `SyncLoop` is a key of the sync loop condition.
+         * Key of the sync loop condition.
          */
         SYNC_LOOP,
 
         /**
-         * `WatchLoop` is a key of the watch loop condition.
+         * Key of the watch loop condition.
          */
         WATCH_LOOP,
     }

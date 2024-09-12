@@ -632,13 +632,12 @@ class DocumentTest {
             val document = Document(documentKey)
 
             val documentStatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
-            val job =
-                "document status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
-                    document.events.filterIsInstance<Event.DocumentStatusChanged>()
-                        .collect {
-                            documentStatusChangedList.add(it)
-                        }
-                }
+            val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<Event.DocumentStatusChanged>()
+                    .collect {
+                        documentStatusChangedList.add(it)
+                    }
+            }
 
             client.activateAsync().await()
             val actorID = client.requireClientId()
@@ -670,7 +669,7 @@ class DocumentTest {
             client.deactivateAsync().await()
             document.close()
             client.close()
-            job.second.cancel()
+            job.cancel()
         }
     }
 

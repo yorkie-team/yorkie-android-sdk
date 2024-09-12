@@ -733,14 +733,12 @@ class DocumentTest {
                 "document3 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document3.events.filterIsInstance<Event.DocumentStatusChanged>()
                         .collect {
-                            println("collect : ${it.documentStatus}")
                             document3StatusChangedList.add(it)
                         }
                 },
                 "document4 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
                     document4.events.filterIsInstance<Event.DocumentStatusChanged>()
                         .collect {
-                            println("collect : ${it.documentStatus}")
                             document4StatusChangedList.add(it)
                         }
                 },

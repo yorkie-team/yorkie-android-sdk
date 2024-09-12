@@ -313,7 +313,6 @@ class DocumentTest {
                 edit(1, 3, "")
             }
         }.await()
-        println(target.toJson())
         assertEquals(3, target.getRoot().getAs<JsonText>("text").treeByID.size)
 
         target.garbageCollect(TimeTicket.MaxTimeTicket)

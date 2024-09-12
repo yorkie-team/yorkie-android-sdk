@@ -288,7 +288,7 @@ public class Document(
         pack.minSyncedTicket?.let(::garbageCollect)
 
         if (pack.isRemoved) {
-            applyDocumentStatus(DocumentStatus.Removed, null)
+            applyDocumentStatus(DocumentStatus.Removed)
         }
     }
 
@@ -358,13 +358,18 @@ public class Document(
         }
     }
 
-    internal suspend fun applyDocumentStatus(status: DocumentStatus, actorID: ActorID?) {
+    internal suspend fun applyDocumentStatus(status: DocumentStatus) {
         if (this.status == status) {
             return
         }
 
         this.status = status
-        publishEvent(DocumentStatusChanged(status, actorID))
+        publishEvent(
+            DocumentStatusChanged(
+                status,
+                changeID.actor.takeIf { status == DocumentStatus.Attached },
+            ),
+        )
     }
 
     private suspend fun ensureClone(): RootClone = withContext(dispatcher) {

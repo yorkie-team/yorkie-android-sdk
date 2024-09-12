@@ -580,7 +580,7 @@ public class Client @VisibleForTesting internal constructor(
                     return@async SUCCESS
                 }
 
-                document.applyDocumentStatus(DocumentStatus.Attached, clientID)
+                document.applyDocumentStatus(DocumentStatus.Attached)
                 attachments.value += document.key to Attachment(
                     document,
                     response.documentId,
@@ -612,9 +612,8 @@ public class Client @VisibleForTesting internal constructor(
                     presence.clear()
                 }.await()
 
-                val clientID = requireClientId()
                 val request = detachDocumentRequest {
-                    clientId = clientID.value
+                    clientId = requireClientId().value
                     changePack = document.createChangePack().toPBChangePack()
                     documentId = attachment.documentID
                 }
@@ -628,7 +627,7 @@ public class Client @VisibleForTesting internal constructor(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
                 if (document.status != DocumentStatus.Removed) {
-                    document.applyDocumentStatus(DocumentStatus.Detached, clientID)
+                    document.applyDocumentStatus(DocumentStatus.Detached)
                     attachments.value -= document.key
                     mutexForDocuments.remove(document.key)
                 }
@@ -647,10 +646,9 @@ public class Client @VisibleForTesting internal constructor(
             }
             activationJob.cancelChildren()
 
-            val actorID = requireClientId()
             service.deactivateClient(
                 deactivateClientRequest {
-                    clientId = actorID.value
+                    clientId = requireClientId().value
                 },
                 projectBasedRequestHeader,
             ).getOrElse {
@@ -660,7 +658,7 @@ public class Client @VisibleForTesting internal constructor(
 
             attachments.value.values.forEach {
                 detachAsync(it.document).await()
-                it.document.applyDocumentStatus(DocumentStatus.Detached, actorID)
+                it.document.applyDocumentStatus(DocumentStatus.Detached)
             }
 
             _status.emit(Status.Deactivated)

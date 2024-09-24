@@ -20,8 +20,11 @@ import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.*
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
@@ -888,6 +891,74 @@ class ClientTest {
             c2.detachAsync(d2).await()
 
             collectJobs.forEach(Job::cancel)
+        }
+    }
+
+    @Test
+    fun test_should_throw_exceptions_attach_and_detach_document() {
+        runBlocking {
+            val c1 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+
+            // Test that attaching an already attached document throws an error
+            val activatedException = assertFailsWith<YorkieException> {
+                c1.attachAsync(d1).await()
+            }
+            assertEquals(ErrClientNotActivated, activatedException.code)
+
+            c1.activateAsync().await()
+
+            c1.attachAsync(d1).await()
+
+            // Test that attaching an already attached document throws an error
+            val attachException = assertFailsWith<YorkieException> {
+                c1.attachAsync(d1).await()
+            }
+            assertEquals(ErrDocumentNotDetached, attachException.code)
+
+            c1.detachAsync(d1).await()
+
+            // Test that detaching an already detached document throws an error
+            val detachException = assertFailsWith<YorkieException> {
+                c1.detachAsync(d1).await()
+            }
+            assertEquals(ErrDocumentNotAttached, detachException.code)
+
+            c1.deactivateAsync().await()
+            d1.close()
+            c1.close()
+        }
+    }
+
+    @Test
+    fun test_should_handle_local_changes_correctly_when_receiving_snapshot() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewCounter("counter", 0)
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            // 01. c1 increases the counter for creating snapshot.
+            repeat(500) {
+                d1.updateAsync { root, _ ->
+                    root.getAs<JsonCounter>("counter").increase(1)
+                }.await()
+            }
+            c1.syncAsync().await()
+
+            // 02. c2 receives the snapshot and increases the counter simultaneously.
+            // The tc in js-sdk, it performed the sync before update, but it is not necessary.
+            // so, it is not implemented in android sdk.
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonCounter>("counter").increase(1)
+            }.await()
+
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+            assertEquals(d1.toJson(), d2.toJson())
         }
     }
 }

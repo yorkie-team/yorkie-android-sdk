@@ -1,5 +1,7 @@
 package dev.yorkie.core
 
+import com.connectrpc.Code
+import com.connectrpc.ConnectException
 import dev.yorkie.api.PBChangePack
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -26,18 +28,22 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.createSingleThreadDispatcher
+import dev.yorkie.util.isRetryable
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import org.junit.After
@@ -242,6 +248,98 @@ class ClientTest {
 
         target.detachAsync(document).await()
         target.deactivateAsync().await()
+    }
+
+    @Test
+    fun `should retry on network failure if error code was retryable`() = runTest {
+        runBlocking {
+            val mockYorkieService = MockYorkieService()
+            val yorkieService = mock<YorkieServiceClientInterface>(
+                defaultAnswer = delegatesTo(mockYorkieService),
+            )
+
+            val client = Client(
+                yorkieService,
+                Client.Options(key = TEST_KEY, apiKey = TEST_KEY, syncLoopDuration = 500.milliseconds),
+                createSingleThreadDispatcher("Client Test"),
+                OkHttpClient(),
+                OkHttpClient(),
+            )
+
+            client.activateAsync().await()
+
+            delay(1000)
+            assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
+
+            // 01. Simulate retryable errors.
+            val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
+            client.attachAsync(document).await()
+
+            document.updateAsync { root, _ ->
+                root.setNewText("")
+                root.getAs<JsonText>("text").apply {
+                    edit(0, 0, "a")
+                }
+            }.await()
+
+            delay(1000)
+            assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = Code.CANCELED
+            document.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").apply {
+                    edit(0, 0, "b")
+                }
+            }.await()
+            delay(1000)
+            assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = Code.RESOURCE_EXHAUSTED
+            document.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").apply {
+                    edit(0, 0, "b")
+                }
+            }.await()
+            delay(1000)
+            assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = Code.UNAVAILABLE
+            document.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").apply {
+                    edit(0, 0, "b")
+                }
+            }.await()
+            delay(1000)
+            assertTrue(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            // 02. Simulate FailedPrecondition error which is not retryable.
+            Code.entries.filterNot { errorCode ->
+                isRetryable(ConnectException(errorCode))
+            }.forEach { nonRetryableErrorCode ->
+                mockYorkieService.customError[WATCH_SYNC_ERROR_DOCUMENT_KEY] = nonRetryableErrorCode
+                document.updateAsync { root, _ ->
+                    root.getAs<JsonText>("text").apply {
+                        edit(0, 0, "b")
+                    }
+                }.await()
+                delay(1000)
+
+                assertFalse(client.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+                assertFalse(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
+            }
+
+            client.detachAsync(document).await()
+            client.deactivateAsync().await()
+
+            // 03. Assert watch loop is reactivated after client is reactivated.
+            client.activateAsync().await()
+            delay(1000)
+            assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
+
+            client.deactivateAsync().await()
+            document.close()
+            client.close()
+        }
     }
 
     private fun assertIsTestActorID(clientId: String) {

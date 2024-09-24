@@ -38,7 +38,13 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
+import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
+import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
+import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
+import dev.yorkie.util.isRetryable
 import java.io.Closeable
 import java.io.InterruptedIOException
 import java.util.UUID
@@ -125,6 +131,12 @@ public class Client @VisibleForTesting internal constructor(
         callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
     }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
 
+    @VisibleForTesting
+    internal val conditions: MutableMap<ClientCondition, Boolean> = mutableMapOf(
+        ClientCondition.SYNC_LOOP to false,
+        ClientCondition.WATCH_LOOP to false,
+    )
+
     public constructor(
         host: String,
         options: Options = Options(),
@@ -182,15 +194,29 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    /**
+     * runSyncLoop() runs the sync loop. The sync loop pushes local changes to
+     * the server and pulls remote changes from the server.
+     */
     private fun runSyncLoop() {
         scope.launch(activationJob) {
             while (true) {
+                if (!isActive) {
+                    conditions[ClientCondition.SYNC_LOOP] = false
+                    return@launch
+                }
                 attachments.value.entries.asSyncFlow(true).collect { (document, result) ->
                     document.publishEvent(
                         if (result.isSuccess) {
+                            conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.Synced
-                        } else {
+                        } else if (isRetryable(result.exceptionOrNull() as? ConnectException)) {
+                            conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.SyncFailed(result.exceptionOrNull())
+                        } else {
+                            conditions[ClientCondition.SYNC_LOOP] = false
+                            SyncStatusChanged.SyncFailed(result.exceptionOrNull())
+                            return@collect
                         },
                     )
                 }
@@ -205,10 +231,12 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun syncAsync(document: Document? = null): Deferred<OperationResult> {
         return scope.async {
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
             var failure: Throwable? = null
             val attachments = document?.let {
                 val attachment = attachments.value[it.key]?.copy(syncMode = SyncMode.Realtime)
-                    ?: throw IllegalArgumentException("document is not attached")
+                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
 
                 listOf(AttachmentEntry(it.key, attachment))
             } ?: attachments.value.entries
@@ -289,8 +317,14 @@ public class Client @VisibleForTesting internal constructor(
             }
     }
 
+    /**
+     * runWatchLoop() runs the watch loop for the given document. The watch loop
+     * listens to the events of the given document from the server.
+     */
     private fun runWatchLoop() {
         scope.launch(activationJob) {
+            conditions[ClientCondition.WATCH_LOOP] = true
+
             attachments.map { attachment ->
                 attachment.filterValues { it.syncMode != SyncMode.Manual }
             }.fold(emptyMap<Document.Key, WatchJobHolder>()) { accumulator, attachments ->
@@ -316,9 +350,11 @@ public class Client @VisibleForTesting internal constructor(
     private fun createWatchJob(attachment: Attachment): Job {
         var latestStream: ServerOnlyStreamInterface<*, *>? = null
         return scope.launch(activationJob) {
-            while (true) {
+            var shouldContinue = true
+            while (shouldContinue) {
                 ensureActive()
                 latestStream.safeClose()
+
                 val stream = withTimeoutOrNull(streamTimeout) {
                     service.watchDocument(
                         attachment.document.key.documentBasedRequestHeader,
@@ -328,18 +364,19 @@ public class Client @VisibleForTesting internal constructor(
                 } ?: continue
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
-                    while (!stream.isReceiveClosed() && !channel.isClosedForReceive) {
+                    while (!stream.isReceiveClosed() && !channel.isClosedForReceive && shouldContinue) {
                         withTimeoutOrNull(streamTimeout) {
                             val receiveResult = channel.receiveCatching()
                             receiveResult.onSuccess {
                                 attachment.document.publishEvent(StreamConnectionChanged.Connected)
                                 handleWatchDocumentsResponse(attachment.document.key, it)
+                                shouldContinue = true
                             }.onFailure {
                                 if (receiveResult.isClosed) {
                                     stream.safeClose()
                                     return@onFailure
                                 }
-                                handleWatchStreamFailure(attachment.document, stream, it)
+                                shouldContinue = handleWatchStreamFailure(attachment.document, stream, it)
                             }.onClosed {
                                 handleWatchStreamFailure(
                                     attachment.document,
@@ -353,6 +390,7 @@ public class Client @VisibleForTesting internal constructor(
                                 stream,
                                 TimeoutException("channel timed out"),
                             )
+                            shouldContinue = true
                         }
                     }
                 }
@@ -374,17 +412,28 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    /**
+     * handleWatchStreamFailure() handles the failure of the watch stream.
+     * return true if the stream should be reconnected, false otherwise.
+     */
     private suspend fun handleWatchStreamFailure(
         document: Document,
         stream: ServerOnlyStreamInterface<*, *>,
         cause: Throwable?,
-    ) {
+    ): Boolean {
         onWatchStreamCanceled(document)
         stream.safeClose()
 
         cause?.let(::sendWatchStreamException)
-        coroutineContext.ensureActive()
-        delay(options.reconnectStreamDelay.inWholeMilliseconds)
+
+        if (isRetryable(cause as? ConnectException)) {
+            coroutineContext.ensureActive()
+            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+            return true
+        } else {
+            conditions[ClientCondition.WATCH_LOOP] = false
+            return false
+        }
     }
 
     private suspend fun onWatchStreamCanceled(document: Document) {
@@ -499,20 +548,22 @@ public class Client @VisibleForTesting internal constructor(
         syncMode: SyncMode = SyncMode.Realtime,
     ): Deferred<OperationResult> {
         return scope.async {
-            check(isActive) {
-                "client is not active"
-            }
-            require(document.status == DocumentStatus.Detached) {
-                "document is not detached"
-            }
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
+            checkYorkieError(
+                document.status == DocumentStatus.Detached,
+                YorkieException(ErrDocumentNotDetached, "document(${document.key} is not detached"),
+            )
+
             document.mutex.withLock {
-                document.setActor(requireClientId())
+                val clientID = requireClientId()
+                document.setActor(clientID)
                 document.updateAsync { _, presence ->
                     presence.put(initialPresence)
                 }.await()
 
                 val request = attachDocumentRequest {
-                    clientId = requireClientId().value
+                    clientId = clientID.value
                     changePack = document.createChangePack().toPBChangePack()
                 }
                 val response = service.attachDocument(
@@ -529,7 +580,7 @@ public class Client @VisibleForTesting internal constructor(
                     return@async SUCCESS
                 }
 
-                document.status = DocumentStatus.Attached
+                document.applyDocumentStatus(DocumentStatus.Attached)
                 attachments.value += document.key to Attachment(
                     document,
                     response.documentId,
@@ -551,12 +602,11 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun detachAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
-            check(isActive) {
-                "client is not active"
-            }
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
             document.mutex.withLock {
                 val attachment = attachments.value[document.key]
-                    ?: throw IllegalArgumentException("document is not attached")
+                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
 
                 document.updateAsync { _, presence ->
                     presence.clear()
@@ -577,7 +627,7 @@ public class Client @VisibleForTesting internal constructor(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
                 if (document.status != DocumentStatus.Removed) {
-                    document.status = DocumentStatus.Detached
+                    document.applyDocumentStatus(DocumentStatus.Detached)
                     attachments.value -= document.key
                     mutexForDocuments.remove(document.key)
                 }
@@ -605,7 +655,14 @@ public class Client @VisibleForTesting internal constructor(
                 ensureActive()
                 return@async Result.failure(it)
             }
+
+            attachments.value.values.forEach {
+                detachAsync(it.document).await()
+                it.document.applyDocumentStatus(DocumentStatus.Detached)
+            }
+
             _status.emit(Status.Deactivated)
+
             SUCCESS
         }
     }
@@ -615,12 +672,11 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun removeAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
-            check(isActive) {
-                "client is not active"
-            }
+            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
             document.mutex.withLock {
                 val attachment = attachments.value[document.key]
-                    ?: throw IllegalArgumentException("document is not attached")
+                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
 
                 val request = removeDocumentRequest {
                     clientId = requireClientId().value
@@ -657,11 +713,10 @@ public class Client @VisibleForTesting internal constructor(
      * Changes the sync mode of the [document].
      */
     public fun changeSyncMode(document: Document, syncMode: SyncMode) {
-        check(isActive) {
-            "client is not active"
-        }
+        checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+
         val attachment = attachments.value[document.key]
-            ?: throw IllegalArgumentException("document is not attached")
+            ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
         attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
             attachment.copy(syncMode = syncMode, remoteChangeEventReceived = true)
         } else {
@@ -742,4 +797,19 @@ public class Client @VisibleForTesting internal constructor(
          */
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
     )
+
+    /**
+     * [ClientCondition] represents the condition of the client.
+     */
+    public enum class ClientCondition {
+        /**
+         * Key of the sync loop condition.
+         */
+        SYNC_LOOP,
+
+        /**
+         * Key of the watch loop condition.
+         */
+        WATCH_LOOP,
+    }
 }

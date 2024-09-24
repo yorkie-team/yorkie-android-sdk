@@ -14,6 +14,8 @@ import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.checkYorkieError
 import java.util.Date
 
 /**
@@ -117,9 +119,13 @@ public class JsonObject internal constructor(
     }
 
     private fun setAndRegister(key: String, element: CrdtElement) {
-        require(!key.contains(".")) {
-            """key must not contain the "."."""
-        }
+        checkYorkieError(
+            !key.contains("."),
+            YorkieException(
+                YorkieException.Code.ErrInvalidObjectKey,
+                """key must not contain the "."."""
+            ),
+        )
         val removed = target.set(key, element)
         context.registerElement(element, target)
         removed?.let(context::registerRemovedElement)

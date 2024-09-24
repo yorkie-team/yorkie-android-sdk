@@ -7,6 +7,7 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
 import java.util.Date
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -191,12 +192,13 @@ class DocumentTest {
     }
 
     @Test
-    fun `should throw error when trying to find value from invalid paths`() {
-        assertThrows(IllegalArgumentException::class.java) {
+    fun `should throw YorkieException when trying to find value from invalid paths`() {
+        val exception = assertThrows(YorkieException::class.java) {
             runTest {
                 target.getValueByPath("..$")
             }
         }
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
     }
 
     @Suppress("ktlint:standard:max-line-length")
@@ -290,5 +292,30 @@ class DocumentTest {
             "Yorkie",
             JsonParser.parseString(target.toJson()).asJsonObject.get("""it"s""").asString,
         )
+    }
+
+    @Test
+    fun `should purge node from indexes during GC`() = runTest {
+        target.updateAsync { root, _ ->
+            root.setNewText("text")
+        }.await()
+        assertEquals(1, target.getRoot().getAs<JsonText>("text").treeByID.size)
+
+        target.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").apply {
+                edit(0, 0, "ABC")
+            }
+        }.await()
+        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeByID.size)
+
+        target.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").apply {
+                edit(1, 3, "")
+            }
+        }.await()
+        assertEquals(3, target.getRoot().getAs<JsonText>("text").treeByID.size)
+
+        target.garbageCollect(TimeTicket.MaxTimeTicket)
+        assertEquals(2, target.getRoot().getAs<JsonText>("text").treeByID.size)
     }
 }

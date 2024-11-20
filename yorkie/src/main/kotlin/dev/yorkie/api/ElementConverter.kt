@@ -175,7 +175,7 @@ internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
         PBValueType.VALUE_TYPE_STRING -> CrdtPrimitive.Type.String
         PBValueType.VALUE_TYPE_BYTES -> CrdtPrimitive.Type.Bytes
         PBValueType.VALUE_TYPE_DATE -> CrdtPrimitive.Type.Date
-        else -> throw YorkieException(ErrUnimplemented, "unimplemented type : $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented value type : $this")
     }
 }
 
@@ -547,7 +547,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
 
         PBValueType.VALUE_TYPE_TREE -> value.toCrdtTree()
 
-        else -> throw YorkieException(ErrUnimplemented, "unimplemented type : $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $this")
     }
 }
 

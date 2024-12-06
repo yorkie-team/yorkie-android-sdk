@@ -24,7 +24,7 @@ For developers with MAC, you should add `protoc_platform=osx-x86_64` to your `lo
 Start MongoDB, Yorkie and Envoy proxy in a terminal session.
 
 ```bash
-$ docker-compose -f docker/docker-compose.yml up --build -d
+$ docker compose -f docker/docker-compose.yml up --build -d
 ```
 
 Start the test in another terminal session.
@@ -37,7 +37,7 @@ To get the latest server locally, run the command below then restart containers 
 
 ```bash
 $ docker pull yorkieteam/yorkie:latest
-$ docker-compose -f docker/docker-compose.yml up --build -d
+$ docker compose -f docker/docker-compose.yml up --build -d
 ```
 
 ## Contributing

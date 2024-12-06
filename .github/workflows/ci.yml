@@ -63,7 +63,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
       - run: |
           docker system prune --all --force
-          docker-compose -f docker/docker-compose-ci.yml up --build -d
+          docker compose -f docker/docker-compose-ci.yml up --build -d
       - uses: actions/cache@v4
         id: avd-cache
         with:

@@ -11,6 +11,7 @@ import com.connectrpc.getOrThrow
 import com.connectrpc.impl.ProtocolClient
 import com.connectrpc.okhttp.ConnectOkHttpClient
 import com.connectrpc.protocols.NetworkProtocol
+import com.google.protobuf.ByteString
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.v1.DocEventType
@@ -19,6 +20,7 @@ import dev.yorkie.api.v1.YorkieServiceClient
 import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
+import dev.yorkie.api.v1.broadcastRequest
 import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
@@ -231,12 +233,18 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun syncAsync(document: Document? = null): Deferred<OperationResult> {
         return scope.async {
-            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
 
             var failure: Throwable? = null
             val attachments = document?.let {
                 val attachment = attachments.value[it.key]?.copy(syncMode = SyncMode.Realtime)
-                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
+                    ?: throw YorkieException(
+                        ErrDocumentNotAttached,
+                        "document(${document.key}) is not attached",
+                    )
 
                 listOf(AttachmentEntry(it.key, attachment))
             } ?: attachments.value.entries
@@ -376,7 +384,8 @@ public class Client @VisibleForTesting internal constructor(
                                     stream.safeClose()
                                     return@onFailure
                                 }
-                                shouldContinue = handleWatchStreamFailure(attachment.document, stream, it)
+                                shouldContinue =
+                                    handleWatchStreamFailure(attachment.document, stream, it)
                             }.onClosed {
                                 handleWatchStreamFailure(
                                     attachment.document,
@@ -532,7 +541,19 @@ public class Client @VisibleForTesting internal constructor(
                 )
             }
 
-            DocEventType.UNRECOGNIZED, DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST -> {
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST -> {
+                val topic = response.event.body.topic
+                val payload = response.event.body.payload.toStringUtf8()
+                document.publishEvent(
+                    Document.Event.Broadcast(
+                        actorID = publisher,
+                        topic = topic,
+                        payload = payload,
+                    ),
+                )
+            }
+
+            DocEventType.UNRECOGNIZED -> {
                 // nothing to do
             }
         }
@@ -548,7 +569,10 @@ public class Client @VisibleForTesting internal constructor(
         syncMode: SyncMode = SyncMode.Realtime,
     ): Deferred<OperationResult> {
         return scope.async {
-            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
 
             checkYorkieError(
                 document.status == DocumentStatus.Detached,
@@ -602,11 +626,17 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun detachAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
-            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
 
             document.mutex.withLock {
                 val attachment = attachments.value[document.key]
-                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
+                    ?: throw YorkieException(
+                        ErrDocumentNotAttached,
+                        "document(${document.key}) is not attached",
+                    )
 
                 document.updateAsync { _, presence ->
                     presence.clear()
@@ -672,11 +702,17 @@ public class Client @VisibleForTesting internal constructor(
      */
     public fun removeAsync(document: Document): Deferred<OperationResult> {
         return scope.async {
-            checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
 
             document.mutex.withLock {
                 val attachment = attachments.value[document.key]
-                    ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
+                    ?: throw YorkieException(
+                        ErrDocumentNotAttached,
+                        "document(${document.key}) is not attached",
+                    )
 
                 val request = removeDocumentRequest {
                     clientId = requireClientId().value
@@ -699,6 +735,42 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
+    public fun broadcast(
+        document: Document,
+        topic: String,
+        payload: String,
+    ): Deferred<OperationResult> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            val attachment = attachments.value[document.key] ?: throw YorkieException(
+                ErrDocumentNotAttached,
+                "document(${document.key}) is not attached",
+            )
+            val clientID = requireClientId()
+
+            val request = broadcastRequest {
+                clientId = clientID.value
+                documentId = attachment.documentID
+                this.topic = topic
+                this.payload = ByteString.copyFromUtf8(payload)
+            }
+
+            service.broadcast(
+                request,
+                document.key.documentBasedRequestHeader,
+            ).getOrElse {
+                ensureActive()
+                return@async Result.failure(it)
+            }
+            SUCCESS
+        }
+
+    }
+
     private suspend fun waitForInitialization(documentKey: Document.Key) {
         val attachment = attachments.first { documentKey in it.keys }[documentKey] ?: return
         attachment.document.presences.first { it != UninitializedPresences }
@@ -716,7 +788,10 @@ public class Client @VisibleForTesting internal constructor(
         checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
 
         val attachment = attachments.value[document.key]
-            ?: throw YorkieException(ErrDocumentNotAttached, "document(${document.key}) is not attached")
+            ?: throw YorkieException(
+                ErrDocumentNotAttached,
+                "document(${document.key}) is not attached",
+            )
         attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
             attachment.copy(syncMode = syncMode, remoteChangeEventReceived = true)
         } else {

@@ -605,6 +605,15 @@ public class Document(
         ) : Event
 
         /**
+         * `Broadcast` means that the broadcast event is received from the remote client.
+         */
+        public data class Broadcast(
+            val actorID: ActorID?,
+            val topic: String,
+            val payload: String
+        ): Event
+
+        /**
          * Represents the modification made during a document update and the message passed.
          */
         public data class ChangeInfo(

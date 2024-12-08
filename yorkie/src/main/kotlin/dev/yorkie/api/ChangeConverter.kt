@@ -48,6 +48,7 @@ internal fun PBChangeID.toChangeID(): ChangeID {
         clientSeq.toUInt(),
         lamport,
         actorId.toActorID(),
+        versionVector.toVersionVector(),
         serverSeq,
     )
 }
@@ -59,6 +60,7 @@ internal fun ChangeID.toPBChangeID(): PBChangeID {
         lamport = changeID.lamport
         actorId = changeID.actor.toByteString()
         serverSeq = changeID.serverSeq
+        versionVector = changeID.versionVector.toPBVersionVector()
     }
 }
 
@@ -82,6 +84,7 @@ internal fun PBChangePack.toChangePack(): ChangePack {
         snapshot = snapshot.takeUnless { it.isEmpty },
         minSyncedTicket = minSyncedTicketOrNull?.toTimeTicket(),
         isRemoved = isRemoved,
+        versionVector = versionVector.toVersionVector(),
     )
 }
 
@@ -98,5 +101,6 @@ internal fun ChangePack.toPBChangePack(): PBChangePack {
             clearMinSyncedTicket()
         }
         isRemoved = changePack.isRemoved
+        versionVector = changePack.versionVector.toPBVersionVector()
     }
 }

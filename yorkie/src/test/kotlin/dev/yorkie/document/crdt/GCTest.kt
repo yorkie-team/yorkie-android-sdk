@@ -11,6 +11,7 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.issueTime
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
@@ -147,14 +148,14 @@ class GCTest {
                         TreeCode.RemoveStyle -> root.rootTree().removeStyle(0, 1, listOf(op.key))
                         TreeCode.Style -> root.rootTree().style(0, 1, mapOf(op.key to op.value))
                         TreeCode.DeleteNode -> root.rootTree().edit(0, 2)
-                        TreeCode.GC -> doc.garbageCollect(TimeTicket.MaxTimeTicket)
+                        TreeCode.GC -> doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
                     }
                 }.await()
                 assertEquals(expectedXml, doc.getRoot().rootTree().toXml())
                 assertEquals(garbageLen, doc.garbageLength)
             }
 
-            doc.garbageCollect(TimeTicket.MaxTimeTicket)
+            doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
             assertEquals(0, doc.garbageLength)
         }
     }
@@ -209,14 +210,14 @@ class GCTest {
                     when (op.code) {
                         TextCode.Style -> root.rootText().style(0, 2, mapOf(op.key to op.value))
                         TextCode.DeleteNode -> root.rootText().edit(0, 2, "")
-                        TextCode.GC -> doc.garbageCollect(issueTime())
+                        TextCode.GC -> doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
                     }
                 }.await()
                 assertEquals(expectedJson, doc.getRoot().rootText().toJson())
                 assertEquals(garbageLen, doc.garbageLength)
             }
 
-            doc.garbageCollect(TimeTicket.MaxTimeTicket)
+            doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
             assertEquals(0, doc.garbageLength)
         }
     }

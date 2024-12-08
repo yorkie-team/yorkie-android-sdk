@@ -3,6 +3,7 @@ package dev.yorkie.document.crdt
 import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
 
 /**
@@ -147,11 +148,12 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     /**
      * Deletes elements that were removed before [executedAt].
      */
-    fun garbageCollect(executedAt: TimeTicket): Int {
+    fun garbageCollect(minSyncedVersionVector: VersionVector): Int {
         var count = 0
         gcElementSetByCreatedAt.toSet().forEach { createdAt ->
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
-            if (pair.element.isRemoved && pair.element.removedAt <= executedAt) {
+            val removedAt = pair.element.removedAt
+            if (removedAt != null && minSyncedVersionVector.afterOrEqual(removedAt)) {
                 pair.parent?.delete(pair.element)
                 count += garbageCollectInternal(pair.element)
             }
@@ -161,7 +163,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         while (iterator.hasNext()) {
             val pair = iterator.next()
             val removedAt = pair.child.removedAt
-            if (removedAt <= executedAt) {
+            if (removedAt != null && minSyncedVersionVector.afterOrEqual(removedAt)) {
                 pair.parent.deleteChild(pair.child)
                 iterator.remove()
                 count++

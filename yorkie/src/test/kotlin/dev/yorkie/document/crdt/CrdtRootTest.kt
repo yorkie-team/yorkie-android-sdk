@@ -3,6 +3,7 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -77,6 +78,6 @@ class CrdtRootTest {
         obj["k2"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))
         root.registerRemovedElement(obj["k1"])
         root.registerRemovedElement(obj["k2"])
-        root.garbageCollect(TimeTicket.InitialTimeTicket.copy(lamport = 5))
+        root.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
     }
 }

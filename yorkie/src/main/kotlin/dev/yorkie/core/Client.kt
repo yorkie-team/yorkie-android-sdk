@@ -38,6 +38,7 @@ import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger.Companion.log
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
 import dev.yorkie.util.YorkieException
@@ -53,6 +54,7 @@ import java.util.UUID
 import java.util.concurrent.TimeoutException
 import kotlin.collections.Map.Entry
 import kotlin.coroutines.coroutineContext
+import kotlin.math.pow
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -739,8 +741,16 @@ public class Client @VisibleForTesting internal constructor(
         document: Document,
         topic: String,
         payload: String,
+        options: Document.BroadcastOptions = Document.BroadcastOptions(),
     ): Deferred<OperationResult> {
-        return scope.async {
+        val maxRetries = options.maxRetries
+        val maxBackoff = BROADCAST_MAX_BACK_OFF
+        var retryCount = 0
+
+        fun exponentialBackoff(retryCount: Int): Long {
+            return minOf(BROADCAST_INITIAL_RETRY_INTERVAL * (2.0.pow(retryCount.toDouble())).toLong(), maxBackoff,)
+        }
+        suspend fun doLoop(): OperationResult {
             checkYorkieError(
                 isActive,
                 YorkieException(ErrClientNotActivated, "client is not active"),
@@ -759,16 +769,35 @@ public class Client @VisibleForTesting internal constructor(
                 this.payload = ByteString.copyFromUtf8(payload)
             }
 
-            service.broadcast(
-                request,
-                document.key.documentBasedRequestHeader,
-            ).getOrElse {
-                ensureActive()
-                return@async Result.failure(it)
+            while (retryCount <= maxRetries) {
+                try {
+                    service.broadcast(
+                        request,
+                        document.key.documentBasedRequestHeader
+                    ).getOrElse {
+                        throw it
+                    }
+                    return SUCCESS
+                } catch (err: Exception) {
+                    retryCount++
+                    if (retryCount > maxRetries) {
+                        logError("BROADCAST", "Exceeded maximum retry attempts for topic $topic")
+                        throw err
+                    }
+
+                    val retryInterval = exponentialBackoff(retryCount - 1)
+                    logError(
+                        "BROADCAST", "Retry attempt $retryCount/$maxRetries for topic $topic after $retryInterval ms"
+                    )
+                    delay(retryInterval)
+                }
             }
-            SUCCESS
+            throw Exception("Unexpected error during broadcast")
         }
 
+        return scope.async {
+            doLoop()
+        }
     }
 
     private suspend fun waitForInitialization(documentKey: Document.Key) {
@@ -886,5 +915,10 @@ public class Client @VisibleForTesting internal constructor(
          * Key of the watch loop condition.
          */
         WATCH_LOOP,
+    }
+
+    companion object {
+        private const val BROADCAST_MAX_BACK_OFF = 20_000L
+        private const val BROADCAST_INITIAL_RETRY_INTERVAL = 1_000
     }
 }

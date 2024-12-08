@@ -661,6 +661,16 @@ public class Document(
         public val disableGC: Boolean = false,
     )
 
+    /**
+     * `BroadcastOptions` are the options to create a new broadcast.
+     */
+    public data class BroadcastOptions(
+        /**
+         * `maxRetries` is the maximum number of retries.
+         */
+        val maxRetries: Int = Int.MAX_VALUE,
+    )
+
     internal data class RootClone(val root: CrdtRoot, val presences: Presences) {
 
         fun deepCopy() = copy(root = root.deepCopy(), presences = presences.asPresences())

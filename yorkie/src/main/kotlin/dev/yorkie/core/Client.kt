@@ -519,6 +519,9 @@ public class Client @VisibleForTesting internal constructor(
 
         when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
+                if (document.getOnlineClients().contains(publisher) && document.presences.value.contains(publisher)) {
+                    return
+                }
                 // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
                 // unless we also know their initial presence data at this point.
                 val presence = document.allPresences.value[publisher]

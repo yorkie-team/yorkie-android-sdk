@@ -491,6 +491,8 @@ public class Document(
         JsonObject(context, clone.root.rootObject)
     }
 
+    internal fun getOnlineClients() = onlineClients.value
+
     internal fun setOnlineClients(actorIDs: Set<ActorID>) {
         onlineClients.value = actorIDs
     }

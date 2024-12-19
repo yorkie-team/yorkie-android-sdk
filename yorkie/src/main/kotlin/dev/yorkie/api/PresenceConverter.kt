@@ -41,7 +41,7 @@ internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     return when (type) {
         PBPresenceChangeType.CHANGE_TYPE_PUT -> PresenceChange.Put(presence.toPresence())
         PBPresenceChangeType.CHANGE_TYPE_CLEAR -> PresenceChange.Clear
-        else -> throw YorkieException(Unsupported, "unsupported type : $type")
+        else -> throw YorkieException(ErrUnimplemented, "Unimplemented type: $type")
     }
 }
 

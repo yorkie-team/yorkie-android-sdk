@@ -45,6 +45,7 @@ import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
@@ -153,6 +154,7 @@ class ConverterTest {
             null,
             null,
             isRemoved = false,
+            VersionVector.INITIAL_VERSION_VECTOR,
         )
         val converted = changePack.toPBChangePack().toChangePack()
 
@@ -179,6 +181,7 @@ class ConverterTest {
             "snapshot".toByteStringUtf8(),
             InitialTimeTicket,
             isRemoved = false,
+            VersionVector.INITIAL_VERSION_VECTOR,
         )
         val converted = changePack.toPBChangePack().toChangePack()
 

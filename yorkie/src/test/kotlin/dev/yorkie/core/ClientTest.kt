@@ -31,6 +31,7 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.isRetryable
 import kotlin.test.assertEquals
@@ -356,7 +357,7 @@ class ClientTest {
             CheckPoint(0, 1u),
             listOf(
                 Change(
-                    ChangeID(1u, 1, TEST_ACTOR_ID),
+                    ChangeID(1u, 1, TEST_ACTOR_ID, VersionVector.INITIAL_VERSION_VECTOR),
                     emptyList(),
                     PresenceChange.Put(emptyMap()),
                 ),
@@ -364,6 +365,7 @@ class ClientTest {
             null,
             null,
             false,
+            VersionVector.INITIAL_VERSION_VECTOR,
         )
     }
 }

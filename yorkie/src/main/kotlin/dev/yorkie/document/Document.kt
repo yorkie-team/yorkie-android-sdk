@@ -696,7 +696,7 @@ public class Document(
         /**
          * `maxRetries` is the maximum number of retries.
          */
-        val maxRetries: Int = Int.MAX_VALUE,
+        public val maxRetries: Int = Int.MAX_VALUE,
     )
 
     internal data class RootClone(val root: CrdtRoot, val presences: Presences) {

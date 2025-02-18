@@ -63,7 +63,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     /**
      * Creates an array of the sub paths for the given element.
      */
-    fun createSubPaths(createdAt: TimeTicket): List<String> {
+    private fun createSubPaths(createdAt: TimeTicket): List<String> {
         var pair: CrdtElementPair = elementPairMapByCreatedAt[createdAt] ?: return emptyList()
 
         val subPaths = mutableListOf<String>()

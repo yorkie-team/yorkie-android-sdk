@@ -258,10 +258,23 @@ public class Document(
     }
 
     /**
+     * Removes local changes if the client sequence number is less than or equal to [clientSeq].
+     */
+    private fun removePushedLocalChanges(clientSeq: UInt) {
+        val iterator = localChanges.iterator()
+        while (iterator.hasNext()) {
+            val change = iterator.next()
+            if (change.id.clientSeq > clientSeq) {
+                break
+            }
+            iterator.remove()
+        }
+    }
+
+    /**
      * Applies the given [pack] into this document.
-     * 1. Remove local changes applied to server.
-     * 2. Update the checkpoint.
-     * 3. Do Garbage collection.
+     * 1. Update the checkpoint.
+     * 2. Do Garbage collection.
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
         if (pack.hasSnapshot) {
@@ -269,22 +282,11 @@ public class Document(
                 pack.checkPoint.serverSeq,
                 pack.versionVector,
                 checkNotNull(pack.snapshot),
+                pack.checkPoint.clientSeq,
             )
-        } else if (pack.hasChanges) {
+        } else {
             applyChanges(pack.changes)
-        }
-
-        val iterator = localChanges.iterator()
-        while (iterator.hasNext()) {
-            val change = iterator.next()
-            if (change.id.clientSeq > pack.checkPoint.clientSeq) {
-                break
-            }
-            iterator.remove()
-        }
-
-        if (pack.hasSnapshot) {
-            applyChanges(localChanges)
+            removePushedLocalChanges(pack.checkPoint.clientSeq)
         }
 
         checkPoint = checkPoint.forward(pack.checkPoint)
@@ -309,6 +311,7 @@ public class Document(
         serverSeq: Long,
         snapshotVector: VersionVector,
         snapshot: ByteString,
+        clientSeq: UInt,
     ) {
         val (root, presences) = withContext(snapshotDispatcher) {
             val (root, p) = snapshot.toSnapshot()
@@ -321,6 +324,7 @@ public class Document(
         }
         changeID = changeID.setClocks(serverSeq, snapshotVector)
         clone = null
+        removePushedLocalChanges(clientSeq)
         eventStream.emit(Event.Snapshot(snapshot))
     }
 
@@ -439,6 +443,8 @@ public class Document(
                 val actorID = event.changed.actorID
                 event.changed.presence == presences[actorID]
             }
+
+            else -> false
         }
     }
 

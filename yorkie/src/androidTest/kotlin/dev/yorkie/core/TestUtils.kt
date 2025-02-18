@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 
+const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
 const val GENERAL_TIMEOUT = 3_000L
 
 fun createClient() = Client(

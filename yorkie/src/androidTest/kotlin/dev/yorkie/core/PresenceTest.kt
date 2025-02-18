@@ -32,15 +32,14 @@ class PresenceTest {
     @Test
     fun test_presence_from_snapshot() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            val snapshotThreshold = 500
-            repeat(snapshotThreshold) {
+            repeat(DEFAULT_SNAPSHOT_THRESHOLD) {
                 d1.updateAsync { _, presence ->
                     presence.put(mapOf("key" to "$it"))
                 }.await()
             }
 
             assertEquals(
-                mapOf("key" to "${snapshotThreshold - 1}"),
+                mapOf("key" to "${DEFAULT_SNAPSHOT_THRESHOLD - 1}"),
                 d1.allPresences.value[c1.requireClientId()],
             )
 
@@ -48,7 +47,7 @@ class PresenceTest {
             c2.syncAsync().await()
 
             assertEquals(
-                mapOf("key" to "${snapshotThreshold - 1}"),
+                mapOf("key" to "${DEFAULT_SNAPSHOT_THRESHOLD - 1}"),
                 d2.allPresences.value[c1.requireClientId()],
             )
         }

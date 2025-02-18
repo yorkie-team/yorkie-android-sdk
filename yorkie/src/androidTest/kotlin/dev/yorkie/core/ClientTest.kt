@@ -969,7 +969,7 @@ class ClientTest {
             c2.syncAsync().await()
 
             // 01. c1 increases the counter for creating snapshot.
-            repeat(500) {
+            repeat(DEFAULT_SNAPSHOT_THRESHOLD) {
                 d1.updateAsync { root, _ ->
                     root.getAs<JsonCounter>("counter").increase(1)
                 }.await()

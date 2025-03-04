@@ -88,7 +88,7 @@ public class Document(
     internal var clone: RootClone? = null
         private set
 
-    private var changeID = ChangeID.InitialChangeID
+    internal var changeID = ChangeID.InitialChangeID
 
     @VisibleForTesting
     internal var checkPoint = CheckPoint.InitialCheckPoint
@@ -443,8 +443,6 @@ public class Document(
                 val actorID = event.changed.actorID
                 event.changed.presence == presences[actorID]
             }
-
-            else -> false
         }
     }
 

@@ -2,7 +2,6 @@ package dev.yorkie.document.crdt
 
 import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
 
@@ -169,7 +168,6 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
                 count++
             }
         }
-
         return count
     }
 

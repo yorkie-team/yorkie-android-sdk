@@ -12,7 +12,7 @@ import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
  * If caller want to handle the error about [ErrClientNotActivated] or [ErrClientNotFound],
  * then pass the lambda function to [handleError].
  */
-public suspend fun handleConnectException(
+internal suspend fun handleConnectException(
     exception: ConnectException?,
     handleError: (suspend () -> Unit)? = null,
 ): Boolean {
@@ -30,7 +30,6 @@ public suspend fun handleConnectException(
     if (yorkieErrorCode == ErrClientNotActivated.codeString ||
         yorkieErrorCode == ErrClientNotFound.codeString
     ) {
-        print("Yorkie error: $yorkieErrorCode")
         handleError?.invoke()
     }
     return false

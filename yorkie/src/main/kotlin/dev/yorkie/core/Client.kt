@@ -47,7 +47,7 @@ import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
 import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
-import dev.yorkie.util.isRetryable
+import dev.yorkie.util.handleConnectException
 import java.io.Closeable
 import java.io.InterruptedIOException
 import java.util.UUID
@@ -189,6 +189,9 @@ public class Client @VisibleForTesting internal constructor(
                 projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
+                handleConnectException(it) {
+                    deactivateInternal()
+                }
                 return@async Result.failure(it)
             }
             _status.emit(Status.Activated(ActorID(activateResponse.clientId)))
@@ -214,7 +217,7 @@ public class Client @VisibleForTesting internal constructor(
                         if (result.isSuccess) {
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.Synced
-                        } else if (isRetryable(result.exceptionOrNull() as? ConnectException)) {
+                        } else if (handleConnectException(result.exceptionOrNull() as? ConnectException)) { // check if the exception is retryable
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.SyncFailed(result.exceptionOrNull())
                         } else {
@@ -322,6 +325,11 @@ public class Client @VisibleForTesting internal constructor(
                         }
                     }.onFailure {
                         coroutineContext.ensureActive()
+                        (it as? ConnectException)?.let { exception ->
+                            handleConnectException(exception) {
+                                deactivateInternal()
+                            }
+                        }
                     },
                 )
             }
@@ -437,7 +445,7 @@ public class Client @VisibleForTesting internal constructor(
 
         cause?.let(::sendWatchStreamException)
 
-        if (isRetryable(cause as? ConnectException)) {
+        if (handleConnectException(cause as? ConnectException)) {
             coroutineContext.ensureActive()
             delay(options.reconnectStreamDelay.inWholeMilliseconds)
             return true
@@ -600,6 +608,9 @@ public class Client @VisibleForTesting internal constructor(
                     document.key.documentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
+                    handleConnectException(it) {
+                        deactivateInternal()
+                    }
                     return@async Result.failure(it)
                 }
                 val pack = response.changePack.toChangePack()
@@ -657,6 +668,9 @@ public class Client @VisibleForTesting internal constructor(
                     document.key.documentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
+                    handleConnectException(it) {
+                        deactivateInternal()
+                    }
                     return@async Result.failure(it)
                 }
                 val pack = response.changePack.toChangePack()
@@ -688,18 +702,24 @@ public class Client @VisibleForTesting internal constructor(
                 projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
+                handleConnectException(it) {
+                    deactivateInternal()
+                }
                 return@async Result.failure(it)
             }
 
-            attachments.value.values.forEach {
-                detachAsync(it.document).await()
-                it.document.applyDocumentStatus(DocumentStatus.Detached)
-            }
-
-            _status.emit(Status.Deactivated)
-
+            deactivateInternal()
             SUCCESS
         }
+    }
+
+    private suspend fun deactivateInternal() {
+        attachments.value.values.forEach {
+            detachAsync(it.document).await()
+            it.document.applyDocumentStatus(DocumentStatus.Detached)
+        }
+
+        _status.emit(Status.Deactivated)
     }
 
     /**
@@ -811,7 +831,12 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    public fun requireClientId() = (status.value as Status.Activated).clientId
+    public fun requireClientId(): ActorID {
+        if (status.value is Status.Deactivated) {
+            throw YorkieException(ErrClientNotActivated, "client is not active")
+        }
+        return (status.value as Status.Activated).clientId
+    }
 
     /**
      * Changes the sync mode of the [document].

@@ -115,7 +115,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                     .associate { (key, value) -> ActorID(key) to value.toTimeTicket() },
             )
 
-            else -> throw YorkieException(ErrUnimplemented, "unimplemented operation")
+            else -> throw YorkieException(ErrUnimplemented, "unimplemented operations")
         }
     }
 }

@@ -677,12 +677,17 @@ public class Client @VisibleForTesting internal constructor(
                 document.applyChangePack(pack)
                 if (document.status != DocumentStatus.Removed) {
                     document.applyDocumentStatus(DocumentStatus.Detached)
-                    attachments.value -= document.key
-                    mutexForDocuments.remove(document.key)
+                    detachInternal(document)
                 }
             }
             SUCCESS
         }
+    }
+
+    private fun detachInternal(document: Document) {
+        attachments.value[document.key] ?: return
+        attachments.value -= document.key
+        mutexForDocuments.remove(document.key)
     }
 
     /**
@@ -715,8 +720,8 @@ public class Client @VisibleForTesting internal constructor(
 
     private suspend fun deactivateInternal() {
         attachments.value.values.forEach {
-            detachAsync(it.document).await()
             it.document.applyDocumentStatus(DocumentStatus.Detached)
+            detachInternal(it.document)
         }
 
         _status.emit(Status.Deactivated)

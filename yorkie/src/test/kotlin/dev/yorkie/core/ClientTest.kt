@@ -32,7 +32,7 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector
-import dev.yorkie.util.createSingleThreadDispatcher
+import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -115,14 +115,20 @@ class ClientTest {
         target.attachAsync(document, syncMode = Manual).await()
         verify(service).attachDocument(attachRequestCaptor.capture(), any())
         assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
-        assertIsInitialChangePack(attachRequestCaptor.firstValue.changePack)
+        assertIsInitialChangePack(
+            createInitialChangePack(initialAttachVersionVector, initialAttachVersionVector),
+            attachRequestCaptor.firstValue.changePack,
+        )
         assertJsonContentEquals("""{"k1": 4}""", document.toJson())
 
         val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
         target.syncAsync().await()
         verify(service).pushPullChanges(syncRequestCaptor.capture(), any())
         assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
-        assertIsInitialChangePack(syncRequestCaptor.firstValue.changePack)
+        assertIsInitialChangePack(
+            createInitialChangePack(initialSyncVersionVector, VersionVector()),
+            syncRequestCaptor.firstValue.changePack,
+        )
         assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
         val detachRequestCaptor = argumentCaptor<DetachDocumentRequest>()
@@ -239,7 +245,7 @@ class ClientTest {
         verify(service).removeDocument(removeDocumentRequestCaptor.capture(), any())
         assertIsTestActorID(removeDocumentRequestCaptor.firstValue.clientId)
         assertEquals(
-            InitialChangePack.copy(isRemoved = true),
+            createInitialChangePack(initialRemoveVersionVector).copy(isRemoved = true),
             removeDocumentRequestCaptor.firstValue.changePack.toChangePack(),
         )
 
@@ -355,20 +361,36 @@ class ClientTest {
     }
 
     private fun assertIsTestActorID(clientId: String) {
+        println(
+            "dlt, assertIsTestActorID: TEST_ACTOR_ID: $TEST_ACTOR_ID, clientId: ${ActorID(clientId)}",
+        )
         assertEquals(TEST_ACTOR_ID, ActorID(clientId))
     }
 
-    private fun assertIsInitialChangePack(changePack: PBChangePack) {
-        assertEquals(InitialChangePack, changePack.toChangePack())
+    private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {
+        assertEquals(initialChangePack, changePack.toChangePack())
     }
 
     companion object {
-        private val InitialChangePack = ChangePack(
+        val initialAttachVersionVector = VersionVector().apply {
+            set(TEST_ACTOR_ID.value, 1)
+        }
+        val initialSyncVersionVector = VersionVector().apply {
+            set(TEST_ACTOR_ID.value, 1)
+        }
+        val initialRemoveVersionVector = VersionVector().apply {
+            set(TEST_ACTOR_ID.value, 1)
+        }
+
+        private fun createInitialChangePack(
+            changesVersionVector: VersionVector,
+            changePackVersionVector: VersionVector = INITIAL_VERSION_VECTOR,
+        ) = ChangePack(
             NORMAL_DOCUMENT_KEY,
             CheckPoint(0, 1u),
             listOf(
                 Change(
-                    ChangeID(1u, 1, TEST_ACTOR_ID, VersionVector.INITIAL_VERSION_VECTOR),
+                    ChangeID(1u, 1, TEST_ACTOR_ID, changesVersionVector),
                     emptyList(),
                     PresenceChange.Put(emptyMap()),
                 ),
@@ -376,7 +398,7 @@ class ClientTest {
             null,
             null,
             false,
-            VersionVector.INITIAL_VERSION_VECTOR,
+            changePackVersionVector,
         )
     }
 }

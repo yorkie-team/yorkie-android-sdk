@@ -74,7 +74,7 @@ class KanbanBoardActivity : ComponentActivity() {
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(10.dp),
-                        onClick = onBroadcastMessage
+                        onClick = onBroadcastMessage,
                     ) {
                         Icon(Icons.Default.Share, null)
                     }

@@ -120,12 +120,11 @@ internal data class CrdtPrimitive private constructor(
         }
 
         fun fromBytes(type: Type, bytes: ByteString): Any? {
-            fun ByteString.asByteBuffer() =
-                ByteBuffer.wrap(
-                    toByteArray(),
-                ).order(
-                    ByteOrder.LITTLE_ENDIAN,
-                )
+            fun ByteString.asByteBuffer() = ByteBuffer.wrap(
+                toByteArray(),
+            ).order(
+                ByteOrder.LITTLE_ENDIAN,
+            )
 
             return when (type) {
                 Type.Null -> null

@@ -890,7 +890,7 @@ public class Client @VisibleForTesting internal constructor(
         public class Activated internal constructor(public val clientId: ActorID) : Status
 
         /**
-         * Means that the client is not activated. It is the initial stastus of the client.
+         * Means that the client is not activated. It is the initial status of the client.
          * If the client is deactivated, all [Document]s of the client are also not used.
          */
         public data object Deactivated : Status

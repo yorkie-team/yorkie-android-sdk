@@ -7,6 +7,7 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.YorkieException
 import java.util.Date
 import kotlin.test.assertFalse
@@ -257,7 +258,7 @@ class DocumentTest {
         assertEquals("{}", target.toJson())
         assertEquals(2, target.garbageLength)
 
-        target.garbageCollect(TimeTicket.MaxTimeTicket)
+        target.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
         assertEquals(0, target.garbageLength)
     }
 
@@ -315,7 +316,7 @@ class DocumentTest {
         }.await()
         assertEquals(3, target.getRoot().getAs<JsonText>("text").treeByID.size)
 
-        target.garbageCollect(TimeTicket.MaxTimeTicket)
+        target.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
         assertEquals(2, target.getRoot().getAs<JsonText>("text").treeByID.size)
     }
 }

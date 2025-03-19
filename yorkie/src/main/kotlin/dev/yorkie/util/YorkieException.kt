@@ -6,7 +6,10 @@ import kotlin.contracts.contract
 /**
  * `YorkieError` is an error returned by a Yorkie operation.
  */
-public data class YorkieException(public val code: Code, public val errorMessage: String) : RuntimeException(errorMessage) {
+public data class YorkieException(
+    public val code: Code,
+    public val errorMessage: String,
+) : RuntimeException(errorMessage) {
     public enum class Code(val codeString: String) {
         // Ok is returned when the operation completed successfully.
         Ok("ok"),
@@ -36,7 +39,7 @@ public data class YorkieException(public val code: Code, public val errorMessage
         ErrInvalidObjectKey("ErrInvalidObjectKey"),
 
         // ErrInvalidArgument is returned when the argument is invalid.
-        ErrInvalidArgument("ErrInvalidArgument");
+        ErrInvalidArgument("ErrInvalidArgument"),
     }
 }
 

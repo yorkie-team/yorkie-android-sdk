@@ -42,9 +42,11 @@ internal data class CrdtPrimitive private constructor(
             is ByteString -> {
                 copy(_value = value.toByteArray().toByteString())
             }
+
             is Date -> {
                 copy(_value = value.clone())
             }
+
             else -> copy()
         }
     }
@@ -60,6 +62,7 @@ internal data class CrdtPrimitive private constructor(
                     .array()
                     .toByteString()
             }
+
             Type.Long -> {
                 ByteBuffer.allocate(Long.SIZE_BYTES)
                     .order(ByteOrder.LITTLE_ENDIAN)
@@ -67,6 +70,7 @@ internal data class CrdtPrimitive private constructor(
                     .array()
                     .toByteString()
             }
+
             Type.Double -> {
                 ByteBuffer.allocate(Double.SIZE_BYTES)
                     .order(ByteOrder.LITTLE_ENDIAN)
@@ -74,6 +78,7 @@ internal data class CrdtPrimitive private constructor(
                     .array()
                     .toByteString()
             }
+
             Type.String -> (value as String).toByteStringUtf8()
             Type.Bytes -> value as ByteString
             Type.Date -> {
@@ -115,7 +120,11 @@ internal data class CrdtPrimitive private constructor(
         }
 
         fun fromBytes(type: Type, bytes: ByteString): Any? {
-            fun ByteString.asByteBuffer() = ByteBuffer.wrap(toByteArray()).order(ByteOrder.LITTLE_ENDIAN)
+            fun ByteString.asByteBuffer() = ByteBuffer.wrap(
+                toByteArray(),
+            ).order(
+                ByteOrder.LITTLE_ENDIAN,
+            )
 
             return when (type) {
                 Type.Null -> null

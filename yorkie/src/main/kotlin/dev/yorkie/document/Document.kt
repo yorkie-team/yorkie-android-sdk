@@ -27,8 +27,8 @@ import dev.yorkie.document.presence.Presences
 import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.time.ActorID
-import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.YorkieException
@@ -265,7 +265,11 @@ public class Document(
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
         if (pack.hasSnapshot) {
-            applySnapshot(pack.checkPoint.serverSeq, checkNotNull(pack.snapshot))
+            applySnapshot(
+                pack.checkPoint.serverSeq,
+                pack.versionVector,
+                checkNotNull(pack.snapshot),
+            )
         } else if (pack.hasChanges) {
             applyChanges(pack.changes)
         }
@@ -285,7 +289,13 @@ public class Document(
 
         checkPoint = checkPoint.forward(pack.checkPoint)
 
-        pack.minSyncedTicket?.let(::garbageCollect)
+        if (!pack.hasSnapshot) {
+            garbageCollect(pack.versionVector)
+        }
+
+        if (!pack.hasSnapshot) {
+            filterVersionVector(pack.versionVector)
+        }
 
         if (pack.isRemoved) {
             applyDocumentStatus(DocumentStatus.Removed)
@@ -295,7 +305,11 @@ public class Document(
     /**
      * Applies the given [snapshot] into this document.
      */
-    private suspend fun applySnapshot(serverSeq: Long, snapshot: ByteString) {
+    private suspend fun applySnapshot(
+        serverSeq: Long,
+        snapshotVector: VersionVector,
+        snapshot: ByteString,
+    ) {
         val (root, presences) = withContext(snapshotDispatcher) {
             val (root, p) = snapshot.toSnapshot()
             CrdtRoot(root) to p.asPresences()
@@ -305,7 +319,7 @@ public class Document(
         logDebug("Document.snapshot") {
             "Snapshot: ${snapshot.toSnapshot()}"
         }
-        changeID = changeID.syncLamport(serverSeq)
+        changeID = changeID.setClocks(serverSeq, snapshotVector)
         clone = null
         eventStream.emit(Event.Snapshot(snapshot))
     }
@@ -354,7 +368,7 @@ public class Document(
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
             newPresences?.let { emitPresences(it, presenceEvent) }
-            changeID = changeID.syncLamport(change.id.lamport)
+            changeID = changeID.syncClocks(change.id)
         }
     }
 
@@ -441,6 +455,7 @@ public class Document(
             null,
             null,
             forceRemove || status == DocumentStatus.Removed,
+            changeID.versionVector,
         )
     }
 
@@ -476,6 +491,8 @@ public class Document(
         JsonObject(context, clone.root.rootObject)
     }
 
+    internal fun getOnlineClients() = onlineClients.value
+
     internal fun setOnlineClients(actorIDs: Set<ActorID>) {
         onlineClients.value = actorIDs
     }
@@ -489,16 +506,27 @@ public class Document(
     }
 
     /**
+     * Filters detached client's Lamport timestamps from the version vector.
+     */
+    private fun filterVersionVector(minSyncedVersionVector: VersionVector) {
+        val versionVector = changeID.versionVector
+        val filteredVersionVector = versionVector.filter(minSyncedVersionVector)
+
+        changeID = changeID.setVersionVector(filteredVersionVector)
+    }
+
+
+    /**
      * Deletes elements that were removed before the given time.
      */
     @VisibleForTesting
-    public fun garbageCollect(ticket: TimeTicket): Int {
+    public fun garbageCollect(minSyncedVersionVector: VersionVector): Int {
         if (options.disableGC) {
             return 0
         }
 
-        clone?.root?.garbageCollect(ticket)
-        return root.garbageCollect(ticket)
+        clone?.root?.garbageCollect(minSyncedVersionVector)
+        return root.garbageCollect(minSyncedVersionVector)
     }
 
     private fun Change.toChangeInfo(operationInfos: List<OperationInfo>) =
@@ -605,6 +633,15 @@ public class Document(
         ) : Event
 
         /**
+         * `Broadcast` means that the broadcast event is received from the remote client.
+         */
+        public data class Broadcast(
+            val actorID: ActorID?,
+            val topic: String,
+            val payload: String,
+        ) : Event
+
+        /**
          * Represents the modification made during a document update and the message passed.
          */
         public data class ChangeInfo(
@@ -650,6 +687,16 @@ public class Document(
          * Disables garbage collection if true.
          */
         public val disableGC: Boolean = false,
+    )
+
+    /**
+     * `BroadcastOptions` are the options to create a new broadcast.
+     */
+    public data class BroadcastOptions(
+        /**
+         * `maxRetries` is the maximum number of retries.
+         */
+        public val maxRetries: Int = Int.MAX_VALUE,
     )
 
     internal data class RootClone(val root: CrdtRoot, val presences: Presences) {

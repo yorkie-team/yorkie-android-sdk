@@ -50,6 +50,7 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.VersionVector
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.CompletableDeferred
@@ -103,7 +104,7 @@ class MockYorkieService(
                     documentKey = request.changePack.documentKey
                     changes.add(
                         Change(
-                            ChangeID(0u, 0, TEST_ACTOR_ID),
+                            ChangeID(0u, 0, TEST_ACTOR_ID, VersionVector.INITIAL_VERSION_VECTOR),
                             listOf(
                                 SetOperation(
                                     "k1",

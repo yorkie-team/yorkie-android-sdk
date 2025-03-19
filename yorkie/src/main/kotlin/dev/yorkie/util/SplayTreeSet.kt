@@ -65,6 +65,7 @@ internal class SplayTreeSet<V>(
                 "out of index range: pos: $target > node.length: ${node.length}",
             )
         }
+        splayInternal(node)
         return ValueToOffset(node.value, target)
     }
 
@@ -76,17 +77,8 @@ internal class SplayTreeSet<V>(
         if (node == null || node !== root && !node.hasLinks) {
             return -1
         }
-        var index = 0
-        var current: Node<V>? = node
-        var prev: Node<V>? = null
-        while (current != null) {
-            if (prev == null || prev === current.right) {
-                index += current.length + current.leftWeight
-            }
-            prev = current
-            current = current.parent
-        }
-        return index - node.length
+        splayInternal(node)
+        return root!!.leftWeight
     }
 
     fun insert(value: V) {

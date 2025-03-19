@@ -50,6 +50,8 @@ import dev.yorkie.document.presence.P
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import dev.yorkie.util.traverseAll
 
 internal typealias PBJsonElement = dev.yorkie.api.v1.JSONElement
@@ -93,7 +95,7 @@ internal fun CrdtElement.toByteString(): ByteString {
         is CrdtPrimitive -> toPBPrimitive()
         is CrdtCounter -> toPBCounter()
         is CrdtTree -> toPBTree()
-        else -> throw IllegalArgumentException("unimplemented element $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented element $this")
     }.toByteString()
 }
 
@@ -105,7 +107,7 @@ internal fun PBJsonElement.toCrdtElement(): CrdtElement {
         hasPrimitive() -> primitive.toCrdtPrimitive()
         hasCounter() -> counter.toCrdtCounter()
         hasTree() -> tree.toCrdtTree()
-        else -> throw IllegalArgumentException("unimplemented element: $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $this")
     }
 }
 
@@ -173,7 +175,7 @@ internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
         PBValueType.VALUE_TYPE_STRING -> CrdtPrimitive.Type.String
         PBValueType.VALUE_TYPE_BYTES -> CrdtPrimitive.Type.Bytes
         PBValueType.VALUE_TYPE_DATE -> CrdtPrimitive.Type.Date
-        else -> throw IllegalArgumentException("unimplemented type $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented value type : $this")
     }
 }
 
@@ -200,7 +202,7 @@ internal fun PBValueType.toCounterType(): CounterType {
     return when (this) {
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.IntegerCnt
         PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.LongCnt
-        else -> throw IllegalArgumentException("unimplemented value type: $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented value type : $this")
     }
 }
 
@@ -286,7 +288,7 @@ internal fun CrdtElement.toPBJsonElement(): PBJsonElement {
         is CrdtPrimitive -> toPBPrimitive()
         is CrdtCounter -> toPBCounter()
         is CrdtTree -> toPBTree()
-        else -> throw IllegalArgumentException("unimplemented element: $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $this")
     }
 }
 
@@ -545,7 +547,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
 
         PBValueType.VALUE_TYPE_TREE -> value.toCrdtTree()
 
-        else -> throw IllegalArgumentException("unimplemented type $this")
+        else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $this")
     }
 }
 
@@ -572,7 +574,7 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
                 value = element.toPBTree().toByteString()
             }
 
-            else -> throw IllegalArgumentException("unimplemented element: $element")
+            else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $element")
         }
     }
 }

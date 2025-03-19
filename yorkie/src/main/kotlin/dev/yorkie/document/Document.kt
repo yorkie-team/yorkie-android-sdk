@@ -3,6 +3,7 @@ package dev.yorkie.document
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
+import dev.yorkie.document.Document.Event.DocumentStatusChanged
 import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
@@ -30,6 +31,10 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.OperationResult
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrDocumentRemoved
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
+import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineDispatcher
@@ -135,9 +140,10 @@ public class Document(
         updater: suspend (root: JsonObject, presence: Presence) -> Unit,
     ): Deferred<OperationResult> {
         return scope.async {
-            check(status != DocumentStatus.Removed) {
-                "document is removed"
-            }
+            checkYorkieError(
+                status != DocumentStatus.Removed,
+                YorkieException(ErrDocumentRemoved, "document(${key}) is removed"),
+            )
 
             val clone = ensureClone()
             val context = ChangeContext(
@@ -234,9 +240,11 @@ public class Document(
      * Returns the [JsonElement] corresponding to the [path].
      */
     public suspend fun getValueByPath(path: String): JsonElement? = withContext(dispatcher) {
-        require(path.startsWith("$")) {
-            "the path must start with \"$\""
-        }
+        checkYorkieError(
+            path.startsWith("$"),
+            YorkieException(ErrInvalidArgument, "the path must start with \"$\""),
+        )
+
         val paths = path.split(".").drop(1)
         var value: JsonElement? = getRoot()
         paths.forEach { key ->
@@ -271,12 +279,16 @@ public class Document(
             iterator.remove()
         }
 
+        if (pack.hasSnapshot) {
+            applyChanges(localChanges)
+        }
+
         checkPoint = checkPoint.forward(pack.checkPoint)
 
         pack.minSyncedTicket?.let(::garbageCollect)
 
         if (pack.isRemoved) {
-            status = DocumentStatus.Removed
+            applyDocumentStatus(DocumentStatus.Removed)
         }
     }
 
@@ -344,6 +356,20 @@ public class Document(
             newPresences?.let { emitPresences(it, presenceEvent) }
             changeID = changeID.syncLamport(change.id.lamport)
         }
+    }
+
+    internal suspend fun applyDocumentStatus(status: DocumentStatus) {
+        if (this.status == status) {
+            return
+        }
+
+        this.status = status
+        publishEvent(
+            DocumentStatusChanged(
+                status,
+                changeID.actor.takeIf { status == DocumentStatus.Attached },
+            ),
+        )
     }
 
     private suspend fun ensureClone(): RootClone = withContext(dispatcher) {
@@ -568,6 +594,15 @@ public class Document(
 
             public data object Disconnected : StreamConnectionChanged
         }
+
+        /**
+         * An event that occurs when the document's status has been changed.
+         * @see DocumentStatus
+         */
+        public data class DocumentStatusChanged(
+            val documentStatus: DocumentStatus,
+            val actorID: ActorID?,
+        ) : Event
 
         /**
          * Represents the modification made during a document update and the message passed.

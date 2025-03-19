@@ -20,9 +20,11 @@ import dev.yorkie.document.operation.OperationInfo.MoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.StyleOpInfo
+import dev.yorkie.util.YorkieException
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,13 +46,13 @@ class DocumentTest {
             val document = Document(documentKey)
 
             // 01. client is not activated.
-            assertFailsWith(IllegalStateException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
 
             // 02. document is not attached.
             client.activateAsync().await()
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
 
@@ -60,14 +62,14 @@ class DocumentTest {
             assertEquals(DocumentStatus.Removed, document.status)
 
             // 04. try to update a removed document.
-            assertFailsWith(IllegalStateException::class) {
+            assertFailsWith(YorkieException::class) {
                 document.updateAsync { root, _ ->
                     root["key"] = 0
                 }.await()
             }
 
             // 05. try to attach a removed document.
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.attachAsync(document).await()
             }
 
@@ -195,31 +197,31 @@ class DocumentTest {
             client.activateAsync().await()
 
             // 01. abnormal behavior on detached state
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.detachAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.syncAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
 
             // 02. abnormal behavior on attached state
             client.attachAsync(document).await()
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.attachAsync(document).await()
             }
 
             // 03. abnormal behavior on removed state
             client.removeAsync(document).await()
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.removeAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.syncAsync(document).await()
             }
-            assertFailsWith(IllegalArgumentException::class) {
+            assertFailsWith(YorkieException::class) {
                 client.detachAsync(document).await()
             }
 
@@ -619,6 +621,216 @@ class DocumentTest {
             assert(document1ObjOps.isEmpty())
 
             collectJobs.values.forEach(Job::cancel)
+        }
+    }
+
+    @Test
+    fun test_single_document_event_stream_can_emit_document_status_changed() {
+        runBlocking {
+            val client = createClient()
+            val documentKey = UUID.randomUUID().toString().toDocKey()
+            val document = Document(documentKey)
+
+            val documentStatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
+            val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<Event.DocumentStatusChanged>()
+                    .collect {
+                        documentStatusChangedList.add(it)
+                    }
+            }
+
+            client.activateAsync().await()
+            val actorID = client.requireClientId()
+
+            // 1. Can receive DocumentStatus.Attached event when attached
+            client.attachAsync(document, syncMode = Manual).await()
+            assertEquals(1, documentStatusChangedList.size)
+            assertEquals(DocumentStatus.Attached, documentStatusChangedList[0].documentStatus)
+            assertEquals(actorID, documentStatusChangedList[0].actorID)
+
+            // 2. Can receive DocumentStatus.Detached event when detached
+            client.detachAsync(document).await()
+            assertEquals(2, documentStatusChangedList.size)
+            assertEquals(DocumentStatus.Detached, documentStatusChangedList[1].documentStatus)
+            assertNull(documentStatusChangedList[1].actorID)
+
+            // 3. Attach could fail if the document has been detached
+            client.attachAsync(document).await()
+            assertEquals(2, documentStatusChangedList.size)
+            assertEquals(DocumentStatus.Detached, documentStatusChangedList[1].documentStatus)
+            assertNull(documentStatusChangedList[1].actorID)
+
+            // 4. Exception should be thrown when trying to remove a detached document
+            val exception = assertFailsWith(YorkieException::class) {
+                client.removeAsync(document).await()
+            }
+            assertEquals(YorkieException.Code.ErrDocumentNotAttached, exception.code)
+
+            client.deactivateAsync().await()
+            document.close()
+            client.close()
+            job.cancel()
+        }
+    }
+
+    @Test
+    fun test_multiple_document_event_stream_can_emit_document_status_changed() {
+        createTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
+            val document1StatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
+            val document2StatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
+            val jobs = mapOf(
+                "document1 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
+                    document1.events.filterIsInstance<Event.DocumentStatusChanged>()
+                        .collect {
+                            document1StatusChangedList.add(it)
+                        }
+                },
+                "document2 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
+                    document2.events.filterIsInstance<Event.DocumentStatusChanged>()
+                        .collect {
+                            document2StatusChangedList.add(it)
+                        }
+                },
+            )
+
+            client1.activateAsync().await()
+            client2.activateAsync().await()
+            val c1ID = client1.requireClientId()
+            val c2ID = client2.requireClientId()
+
+            // 1. Can receive DocumentStatus.Attached event when attached
+            client1.attachAsync(document1, syncMode = Manual).await()
+            client2.attachAsync(document2, syncMode = Manual).await()
+
+            assertEquals(1, document1StatusChangedList.size)
+            assertEquals(DocumentStatus.Attached, document1StatusChangedList[0].documentStatus)
+            assertEquals(c1ID, document1StatusChangedList[0].actorID)
+
+            assertEquals(1, document2StatusChangedList.size)
+            assertEquals(DocumentStatus.Attached, document2StatusChangedList[0].documentStatus)
+            assertEquals(c2ID, document2StatusChangedList[0].actorID)
+
+            // 2. Can receive DocumentStatus.Detached event when detached
+            client1.detachAsync(document1).await()
+            assertEquals(2, document1StatusChangedList.size)
+            assertEquals(DocumentStatus.Detached, document1StatusChangedList[1].documentStatus)
+            assertNull(document1StatusChangedList[1].actorID)
+
+            // 3. Can receive DocumentStatus.Detached event when removed
+            client2.deactivateAsync().await()
+            assertEquals(2, document2StatusChangedList.size)
+            assertEquals(DocumentStatus.Detached, document2StatusChangedList[1].documentStatus)
+            assertNull(document2StatusChangedList[1].actorID)
+
+            // 4. Can receive events when other client attaches the same document
+            val newDocumentKey = UUID.randomUUID().toString().toDocKey()
+            val document3 = Document(newDocumentKey)
+            val document4 = Document(newDocumentKey)
+            val document3StatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
+            val document4StatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
+
+            val newJobs = mapOf(
+                "document3 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
+                    document3.events.filterIsInstance<Event.DocumentStatusChanged>()
+                        .collect {
+                            document3StatusChangedList.add(it)
+                        }
+                },
+                "document4 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
+                    document4.events.filterIsInstance<Event.DocumentStatusChanged>()
+                        .collect {
+                            document4StatusChangedList.add(it)
+                        }
+                },
+            )
+            client1.attachAsync(document3, syncMode = Manual).await()
+            assertEquals(1, document3StatusChangedList.size)
+            assertEquals(DocumentStatus.Attached, document3StatusChangedList[0].documentStatus)
+            assertEquals(c1ID, document3StatusChangedList[0].actorID)
+
+            client2.activateAsync().await()
+            client2.attachAsync(document4, syncMode = Manual).await()
+            assertEquals(1, document4StatusChangedList.size)
+            assertEquals(DocumentStatus.Attached, document4StatusChangedList[0].documentStatus)
+            assertEquals(c2ID, document4StatusChangedList[0].actorID)
+
+            // 5. Can receive DocumentStatus.Removed event when removed
+            client1.removeAsync(document3).await()
+            assertEquals(2, document3StatusChangedList.size)
+            assertEquals(DocumentStatus.Removed, document3StatusChangedList[1].documentStatus)
+            assertNull(document3StatusChangedList[1].actorID)
+
+            // 6. Can receive DocumentStatus.Removed event another client syncs
+            client2.syncAsync().await()
+            assertEquals(2, document4StatusChangedList.size)
+            assertEquals(DocumentStatus.Removed, document4StatusChangedList[1].documentStatus)
+            assertNull(document4StatusChangedList[1].actorID)
+
+            // 7. DocumentStatus.Detached should not be emitted when deactivating the client and it's document is in the removed state
+            val eventCount3 = document3StatusChangedList.size
+            val eventCount4 = document4StatusChangedList.size
+            client1.deactivateAsync().await()
+            client2.deactivateAsync().await()
+            assertEquals(eventCount3, document3StatusChangedList.size)
+            assertEquals(eventCount4, document4StatusChangedList.size)
+
+            document3.close()
+            document4.close()
+
+            jobs.values.forEach(Job::cancel)
+            newJobs.values.forEach(Job::cancel)
+        }
+    }
+
+    @Test
+    fun test_document_event_stream_can_receive_document_status_changed() {
+        createTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
+            val document1StatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
+            val document2StatusChangedList = mutableListOf<Event.DocumentStatusChanged>()
+            val jobs = mapOf(
+                "document1 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
+                    document1.events.filterIsInstance<Event.DocumentStatusChanged>()
+                        .collect {
+                            document1StatusChangedList.add(it)
+                        }
+                },
+                "document2 status changed events" to launch(start = CoroutineStart.UNDISPATCHED) {
+                    document2.events.filterIsInstance<Event.DocumentStatusChanged>()
+                        .collect {
+                            document2StatusChangedList.add(it)
+                        }
+                },
+            )
+
+            client1.activateAsync().await()
+            client2.activateAsync().await()
+            val c1ID = client1.requireClientId()
+            val c2ID = client2.requireClientId()
+
+            // 1. Can receive DocumentStatus.Attached event when attached
+            client1.attachAsync(document1, syncMode = Manual).await()
+            client2.attachAsync(document2, syncMode = Manual).await()
+
+            assertEquals(1, document1StatusChangedList.size)
+            assertEquals(DocumentStatus.Attached, document1StatusChangedList[0].documentStatus)
+            assertEquals(c1ID, document1StatusChangedList[0].actorID)
+
+            assertEquals(1, document2StatusChangedList.size)
+            assertEquals(DocumentStatus.Attached, document2StatusChangedList[0].documentStatus)
+            assertEquals(c2ID, document2StatusChangedList[0].actorID)
+
+            // 2. Can receive DocumentStatus.Removed event when removed
+            client1.removeAsync(document1).await()
+            assertEquals(2, document1StatusChangedList.size)
+            assertEquals(DocumentStatus.Removed, document1StatusChangedList[1].documentStatus)
+            assertNull(document1StatusChangedList[1].actorID)
+
+            // 3. Can receive DocumentStatus.Detached event when deactivating the client after peer client removes the document
+            client2.deactivateAsync().await()
+            assertEquals(2, document2StatusChangedList.size)
+            assertEquals(DocumentStatus.Detached, document2StatusChangedList[1].documentStatus)
+
+            jobs.values.forEach(Job::cancel)
         }
     }
 }

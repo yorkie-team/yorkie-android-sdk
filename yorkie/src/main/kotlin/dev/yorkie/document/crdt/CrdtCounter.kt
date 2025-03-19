@@ -2,6 +2,7 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 internal typealias CounterValue = Number
 
@@ -26,8 +27,16 @@ internal data class CrdtCounter private constructor(
 
     fun toBytes(): ByteArray {
         return when (type) {
-            CounterType.IntegerCnt -> ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value.toInt())
-            CounterType.LongCnt -> ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value.toLong())
+            CounterType.IntegerCnt -> ByteBuffer
+                .allocate(Int.SIZE_BYTES)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(value.toInt())
+
+            CounterType.LongCnt -> ByteBuffer
+                .allocate(Long.SIZE_BYTES)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putLong(value.toLong())
+
         }.array()
     }
 
@@ -68,7 +77,7 @@ internal data class CrdtCounter private constructor(
         }
 
         fun ByteArray.asCounterValue(counterType: CounterType): Number =
-            with(ByteBuffer.wrap(this)) {
+            with(ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN)) {
                 when (counterType) {
                     CounterType.IntegerCnt -> int
                     CounterType.LongCnt -> long

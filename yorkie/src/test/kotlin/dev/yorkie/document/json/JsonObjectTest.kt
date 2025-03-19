@@ -6,6 +6,8 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidObjectKey
 import kotlin.test.assertIs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -46,17 +48,20 @@ class JsonObjectTest {
 
     @Test
     fun `should throw when setting a key containing delimiter`() {
-        assertThrows(IllegalArgumentException::class.java) {
+        val exception1 = assertThrows(YorkieException::class.java) {
             target["."] = "dot"
         }
+        assertEquals(ErrInvalidObjectKey, exception1.code)
 
-        assertThrows(IllegalArgumentException::class.java) {
+        val exception2 = assertThrows(YorkieException::class.java) {
             target["$..hello"] = "world"
         }
+        assertEquals(ErrInvalidObjectKey, exception2.code)
 
-        assertThrows(IllegalArgumentException::class.java) {
+        val exception3 = assertThrows(YorkieException::class.java) {
             target.setNewObject("")["."] = "dot"
         }
+        assertEquals(ErrInvalidObjectKey, exception3.code)
     }
 
     @Test

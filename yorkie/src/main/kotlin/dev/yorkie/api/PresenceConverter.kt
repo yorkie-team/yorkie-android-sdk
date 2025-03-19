@@ -5,6 +5,9 @@ import dev.yorkie.api.v1.presenceChange
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
+import dev.yorkie.util.YorkieException.Code.Unsupported
 
 internal typealias PBPresence = dev.yorkie.api.v1.Presence
 internal typealias PBPresenceChange = dev.yorkie.api.v1.PresenceChange
@@ -38,7 +41,7 @@ internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     return when (type) {
         PBPresenceChangeType.CHANGE_TYPE_PUT -> PresenceChange.Put(presence.toPresence())
         PBPresenceChangeType.CHANGE_TYPE_CLEAR -> PresenceChange.Clear
-        else -> throw IllegalArgumentException("unsupported type: $type")
+        else -> throw YorkieException(ErrUnimplemented, "Unimplemented type: $type")
     }
 }
 

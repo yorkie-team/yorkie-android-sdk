@@ -58,7 +58,7 @@ internal data class ChangeID(
      */
     fun setClocks(otherLamport: Long, vector: VersionVector): ChangeID {
         val lamport = if (otherLamport > lamport) otherLamport else lamport + 1
-        val maxVersionVector = vector.max(vector)
+        val maxVersionVector = this.versionVector.max(vector)
         maxVersionVector.set(actor.value, lamport)
         return copy(
             lamport = lamport,

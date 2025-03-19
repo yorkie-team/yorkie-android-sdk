@@ -46,6 +46,33 @@ import org.junit.runner.RunWith
 class ClientTest {
 
     @Test
+    fun can_attach_and_detach_document() {
+        runBlocking {
+            val c1 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+            c1.activateAsync().await()
+
+            c1.attachAsync(d1).await()
+            // attach again after attached
+            val exception = assertFailsWith(YorkieException::class) {
+                c1.attachAsync(d1).await()
+            }
+            assertEquals(ErrDocumentNotDetached, exception.code)
+
+            c1.detachAsync(d1).await()
+            // detach again after detached
+            val exception2 = assertFailsWith(YorkieException::class) {
+                c1.detachAsync(d1).await()
+            }
+            assertEquals(ErrDocumentNotAttached, exception2.code)
+
+            c1.deactivateAsync().await()
+            c1.close()
+        }
+    }
+
+    @Test
     fun test_multiple_clients_working_on_same_document() {
         runBlocking {
             val c1 = createClient()

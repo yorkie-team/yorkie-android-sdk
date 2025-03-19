@@ -45,9 +45,8 @@ import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
-import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
-import dev.yorkie.util.isRetryable
+import dev.yorkie.util.handleConnectException
 import java.io.Closeable
 import java.io.InterruptedIOException
 import java.util.UUID
@@ -189,6 +188,9 @@ public class Client @VisibleForTesting internal constructor(
                 projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
+                handleConnectException(it) {
+                    deactivateInternal()
+                }
                 return@async Result.failure(it)
             }
             _status.emit(Status.Activated(ActorID(activateResponse.clientId)))
@@ -214,7 +216,7 @@ public class Client @VisibleForTesting internal constructor(
                         if (result.isSuccess) {
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.Synced
-                        } else if (isRetryable(result.exceptionOrNull() as? ConnectException)) {
+                        } else if (handleConnectException(result.exceptionOrNull() as? ConnectException)) { // check if the exception is retryable
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.SyncFailed(result.exceptionOrNull())
                         } else {
@@ -322,6 +324,11 @@ public class Client @VisibleForTesting internal constructor(
                         }
                     }.onFailure {
                         coroutineContext.ensureActive()
+                        (it as? ConnectException)?.let { exception ->
+                            handleConnectException(exception) {
+                                deactivateInternal()
+                            }
+                        }
                     },
                 )
             }
@@ -437,7 +444,7 @@ public class Client @VisibleForTesting internal constructor(
 
         cause?.let(::sendWatchStreamException)
 
-        if (isRetryable(cause as? ConnectException)) {
+        if (handleConnectException(cause as? ConnectException)) {
             coroutineContext.ensureActive()
             delay(options.reconnectStreamDelay.inWholeMilliseconds)
             return true
@@ -519,7 +526,9 @@ public class Client @VisibleForTesting internal constructor(
 
         when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
-                if (document.getOnlineClients().contains(publisher) && document.presences.value.contains(publisher)) {
+                if (document.getOnlineClients()
+                        .contains(publisher) && document.presences.value.contains(publisher)
+                ) {
                     return
                 }
                 // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
@@ -600,6 +609,9 @@ public class Client @VisibleForTesting internal constructor(
                     document.key.documentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
+                    handleConnectException(it) {
+                        deactivateInternal()
+                    }
                     return@async Result.failure(it)
                 }
                 val pack = response.changePack.toChangePack()
@@ -657,6 +669,9 @@ public class Client @VisibleForTesting internal constructor(
                     document.key.documentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
+                    handleConnectException(it) {
+                        deactivateInternal()
+                    }
                     return@async Result.failure(it)
                 }
                 val pack = response.changePack.toChangePack()
@@ -688,18 +703,24 @@ public class Client @VisibleForTesting internal constructor(
                 projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
+                handleConnectException(it) {
+                    deactivateInternal()
+                }
                 return@async Result.failure(it)
             }
 
-            attachments.value.values.forEach {
-                detachAsync(it.document).await()
-                it.document.applyDocumentStatus(DocumentStatus.Detached)
-            }
-
-            _status.emit(Status.Deactivated)
-
+            deactivateInternal()
             SUCCESS
         }
+    }
+
+    private suspend fun deactivateInternal() {
+        attachments.value.values.forEach {
+            detachAsync(it.document).await()
+            it.document.applyDocumentStatus(DocumentStatus.Detached)
+        }
+
+        _status.emit(Status.Deactivated)
     }
 
     /**
@@ -751,8 +772,12 @@ public class Client @VisibleForTesting internal constructor(
         var retryCount = 0
 
         fun exponentialBackoff(retryCount: Int): Long {
-            return minOf(BROADCAST_INITIAL_RETRY_INTERVAL * (2.0.pow(retryCount.toDouble())).toLong(), maxBackoff,)
+            return minOf(
+                BROADCAST_INITIAL_RETRY_INTERVAL * (2.0.pow(retryCount.toDouble())).toLong(),
+                maxBackoff,
+            )
         }
+
         suspend fun doLoop(): OperationResult {
             checkYorkieError(
                 isActive,
@@ -776,7 +801,7 @@ public class Client @VisibleForTesting internal constructor(
                 try {
                     service.broadcast(
                         request,
-                        document.key.documentBasedRequestHeader
+                        document.key.documentBasedRequestHeader,
                     ).getOrElse {
                         throw it
                     }
@@ -790,7 +815,8 @@ public class Client @VisibleForTesting internal constructor(
 
                     val retryInterval = exponentialBackoff(retryCount - 1)
                     logError(
-                        "BROADCAST", "Retry attempt $retryCount/$maxRetries for topic $topic after $retryInterval ms"
+                        "BROADCAST",
+                        "Retry attempt $retryCount/$maxRetries for topic $topic after $retryInterval ms",
                     )
                     delay(retryInterval)
                 }
@@ -811,7 +837,12 @@ public class Client @VisibleForTesting internal constructor(
         }
     }
 
-    public fun requireClientId() = (status.value as Status.Activated).clientId
+    public fun requireClientId(): ActorID {
+        if (status.value is Status.Deactivated) {
+            throw YorkieException(ErrClientNotActivated, "client is not active")
+        }
+        return (status.value as Status.Activated).clientId
+    }
 
     /**
      * Changes the sync mode of the [document].

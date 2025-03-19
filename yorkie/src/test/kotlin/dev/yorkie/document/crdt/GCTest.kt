@@ -10,9 +10,7 @@ import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
-import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
-import dev.yorkie.issueTime
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import org.junit.Test

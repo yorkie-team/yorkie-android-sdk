@@ -27,16 +27,17 @@ internal data class CrdtCounter private constructor(
 
     fun toBytes(): ByteArray {
         return when (type) {
-            CounterType.IntegerCnt -> ByteBuffer
-                .allocate(Int.SIZE_BYTES)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putInt(value.toInt())
+            CounterType.IntegerCnt ->
+                ByteBuffer
+                    .allocate(Int.SIZE_BYTES)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                    .putInt(value.toInt())
 
-            CounterType.LongCnt -> ByteBuffer
-                .allocate(Long.SIZE_BYTES)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putLong(value.toLong())
-
+            CounterType.LongCnt ->
+                ByteBuffer
+                    .allocate(Long.SIZE_BYTES)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                    .putLong(value.toLong())
         }.array()
     }
 

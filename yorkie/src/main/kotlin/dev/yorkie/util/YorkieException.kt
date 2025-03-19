@@ -39,7 +39,7 @@ public data class YorkieException(
         ErrInvalidObjectKey("ErrInvalidObjectKey"),
 
         // ErrInvalidArgument is returned when the argument is invalid.
-        ErrInvalidArgument("ErrInvalidArgument")
+        ErrInvalidArgument("ErrInvalidArgument"),
     }
 }
 

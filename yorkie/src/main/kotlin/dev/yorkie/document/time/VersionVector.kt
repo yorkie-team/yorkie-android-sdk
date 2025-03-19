@@ -7,7 +7,7 @@ package dev.yorkie.document.time
  */
 
 public data class VersionVector(
-    val vectorMap: MutableMap<String, Long> = mutableMapOf()
+    val vectorMap: MutableMap<String, Long> = mutableMapOf(),
 ) {
 
     /**

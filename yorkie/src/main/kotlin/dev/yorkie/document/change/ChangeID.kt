@@ -38,7 +38,6 @@ internal data class ChangeID(
         return copy(lamport = lamport + 1)
     }
 
-
     /**
      * `syncClocks` syncs logical clocks with the given ID.
      */
@@ -66,7 +65,6 @@ internal data class ChangeID(
             versionVector = maxVersionVector,
         )
     }
-
 
     /**
      * Creates a ticket of the given delimiter.

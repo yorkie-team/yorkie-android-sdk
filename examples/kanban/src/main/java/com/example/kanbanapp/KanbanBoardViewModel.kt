@@ -46,7 +46,7 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
                         }
                 }
                 if (it is Document.Event.Broadcast) {
-                    when(it.topic) {
+                    when (it.topic) {
                         BROADCAST_GREETING -> _greetingBroadcast.value = it.payload
                     }
                 }

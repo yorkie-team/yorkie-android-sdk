@@ -21,9 +21,7 @@ import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.util.YorkieException
-import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
-import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
-import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
+import dev.yorkie.util.YorkieException.Code.*
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

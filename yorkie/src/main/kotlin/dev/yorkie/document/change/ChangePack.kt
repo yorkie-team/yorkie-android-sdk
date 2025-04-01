@@ -2,6 +2,7 @@ package dev.yorkie.document.change
 
 import com.google.protobuf.ByteString
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 
 /**
  * [ChangePack] is a unit for delivering changes in a document to the remote.
@@ -19,6 +20,7 @@ internal data class ChangePack(
     val snapshot: ByteString?,
     val minSyncedTicket: TimeTicket?,
     val isRemoved: Boolean,
+    val versionVector: VersionVector,
 ) {
 
     /**

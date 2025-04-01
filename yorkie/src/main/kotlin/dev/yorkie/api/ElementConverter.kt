@@ -222,11 +222,12 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
     }
     val nodes = map { it.toCrdtTreeNode() }
     val root = nodes.last()
+    val depthTable = mutableMapOf<Int, CrdtTreeNode>()
+    depthTable[this.last().depth] = nodes.last()
     for (i in size - 2 downTo 0) {
-        val parentIndex = subList(i + 1, size).indexOfFirst {
-            this[i].depth - 1 == it.depth
-        }.takeIf { it > -1 }?.plus(i + 1) ?: continue
-        nodes[parentIndex].prepend(nodes[i])
+        val parent = depthTable[this[i].depth - 1] ?: continue
+        parent.prepend(nodes[i])
+        depthTable[this[i].depth] = nodes[i]
     }
     root.updateDescendantSize()
     return CrdtTree(root, InitialTimeTicket).root
@@ -530,7 +531,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
         PBValueType.VALUE_TYPE_STRING,
         PBValueType.VALUE_TYPE_BYTES,
         PBValueType.VALUE_TYPE_DATE,
-        -> CrdtPrimitive(
+            -> CrdtPrimitive(
             CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
             createdAt.toTimeTicket(),
         )

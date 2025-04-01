@@ -22,6 +22,9 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
     private val _list = MutableStateFlow<ImmutableList<KanbanColumn>>(persistentListOf())
     val list: StateFlow<ImmutableList<KanbanColumn>> = _list.asStateFlow()
 
+    private val _greetingBroadcast: MutableStateFlow<String?> = MutableStateFlow(null)
+    val greetingBroadcast: StateFlow<String?> = _greetingBroadcast.asStateFlow()
+
     init {
         viewModelScope.launch {
             if (client.activateAsync().await().isSuccess &&
@@ -41,6 +44,11 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
                                 root.setNewArray(DOCUMENT_LIST_KEY)
                             }.await()
                         }
+                }
+                if (it is Document.Event.Broadcast) {
+                    when (it.topic) {
+                        BROADCAST_GREETING -> _greetingBroadcast.value = it.payload
+                    }
                 }
             }
         }
@@ -95,8 +103,18 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
         }
     }
 
+    fun broadcastMessage() {
+        val payload = "hello".toList().shuffled().joinToString("")
+        viewModelScope.launch {
+            client.broadcast(document, BROADCAST_GREETING, payload)
+                .await().isSuccess
+        }
+    }
+
     companion object {
         private const val DOCUMENT_KEY = "vuejs-kanban"
         private const val DOCUMENT_LIST_KEY = "lists"
+
+        private const val BROADCAST_GREETING = "GREETING"
     }
 }

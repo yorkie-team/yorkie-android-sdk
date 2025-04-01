@@ -7,7 +7,6 @@ import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
-import dev.yorkie.util.YorkieException.Code.Unsupported
 
 internal typealias PBPresence = dev.yorkie.api.v1.Presence
 internal typealias PBPresenceChange = dev.yorkie.api.v1.PresenceChange

@@ -123,7 +123,7 @@ public class JsonObject internal constructor(
             !key.contains("."),
             YorkieException(
                 YorkieException.Code.ErrInvalidObjectKey,
-                """key must not contain the "."."""
+                """key must not contain the ".".""",
             ),
         )
         val removed = target.set(key, element)

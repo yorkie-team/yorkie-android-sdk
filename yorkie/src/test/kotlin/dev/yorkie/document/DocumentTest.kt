@@ -6,7 +6,6 @@ import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
-import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.YorkieException
 import java.util.Date

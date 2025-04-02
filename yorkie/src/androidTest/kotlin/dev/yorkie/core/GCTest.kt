@@ -851,5 +851,4 @@ class GCTest {
         versionVector.set(document.changeID.actor.value, MAX_LAMPORT)
         return versionVector
     }
-
 }

@@ -250,7 +250,7 @@ class MockYorkieService(
                         delay(50)
                         if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
                             responseChannel.close(
-                                ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!)
+                                ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!),
                             )
                             return@launch
                         }

@@ -255,7 +255,13 @@ class PresenceTest {
             val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<PresenceChanged>().collect(d1Events::add)
             }
-            c1.attachAsync(d1, initialPresence = mapOf("name" to "a", "cursor" to previousCursor)).await()
+            c1.attachAsync(
+                d1,
+                initialPresence = mapOf(
+                    "name" to "a",
+                    "cursor" to previousCursor
+                ),
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // initialized, my-presence changed
@@ -268,7 +274,13 @@ class PresenceTest {
             val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d2.events.filterIsInstance<Others>().collect(d2Events::add)
             }
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b", "cursor" to previousCursor)).await()
+            c2.attachAsync(
+                d2,
+                initialPresence = mapOf(
+                    "name" to "b",
+                    "cursor" to previousCursor
+                ),
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {

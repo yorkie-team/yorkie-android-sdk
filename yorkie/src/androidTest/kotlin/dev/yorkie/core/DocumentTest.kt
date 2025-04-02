@@ -848,7 +848,6 @@ class DocumentTest {
                     .collect {
                         val (root, p) = it.data.toSnapshot()
                         val crdtRoot = CrdtRoot(root)
-                        println("dlt, snapshot event: ${crdtRoot}")
                     }
             }
 

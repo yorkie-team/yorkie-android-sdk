@@ -361,9 +361,6 @@ class ClientTest {
     }
 
     private fun assertIsTestActorID(clientId: String) {
-        println(
-            "dlt, assertIsTestActorID: TEST_ACTOR_ID: $TEST_ACTOR_ID, clientId: ${ActorID(clientId)}",
-        )
         assertEquals(TEST_ACTOR_ID, ActorID(clientId))
     }
 

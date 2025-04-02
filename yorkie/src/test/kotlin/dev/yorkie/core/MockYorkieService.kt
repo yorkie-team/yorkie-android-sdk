@@ -2,9 +2,11 @@ package dev.yorkie.core
 
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
+import com.connectrpc.ErrorDetailParser
 import com.connectrpc.Headers
 import com.connectrpc.ResponseMessage
 import com.connectrpc.ServerOnlyStreamInterface
+import com.connectrpc.extensions.GoogleJavaLiteProtobufStrategy
 import com.google.protobuf.kotlin.toByteString
 import dev.yorkie.api.PBTimeTicket
 import dev.yorkie.api.toPBChange
@@ -98,6 +100,15 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.changePack.documentKey == AUTH_ERROR_DOCUMENT_KEY) {
+            return ResponseMessage.Failure(
+                ConnectException(
+                    customError[AUTH_ERROR_DOCUMENT_KEY]!!,
+                ),
+                emptyMap(),
+                emptyMap(),
+            )
+        }
         return ResponseMessage.Success(
             attachDocumentResponse {
                 changePack = changePack {
@@ -144,7 +155,9 @@ class MockYorkieService(
     ): ResponseMessage<PushPullChangesResponse> {
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
-                ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!),
+                ConnectException(
+                    customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!,
+                ),
                 emptyMap(),
                 emptyMap(),
             )
@@ -316,6 +329,7 @@ class MockYorkieService(
         internal const val ATTACH_ERROR_DOCUMENT_KEY = "ATTACH_ERROR_DOCUMENT_KEY"
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
+        internal const val AUTH_ERROR_DOCUMENT_KEY = "AUTH_ERROR_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000ffff0000000000")
 
         internal val defaultError: MutableMap<String, Code> = mutableMapOf(
@@ -323,6 +337,7 @@ class MockYorkieService(
             DETACH_ERROR_DOCUMENT_KEY to Code.UNKNOWN,
             REMOVE_ERROR_DOCUMENT_KEY to Code.UNAVAILABLE,
             WATCH_SYNC_ERROR_DOCUMENT_KEY to Code.UNKNOWN,
+            AUTH_ERROR_DOCUMENT_KEY to Code.UNAUTHENTICATED,
         )
     }
 }

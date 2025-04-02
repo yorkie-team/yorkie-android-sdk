@@ -1,5 +1,6 @@
 package dev.yorkie.document
 
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
@@ -98,7 +99,7 @@ public class Document(
         get() = localChanges.isNotEmpty()
 
     @Volatile
-    public var status = DocumentStatus.Detached
+    public var status = DocStatus.Detached
         internal set
 
     @VisibleForTesting
@@ -129,7 +130,7 @@ public class Document(
 
     public val myPresence: P
         get() = allPresences.value[changeID.actor]
-            .takeIf { status == DocumentStatus.Attached }
+            .takeIf { status == DocStatus.Attached }
             .orEmpty()
 
     /**
@@ -141,7 +142,7 @@ public class Document(
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
-                status != DocumentStatus.Removed,
+                status != DocStatus.Removed,
                 YorkieException(ErrDocumentRemoved, "document(${key}) is removed"),
             )
 
@@ -300,7 +301,7 @@ public class Document(
         }
 
         if (pack.isRemoved) {
-            applyDocumentStatus(DocumentStatus.Removed)
+            applyDocumentStatus(DocStatus.Removed)
         }
     }
 
@@ -376,7 +377,7 @@ public class Document(
         }
     }
 
-    internal suspend fun applyDocumentStatus(status: DocumentStatus) {
+    internal suspend fun applyDocumentStatus(status: DocStatus) {
         if (this.status == status) {
             return
         }
@@ -385,7 +386,7 @@ public class Document(
         publishEvent(
             DocumentStatusChanged(
                 status,
-                changeID.actor.takeIf { status == DocumentStatus.Attached },
+                changeID.actor.takeIf { status == DocStatus.Attached },
             ),
         )
     }
@@ -458,7 +459,7 @@ public class Document(
             localChanges,
             null,
             null,
-            forceRemove || status == DocumentStatus.Removed,
+            forceRemove || status == DocStatus.Removed,
             changeID.versionVector,
         )
     }
@@ -620,6 +621,9 @@ public class Document(
             public data class SyncFailed(public val cause: Throwable?) : SyncStatusChanged
         }
 
+        /**
+         * An event that represents whether the stream connection is connected or not.
+         */
         public sealed interface StreamConnectionChanged : Event {
 
             public data object Connected : StreamConnectionChanged
@@ -629,10 +633,10 @@ public class Document(
 
         /**
          * An event that occurs when the document's status has been changed.
-         * @see DocumentStatus
+         * @see DocStatus
          */
         public data class DocumentStatusChanged(
-            val documentStatus: DocumentStatus,
+            val docStatus: DocStatus,
             val actorID: ActorID?,
         ) : Event
 
@@ -644,6 +648,19 @@ public class Document(
             val topic: String,
             val payload: String,
         ) : Event
+
+        /**
+         * `AuthError` means that an authentication error occurred.
+         */
+        public data class AuthError(
+            val reason: String,
+            val method: AuthErrorMethod,
+        ) : Event {
+            enum class AuthErrorMethod(val value: String) {
+                PushPull("PushPull"),
+                WatchDocuments("WatchDocuments"),
+            }
+        }
 
         /**
          * Represents the modification made during a document update and the message passed.
@@ -666,7 +683,7 @@ public class Document(
     /**
      * Represents the status of the [Document].
      */
-    public enum class DocumentStatus {
+    public enum class DocStatus {
         /**
          * Means that this [Document] is attached to the client.
          * The actor of the ticket is created with being assigned by the client.

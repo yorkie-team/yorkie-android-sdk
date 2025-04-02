@@ -5,10 +5,8 @@ import dev.yorkie.api.toSnapshot
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.DocumentStatus
+import dev.yorkie.document.Document.DocStatus
 import dev.yorkie.document.Document.Event
-import dev.yorkie.document.Document.Event.LocalChange
-import dev.yorkie.document.Document.Event.RemoteChange
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.json.JsonArray
@@ -32,7 +30,6 @@ import kotlin.test.assertNull
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -64,7 +61,7 @@ class DocumentTest {
             // 03. document is attached.
             client.attachAsync(document).await()
             client.removeAsync(document).await()
-            assertEquals(DocumentStatus.Removed, document.status)
+            assertEquals(DocStatus.Removed, document.status)
 
             // 04. try to update a removed document.
             assertFailsWith(YorkieException::class) {
@@ -139,11 +136,11 @@ class DocumentTest {
             }.await()
             client1.removeAsync(document1).await()
             assertEquals("""{"key":2}""", document1.toJson())
-            assertEquals(DocumentStatus.Removed, document1.status)
+            assertEquals(DocStatus.Removed, document1.status)
 
             client2.syncAsync().await()
             assertEquals("""{"key":2}""", document2.toJson())
-            assertEquals(DocumentStatus.Removed, document2.status)
+            assertEquals(DocStatus.Removed, document2.status)
         }
     }
 
@@ -173,8 +170,8 @@ class DocumentTest {
             c1.syncAsync().await()
             c2.syncAsync().await()
 
-            assertEquals(DocumentStatus.Removed, d1.status)
-            assertEquals(DocumentStatus.Removed, d2.status)
+            assertEquals(DocStatus.Removed, d1.status)
+            assertEquals(DocStatus.Removed, d2.status)
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
@@ -650,19 +647,19 @@ class DocumentTest {
             // 1. Can receive DocumentStatus.Attached event when attached
             client.attachAsync(document, syncMode = Manual).await()
             assertEquals(1, documentStatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, documentStatusChangedList[0].documentStatus)
+            assertEquals(DocStatus.Attached, documentStatusChangedList[0].docStatus)
             assertEquals(actorID, documentStatusChangedList[0].actorID)
 
             // 2. Can receive DocumentStatus.Detached event when detached
             client.detachAsync(document).await()
             assertEquals(2, documentStatusChangedList.size)
-            assertEquals(DocumentStatus.Detached, documentStatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Detached, documentStatusChangedList[1].docStatus)
             assertNull(documentStatusChangedList[1].actorID)
 
             // 3. Attach could fail if the document has been detached
             client.attachAsync(document).await()
             assertEquals(2, documentStatusChangedList.size)
-            assertEquals(DocumentStatus.Detached, documentStatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Detached, documentStatusChangedList[1].docStatus)
             assertNull(documentStatusChangedList[1].actorID)
 
             // 4. Exception should be thrown when trying to remove a detached document
@@ -708,23 +705,23 @@ class DocumentTest {
             client2.attachAsync(document2, syncMode = Manual).await()
 
             assertEquals(1, document1StatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, document1StatusChangedList[0].documentStatus)
+            assertEquals(DocStatus.Attached, document1StatusChangedList[0].docStatus)
             assertEquals(c1ID, document1StatusChangedList[0].actorID)
 
             assertEquals(1, document2StatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, document2StatusChangedList[0].documentStatus)
+            assertEquals(DocStatus.Attached, document2StatusChangedList[0].docStatus)
             assertEquals(c2ID, document2StatusChangedList[0].actorID)
 
             // 2. Can receive DocumentStatus.Detached event when detached
             client1.detachAsync(document1).await()
             assertEquals(2, document1StatusChangedList.size)
-            assertEquals(DocumentStatus.Detached, document1StatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Detached, document1StatusChangedList[1].docStatus)
             assertNull(document1StatusChangedList[1].actorID)
 
             // 3. Can receive DocumentStatus.Detached event when removed
             client2.deactivateAsync().await()
             assertEquals(2, document2StatusChangedList.size)
-            assertEquals(DocumentStatus.Detached, document2StatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Detached, document2StatusChangedList[1].docStatus)
             assertNull(document2StatusChangedList[1].actorID)
 
             // 4. Can receive events when other client attaches the same document
@@ -750,25 +747,25 @@ class DocumentTest {
             )
             client1.attachAsync(document3, syncMode = Manual).await()
             assertEquals(1, document3StatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, document3StatusChangedList[0].documentStatus)
+            assertEquals(DocStatus.Attached, document3StatusChangedList[0].docStatus)
             assertEquals(c1ID, document3StatusChangedList[0].actorID)
 
             client2.activateAsync().await()
             client2.attachAsync(document4, syncMode = Manual).await()
             assertEquals(1, document4StatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, document4StatusChangedList[0].documentStatus)
+            assertEquals(DocStatus.Attached, document4StatusChangedList[0].docStatus)
             assertEquals(c2ID, document4StatusChangedList[0].actorID)
 
             // 5. Can receive DocumentStatus.Removed event when removed
             client1.removeAsync(document3).await()
             assertEquals(2, document3StatusChangedList.size)
-            assertEquals(DocumentStatus.Removed, document3StatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Removed, document3StatusChangedList[1].docStatus)
             assertNull(document3StatusChangedList[1].actorID)
 
             // 6. Can receive DocumentStatus.Removed event another client syncs
             client2.syncAsync().await()
             assertEquals(2, document4StatusChangedList.size)
-            assertEquals(DocumentStatus.Removed, document4StatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Removed, document4StatusChangedList[1].docStatus)
             assertNull(document4StatusChangedList[1].actorID)
 
             // 7. DocumentStatus.Detached should not be emitted when deactivating the client and it's document is in the removed state
@@ -816,24 +813,28 @@ class DocumentTest {
             client1.attachAsync(document1, syncMode = Manual).await()
             client2.attachAsync(document2, syncMode = Manual).await()
 
+            assertEquals(true, client1.isActive)
+            assertEquals(true, client2.isActive)
+
             assertEquals(1, document1StatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, document1StatusChangedList[0].documentStatus)
+            assertEquals(DocStatus.Attached, document1StatusChangedList[0].docStatus)
             assertEquals(c1ID, document1StatusChangedList[0].actorID)
 
             assertEquals(1, document2StatusChangedList.size)
-            assertEquals(DocumentStatus.Attached, document2StatusChangedList[0].documentStatus)
+            assertEquals(DocStatus.Attached, document2StatusChangedList[0].docStatus)
             assertEquals(c2ID, document2StatusChangedList[0].actorID)
 
             // 2. Can receive DocumentStatus.Removed event when removed
             client1.removeAsync(document1).await()
             assertEquals(2, document1StatusChangedList.size)
-            assertEquals(DocumentStatus.Removed, document1StatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Removed, document1StatusChangedList[1].docStatus)
             assertNull(document1StatusChangedList[1].actorID)
 
             // 3. Can receive DocumentStatus.Detached event when deactivating the client after peer client removes the document
             client2.deactivateAsync().await()
+
             assertEquals(2, document2StatusChangedList.size)
-            assertEquals(DocumentStatus.Detached, document2StatusChangedList[1].documentStatus)
+            assertEquals(DocStatus.Detached, document2StatusChangedList[1].docStatus)
 
             jobs.values.forEach(Job::cancel)
         }

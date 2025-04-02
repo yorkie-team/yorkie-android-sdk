@@ -2,6 +2,8 @@ package dev.yorkie.core
 
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
+import com.connectrpc.ResponseMessage
+import com.google.rpc.ErrorInfo
 import dev.yorkie.api.PBChangePack
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -14,6 +16,7 @@ import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
@@ -60,11 +63,15 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 
 class ClientTest {
     private lateinit var target: Client
 
     private lateinit var service: YorkieServiceClientInterface
+
+    val REFRESH_TEST_AUTH_TOKEN = "RefreshTestAuthToken"
+    val TEST_AUTH_TOKEN = "TestAuthToken"
 
     @Before
     fun setUp() {
@@ -73,12 +80,19 @@ class ClientTest {
         )
 
         target = Client(
-            service,
-            Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            Client.Options(key = TEST_KEY, apiKey = TEST_KEY, fetchAuthToken = { refresh ->
+                if (refresh) {
+                    REFRESH_TEST_AUTH_TOKEN
+                } else {
+                    TEST_AUTH_TOKEN
+                }
+            }),
+            OkHttpClient(),
+            OkHttpClient(),
             createSingleThreadDispatcher("Client Test"),
-            OkHttpClient(),
-            OkHttpClient(),
+            "0.0.0.0",
         )
+        target.service = service
     }
 
     @After
@@ -265,6 +279,23 @@ class ClientTest {
     }
 
     @Test
+    fun `should set a new token when auth error occurs`() = runTest {
+        val success = Document(Key(NORMAL_DOCUMENT_KEY))
+        target.activateAsync().await()
+        target.attachAsync(success).await()
+        assertEquals(TEST_AUTH_TOKEN, runBlocking { target.authToken(false) })
+        assertFalse(target.shouldRefreshToken)
+        assertTrue(target.detachAsync(success).await().isSuccess)
+
+        val failing = Document(Key(AUTH_ERROR_DOCUMENT_KEY))
+        val await = target.attachAsync(failing).await()
+        assertTrue(await.isFailure)
+        assertTrue(target.shouldRefreshToken)
+
+        target.deactivateAsync().await()
+    }
+
+    @Test
     fun `should retry on network failure if error code was retryable`() = runTest {
         runBlocking {
             val mockYorkieService = MockYorkieService()
@@ -273,16 +304,17 @@ class ClientTest {
             )
 
             val client = Client(
-                yorkieService,
                 Client.Options(
                     key = TEST_KEY,
                     apiKey = TEST_KEY,
                     syncLoopDuration = 500.milliseconds,
                 ),
+                OkHttpClient(),
+                OkHttpClient(),
                 createSingleThreadDispatcher("Client Test"),
-                OkHttpClient(),
-                OkHttpClient(),
+                host = "0.0.0.0",
             )
+            client.service = yorkieService
 
             client.activateAsync().await()
 

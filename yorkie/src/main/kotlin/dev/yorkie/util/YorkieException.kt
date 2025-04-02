@@ -40,6 +40,13 @@ public data class YorkieException(
 
         // ErrInvalidArgument is returned when the argument is invalid.
         ErrInvalidArgument("ErrInvalidArgument"),
+
+        // ErrPermissionDenied is returned when the authorization webhook denies the request.
+        ErrPermissionDenied("ErrPermissionDenied"),
+
+        // ErrUnauthenticated is returned when the request does not have valid authentication credentials.
+        ErrUnauthenticated("ErrUnauthenticated");
+
     }
 }
 

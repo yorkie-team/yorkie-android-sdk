@@ -3,8 +3,7 @@ package dev.yorkie.util
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.google.rpc.ErrorInfo
-import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
-import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
+import dev.yorkie.util.YorkieException.Code.*
 
 /**
  * [handleConnectException] will return true if the given error is retryable.
@@ -14,7 +13,7 @@ import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
  */
 internal suspend fun handleConnectException(
     exception: ConnectException?,
-    handleError: (suspend () -> Unit)? = null,
+    handleError: (suspend (ConnectException) -> Unit)? = null,
 ): Boolean {
     val errorCode = exception?.code ?: return false
 
@@ -28,17 +27,26 @@ internal suspend fun handleConnectException(
 
     val yorkieErrorCode = errorCodeOf(exception)
     if (yorkieErrorCode == ErrClientNotActivated.codeString ||
-        yorkieErrorCode == ErrClientNotFound.codeString
+        yorkieErrorCode == ErrClientNotFound.codeString ||
+        yorkieErrorCode == ErrUnauthenticated.codeString
     ) {
-        handleError?.invoke()
+        handleError?.invoke(exception)
     }
     return false
 }
 
-private fun errorCodeOf(exception: ConnectException): String {
+fun errorCodeOf(exception: ConnectException): String {
     val infos = exception.unpackedDetails(ErrorInfo::class)
     for (info in infos) {
         info.metadataMap["code"]?.let { return it }
     }
     return ""
+}
+
+fun errorMetadataOf(exception: ConnectException): Map<String, String> {
+    val infos = exception.unpackedDetails(ErrorInfo::class)
+    for (info in infos) {
+        return info.metadataMap
+    }
+    return emptyMap()
 }

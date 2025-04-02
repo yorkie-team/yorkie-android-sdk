@@ -2,6 +2,7 @@ package dev.yorkie.core
 
 import android.util.Log
 import androidx.annotation.VisibleForTesting
+import androidx.annotation.WorkerThread
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
 import com.connectrpc.ServerOnlyStreamInterface
@@ -27,7 +28,10 @@ import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.watchDocumentRequest
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.DocumentStatus
+import dev.yorkie.document.Document.DocStatus
+import dev.yorkie.document.Document.Event.AuthError
+import dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod.PushPull
+import dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod.WatchDocuments
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
@@ -45,8 +49,10 @@ import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
+import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 import dev.yorkie.util.checkYorkieError
-import dev.yorkie.util.createSingleThreadDispatcher
+import dev.yorkie.util.errorCodeOf
+import dev.yorkie.util.errorMetadataOf
 import dev.yorkie.util.handleConnectException
 import java.io.Closeable
 import java.io.InterruptedIOException
@@ -101,12 +107,13 @@ import okhttp3.OkHttpClient
  * Therefore you need to [close] the client, when the client is no longer needed.
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
-public class Client @VisibleForTesting internal constructor(
-    private val service: YorkieServiceClientInterface,
+public class Client @VisibleForTesting constructor(
     private val options: Options,
-    private val dispatcher: CoroutineDispatcher,
     private val unaryClient: OkHttpClient,
     private val streamClient: OkHttpClient,
+    private val dispatcher: CoroutineDispatcher,
+    host: String,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val activationJob = SupervisorJob()
@@ -141,35 +148,33 @@ public class Client @VisibleForTesting internal constructor(
         ClientCondition.WATCH_LOOP to false,
     )
 
-    public constructor(
-        host: String,
-        options: Options = Options(),
-        unaryClient: OkHttpClient = OkHttpClient(),
-        streamClient: OkHttpClient = unaryClient,
-        dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Client(${options.key})"),
-        ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    ) : this(
-        service = YorkieServiceClient(
-            ProtocolClient(
-                ConnectOkHttpClient(unaryClient, streamClient),
-                ProtocolClientConfig(
-                    host = host,
-                    serializationStrategy = GoogleJavaLiteProtobufStrategy(),
-                    networkProtocol = NetworkProtocol.CONNECT,
-                    ioCoroutineContext = ioDispatcher,
-                    interceptors = buildList {
-                        add { UserAgentInterceptor }
-                        options.authInterceptor()?.let { interceptor ->
-                            add { interceptor }
-                        }
-                    },
-                ),
+    var shouldRefreshToken: Boolean = false
+
+    @VisibleForTesting
+    suspend fun authToken(shouldRefresh: Boolean): String? {
+        return options.fetchAuthToken?.invoke(shouldRefresh)
+    }
+
+    @VisibleForTesting
+    var service: YorkieServiceClientInterface = YorkieServiceClient(
+        ProtocolClient(
+            ConnectOkHttpClient(unaryClient, streamClient),
+            ProtocolClientConfig(
+                host = host,
+                serializationStrategy = GoogleJavaLiteProtobufStrategy(),
+                networkProtocol = NetworkProtocol.CONNECT,
+                ioCoroutineContext = ioDispatcher,
+                interceptors = buildList {
+                    add { UserAgentInterceptor }
+                    options.authInterceptor(
+                        { shouldRefreshToken },
+                        { shouldRefreshToken = false },
+                    )?.let { interceptor ->
+                        add { interceptor }
+                    }
+                },
             ),
         ),
-        options = options,
-        dispatcher = dispatcher,
-        unaryClient = unaryClient,
-        streamClient = streamClient,
     )
 
     /**
@@ -182,6 +187,7 @@ public class Client @VisibleForTesting internal constructor(
             if (isActive) {
                 return@async SUCCESS
             }
+
             val activateResponse = service.activateClient(
                 activateClientRequest {
                     clientKey = options.key
@@ -189,7 +195,10 @@ public class Client @VisibleForTesting internal constructor(
                 projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
-                handleConnectException(it) {
+                handleConnectException(it) { exception ->
+                    if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                        shouldRefreshToken = true
+                    }
                     deactivateInternal()
                 }
                 return@async Result.failure(it)
@@ -217,7 +226,19 @@ public class Client @VisibleForTesting internal constructor(
                         if (result.isSuccess) {
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.Synced
-                        } else if (handleConnectException(result.exceptionOrNull() as? ConnectException)) { // check if the exception is retryable
+                        } else if (handleConnectException(result.exceptionOrNull() as? ConnectException) { connectException ->
+                                if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
+                                    shouldRefreshToken = true
+                                    document.publishEvent(
+                                        AuthError(
+                                            errorMetadataOf(
+                                                connectException,
+                                            )["reason"] ?: "AuthError",
+                                            PushPull,
+                                        ),
+                                    )
+                                }
+                            }) { // check if the exception is retryable
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.SyncFailed(result.exceptionOrNull())
                         } else {
@@ -242,6 +263,9 @@ public class Client @VisibleForTesting internal constructor(
                 isActive,
                 YorkieException(ErrClientNotActivated, "client is not active"),
             )
+
+            shouldRefreshToken = options.fetchAuthToken != null
+            println("dlt, syncAsync shouldRefreshToken : $shouldRefreshToken")
 
             var failure: Throwable? = null
             val attachments = document?.let {
@@ -318,7 +342,7 @@ public class Client @VisibleForTesting internal constructor(
                             document.applyChangePack(responsePack)
                             // NOTE(chacha912): If a document has been removed, watchStream should
                             // be disconnected to not receive an event for that document.
-                            if (document.status == DocumentStatus.Removed) {
+                            if (document.status == DocStatus.Removed) {
                                 attachments.value -= document.key
                                 mutexForDocuments.remove(document.key)
                             }
@@ -326,7 +350,10 @@ public class Client @VisibleForTesting internal constructor(
                     }.onFailure {
                         coroutineContext.ensureActive()
                         (it as? ConnectException)?.let { exception ->
-                            handleConnectException(exception) {
+                            handleConnectException(exception) { it ->
+                                if (errorCodeOf(it) == ErrUnauthenticated.codeString) {
+                                    shouldRefreshToken = true
+                                }
                                 deactivateInternal()
                             }
                         }
@@ -445,7 +472,19 @@ public class Client @VisibleForTesting internal constructor(
 
         cause?.let(::sendWatchStreamException)
 
-        if (handleConnectException(cause as? ConnectException)) {
+        if (handleConnectException(cause as? ConnectException) { connectException ->
+                if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
+                    shouldRefreshToken = true
+                    document.publishEvent(
+                        AuthError(
+                            errorMetadataOf(
+                                connectException,
+                            )["reason"] ?: "AuthError",
+                            WatchDocuments,
+                        ),
+                    )
+                }
+            }) {
             coroutineContext.ensureActive()
             delay(options.reconnectStreamDelay.inWholeMilliseconds)
             return true
@@ -456,7 +495,7 @@ public class Client @VisibleForTesting internal constructor(
     }
 
     private suspend fun onWatchStreamCanceled(document: Document) {
-        if (document.status == DocumentStatus.Attached && status.value is Status.Activated) {
+        if (document.status == DocStatus.Attached && status.value is Status.Activated) {
             document.publishEvent(
                 Initialized((requireClientId() to document.myPresence).asPresences()),
             )
@@ -590,7 +629,7 @@ public class Client @VisibleForTesting internal constructor(
             )
 
             checkYorkieError(
-                document.status == DocumentStatus.Detached,
+                document.status == DocStatus.Detached,
                 YorkieException(ErrDocumentNotDetached, "document(${document.key} is not detached"),
             )
 
@@ -610,7 +649,10 @@ public class Client @VisibleForTesting internal constructor(
                     document.key.documentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
-                    handleConnectException(it) {
+                    handleConnectException(it) { exception ->
+                        if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                            shouldRefreshToken = true
+                        }
                         deactivateInternal()
                     }
                     return@async Result.failure(it)
@@ -618,11 +660,11 @@ public class Client @VisibleForTesting internal constructor(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
 
-                if (document.status == DocumentStatus.Removed) {
+                if (document.status == DocStatus.Removed) {
                     return@async SUCCESS
                 }
 
-                document.applyDocumentStatus(DocumentStatus.Attached)
+                document.applyDocumentStatus(DocStatus.Attached)
                 attachments.value += document.key to Attachment(
                     document,
                     response.documentId,
@@ -670,15 +712,18 @@ public class Client @VisibleForTesting internal constructor(
                     document.key.documentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
-                    handleConnectException(it) {
+                    handleConnectException(it) { exception ->
+                        if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                            shouldRefreshToken = true
+                        }
                         deactivateInternal()
                     }
                     return@async Result.failure(it)
                 }
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
-                if (document.status != DocumentStatus.Removed) {
-                    document.applyDocumentStatus(DocumentStatus.Detached)
+                if (document.status != DocStatus.Removed) {
+                    document.applyDocumentStatus(DocStatus.Detached)
                     detachInternal(document)
                 }
             }
@@ -709,7 +754,10 @@ public class Client @VisibleForTesting internal constructor(
                 projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
-                handleConnectException(it) {
+                handleConnectException(it) { exception ->
+                    if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                        shouldRefreshToken = true
+                    }
                     deactivateInternal()
                 }
                 return@async Result.failure(it)
@@ -722,8 +770,8 @@ public class Client @VisibleForTesting internal constructor(
 
     private suspend fun deactivateInternal() {
         attachments.value.values.forEach {
-            it.document.applyDocumentStatus(DocumentStatus.Detached)
             detachInternal(it.document)
+            it.document.applyDocumentStatus(DocStatus.Detached)
         }
 
         _status.emit(Status.Deactivated)
@@ -925,9 +973,11 @@ public class Client @VisibleForTesting internal constructor(
          */
         public val apiKey: String? = null,
         /**
-         * Authentication token of this [Client] used to identify the user of the client.
+         * `fetchAuthToken` provides a token for the auth webhook.
+         * When the webhook response status code is 401, this function is called to refresh the token.
+         * The `reason` parameter is the reason from the webhook response.
          */
-        public val token: String? = null,
+        public val fetchAuthToken: (suspend (shouldRefresh: Boolean) -> String)? = null,
         /**
          * Duration of the sync loop.
          * After each sync loop, the client waits for the duration to next sync.

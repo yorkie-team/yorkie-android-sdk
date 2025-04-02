@@ -7,6 +7,7 @@ import com.connectrpc.UnaryFunction
 import com.connectrpc.http.HTTPRequest
 import com.connectrpc.http.clone
 import dev.yorkie.BuildConfig
+import kotlinx.coroutines.runBlocking
 
 internal val UserAgentInterceptor = object : Interceptor {
 
@@ -34,8 +35,11 @@ internal val UserAgentInterceptor = object : Interceptor {
     }
 }
 
-internal fun Client.Options.authInterceptor(): Interceptor? {
-    if (apiKey == null && token == null) {
+internal fun Client.Options.authInterceptor(
+    shouldRefreshTokenProvider: () -> Boolean,
+    refreshTokenCallback: (() -> Unit)? = null,
+): Interceptor? {
+    if (apiKey == null && fetchAuthToken == null) {
         return null
     }
     return object : Interceptor {
@@ -56,11 +60,16 @@ internal fun Client.Options.authInterceptor(): Interceptor? {
         }
 
         private fun headers(request: HTTPRequest): Headers {
+
             return buildMap {
                 if (apiKey != null) {
                     put("x-api-key", listOf(apiKey))
                 }
-                if (token != null) {
+                fetchAuthToken?.let { tokenFetcher ->
+                    val token = runBlocking {
+                        tokenFetcher.invoke(shouldRefreshTokenProvider())
+                    }
+                    refreshTokenCallback?.invoke()
                     put("authorization", listOf(token))
                 }
                 putAll(request.headers)

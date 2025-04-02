@@ -2,8 +2,6 @@ package dev.yorkie.core
 
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
-import com.connectrpc.ResponseMessage
-import com.google.rpc.ErrorInfo
 import dev.yorkie.api.PBChangePack
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -63,15 +61,14 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
-import org.mockito.kotlin.whenever
 
 class ClientTest {
     private lateinit var target: Client
 
     private lateinit var service: YorkieServiceClientInterface
 
-    val REFRESH_TEST_AUTH_TOKEN = "RefreshTestAuthToken"
-    val TEST_AUTH_TOKEN = "TestAuthToken"
+    private val refreshTestAuthToken = "RefreshTestAuthToken"
+    private val testAuthToken = "TestAuthToken"
 
     @Before
     fun setUp() {
@@ -82,9 +79,9 @@ class ClientTest {
         target = Client(
             Client.Options(key = TEST_KEY, apiKey = TEST_KEY, fetchAuthToken = { refresh ->
                 if (refresh) {
-                    REFRESH_TEST_AUTH_TOKEN
+                    refreshTestAuthToken
                 } else {
-                    TEST_AUTH_TOKEN
+                    testAuthToken
                 }
             }),
             OkHttpClient(),
@@ -283,7 +280,7 @@ class ClientTest {
         val success = Document(Key(NORMAL_DOCUMENT_KEY))
         target.activateAsync().await()
         target.attachAsync(success).await()
-        assertEquals(TEST_AUTH_TOKEN, runBlocking { target.authToken(false) })
+        assertEquals(testAuthToken, runBlocking { target.authToken(false) })
         assertFalse(target.shouldRefreshToken)
         assertTrue(target.detachAsync(success).await().isSuccess)
 

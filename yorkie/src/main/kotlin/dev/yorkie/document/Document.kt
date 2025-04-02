@@ -1,6 +1,5 @@
 package dev.yorkie.document
 
-import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot

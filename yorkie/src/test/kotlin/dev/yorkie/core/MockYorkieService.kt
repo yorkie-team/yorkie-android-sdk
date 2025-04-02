@@ -2,11 +2,9 @@ package dev.yorkie.core
 
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
-import com.connectrpc.ErrorDetailParser
 import com.connectrpc.Headers
 import com.connectrpc.ResponseMessage
 import com.connectrpc.ServerOnlyStreamInterface
-import com.connectrpc.extensions.GoogleJavaLiteProtobufStrategy
 import com.google.protobuf.kotlin.toByteString
 import dev.yorkie.api.PBTimeTicket
 import dev.yorkie.api.toPBChange
@@ -251,7 +249,9 @@ class MockYorkieService(
                         )
                         delay(50)
                         if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
-                            responseChannel.close(ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!))
+                            responseChannel.close(
+                                ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!)
+                            )
                             return@launch
                         }
                         responseChannel.trySend(

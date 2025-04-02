@@ -45,8 +45,7 @@ public data class YorkieException(
         ErrPermissionDenied("ErrPermissionDenied"),
 
         // ErrUnauthenticated is returned when the request does not have valid authentication credentials.
-        ErrUnauthenticated("ErrUnauthenticated");
-
+        ErrUnauthenticated("ErrUnauthenticated")
     }
 }
 

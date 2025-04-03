@@ -262,7 +262,6 @@ public class Client @VisibleForTesting constructor(
             )
 
             shouldRefreshToken = options.fetchAuthToken != null
-            println("dlt, syncAsync shouldRefreshToken : $shouldRefreshToken")
 
             var failure: Throwable? = null
             val attachments = document?.let {

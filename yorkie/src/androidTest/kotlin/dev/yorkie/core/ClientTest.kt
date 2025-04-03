@@ -21,7 +21,9 @@ import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.util.YorkieException
-import dev.yorkie.util.YorkieException.Code.*
+import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
+import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
+import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -969,7 +971,7 @@ class ClientTest {
             c2.syncAsync().await()
 
             // 01. c1 increases the counter for creating snapshot.
-            repeat(500) {
+            repeat(DEFAULT_SNAPSHOT_THRESHOLD) {
                 d1.updateAsync { root, _ ->
                     root.getAs<JsonCounter>("counter").increase(1)
                 }.await()

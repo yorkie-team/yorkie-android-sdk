@@ -17,16 +17,30 @@ import dev.yorkie.core.Client
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.Logger
+import dev.yorkie.util.createSingleThreadDispatcher
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
 
 class MainActivity : AppCompatActivity() {
-
     private lateinit var binding: ActivityMainBinding
     private val viewModel: EditorViewModel by viewModels {
         viewModelFactory {
             initializer {
-                val client = Client("https://api.yorkie.dev")
-                EditorViewModel(client)
+                val unaryClient = OkHttpClient.Builder()
+                    .protocols(listOf(Protocol.HTTP_1_1))
+                    .build()
+                EditorViewModel(
+                    Client(
+                        options = Client.Options(),
+                        host = "https://api.yorkie.dev",
+                        unaryClient = unaryClient,
+                        streamClient = unaryClient,
+                        dispatcher = createSingleThreadDispatcher(
+                            "YorkieClient",
+                        ),
+                    ),
+                )
             }
         }
     }

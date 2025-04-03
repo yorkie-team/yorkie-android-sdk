@@ -1,5 +1,6 @@
 package com.example.kanbanapp
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -26,12 +27,22 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.yorkie.core.Client
 import dev.yorkie.util.Logger
+import dev.yorkie.util.createSingleThreadDispatcher
+import okhttp3.OkHttpClient
 
+@SuppressLint("VisibleForTests")
 class KanbanBoardActivity : ComponentActivity() {
     private val viewModel: KanbanBoardViewModel by viewModels {
         viewModelFactory {
             initializer {
-                val client = Client("https://api.yorkie.dev")
+                val unaryClient = OkHttpClient()
+                val client = Client(
+                    options = Client.Options(),
+                    unaryClient = unaryClient,
+                    streamClient = unaryClient,
+                    dispatcher = createSingleThreadDispatcher("YorkieClientDispatcher"),
+                    host = "https://api.yorkie.dev",
+                )
                 KanbanBoardViewModel(client)
             }
         }

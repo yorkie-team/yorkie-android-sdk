@@ -32,15 +32,14 @@ class PresenceTest {
     @Test
     fun test_presence_from_snapshot() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
-            val snapshotThreshold = 500
-            repeat(snapshotThreshold) {
+            repeat(DEFAULT_SNAPSHOT_THRESHOLD) {
                 d1.updateAsync { _, presence ->
                     presence.put(mapOf("key" to "$it"))
                 }.await()
             }
 
             assertEquals(
-                mapOf("key" to "${snapshotThreshold - 1}"),
+                mapOf("key" to "${DEFAULT_SNAPSHOT_THRESHOLD - 1}"),
                 d1.allPresences.value[c1.requireClientId()],
             )
 
@@ -48,7 +47,7 @@ class PresenceTest {
             c2.syncAsync().await()
 
             assertEquals(
-                mapOf("key" to "${snapshotThreshold - 1}"),
+                mapOf("key" to "${DEFAULT_SNAPSHOT_THRESHOLD - 1}"),
                 d2.allPresences.value[c1.requireClientId()],
             )
         }
@@ -256,7 +255,13 @@ class PresenceTest {
             val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<PresenceChanged>().collect(d1Events::add)
             }
-            c1.attachAsync(d1, mapOf("name" to "a", "cursor" to previousCursor)).await()
+            c1.attachAsync(
+                d1,
+                initialPresence = mapOf(
+                    "name" to "a",
+                    "cursor" to previousCursor,
+                ),
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // initialized, my-presence changed
@@ -269,7 +274,13 @@ class PresenceTest {
             val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d2.events.filterIsInstance<Others>().collect(d2Events::add)
             }
-            c2.attachAsync(d2, mapOf("name" to "b", "cursor" to previousCursor)).await()
+            c2.attachAsync(
+                d2,
+                initialPresence = mapOf(
+                    "name" to "b",
+                    "cursor" to previousCursor,
+                ),
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
@@ -410,8 +421,21 @@ class PresenceTest {
             }
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
-            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), syncMode = Manual).await()
+            c2.attachAsync(
+                d2,
+                initialPresence = mapOf(
+                    "name" to "b1",
+                    "cursor" to cursor,
+                ),
+            ).await()
+            c3.attachAsync(
+                d3,
+                initialPresence = mapOf(
+                    "name" to "c1",
+                    "cursor" to cursor,
+                ),
+                syncMode = Manual,
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched
@@ -501,8 +525,21 @@ class PresenceTest {
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
             //     c1 receives the watched event from c2.
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
-            c3.attachAsync(d3, mapOf("name" to "c1", "cursor" to cursor), syncMode = Manual).await()
+            c2.attachAsync(
+                d2,
+                initialPresence = mapOf(
+                    "name" to "b1",
+                    "cursor" to cursor,
+                ),
+            ).await()
+            c3.attachAsync(
+                d3,
+                initialPresence = mapOf(
+                    "name" to "c1",
+                    "cursor" to cursor,
+                ),
+                syncMode = Manual,
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched

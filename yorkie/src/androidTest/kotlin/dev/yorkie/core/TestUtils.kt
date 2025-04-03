@@ -1,20 +1,28 @@
 package dev.yorkie.core
 
 import dev.yorkie.document.Document
+import dev.yorkie.util.createSingleThreadDispatcher
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 
+const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
 const val GENERAL_TIMEOUT = 3_000L
 
-fun createClient() = Client(
-    "http://10.0.2.2:8080",
-    unaryClient = OkHttpClient.Builder()
+fun createClient(): Client {
+    val unaryClient = OkHttpClient.Builder()
         .protocols(listOf(Protocol.HTTP_1_1))
-        .build(),
-)
+        .build()
+    return Client(
+        options = Client.Options(),
+        host = "http://10.0.2.2:8080",
+        unaryClient = unaryClient,
+        streamClient = unaryClient,
+        dispatcher = createSingleThreadDispatcher("YorkieClient"),
+    )
+}
 
 fun String.toDocKey(): Document.Key {
     return Document.Key(

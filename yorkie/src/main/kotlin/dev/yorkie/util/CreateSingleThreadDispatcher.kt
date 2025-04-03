@@ -6,7 +6,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.asCoroutineDispatcher
 
-internal fun createSingleThreadDispatcher(threadName: String) = ThreadPoolExecutor(
+fun createSingleThreadDispatcher(threadName: String) = ThreadPoolExecutor(
     0,
     1,
     5,

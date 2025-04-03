@@ -14,6 +14,7 @@ import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
@@ -32,7 +33,7 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector
-import dev.yorkie.util.createSingleThreadDispatcher
+import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -66,6 +67,9 @@ class ClientTest {
 
     private lateinit var service: YorkieServiceClientInterface
 
+    private val refreshTestAuthToken = "RefreshTestAuthToken"
+    private val testAuthToken = "TestAuthToken"
+
     @Before
     fun setUp() {
         service = mock<YorkieServiceClientInterface>(
@@ -73,12 +77,19 @@ class ClientTest {
         )
 
         target = Client(
-            service,
-            Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            Client.Options(key = TEST_KEY, apiKey = TEST_KEY, fetchAuthToken = { refresh ->
+                if (refresh) {
+                    refreshTestAuthToken
+                } else {
+                    testAuthToken
+                }
+            }),
+            OkHttpClient(),
+            OkHttpClient(),
             createSingleThreadDispatcher("Client Test"),
-            OkHttpClient(),
-            OkHttpClient(),
+            "0.0.0.0",
         )
+        target.service = service
     }
 
     @After
@@ -115,14 +126,20 @@ class ClientTest {
         target.attachAsync(document, syncMode = Manual).await()
         verify(service).attachDocument(attachRequestCaptor.capture(), any())
         assertIsTestActorID(attachRequestCaptor.firstValue.clientId)
-        assertIsInitialChangePack(attachRequestCaptor.firstValue.changePack)
+        assertIsInitialChangePack(
+            createInitialChangePack(initialAttachVersionVector, initialAttachVersionVector),
+            attachRequestCaptor.firstValue.changePack,
+        )
         assertJsonContentEquals("""{"k1": 4}""", document.toJson())
 
         val syncRequestCaptor = argumentCaptor<PushPullChangesRequest>()
         target.syncAsync().await()
         verify(service).pushPullChanges(syncRequestCaptor.capture(), any())
         assertIsTestActorID(syncRequestCaptor.firstValue.clientId)
-        assertIsInitialChangePack(syncRequestCaptor.firstValue.changePack)
+        assertIsInitialChangePack(
+            createInitialChangePack(initialSyncVersionVector, VersionVector()),
+            syncRequestCaptor.firstValue.changePack,
+        )
         assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
         val detachRequestCaptor = argumentCaptor<DetachDocumentRequest>()
@@ -239,7 +256,7 @@ class ClientTest {
         verify(service).removeDocument(removeDocumentRequestCaptor.capture(), any())
         assertIsTestActorID(removeDocumentRequestCaptor.firstValue.clientId)
         assertEquals(
-            InitialChangePack.copy(isRemoved = true),
+            createInitialChangePack(initialRemoveVersionVector).copy(isRemoved = true),
             removeDocumentRequestCaptor.firstValue.changePack.toChangePack(),
         )
 
@@ -259,6 +276,23 @@ class ClientTest {
     }
 
     @Test
+    fun `should set a new token when auth error occurs`() = runTest {
+        val success = Document(Key(NORMAL_DOCUMENT_KEY))
+        target.activateAsync().await()
+        target.attachAsync(success).await()
+        assertEquals(testAuthToken, runBlocking { target.authToken(false) })
+        assertFalse(target.shouldRefreshToken)
+        assertTrue(target.detachAsync(success).await().isSuccess)
+
+        val failing = Document(Key(AUTH_ERROR_DOCUMENT_KEY))
+        val await = target.attachAsync(failing).await()
+        assertTrue(await.isFailure)
+        assertTrue(target.shouldRefreshToken)
+
+        target.deactivateAsync().await()
+    }
+
+    @Test
     fun `should retry on network failure if error code was retryable`() = runTest {
         runBlocking {
             val mockYorkieService = MockYorkieService()
@@ -267,16 +301,17 @@ class ClientTest {
             )
 
             val client = Client(
-                yorkieService,
                 Client.Options(
                     key = TEST_KEY,
                     apiKey = TEST_KEY,
                     syncLoopDuration = 500.milliseconds,
                 ),
+                OkHttpClient(),
+                OkHttpClient(),
                 createSingleThreadDispatcher("Client Test"),
-                OkHttpClient(),
-                OkHttpClient(),
+                host = "0.0.0.0",
             )
+            client.service = yorkieService
 
             client.activateAsync().await()
 
@@ -358,17 +393,30 @@ class ClientTest {
         assertEquals(TEST_ACTOR_ID, ActorID(clientId))
     }
 
-    private fun assertIsInitialChangePack(changePack: PBChangePack) {
-        assertEquals(InitialChangePack, changePack.toChangePack())
+    private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {
+        assertEquals(initialChangePack, changePack.toChangePack())
     }
 
     companion object {
-        private val InitialChangePack = ChangePack(
+        val initialAttachVersionVector = VersionVector().apply {
+            set(TEST_ACTOR_ID.value, 1)
+        }
+        val initialSyncVersionVector = VersionVector().apply {
+            set(TEST_ACTOR_ID.value, 1)
+        }
+        val initialRemoveVersionVector = VersionVector().apply {
+            set(TEST_ACTOR_ID.value, 1)
+        }
+
+        private fun createInitialChangePack(
+            changesVersionVector: VersionVector,
+            changePackVersionVector: VersionVector = INITIAL_VERSION_VECTOR,
+        ) = ChangePack(
             NORMAL_DOCUMENT_KEY,
             CheckPoint(0, 1u),
             listOf(
                 Change(
-                    ChangeID(1u, 1, TEST_ACTOR_ID, VersionVector.INITIAL_VERSION_VECTOR),
+                    ChangeID(1u, 1, TEST_ACTOR_ID, changesVersionVector),
                     emptyList(),
                     PresenceChange.Put(emptyMap()),
                 ),
@@ -376,7 +424,7 @@ class ClientTest {
             null,
             null,
             false,
-            VersionVector.INITIAL_VERSION_VECTOR,
+            changePackVersionVector,
         )
     }
 }

@@ -3,7 +3,9 @@ package dev.yorkie.util
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.google.rpc.ErrorInfo
-import dev.yorkie.util.YorkieException.Code.*
+import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
+import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
+import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 
 /**
  * [handleConnectException] will return true if the given error is retryable.

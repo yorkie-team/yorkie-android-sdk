@@ -531,7 +531,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
         PBValueType.VALUE_TYPE_STRING,
         PBValueType.VALUE_TYPE_BYTES,
         PBValueType.VALUE_TYPE_DATE,
-            -> CrdtPrimitive(
+        -> CrdtPrimitive(
             CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
             createdAt.toTimeTicket(),
         )

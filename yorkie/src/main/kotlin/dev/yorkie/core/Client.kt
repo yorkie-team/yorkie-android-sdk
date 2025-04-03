@@ -406,9 +406,8 @@ public class Client @VisibleForTesting constructor(
                 } ?: continue
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
-                    while (!stream.isReceiveClosed()
-                        && !channel.isClosedForReceive
-                        && shouldContinue
+                    while (!stream.isReceiveClosed() &&
+                        !channel.isClosedForReceive && shouldContinue
                     ) {
                         withTimeoutOrNull(streamTimeout) {
                             val receiveResult = channel.receiveCatching()

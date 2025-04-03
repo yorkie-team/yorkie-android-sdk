@@ -225,7 +225,10 @@ public class Client @VisibleForTesting constructor(
                         if (result.isSuccess) {
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.Synced
-                        } else if (handleConnectException(result.exceptionOrNull() as? ConnectException) { connectException ->
+                        } else if (
+                            handleConnectException(
+                                result.exceptionOrNull() as? ConnectException,
+                            ) { connectException ->
                                 if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
                                     shouldRefreshToken = true
                                     document.publishEvent(
@@ -237,7 +240,8 @@ public class Client @VisibleForTesting constructor(
                                         ),
                                     )
                                 }
-                            }) { // check if the exception is retryable
+                            }
+                        ) { // check if the exception is retryable
                             conditions[ClientCondition.SYNC_LOOP] = true
                             SyncStatusChanged.SyncFailed(
                                 result.exceptionOrNull(),
@@ -875,7 +879,8 @@ public class Client @VisibleForTesting constructor(
                     val retryInterval = exponentialBackoff(retryCount - 1)
                     logError(
                         "BROADCAST",
-                        "Retry attempt $retryCount/$maxRetries for topic $topic after $retryInterval ms",
+                        "Retry attempt $retryCount/$maxRetries " +
+                            "for topic $topic after $retryInterval ms",
                     )
                     delay(retryInterval)
                 }

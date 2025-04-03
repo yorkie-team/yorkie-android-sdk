@@ -106,7 +106,7 @@ import okhttp3.OkHttpClient
  * Therefore you need to [close] the client, when the client is no longer needed.
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
-public class Client @VisibleForTesting constructor(
+public class Client constructor(
     private val options: Options,
     private val unaryClient: OkHttpClient,
     private val streamClient: OkHttpClient,

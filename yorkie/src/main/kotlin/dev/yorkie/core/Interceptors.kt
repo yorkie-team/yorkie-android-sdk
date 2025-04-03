@@ -60,7 +60,6 @@ internal fun Client.Options.authInterceptor(
         }
 
         private fun headers(request: HTTPRequest): Headers {
-
             return buildMap {
                 if (apiKey != null) {
                     put("x-api-key", listOf(apiKey))

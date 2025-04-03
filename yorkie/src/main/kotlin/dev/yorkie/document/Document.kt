@@ -142,7 +142,7 @@ public class Document(
         return scope.async {
             checkYorkieError(
                 status != DocStatus.Removed,
-                YorkieException(ErrDocumentRemoved, "document(${key}) is removed"),
+                YorkieException(ErrDocumentRemoved, "document($key) is removed"),
             )
 
             val clone = ensureClone()
@@ -518,7 +518,6 @@ public class Document(
 
         changeID = changeID.setVersionVector(filteredVersionVector)
     }
-
 
     /**
      * Deletes elements that were removed before the given time.

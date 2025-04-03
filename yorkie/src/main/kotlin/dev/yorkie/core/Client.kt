@@ -2,7 +2,6 @@ package dev.yorkie.core
 
 import android.util.Log
 import androidx.annotation.VisibleForTesting
-import androidx.annotation.WorkerThread
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
 import com.connectrpc.ServerOnlyStreamInterface
@@ -240,10 +239,14 @@ public class Client @VisibleForTesting constructor(
                                 }
                             }) { // check if the exception is retryable
                             conditions[ClientCondition.SYNC_LOOP] = true
-                            SyncStatusChanged.SyncFailed(result.exceptionOrNull())
+                            SyncStatusChanged.SyncFailed(
+                                result.exceptionOrNull(),
+                            )
                         } else {
                             conditions[ClientCondition.SYNC_LOOP] = false
-                            SyncStatusChanged.SyncFailed(result.exceptionOrNull())
+                            SyncStatusChanged.SyncFailed(
+                                result.exceptionOrNull(),
+                            )
                             return@collect
                         },
                     )
@@ -497,7 +500,9 @@ public class Client @VisibleForTesting constructor(
     private suspend fun onWatchStreamCanceled(document: Document) {
         if (document.status == DocStatus.Attached && status.value is Status.Activated) {
             document.publishEvent(
-                Initialized((requireClientId() to document.myPresence).asPresences()),
+                Initialized(
+                    (requireClientId() to document.myPresence).asPresences(),
+                ),
             )
             document.setOnlineClients(emptySet())
             document.publishEvent(StreamConnectionChanged.Disconnected)

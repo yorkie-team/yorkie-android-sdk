@@ -259,7 +259,7 @@ class PresenceTest {
                 d1,
                 initialPresence = mapOf(
                     "name" to "a",
-                    "cursor" to previousCursor
+                    "cursor" to previousCursor,
                 ),
             ).await()
 
@@ -278,7 +278,7 @@ class PresenceTest {
                 d2,
                 initialPresence = mapOf(
                     "name" to "b",
-                    "cursor" to previousCursor
+                    "cursor" to previousCursor,
                 ),
             ).await()
 
@@ -421,8 +421,21 @@ class PresenceTest {
             }
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
-            c3.attachAsync(d3, initialPresence = mapOf("name" to "c1", "cursor" to cursor), syncMode = Manual).await()
+            c2.attachAsync(
+                d2,
+                initialPresence = mapOf(
+                    "name" to "b1",
+                    "cursor" to cursor,
+                ),
+            ).await()
+            c3.attachAsync(
+                d3,
+                initialPresence = mapOf(
+                    "name" to "c1",
+                    "cursor" to cursor,
+                ),
+                syncMode = Manual,
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched
@@ -512,8 +525,21 @@ class PresenceTest {
 
             // 01. c2 attaches doc in realtime sync, and c3 attached doc in manual sync.
             //     c1 receives the watched event from c2.
-            c2.attachAsync(d2, initialPresence = mapOf("name" to "b1", "cursor" to cursor)).await()
-            c3.attachAsync(d3, initialPresence = mapOf("name" to "c1", "cursor" to cursor), syncMode = Manual).await()
+            c2.attachAsync(
+                d2,
+                initialPresence = mapOf(
+                    "name" to "b1",
+                    "cursor" to cursor,
+                ),
+            ).await()
+            c3.attachAsync(
+                d3,
+                initialPresence = mapOf(
+                    "name" to "c1",
+                    "cursor" to cursor,
+                ),
+                syncMode = Manual,
+            ).await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 // c2 watched

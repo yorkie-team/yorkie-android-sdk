@@ -229,17 +229,7 @@ public class Client @VisibleForTesting constructor(
                             handleConnectException(
                                 result.exceptionOrNull() as? ConnectException,
                             ) { connectException ->
-                                if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
-                                    shouldRefreshToken = true
-                                    document.publishEvent(
-                                        AuthError(
-                                            errorMetadataOf(
-                                                connectException,
-                                            )["reason"] ?: "AuthError",
-                                            PushPull,
-                                        ),
-                                    )
-                                }
+                                handleAuthenticationError(connectException, document, PushPull)
                             }
                         ) { // check if the exception is retryable
                             conditions[ClientCondition.SYNC_LOOP] = true
@@ -416,12 +406,20 @@ public class Client @VisibleForTesting constructor(
                 } ?: continue
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val channel = stream.responseChannel()
-                    while (!stream.isReceiveClosed() && !channel.isClosedForReceive && shouldContinue) {
+                    while (!stream.isReceiveClosed()
+                        && !channel.isClosedForReceive
+                        && shouldContinue
+                    ) {
                         withTimeoutOrNull(streamTimeout) {
                             val receiveResult = channel.receiveCatching()
                             receiveResult.onSuccess {
-                                attachment.document.publishEvent(StreamConnectionChanged.Connected)
-                                handleWatchDocumentsResponse(attachment.document.key, it)
+                                attachment.document.publishEvent(
+                                    StreamConnectionChanged.Connected,
+                                )
+                                handleWatchDocumentsResponse(
+                                    attachment.document.key,
+                                    it,
+                                )
                                 shouldContinue = true
                             }.onFailure {
                                 if (receiveResult.isClosed) {
@@ -429,7 +427,11 @@ public class Client @VisibleForTesting constructor(
                                     return@onFailure
                                 }
                                 shouldContinue =
-                                    handleWatchStreamFailure(attachment.document, stream, it)
+                                    handleWatchStreamFailure(
+                                        attachment.document,
+                                        stream,
+                                        it,
+                                    )
                             }.onClosed {
                                 handleWatchStreamFailure(
                                     attachment.document,
@@ -479,19 +481,7 @@ public class Client @VisibleForTesting constructor(
 
         cause?.let(::sendWatchStreamException)
 
-        if (handleConnectException(cause as? ConnectException) { connectException ->
-                if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
-                    shouldRefreshToken = true
-                    document.publishEvent(
-                        AuthError(
-                            errorMetadataOf(
-                                connectException,
-                            )["reason"] ?: "AuthError",
-                            WatchDocuments,
-                        ),
-                    )
-                }
-            }) {
+        if (handleAuthenticationError(cause, document, WatchDocuments)) {
             coroutineContext.ensureActive()
             delay(options.reconnectStreamDelay.inWholeMilliseconds)
             return true
@@ -923,6 +913,24 @@ public class Client @VisibleForTesting constructor(
             attachment.copy(syncMode = syncMode, remoteChangeEventReceived = true)
         } else {
             attachment.copy(syncMode = syncMode)
+        }
+    }
+
+    private suspend fun handleAuthenticationError(
+        exception: Throwable?,
+        document: Document,
+        method: AuthError.AuthErrorMethod,
+    ): Boolean {
+        return handleConnectException(exception as? ConnectException) { connectException ->
+            if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
+                shouldRefreshToken = true
+                document.publishEvent(
+                    AuthError(
+                        errorMetadataOf(connectException)["reason"] ?: "AuthError",
+                        method,
+                    ),
+                )
+            }
         }
     }
 

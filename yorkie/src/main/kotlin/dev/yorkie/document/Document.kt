@@ -658,6 +658,7 @@ public class Document(
             enum class AuthErrorMethod(val value: String) {
                 PushPull("PushPull"),
                 WatchDocuments("WatchDocuments"),
+                Broadcast("Broadcast"),
             }
         }
 

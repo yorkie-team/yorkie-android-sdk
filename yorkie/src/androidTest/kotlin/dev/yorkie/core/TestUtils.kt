@@ -46,6 +46,7 @@ fun createTwoClientsAndDocuments(
 }
 
 fun withTwoClientsAndDocuments(
+    attachDocuments: Boolean = true,
     detachDocuments: Boolean = true,
     syncMode: Client.SyncMode = Client.SyncMode.Realtime,
     presences: Pair<Map<String, String>, Map<String, String>> = Pair(emptyMap(), emptyMap()),
@@ -55,16 +56,18 @@ fun withTwoClientsAndDocuments(
         client1.activateAsync().await()
         client2.activateAsync().await()
 
-        client1.attachAsync(
-            document1,
-            syncMode = syncMode,
-            initialPresence = presences.first,
-        ).await()
-        client2.attachAsync(
-            document2,
-            syncMode = syncMode,
-            initialPresence = presences.second,
-        ).await()
+        if (attachDocuments) {
+            client1.attachAsync(
+                document1,
+                syncMode = syncMode,
+                initialPresence = presences.first,
+            ).await()
+            client2.attachAsync(
+                document2,
+                syncMode = syncMode,
+                initialPresence = presences.second,
+            ).await()
+        }
 
         callback.invoke(this, client1, client2, document1, document2, key)
 

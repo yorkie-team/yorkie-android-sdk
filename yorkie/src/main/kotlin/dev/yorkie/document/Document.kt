@@ -521,6 +521,13 @@ public class Document(
     }
 
     /**
+     * `getVersionVector` returns the version vector of document
+     */
+    fun getVersionVector(): VersionVector {
+        return changeID.versionVector
+    }
+
+    /**
      * Deletes elements that were removed before the given time.
      */
     @VisibleForTesting

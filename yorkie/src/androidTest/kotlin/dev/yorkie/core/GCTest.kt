@@ -17,6 +17,7 @@ import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.gson
 import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.versionVectorHelper
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
@@ -390,9 +391,27 @@ class GCTest {
     @Test
     fun test_gc_with_detached_document() {
         withTwoClientsAndDocuments(
+            attachDocuments = false,
             detachDocuments = false,
             syncMode = Manual,
         ) { c1, c2, d1, d2, _ ->
+            c1.attachAsync(d1, syncMode = Manual).await()
+            assertEquals(true, versionVectorHelper(
+                d1.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 1L),
+                ),
+            ))
+
+            c2.attachAsync(d2, syncMode = Manual).await()
+            assertEquals(true, versionVectorHelper(
+                d2.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 1L),
+                    Pair(c2.requireClientId().value, 2L),
+                ),
+            ))
+
             d1.updateAsync { root, _ ->
                 root["1"] = 1
                 root.setNewArray("2").apply {
@@ -404,14 +423,35 @@ class GCTest {
                 root.setNewText("4").edit(0, 0, "hi")
                 root.setNewText("5").edit(0, 0, "hi")
             }.await()
+            assertEquals(true, versionVectorHelper(
+                d1.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 2L),
+                ),
+            ))
+
             assertEquals(0, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
 
             // (0, 0) -> (1, 0): syncedseqs:(0, 0)
             c1.syncAsync().await()
+            assertEquals(true, versionVectorHelper(
+                d1.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 3L),
+                    Pair(c2.requireClientId().value, 1L),
+                ),
+            ))
 
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
             c2.syncAsync().await()
+            assertEquals(true, versionVectorHelper(
+                d2.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 2L),
+                    Pair(c2.requireClientId().value, 3L),
+                ),
+            ))
 
             d1.updateAsync { root, _ ->
                 root.remove("2")
@@ -423,11 +463,25 @@ class GCTest {
                     mapOf("b" to "1"),
                 )
             }.await()
+            assertEquals(true, versionVectorHelper(
+                d1.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 4L),
+                    Pair(c2.requireClientId().value, 1L),
+                ),
+            ))
             assertEquals(6, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
 
             // (1, 1) -> (2, 1): syncedseqs:(1, 0)
             c1.syncAsync().await()
+            assertEquals(true, versionVectorHelper(
+                d1.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 4L),
+                    Pair(c2.requireClientId().value, 1L),
+                ),
+            ))
             assertEquals(6, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
 
@@ -440,6 +494,14 @@ class GCTest {
 
             // (2, 2) -> (2, 2): syncedseqs:(2, x): meet GC condition
             c1.syncAsync().await()
+            assertEquals(true, versionVectorHelper(
+                d1.getVersionVector(),
+                arrayOf(
+                    Pair(c1.requireClientId().value, 5L),
+                    Pair(c2.requireClientId().value, 4L),
+                ),
+            ))
+
             assertEquals(0, d1.garbageLength)
             assertEquals(6, d2.garbageLength)
 

@@ -858,6 +858,15 @@ public class Client constructor(
                     }
                     return SUCCESS
                 } catch (err: Exception) {
+                    if (err is ConnectException && errorCodeOf(err) == ErrUnauthenticated.codeString) {
+                        shouldRefreshToken = true
+                        attachment.document.publishEvent(
+                            AuthError(
+                                errorMetadataOf(err)["reason"] ?: "AuthError",
+                                Document.Event.AuthError.AuthErrorMethod.Broadcast,
+                            ),
+                        )
+                    }
                     retryCount++
                     if (retryCount > maxRetries) {
                         logError("BROADCAST", "Exceeded maximum retry attempts for topic $topic")

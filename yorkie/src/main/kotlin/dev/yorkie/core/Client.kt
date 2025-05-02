@@ -64,12 +64,14 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -736,32 +738,44 @@ public class Client constructor(
 
     /**
      * Deactivates this [Client].
+     *
+     * @param keepalive 비활성화 요청을 앱이 종료되더라도 완료하도록 보장합니다. 페이지 언로드 또는 앱 종료 시에 사용합니다.
      */
-    public fun deactivateAsync(): Deferred<OperationResult> {
-        return scope.async {
-            if (!isActive) {
-                return@async SUCCESS
-            }
-            activationJob.cancelChildren()
+    @OptIn(DelicateCoroutinesApi::class)
+    public fun deactivateAsync(keepalive: Boolean = false): Deferred<OperationResult> {
+        if (!isActive) {
+            return CompletableDeferred(SUCCESS)
+        }
 
-            service.deactivateClient(
-                deactivateClientRequest {
-                    clientId = requireClientId().value
-                },
-                projectBasedRequestHeader,
-            ).getOrElse {
-                ensureActive()
-                handleConnectException(it) { exception ->
+        val task = suspend {
+            activationJob.cancelChildren()
+            try {
+                service.deactivateClient(
+                    deactivateClientRequest {
+                        clientId = requireClientId().value
+                    },
+                    projectBasedRequestHeader,
+                ).getOrThrow()
+
+                deactivateInternal()
+                SUCCESS
+            } catch (e: ConnectException) {
+                handleConnectException(e) { exception ->
                     if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
                         shouldRefreshToken = true
                     }
                     deactivateInternal()
                 }
-                return@async Result.failure(it)
+                Result.failure(e)
             }
+        }
 
-            deactivateInternal()
-            SUCCESS
+        return if (keepalive) {
+            GlobalScope.async(Dispatchers.IO) {
+                NonCancellable.run { task() }
+            }
+        } else {
+            scope.async { task() }
         }
     }
 

@@ -88,7 +88,8 @@ public class Document(
     internal var clone: RootClone? = null
         private set
 
-    internal var changeID = ChangeID.InitialChangeID
+    @VisibleForTesting
+    public var changeID = ChangeID.InitialChangeID
 
     @VisibleForTesting
     internal var checkPoint = CheckPoint.InitialCheckPoint

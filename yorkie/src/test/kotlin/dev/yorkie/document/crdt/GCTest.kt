@@ -10,6 +10,8 @@ import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
+import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
@@ -138,6 +140,9 @@ class GCTest {
             }.await()
 
             fun JsonObject.rootTree() = getAs<JsonTree>("t")
+            val versionVector = VersionVector().apply {
+                set(INITIAL_ACTOR_ID.value, MAX_LAMPORT)
+            }
 
             assertEquals("<r><p></p></r>", doc.getRoot().rootTree().toXml())
             test.steps.forEach { (op, expectedXml, garbageLen) ->
@@ -146,14 +151,16 @@ class GCTest {
                         TreeCode.RemoveStyle -> root.rootTree().removeStyle(0, 1, listOf(op.key))
                         TreeCode.Style -> root.rootTree().style(0, 1, mapOf(op.key to op.value))
                         TreeCode.DeleteNode -> root.rootTree().edit(0, 2)
-                        TreeCode.GC -> doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
+                        TreeCode.GC -> {
+                            doc.garbageCollect(versionVector)
+                        }
                     }
                 }.await()
                 assertEquals(expectedXml, doc.getRoot().rootTree().toXml())
                 assertEquals(garbageLen, doc.garbageLength)
             }
 
-            doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
+            doc.garbageCollect(versionVector)
             assertEquals(0, doc.garbageLength)
         }
     }
@@ -203,19 +210,23 @@ class GCTest {
 
             assertEquals("""[{"val":"AB"}]""", doc.getRoot().rootText().toJson())
 
+            val versionVector = VersionVector().apply {
+                set(INITIAL_ACTOR_ID.value, MAX_LAMPORT)
+            }
+
             test.steps.forEach { (op, expectedJson, garbageLen) ->
                 doc.updateAsync { root, _ ->
                     when (op.code) {
                         TextCode.Style -> root.rootText().style(0, 2, mapOf(op.key to op.value))
                         TextCode.DeleteNode -> root.rootText().edit(0, 2, "")
-                        TextCode.GC -> doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
+                        TextCode.GC -> doc.garbageCollect(versionVector)
                     }
                 }.await()
                 assertEquals(expectedJson, doc.getRoot().rootText().toJson())
                 assertEquals(garbageLen, doc.garbageLength)
             }
 
-            doc.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
+            doc.garbageCollect(versionVector)
             assertEquals(0, doc.garbageLength)
         }
     }

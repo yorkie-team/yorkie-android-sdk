@@ -9,7 +9,7 @@ import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 /**
  * Identifies the Change.
  */
-internal data class ChangeID(
+public data class ChangeID(
     val clientSeq: UInt,
     val lamport: Long,
     val actor: ActorID,

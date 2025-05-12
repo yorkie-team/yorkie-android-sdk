@@ -12,7 +12,9 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
-import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
+import dev.yorkie.document.time.VersionVector
+import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.gson
 import dev.yorkie.util.IndexTreeNode
 import java.util.UUID
@@ -28,7 +30,7 @@ class GCTest {
     fun test_gc() {
         runBlocking {
             val documentKey = UUID.randomUUID().toString().toDocKey()
-            val document = Document(documentKey)
+            val document = Document(documentKey) // gc false
             assertEquals("{}", document.toJson())
 
             document.updateAsync { root, _ ->
@@ -47,7 +49,7 @@ class GCTest {
             }.await()
             assertJsonContentEquals("""{"1":1,"3":3}""", document.toJson())
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(MaxTimeTicket))
+            assertEquals(4, document.garbageCollect(maxLamportVersionVector(document)))
             assertEquals(0, document.garbageLength)
 
             document.close()
@@ -73,7 +75,7 @@ class GCTest {
                 document.toJson(),
             )
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(MaxTimeTicket))
+            assertEquals(1, document.garbageCollect(maxLamportVersionVector(document)))
             assertEquals(0, document.garbageLength)
 
             document.close()
@@ -112,7 +114,7 @@ class GCTest {
                 document.toJson(),
             )
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(MaxTimeTicket))
+            assertEquals(4, document.garbageCollect(maxLamportVersionVector(document)))
             assertEquals(0, document.garbageLength)
 
             document.close()
@@ -153,7 +155,7 @@ class GCTest {
             var nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(2, document.garbageLength)
-            assertEquals(2, document.garbageCollect(MaxTimeTicket))
+            assertEquals(2, document.garbageCollect(INITIAL_VERSION_VECTOR))
             assertEquals(0, document.garbageLength)
             var nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -175,7 +177,7 @@ class GCTest {
             nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(MaxTimeTicket))
+            assertEquals(1, document.garbageCollect(INITIAL_VERSION_VECTOR))
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -198,7 +200,7 @@ class GCTest {
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
 
             assertEquals(5, document.garbageLength)
-            assertEquals(5, document.garbageCollect(MaxTimeTicket))
+            assertEquals(5, document.garbageCollect(INITIAL_VERSION_VECTOR))
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -465,7 +467,7 @@ class GCTest {
         }.await()
         assertJsonContentEquals("""{"1":1, "3":3}""", document.toJson())
         assertEquals(4, document.garbageLength)
-        assertEquals(0, document.garbageCollect(MaxTimeTicket))
+        assertEquals(0, document.garbageCollect(INITIAL_VERSION_VECTOR))
         assertEquals(4, document.garbageLength)
     }
 
@@ -612,8 +614,8 @@ class GCTest {
             assertEquals(d2.garbageLength, gcNodeLength)
 
             // Actual garbage-collected nodes
-            assertEquals(d1.garbageCollect(MaxTimeTicket), gcNodeLength)
-            assertEquals(d2.garbageCollect(MaxTimeTicket), gcNodeLength)
+            assertEquals(d1.garbageCollect(INITIAL_VERSION_VECTOR), gcNodeLength)
+            assertEquals(d2.garbageCollect(INITIAL_VERSION_VECTOR), gcNodeLength)
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
@@ -748,7 +750,7 @@ class GCTest {
             document.updateAsync { root, _ ->
                 root.remove("1")
             }.await()
-            assertEquals(size + 1, document.garbageCollect(MaxTimeTicket))
+            assertEquals(size + 1, document.garbageCollect(maxLamportVersionVector(document)))
         }
     }
 
@@ -773,7 +775,7 @@ class GCTest {
             assertEquals("""{"list":[1,3]}""", document.toJson())
 
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(MaxTimeTicket))
+            assertEquals(1, document.garbageCollect(maxLamportVersionVector(document)))
             assertEquals(0, document.garbageLength)
         }
     }
@@ -793,7 +795,7 @@ class GCTest {
             }.await()
 
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(MaxTimeTicket))
+            assertEquals(4, document.garbageCollect(maxLamportVersionVector(document)))
         }
     }
 
@@ -833,7 +835,7 @@ class GCTest {
             assertEquals("<doc><p><tn></tn></p></doc>", doc.getRoot().rootTree().toXml())
             assertEquals(3, doc.garbageLength)
 
-            assertEquals(3, doc.garbageCollect(MaxTimeTicket))
+            assertEquals(3, doc.garbageCollect(maxLamportVersionVector(doc)))
             assertEquals(0, doc.garbageLength)
         }
     }
@@ -842,5 +844,11 @@ class GCTest {
         return root.allChildren.fold(root.allChildren.size) { acc, child ->
             acc + getNodeLength(child)
         }
+    }
+
+    private fun maxLamportVersionVector(document: Document): VersionVector {
+        val versionVector = VersionVector()
+        versionVector.set(document.changeID.actor.value, MAX_LAMPORT)
+        return versionVector
     }
 }

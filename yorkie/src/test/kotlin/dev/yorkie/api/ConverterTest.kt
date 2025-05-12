@@ -302,7 +302,7 @@ class ConverterTest {
     }
 
     @Test
-    fun `should throw YorkieException for unsupported operations and it contains ErrUnimplemented code`() {
+    fun `should throw ErrUnimplemented for unsupported operations`() {
         val exception1 = assertThrows(YorkieException::class.java) {
             val operation = TestOperation(InitialTimeTicket, InitialTimeTicket, InitialTimeTicket)
             operation.toPBOperation()
@@ -383,7 +383,7 @@ class ConverterTest {
     }
 
     @Test
-    fun `should throw YorkieException for unsupported CrdtElements and it contains ErrUnimplemented code`() {
+    fun `should throw ErrUnimplemented for unsupported CrdtElements`() {
         val exception1 = assertThrows(YorkieException::class.java) {
             val testCrdtElement = TestCrdtElement(InitialTimeTicket)
             testCrdtElement.toPBJsonElement()

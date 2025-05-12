@@ -7,7 +7,9 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
+import dev.yorkie.document.time.VersionVector
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
@@ -233,7 +235,7 @@ class DocumentBenchmark {
                 }.await()
 
                 assert(document.garbageLength == size)
-                assert(document.garbageCollect(MaxTimeTicket) == size)
+                assert(document.garbageCollect(maxLamportVersionVector(document)) == size)
                 assert(document.garbageLength == 0)
                 document.close()
             }
@@ -261,10 +263,17 @@ class DocumentBenchmark {
                 }.await()
 
                 assert(document.garbageLength == size)
-                assert(document.garbageCollect(MaxTimeTicket) == size)
+                assert(document.garbageCollect(maxLamportVersionVector(document)) == size)
                 assert(document.garbageLength == 0)
                 document.close()
             }
         }
+    }
+
+
+    private fun maxLamportVersionVector(document: Document): VersionVector {
+        val versionVector = VersionVector()
+        versionVector.set(document.changeID.actor.value, MAX_LAMPORT)
+        return versionVector
     }
 }

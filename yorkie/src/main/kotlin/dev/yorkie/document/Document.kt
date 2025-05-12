@@ -88,7 +88,8 @@ public class Document(
     internal var clone: RootClone? = null
         private set
 
-    private var changeID = ChangeID.InitialChangeID
+    @VisibleForTesting
+    public var changeID = ChangeID.InitialChangeID
 
     @VisibleForTesting
     internal var checkPoint = CheckPoint.InitialCheckPoint
@@ -98,7 +99,7 @@ public class Document(
         get() = localChanges.isNotEmpty()
 
     @Volatile
-    public var status = DocumentStatus.Detached
+    public var status = DocStatus.Detached
         internal set
 
     @VisibleForTesting
@@ -129,7 +130,7 @@ public class Document(
 
     public val myPresence: P
         get() = allPresences.value[changeID.actor]
-            .takeIf { status == DocumentStatus.Attached }
+            .takeIf { status == DocStatus.Attached }
             .orEmpty()
 
     /**
@@ -141,8 +142,8 @@ public class Document(
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
-                status != DocumentStatus.Removed,
-                YorkieException(ErrDocumentRemoved, "document(${key}) is removed"),
+                status != DocStatus.Removed,
+                YorkieException(ErrDocumentRemoved, "document($key) is removed"),
             )
 
             val clone = ensureClone()
@@ -258,10 +259,23 @@ public class Document(
     }
 
     /**
+     * Removes local changes if the client sequence number is less than or equal to [clientSeq].
+     */
+    private fun removePushedLocalChanges(clientSeq: UInt) {
+        val iterator = localChanges.iterator()
+        while (iterator.hasNext()) {
+            val change = iterator.next()
+            if (change.id.clientSeq > clientSeq) {
+                break
+            }
+            iterator.remove()
+        }
+    }
+
+    /**
      * Applies the given [pack] into this document.
-     * 1. Remove local changes applied to server.
-     * 2. Update the checkpoint.
-     * 3. Do Garbage collection.
+     * 1. Update the checkpoint.
+     * 2. Do Garbage collection.
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
         if (pack.hasSnapshot) {
@@ -269,22 +283,11 @@ public class Document(
                 pack.checkPoint.serverSeq,
                 pack.versionVector,
                 checkNotNull(pack.snapshot),
+                pack.checkPoint.clientSeq,
             )
-        } else if (pack.hasChanges) {
+        } else {
             applyChanges(pack.changes)
-        }
-
-        val iterator = localChanges.iterator()
-        while (iterator.hasNext()) {
-            val change = iterator.next()
-            if (change.id.clientSeq > pack.checkPoint.clientSeq) {
-                break
-            }
-            iterator.remove()
-        }
-
-        if (pack.hasSnapshot) {
-            applyChanges(localChanges)
+            removePushedLocalChanges(pack.checkPoint.clientSeq)
         }
 
         checkPoint = checkPoint.forward(pack.checkPoint)
@@ -298,7 +301,7 @@ public class Document(
         }
 
         if (pack.isRemoved) {
-            applyDocumentStatus(DocumentStatus.Removed)
+            applyDocumentStatus(DocStatus.Removed)
         }
     }
 
@@ -309,6 +312,7 @@ public class Document(
         serverSeq: Long,
         snapshotVector: VersionVector,
         snapshot: ByteString,
+        clientSeq: UInt,
     ) {
         val (root, presences) = withContext(snapshotDispatcher) {
             val (root, p) = snapshot.toSnapshot()
@@ -321,6 +325,7 @@ public class Document(
         }
         changeID = changeID.setClocks(serverSeq, snapshotVector)
         clone = null
+        removePushedLocalChanges(clientSeq)
         eventStream.emit(Event.Snapshot(snapshot))
     }
 
@@ -372,7 +377,7 @@ public class Document(
         }
     }
 
-    internal suspend fun applyDocumentStatus(status: DocumentStatus) {
+    internal suspend fun applyDocumentStatus(status: DocStatus) {
         if (this.status == status) {
             return
         }
@@ -381,7 +386,7 @@ public class Document(
         publishEvent(
             DocumentStatusChanged(
                 status,
-                changeID.actor.takeIf { status == DocumentStatus.Attached },
+                changeID.actor.takeIf { status == DocStatus.Attached },
             ),
         )
     }
@@ -454,7 +459,7 @@ public class Document(
             localChanges,
             null,
             null,
-            forceRemove || status == DocumentStatus.Removed,
+            forceRemove || status == DocStatus.Removed,
             changeID.versionVector,
         )
     }
@@ -514,7 +519,6 @@ public class Document(
 
         changeID = changeID.setVersionVector(filteredVersionVector)
     }
-
 
     /**
      * Deletes elements that were removed before the given time.
@@ -616,6 +620,9 @@ public class Document(
             public data class SyncFailed(public val cause: Throwable?) : SyncStatusChanged
         }
 
+        /**
+         * An event that represents whether the stream connection is connected or not.
+         */
         public sealed interface StreamConnectionChanged : Event {
 
             public data object Connected : StreamConnectionChanged
@@ -625,10 +632,10 @@ public class Document(
 
         /**
          * An event that occurs when the document's status has been changed.
-         * @see DocumentStatus
+         * @see DocStatus
          */
         public data class DocumentStatusChanged(
-            val documentStatus: DocumentStatus,
+            val docStatus: DocStatus,
             val actorID: ActorID?,
         ) : Event
 
@@ -640,6 +647,19 @@ public class Document(
             val topic: String,
             val payload: String,
         ) : Event
+
+        /**
+         * `AuthError` means that an authentication error occurred.
+         */
+        public data class AuthError(
+            val reason: String,
+            val method: AuthErrorMethod,
+        ) : Event {
+            enum class AuthErrorMethod(val value: String) {
+                PushPull("PushPull"),
+                WatchDocuments("WatchDocuments"),
+            }
+        }
 
         /**
          * Represents the modification made during a document update and the message passed.
@@ -662,7 +682,7 @@ public class Document(
     /**
      * Represents the status of the [Document].
      */
-    public enum class DocumentStatus {
+    public enum class DocStatus {
         /**
          * Means that this [Document] is attached to the client.
          * The actor of the ticket is created with being assigned by the client.

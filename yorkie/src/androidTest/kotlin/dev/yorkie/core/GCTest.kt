@@ -902,6 +902,102 @@ class GCTest {
         }
     }
 
+    @Test
+    fun test_snapshot_version_vector() {
+        withThreeClientsAndDocuments { client1, client2, client3, doc1, doc2, doc3, key ->
+            assertEquals("{}", doc1.toJson())
+            doc1.updateAsync { root, _ ->
+                root.setNewText("t").edit(0, 0, "a")
+            }.await()
+            assertEquals("""{"t":"a"}""", doc1.toJson())
+
+            client1.syncAsync().await()
+            client2.syncAsync().await()
+            client3.syncAsync().await()
+
+            val actorData1 = arrayOf(
+                client1.requireClientId().value to 4L,
+                client2.requireClientId().value to 1L,
+                client3.requireClientId().value to 1L,
+            )
+            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData1), true)
+
+            val actorData2 = arrayOf(
+                client1.requireClientId().value to 2L,
+                client2.requireClientId().value to 4L,
+                client3.requireClientId().value to 1L,
+            )
+            assertEquals(versionVectorHelper(doc2.getVersionVector(), actorData2), true)
+
+            val actorData3 = arrayOf(
+                client1.requireClientId().value to 2L,
+                client2.requireClientId().value to 1L,
+                client3.requireClientId().value to 4L,
+            )
+            assertEquals(versionVectorHelper(doc3.getVersionVector(), actorData3), true)
+
+            // 01. Updates changes over snapshot threshold.
+            for (idx in 0 until DEFAULT_SNAPSHOT_THRESHOLD / 2) {
+                doc1.updateAsync { root, _ ->
+                    (root["t"] as JsonText).edit(0, 0, "${idx % 10}")
+                }.await()
+                client1.syncAsync().await()
+                client2.syncAsync().await()
+
+                doc2.updateAsync { root, _ ->
+                    (root["t"] as JsonText).edit(0, 0, "${idx % 10}")
+                }.await()
+                client2.syncAsync().await()
+                client1.syncAsync().await()
+            }
+
+            val actorData4 = arrayOf(
+                client1.requireClientId().value to 2004L,
+                client2.requireClientId().value to 2003L,
+                client3.requireClientId().value to 1L,
+            )
+            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData4), true)
+
+            val actorData5 = arrayOf(
+                client1.requireClientId().value to 2001L,
+                client2.requireClientId().value to 2003L,
+                client3.requireClientId().value to 1L,
+            )
+            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData5), true)
+
+            val actorData6 = arrayOf(
+                client1.requireClientId().value to 2L,
+                client2.requireClientId().value to 1L,
+                client3.requireClientId().value to 4L,
+            )
+            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData6), true)
+
+            // 02. Makes local changes then pull a snapshot from the server.
+            doc3.updateAsync { root, _ ->
+                (root["t"] as JsonText).edit(0, 0, "c")
+            }.await()
+            client3.syncAsync().await()
+            val actorData7 = arrayOf(
+                client1.requireClientId().value to 2001L,
+                client2.requireClientId().value to 2003L,
+                client3.requireClientId().value to 2006L,
+            )
+            assertEquals(versionVectorHelper(doc3.getVersionVector(), actorData7), true)
+            assertEquals(DEFAULT_SNAPSHOT_THRESHOLD + 2, doc3.getRoot()["t"].toString().length)
+
+            // 03. Delete text after receiving the snapshot.
+            doc3.updateAsync { root, _ ->
+                (root["t"] as JsonText).edit(1, 3, "")
+            }.await()
+            assertEquals(DEFAULT_SNAPSHOT_THRESHOLD, doc3.getRoot()["t"].toString().length)
+            client3.syncAsync().await()
+            client2.syncAsync().await()
+            client1.syncAsync().await()
+            assertEquals(DEFAULT_SNAPSHOT_THRESHOLD, doc2.getRoot()["t"].toString().length)
+            assertEquals(DEFAULT_SNAPSHOT_THRESHOLD, doc1.getRoot()["t"].toString().length)
+        }
+    }
+
     private fun getNodeLength(root: IndexTreeNode<CrdtTreeNode>): Int {
         return root.allChildren.fold(root.allChildren.size) { acc, child ->
             acc + getNodeLength(child)

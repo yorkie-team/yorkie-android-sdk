@@ -40,6 +40,6 @@ public data class Change internal constructor(
                 is PresenceChange.Clear -> presences - id.actor
             }
         }
-        return operations.flatMap { it.execute(root) } to newPresences
+        return operations.flatMap { it.execute(root, id.versionVector) } to newPresences
     }
 }

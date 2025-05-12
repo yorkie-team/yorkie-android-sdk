@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import android.annotation.SuppressLint
 import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.CrdtTreeNodeIDStruct
 import dev.yorkie.document.CrdtTreePosStruct
@@ -8,8 +9,9 @@ import dev.yorkie.document.json.TreePosStructRange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
@@ -25,6 +27,7 @@ internal typealias CrdtTreeToken = TreeToken<CrdtTreeNode>
 
 internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
 
+@SuppressLint("VisibleForTests")
 internal data class CrdtTree(
     val root: CrdtTreeNode,
     override val createdAt: TimeTicket,
@@ -70,6 +73,7 @@ internal data class CrdtTree(
         attributes: Map<String, String>?,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        versionVector: VersionVector? = null,
     ): TreeOperationResult {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
@@ -84,11 +88,23 @@ internal data class CrdtTree(
             toLeft = toLeft,
         ) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            val maxCreatedAt = maxCreatedAtMapByActor?.let {
-                maxCreatedAtMapByActor[actorID] ?: InitialTimeTicket
-            } ?: MaxTimeTicket
+            var maxCreatedAt: TimeTicket? = null
+            var clientLamportAtChange = 0L
 
-            if (node.canStyle(executedAt, maxCreatedAt) && attributes != null) {
+            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
+                clientLamportAtChange = MAX_LAMPORT
+            } else if (versionVector != null && versionVector.size() > 0) {
+                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
+            } else {
+                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+            }
+
+            if (node.canStyle(
+                    executedAt,
+                    maxCreatedAt,
+                    clientLamportAtChange,
+                ) && attributes != null
+            ) {
                 val max = createdAtMapByActor[actorID]
                 val createdAt = node.createdAt
                 if (max == null || max < createdAt) {
@@ -173,6 +189,7 @@ internal data class CrdtTree(
         executedAt: TimeTicket,
         issueTimeTicket: (() -> TimeTicket)? = null,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        versionVector: VersionVector? = null,
     ): TreeOperationResult {
         // 01. find nodes from the given range and split nodes.
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
@@ -199,11 +216,23 @@ internal data class CrdtTree(
             }
 
             val actorID = node.createdAt.actorID
-            val maxCreatedAt = maxCreatedAtMapByActor?.let {
-                maxCreatedAtMapByActor[actorID] ?: InitialTimeTicket
-            } ?: MaxTimeTicket
+            var maxCreatedAt: TimeTicket? = null
+            var clientLamportAtChange = 0L
 
-            if (node.canDelete(executedAt, maxCreatedAt) || node.parent in nodesToBeRemoved) {
+            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
+                clientLamportAtChange = MAX_LAMPORT
+            } else if (versionVector != null && versionVector.size() > 0) {
+                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
+            } else {
+                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+            }
+
+            if (node.canDelete(
+                    executedAt,
+                    maxCreatedAt,
+                    clientLamportAtChange,
+                ) || node.parent in nodesToBeRemoved
+            ) {
                 val max = maxCreatedAtMap[actorID]
                 val createdAt = node.createdAt
 
@@ -429,6 +458,7 @@ internal data class CrdtTree(
         attributeToRemove: List<String>,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        versionVector: VersionVector? = null,
     ): TreeOperationResult {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
@@ -438,11 +468,23 @@ internal data class CrdtTree(
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            val maxCreatedAt = maxCreatedAtMapByActor?.let {
-                maxCreatedAtMapByActor[actorID] ?: InitialTimeTicket
-            } ?: MaxTimeTicket
+            var maxCreatedAt: TimeTicket? = null
+            var clientLamportAtChange = 0L
 
-            if (node.canStyle(executedAt, maxCreatedAt) && attributeToRemove.isNotEmpty()) {
+            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
+                clientLamportAtChange = MAX_LAMPORT
+            } else if (versionVector != null && versionVector.size() > 0) {
+                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
+            } else {
+                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+            }
+
+            if (node.canStyle(
+                    executedAt,
+                    maxCreatedAt,
+                    clientLamportAtChange,
+                ) && attributeToRemove.isNotEmpty()
+            ) {
                 val max = createdAtMapByActor[actorID]
                 val createdAt = node.createdAt
                 if (max < createdAt) {
@@ -895,15 +937,33 @@ internal data class CrdtTreeNode private constructor(
     /**
      * Checks if node is able to delete.
      */
-    fun canDelete(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
-        return createdAt <= maxCreatedAt && (removedAt == null || removedAt < executedAt)
+    fun canDelete(
+        executedAt: TimeTicket,
+        maxCreatedAt: TimeTicket?,
+        clientLamportAtChange: Long,
+    ): Boolean {
+        val nodeExisted = if (maxCreatedAt != null) {
+            createdAt <= maxCreatedAt
+        } else {
+            createdAt.lamport <= clientLamportAtChange
+        }
+        return nodeExisted && (removedAt == null || executedAt > removedAt)
     }
 
-    fun canStyle(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
+    fun canStyle(
+        executedAt: TimeTicket,
+        maxCreatedAt: TimeTicket?,
+        clientLamportAtChange: Long,
+    ): Boolean {
         if (isText) {
             return false
         }
-        return createdAt <= maxCreatedAt && removedAt < executedAt
+        val nodeExisted = if (maxCreatedAt != null) {
+            createdAt <= maxCreatedAt
+        } else {
+            createdAt.lamport <= clientLamportAtChange
+        }
+        return nodeExisted && (removedAt == null || executedAt > removedAt)
     }
 
     override fun delete(node: RhtNode) {

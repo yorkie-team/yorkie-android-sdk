@@ -1,13 +1,16 @@
 package dev.yorkie.document.crdt
 
+import android.annotation.SuppressLint
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.RgaTreeSplitNodeIDStruct
 import dev.yorkie.document.RgaTreeSplitPosStruct
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.SplayTreeSet
 import java.util.TreeMap
 
@@ -48,6 +51,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         executedAt: TimeTicket,
         value: T?,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        versionVector: VersionVector?
     ): RgaTreeSplitEditResult<T> {
         // 1. Split nodes.
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
@@ -59,6 +63,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             nodesToDelete,
             executedAt,
             maxCreatedAtMapByActor,
+            versionVector
         )
         val caretID = toRight?.id ?: toLeft.id
         var caretPos = RgaTreeSplitPos(caretID, 0)
@@ -186,6 +191,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         candidates: List<RgaTreeSplitNode<T>>,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
+        versionVector: VersionVector?
     ): Triple<
         MutableList<ContentChange>,
         Map<ActorID, TimeTicket>,
@@ -202,6 +208,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             candidates,
             executedAt,
             maxCreatedAtMapByActor,
+            versionVector
         )
         val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
@@ -225,10 +232,12 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         return Triple(changes, createdAtMapByActor, removedNodes)
     }
 
+    @SuppressLint("VisibleForTests")
     private fun filterNodes(
         candidates: List<RgaTreeSplitNode<T>>,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
+        versionVector: VersionVector?,
     ): Pair<List<RgaTreeSplitNode<T>>, List<RgaTreeSplitNode<T>?>> {
         val isRemote = maxCreatedAtMapByActor != null
         val nodesToDelete = mutableListOf<RgaTreeSplitNode<T>>()
@@ -239,12 +248,18 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
         candidates.forEach { node ->
             val actorID = node.createdAt.actorID
-            val maxCreatedAt = if (isRemote) {
-                maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+            var maxCreatedAt: TimeTicket? = null
+            var clientLamportAtChange: Long = 0
+
+            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
+                clientLamportAtChange = MAX_LAMPORT
+            } else if (versionVector != null && versionVector.size() > 0) {
+                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
             } else {
-                MaxTimeTicket
+                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
             }
-            if (node.canDelete(executedAt, maxCreatedAt)) {
+
+            if (node.canDelete(executedAt, maxCreatedAt, clientLamportAtChange)) {
                 nodesToDelete.add(node)
             } else {
                 nodesToKeep.add(node)
@@ -513,9 +528,16 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
-    fun canDelete(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
+    fun canDelete(executedAt: TimeTicket, maxCreatedAt: TimeTicket?, clientLamportAtChange: Long): Boolean {
         val justRemoved = removedAt == null
-        if (createdAt <= maxCreatedAt && _removedAt < executedAt) {
+
+        val nodeExisted = if (maxCreatedAt != null) {
+            createdAt <= maxCreatedAt
+        } else {
+            createdAt.lamport <= clientLamportAtChange
+        }
+
+        if (nodeExisted && (removedAt == null || executedAt > removedAt)) {
             return justRemoved
         }
         return false
@@ -524,8 +546,14 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if node is able to set style.
      */
-    fun canStyle(executedAt: TimeTicket, maxCreatedAt: TimeTicket): Boolean {
-        return createdAt <= maxCreatedAt && removedAt < executedAt
+    fun canStyle(executedAt: TimeTicket, maxCreatedAt: TimeTicket?, clientLamportAtChange: Long): Boolean {
+        val nodeExisted = if (maxCreatedAt != null) {
+            createdAt <= maxCreatedAt
+        } else {
+            createdAt.lamport <= clientLamportAtChange
+        }
+
+        return nodeExisted && (removedAt == null || executedAt > removedAt)
     }
 
     /**

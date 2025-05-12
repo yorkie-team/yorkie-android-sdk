@@ -1,7 +1,11 @@
 package dev.yorkie.document.crdt
 
+import android.annotation.SuppressLint
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.SplayTreeSet
 import java.util.TreeMap
 
@@ -50,6 +54,7 @@ internal data class CrdtText(
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        versionVector: VersionVector? = null,
     ): TextEditResult {
         val textValue = if (value.isNotEmpty()) {
             TextValue(value).apply {
@@ -64,6 +69,7 @@ internal data class CrdtText(
             executedAt,
             textValue,
             maxCreatedAtMapByActor,
+            versionVector,
         )
 
         val changes = contentChanges.map {
@@ -87,11 +93,13 @@ internal data class CrdtText(
      * 1. Split nodes with from and to.
      * 2. Style nodes between from and to.
      */
+    @SuppressLint("VisibleForTests")
     fun style(
         range: RgaTreeSplitPosRange,
         attributes: Map<String, String>,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
+        versionVector: VersionVector? = null,
     ): TextStyleResult {
         // 1. Split nodes with from and to.
         val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
@@ -102,14 +110,19 @@ internal data class CrdtText(
         val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val toBeStyleds = nodes.mapNotNull { node ->
             val actorID = node.createdAt.actorID
-            val maxCreatedAt = if (maxCreatedAtMapByActor?.isNotEmpty() == true) {
-                maxCreatedAtMapByActor[actorID] ?: TimeTicket.InitialTimeTicket
+            var maxCreatedAt: TimeTicket? = null
+            var clientLamportAtChange = 0L
+
+            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
+                clientLamportAtChange = MAX_LAMPORT
+            } else if (versionVector != null && versionVector.size() > 0) {
+                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
             } else {
-                TimeTicket.MaxTimeTicket
+                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
             }
 
             node.takeIf {
-                it.canStyle(executedAt, maxCreatedAt)
+                it.canStyle(executedAt, maxCreatedAt, clientLamportAtChange)
             }?.also {
                 val updatedMaxCreatedAt = createdAtMapByActor[actorID]
                 val updatedCreatedAt = node.createdAt

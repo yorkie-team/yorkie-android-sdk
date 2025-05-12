@@ -84,6 +84,13 @@ public data class VersionVector(
     fun deepCopy(): VersionVector = VersionVector(vectorMap.toMutableMap())
 
     /**
+     * `unset` removes the version for the given actor from the VersionVector.
+     */
+    fun unset(actorID: String) {
+        vectorMap.remove(actorID)
+    }
+
+    /**
      * Allows iteration over the `VersionVector`.
      */
     operator fun iterator(): Iterator<Map.Entry<String, Long>> = vectorMap.entries.iterator()

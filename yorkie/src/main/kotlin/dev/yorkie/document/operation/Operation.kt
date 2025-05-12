@@ -23,7 +23,7 @@ internal abstract class Operation {
     /**
      * Executes this [Operation] on the given [root].
      */
-    abstract fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo>
+    abstract fun execute(root: CrdtRoot, versionVector: VersionVector? = null): List<OperationInfo>
 
     /**
      * Sets the given [ActorID] to this [Operation].

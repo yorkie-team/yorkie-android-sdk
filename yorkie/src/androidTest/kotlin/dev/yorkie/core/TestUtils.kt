@@ -1,6 +1,7 @@
 package dev.yorkie.core
 
 import dev.yorkie.document.Document
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.createSingleThreadDispatcher
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +46,22 @@ fun createTwoClientsAndDocuments(
     }
 }
 
+fun createThreeClientsAndDocuments(
+    callback: suspend CoroutineScope.(Client, Client, Client, Document, Document, Document, Document.Key) -> Unit,
+) {
+    runBlocking {
+        val client1 = createClient()
+        val client2 = createClient()
+        val client3 = createClient()
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+        val document1 = Document(documentKey)
+        val document2 = Document(documentKey)
+        val document3 = Document(documentKey)
+
+        callback.invoke(this, client1, client2, client3, document1, document2, document3, documentKey)
+    }
+}
+
 fun withTwoClientsAndDocuments(
     attachDocuments: Boolean = true,
     detachDocuments: Boolean = true,
@@ -83,4 +100,52 @@ fun withTwoClientsAndDocuments(
         client1.close()
         client2.close()
     }
+}
+
+fun withThreeClientsAndDocuments(
+    callback: suspend CoroutineScope.(Client, Client, Client, Document, Document, Document, Document.Key) -> Unit,
+) {
+    createThreeClientsAndDocuments { client1, client2, client3, document1, document2, document3, key ->
+        client1.activateAsync().await()
+        client2.activateAsync().await()
+        client3.activateAsync().await()
+
+        client1.attachAsync(document1).await()
+        client2.attachAsync(document2).await()
+        client3.attachAsync(document3).await()
+
+        callback.invoke(this, client1, client2, client3, document1, document2, document3, key)
+
+        client1.detachAsync(document1).await()
+        client2.detachAsync(document2).await()
+        client3.detachAsync(document3).await()
+
+        client1.deactivateAsync().await()
+        client2.deactivateAsync().await()
+        client3.deactivateAsync().await()
+
+        document1.close()
+        document2.close()
+        document3.close()
+        client1.close()
+        client2.close()
+        client3.close()
+    }
+}
+
+fun versionVectorHelper(
+    versionVector: VersionVector,
+    actorData: Array<Pair<String, Long>>,
+): Boolean {
+    if (versionVector.size() != actorData.size) {
+        return false
+    }
+
+    for ((actor, lamport) in actorData) {
+        val vvLamport = versionVector.get(actor) ?: return false
+        if (vvLamport != lamport) {
+            return false
+        }
+    }
+    return true
 }

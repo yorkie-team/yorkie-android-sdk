@@ -963,14 +963,14 @@ class GCTest {
                 client2.requireClientId().value to 2003L,
                 client3.requireClientId().value to 1L,
             )
-            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData5), true)
+            assertEquals(versionVectorHelper(doc2.getVersionVector(), actorData5), true)
 
             val actorData6 = arrayOf(
                 client1.requireClientId().value to 2L,
                 client2.requireClientId().value to 1L,
                 client3.requireClientId().value to 4L,
             )
-            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData6), true)
+            assertEquals(versionVectorHelper(doc3.getVersionVector(), actorData6), true)
 
             // 02. Makes local changes then pull a snapshot from the server.
             doc3.updateAsync { root, _ ->

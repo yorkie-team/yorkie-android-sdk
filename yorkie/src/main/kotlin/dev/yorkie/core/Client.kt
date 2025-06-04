@@ -664,11 +664,14 @@ public class Client constructor(
                 }
 
                 document.applyDocumentStatus(DocStatus.Attached)
-                attachments.value += document.key to Attachment(
-                    document,
-                    response.documentId,
-                    syncMode,
-                )
+                attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
+                    attachment.copy(
+                        syncMode = syncMode,
+                        remoteChangeEventReceived = true,
+                    )
+                } else {
+                    attachment.copy(syncMode = syncMode)
+                }
                 waitForInitialization(document.key)
             }
             SUCCESS
@@ -933,7 +936,10 @@ public class Client constructor(
                 "document(${document.key}) is not attached",
             )
         attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
-            attachment.copy(syncMode = syncMode, remoteChangeEventReceived = true)
+            attachment.copy(
+                syncMode = syncMode,
+                remoteChangeEventReceived = true,
+            )
         } else {
             attachment.copy(syncMode = syncMode)
         }

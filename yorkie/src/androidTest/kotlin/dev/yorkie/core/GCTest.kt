@@ -396,21 +396,27 @@ class GCTest {
             syncMode = Manual,
         ) { c1, c2, d1, d2, _ ->
             c1.attachAsync(d1, syncMode = Manual).await()
-            assertEquals(true, versionVectorHelper(
-                d1.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 1L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d1.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 1L),
+                    ),
                 ),
-            ))
+            )
 
             c2.attachAsync(d2, syncMode = Manual).await()
-            assertEquals(true, versionVectorHelper(
-                d2.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 1L),
-                    Pair(c2.requireClientId().value, 2L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d2.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 1L),
+                        Pair(c2.requireClientId().value, 2L),
+                    ),
                 ),
-            ))
+            )
 
             d1.updateAsync { root, _ ->
                 root["1"] = 1
@@ -423,35 +429,44 @@ class GCTest {
                 root.setNewText("4").edit(0, 0, "hi")
                 root.setNewText("5").edit(0, 0, "hi")
             }.await()
-            assertEquals(true, versionVectorHelper(
-                d1.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 2L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d1.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 2L),
+                    ),
                 ),
-            ))
+            )
 
             assertEquals(0, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
 
             // (0, 0) -> (1, 0): syncedseqs:(0, 0)
             c1.syncAsync().await()
-            assertEquals(true, versionVectorHelper(
-                d1.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 3L),
-                    Pair(c2.requireClientId().value, 1L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d1.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 3L),
+                        Pair(c2.requireClientId().value, 1L),
+                    ),
                 ),
-            ))
+            )
 
             // (1, 0) -> (1, 1): syncedseqs:(0, 0)
             c2.syncAsync().await()
-            assertEquals(true, versionVectorHelper(
-                d2.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 2L),
-                    Pair(c2.requireClientId().value, 3L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d2.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 2L),
+                        Pair(c2.requireClientId().value, 3L),
+                    ),
                 ),
-            ))
+            )
 
             d1.updateAsync { root, _ ->
                 root.remove("2")
@@ -463,25 +478,31 @@ class GCTest {
                     mapOf("b" to "1"),
                 )
             }.await()
-            assertEquals(true, versionVectorHelper(
-                d1.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 4L),
-                    Pair(c2.requireClientId().value, 1L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d1.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 4L),
+                        Pair(c2.requireClientId().value, 1L),
+                    ),
                 ),
-            ))
+            )
             assertEquals(6, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
 
             // (1, 1) -> (2, 1): syncedseqs:(1, 0)
             c1.syncAsync().await()
-            assertEquals(true, versionVectorHelper(
-                d1.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 4L),
-                    Pair(c2.requireClientId().value, 1L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d1.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 4L),
+                        Pair(c2.requireClientId().value, 1L),
+                    ),
                 ),
-            ))
+            )
             assertEquals(6, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
 
@@ -494,13 +515,16 @@ class GCTest {
 
             // (2, 2) -> (2, 2): syncedseqs:(2, x): meet GC condition
             c1.syncAsync().await()
-            assertEquals(true, versionVectorHelper(
-                d1.getVersionVector(),
-                arrayOf(
-                    Pair(c1.requireClientId().value, 5L),
-                    Pair(c2.requireClientId().value, 4L),
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    d1.getVersionVector(),
+                    arrayOf(
+                        Pair(c1.requireClientId().value, 5L),
+                        Pair(c2.requireClientId().value, 4L),
+                    ),
                 ),
-            ))
+            )
 
             assertEquals(0, d1.garbageLength)
             assertEquals(6, d2.garbageLength)
@@ -920,21 +944,51 @@ class GCTest {
                 client2.requireClientId().value to 1L,
                 client3.requireClientId().value to 1L,
             )
-            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData1), true)
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    doc1.getVersionVector(),
+                    arrayOf(
+                        Pair(client1.requireClientId().value, 4L),
+                        Pair(client2.requireClientId().value, 1L),
+                        Pair(client3.requireClientId().value, 1L),
+                    ),
+                ),
+            )
 
             val actorData2 = arrayOf(
                 client1.requireClientId().value to 2L,
                 client2.requireClientId().value to 4L,
                 client3.requireClientId().value to 1L,
             )
-            assertEquals(versionVectorHelper(doc2.getVersionVector(), actorData2), true)
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    doc2.getVersionVector(),
+                    arrayOf(
+                        Pair(client1.requireClientId().value, 2L),
+                        Pair(client2.requireClientId().value, 4L),
+                        Pair(client3.requireClientId().value, 1L),
+                    ),
+                ),
+            )
 
             val actorData3 = arrayOf(
                 client1.requireClientId().value to 2L,
                 client2.requireClientId().value to 1L,
                 client3.requireClientId().value to 4L,
             )
-            assertEquals(versionVectorHelper(doc3.getVersionVector(), actorData3), true)
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    doc3.getVersionVector(),
+                    arrayOf(
+                        Pair(client1.requireClientId().value, 2L),
+                        Pair(client2.requireClientId().value, 1L),
+                        Pair(client3.requireClientId().value, 4L),
+                    ),
+                ),
+            )
 
             // 01. Updates changes over snapshot threshold.
             for (idx in 0 until DEFAULT_SNAPSHOT_THRESHOLD / 2) {
@@ -956,21 +1010,51 @@ class GCTest {
                 client2.requireClientId().value to 2003L,
                 client3.requireClientId().value to 1L,
             )
-            assertEquals(versionVectorHelper(doc1.getVersionVector(), actorData4), true)
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    doc1.getVersionVector(),
+                    arrayOf(
+                        Pair(client1.requireClientId().value, 2004L),
+                        Pair(client2.requireClientId().value, 2003L),
+                        Pair(client3.requireClientId().value, 1L),
+                    ),
+                ),
+            )
 
             val actorData5 = arrayOf(
                 client1.requireClientId().value to 2001L,
                 client2.requireClientId().value to 2003L,
                 client3.requireClientId().value to 1L,
             )
-            assertEquals(versionVectorHelper(doc2.getVersionVector(), actorData5), true)
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    doc2.getVersionVector(),
+                    arrayOf(
+                        Pair(client1.requireClientId().value, 2001L),
+                        Pair(client2.requireClientId().value, 2003L),
+                        Pair(client3.requireClientId().value, 1L),
+                    ),
+                ),
+            )
 
             val actorData6 = arrayOf(
                 client1.requireClientId().value to 2L,
                 client2.requireClientId().value to 1L,
                 client3.requireClientId().value to 4L,
             )
-            assertEquals(versionVectorHelper(doc3.getVersionVector(), actorData6), true)
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    doc3.getVersionVector(),
+                    arrayOf(
+                        Pair(client1.requireClientId().value, 2L),
+                        Pair(client2.requireClientId().value, 1L),
+                        Pair(client3.requireClientId().value, 4L),
+                    ),
+                ),
+            )
 
             // 02. Makes local changes then pull a snapshot from the server.
             doc3.updateAsync { root, _ ->
@@ -982,7 +1066,17 @@ class GCTest {
                 client2.requireClientId().value to 2003L,
                 client3.requireClientId().value to 2006L,
             )
-            assertEquals(versionVectorHelper(doc3.getVersionVector(), actorData7), true)
+            assertEquals(
+                true,
+                versionVectorHelper(
+                    doc3.getVersionVector(),
+                    arrayOf(
+                        Pair(client1.requireClientId().value, 2001L),
+                        Pair(client2.requireClientId().value, 2003L),
+                        Pair(client3.requireClientId().value, 2006L),
+                    ),
+                ),
+            )
             assertEquals(DEFAULT_SNAPSHOT_THRESHOLD + 2, doc3.getRoot()["t"].toString().length)
 
             // 03. Delete text after receiving the snapshot.

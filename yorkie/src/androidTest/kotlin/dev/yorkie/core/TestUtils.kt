@@ -47,7 +47,15 @@ fun createTwoClientsAndDocuments(
 }
 
 fun createThreeClientsAndDocuments(
-    callback: suspend CoroutineScope.(Client, Client, Client, Document, Document, Document, Document.Key) -> Unit,
+    callback: suspend CoroutineScope.(
+        Client,
+        Client,
+        Client,
+        Document,
+        Document,
+        Document,
+        Document.Key,
+    ) -> Unit,
 ) {
     runBlocking {
         val client1 = createClient()
@@ -58,7 +66,16 @@ fun createThreeClientsAndDocuments(
         val document2 = Document(documentKey)
         val document3 = Document(documentKey)
 
-        callback.invoke(this, client1, client2, client3, document1, document2, document3, documentKey)
+        callback.invoke(
+            this,
+            client1,
+            client2,
+            client3,
+            document1,
+            document2,
+            document3,
+            documentKey,
+        )
     }
 }
 
@@ -103,7 +120,15 @@ fun withTwoClientsAndDocuments(
 }
 
 fun withThreeClientsAndDocuments(
-    callback: suspend CoroutineScope.(Client, Client, Client, Document, Document, Document, Document.Key) -> Unit,
+    callback: suspend CoroutineScope.(
+        Client,
+        Client,
+        Client,
+        Document,
+        Document,
+        Document,
+        Document.Key,
+    ) -> Unit,
 ) {
     createThreeClientsAndDocuments { client1, client2, client3, document1, document2, document3, key ->
         client1.activateAsync().await()
@@ -114,7 +139,16 @@ fun withThreeClientsAndDocuments(
         client2.attachAsync(document2).await()
         client3.attachAsync(document3).await()
 
-        callback.invoke(this, client1, client2, client3, document1, document2, document3, key)
+        callback.invoke(
+            this,
+            client1,
+            client2,
+            client3,
+            document1,
+            document2,
+            document3,
+            key,
+        )
 
         client1.detachAsync(document1).await()
         client2.detachAsync(document2).await()

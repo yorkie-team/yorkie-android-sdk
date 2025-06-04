@@ -8,7 +8,6 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
-import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.VersionVector
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -269,7 +268,6 @@ class DocumentBenchmark {
             }
         }
     }
-
 
     private fun maxLamportVersionVector(document: Document): VersionVector {
         val versionVector = VersionVector()

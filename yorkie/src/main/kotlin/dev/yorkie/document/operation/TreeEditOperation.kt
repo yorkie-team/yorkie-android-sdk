@@ -48,7 +48,7 @@ internal data class TreeEditOperation(
                 editedAt,
                 issueTimeTicket(editedAt),
                 maxCreatedAtMapByActor,
-                versionVector
+                versionVector,
             )
         gcPairs.forEach(root::registerGCPair)
 

@@ -1,6 +1,5 @@
 package dev.yorkie.document.time
 
-import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.TimeTicketStruct
 import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID

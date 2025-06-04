@@ -41,7 +41,7 @@ internal data class TreeStyleOperation(
                     attributes,
                     executedAt,
                     maxCreatedAtMapByActor,
-                    versionVector
+                    versionVector,
                 )
                 gcPairs.forEach(root::registerGCPair)
                 changes.map {
@@ -62,7 +62,7 @@ internal data class TreeStyleOperation(
                     attributesToRemove,
                     executedAt,
                     maxCreatedAtMapByActor,
-                    versionVector
+                    versionVector,
                 )
                 gcPairs.forEach(root::registerGCPair)
                 changes.map {

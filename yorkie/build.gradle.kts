@@ -165,6 +165,8 @@ dependencies {
     api(libs.bundles.rpc)
     implementation(libs.guava)
 
+    implementation(libs.protobuf.javalite)
+
     implementation(libs.androidx.annotation)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.apache.commons.collections)

@@ -274,6 +274,13 @@ class ClientTest {
         target.deactivateAsync().await()
     }
 
+    // TODO
+    //  I haven't found a way to mock the `ErrorInfo` class yet.
+    //  When authentication via Webhook fails on the Yorkie server,
+    //  there is a specification that sends a specific error set in `ErrorInfo`
+    //  back to the client (Android, iOS, etc.).
+    //  I'm trying to find a way to mock this behavior for testing purposes,
+    //  but I haven't figured it out yet. Until I do, I will leave it commented out.
 //    @Test
 //    fun `should set a new token when auth error occurs`() = runTest {
 //        val success = Document(Key(NORMAL_DOCUMENT_KEY))

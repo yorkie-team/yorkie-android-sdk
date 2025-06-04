@@ -14,7 +14,6 @@ import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
-import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY

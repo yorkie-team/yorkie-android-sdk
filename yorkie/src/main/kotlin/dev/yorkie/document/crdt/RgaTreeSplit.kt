@@ -8,7 +8,6 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
-import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.SplayTreeSet
@@ -51,7 +50,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         executedAt: TimeTicket,
         value: T?,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
-        versionVector: VersionVector?
+        versionVector: VersionVector?,
     ): RgaTreeSplitEditResult<T> {
         // 1. Split nodes.
         val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
@@ -63,7 +62,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             nodesToDelete,
             executedAt,
             maxCreatedAtMapByActor,
-            versionVector
+            versionVector,
         )
         val caretID = toRight?.id ?: toLeft.id
         var caretPos = RgaTreeSplitPos(caretID, 0)
@@ -191,7 +190,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         candidates: List<RgaTreeSplitNode<T>>,
         executedAt: TimeTicket,
         maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
-        versionVector: VersionVector?
+        versionVector: VersionVector?,
     ): Triple<
         MutableList<ContentChange>,
         Map<ActorID, TimeTicket>,
@@ -208,7 +207,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             candidates,
             executedAt,
             maxCreatedAtMapByActor,
-            versionVector
+            versionVector,
         )
         val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
@@ -528,7 +527,11 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
-    fun canDelete(executedAt: TimeTicket, maxCreatedAt: TimeTicket?, clientLamportAtChange: Long): Boolean {
+    fun canDelete(
+        executedAt: TimeTicket,
+        maxCreatedAt: TimeTicket?,
+        clientLamportAtChange: Long,
+    ): Boolean {
         val justRemoved = removedAt == null
 
         val nodeExisted = if (maxCreatedAt != null) {
@@ -546,7 +549,11 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if node is able to set style.
      */
-    fun canStyle(executedAt: TimeTicket, maxCreatedAt: TimeTicket?, clientLamportAtChange: Long): Boolean {
+    fun canStyle(
+        executedAt: TimeTicket,
+        maxCreatedAt: TimeTicket?,
+        clientLamportAtChange: Long,
+    ): Boolean {
         val nodeExisted = if (maxCreatedAt != null) {
             createdAt <= maxCreatedAt
         } else {

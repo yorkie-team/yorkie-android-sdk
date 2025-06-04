@@ -88,7 +88,11 @@ internal data class CrdtTree(
             toLeft = toLeft,
         ) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(actorID, versionVector, maxCreatedAtMapByActor)
+            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(
+                actorID,
+                versionVector,
+                maxCreatedAtMapByActor,
+            )
 
             if (node.canStyle(
                     executedAt,
@@ -207,7 +211,11 @@ internal data class CrdtTree(
             }
 
             val actorID = node.createdAt.actorID
-            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(actorID, versionVector, maxCreatedAtMapByActor)
+            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(
+                actorID,
+                versionVector,
+                maxCreatedAtMapByActor,
+            )
 
             if (node.canDelete(
                     executedAt,
@@ -450,7 +458,11 @@ internal data class CrdtTree(
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(actorID, versionVector, maxCreatedAtMapByActor)
+            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(
+                actorID,
+                versionVector,
+                maxCreatedAtMapByActor,
+            )
 
             if (node.canStyle(
                     executedAt,
@@ -748,7 +760,7 @@ internal data class CrdtTree(
     private fun getClientInfoForChange(
         actorID: ActorID,
         versionVector: VersionVector?,
-        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
     ): Pair<TimeTicket?, Long> {
         var maxCreatedAt: TimeTicket? = null
         var clientLamportAtChange = 0L

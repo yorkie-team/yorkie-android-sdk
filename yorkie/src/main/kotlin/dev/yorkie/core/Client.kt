@@ -874,8 +874,8 @@ public class Client constructor(
                     }
                     return SUCCESS
                 } catch (err: Exception) {
-                    if (err is ConnectException
-                        && errorCodeOf(err) == ErrUnauthenticated.codeString
+                    if (err is ConnectException &&
+                        errorCodeOf(err) == ErrUnauthenticated.codeString
                     ) {
                         shouldRefreshToken = true
                         attachment.document.publishEvent(

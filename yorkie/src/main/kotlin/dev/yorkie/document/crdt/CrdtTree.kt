@@ -88,16 +88,7 @@ internal data class CrdtTree(
             toLeft = toLeft,
         ) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            var maxCreatedAt: TimeTicket? = null
-            var clientLamportAtChange = 0L
-
-            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
-                clientLamportAtChange = MAX_LAMPORT
-            } else if (versionVector != null && versionVector.size() > 0) {
-                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
-            } else {
-                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
-            }
+            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(actorID, versionVector, maxCreatedAtMapByActor)
 
             if (node.canStyle(
                     executedAt,
@@ -216,16 +207,7 @@ internal data class CrdtTree(
             }
 
             val actorID = node.createdAt.actorID
-            var maxCreatedAt: TimeTicket? = null
-            var clientLamportAtChange = 0L
-
-            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
-                clientLamportAtChange = MAX_LAMPORT
-            } else if (versionVector != null && versionVector.size() > 0) {
-                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
-            } else {
-                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
-            }
+            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(actorID, versionVector, maxCreatedAtMapByActor)
 
             if (node.canDelete(
                     executedAt,
@@ -468,16 +450,7 @@ internal data class CrdtTree(
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            var maxCreatedAt: TimeTicket? = null
-            var clientLamportAtChange = 0L
-
-            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
-                clientLamportAtChange = MAX_LAMPORT
-            } else if (versionVector != null && versionVector.size() > 0) {
-                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
-            } else {
-                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
-            }
+            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(actorID, versionVector, maxCreatedAtMapByActor)
 
             if (node.canStyle(
                     executedAt,
@@ -767,6 +740,28 @@ internal data class CrdtTree(
             resultNode.id,
             CrdtTreeNodeID(leftNode.createdAt, leftNode.offset + offset),
         )
+    }
+
+    /**
+     * Returns the client info for the change.
+     */
+    private fun getClientInfoForChange(
+        actorID: ActorID,
+        versionVector: VersionVector?,
+        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?
+    ): Pair<TimeTicket?, Long> {
+        var maxCreatedAt: TimeTicket? = null
+        var clientLamportAtChange = 0L
+
+        if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
+            clientLamportAtChange = MAX_LAMPORT
+        } else if (versionVector != null && versionVector.size() > 0) {
+            clientLamportAtChange = versionVector.get(actorID.value) ?: 0
+        } else {
+            maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+        }
+
+        return Pair(maxCreatedAt, clientLamportAtChange)
     }
 }
 

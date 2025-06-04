@@ -34,7 +34,6 @@ public data class TimeTicket(
         internal const val INITIAL_DELIMITER = 0u
         internal const val MAX_DELIMITER = UInt.MAX_VALUE
 
-        @VisibleForTesting
         public const val MAX_LAMPORT = Long.MAX_VALUE
 
         private val NullTimeTicket = TimeTicket(

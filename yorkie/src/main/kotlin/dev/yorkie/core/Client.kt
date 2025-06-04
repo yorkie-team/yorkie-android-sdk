@@ -772,7 +772,9 @@ public class Client constructor(
 
         return if (keepalive) {
             GlobalScope.async(Dispatchers.IO) {
-                NonCancellable.run { task() }
+                withContext(NonCancellable) {
+                    task()
+                }
             }
         } else {
             scope.async { task() }

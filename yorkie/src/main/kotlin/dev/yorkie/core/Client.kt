@@ -664,14 +664,11 @@ public class Client constructor(
                 }
 
                 document.applyDocumentStatus(DocStatus.Attached)
-                attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
-                    attachment.copy(
-                        syncMode = syncMode,
-                        remoteChangeEventReceived = true,
-                    )
-                } else {
-                    attachment.copy(syncMode = syncMode)
-                }
+                attachments.value += document.key to Attachment(
+                    document,
+                    response.documentId,
+                    syncMode,
+                )
                 waitForInitialization(document.key)
             }
             SUCCESS
@@ -877,7 +874,9 @@ public class Client constructor(
                     }
                     return SUCCESS
                 } catch (err: Exception) {
-                    if (err is ConnectException && errorCodeOf(err) == ErrUnauthenticated.codeString) {
+                    if (err is ConnectException
+                        && errorCodeOf(err) == ErrUnauthenticated.codeString
+                    ) {
                         shouldRefreshToken = true
                         attachment.document.publishEvent(
                             AuthError(
@@ -888,7 +887,10 @@ public class Client constructor(
                     }
                     retryCount++
                     if (retryCount > maxRetries) {
-                        logError("BROADCAST", "Exceeded maximum retry attempts for topic $topic")
+                        logError(
+                            "BROADCAST",
+                            "Exceeded maximum retry attempts for topic $topic",
+                        )
                         throw err
                     }
 

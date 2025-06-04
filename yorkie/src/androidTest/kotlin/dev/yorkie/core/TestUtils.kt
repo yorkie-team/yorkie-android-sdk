@@ -13,9 +13,7 @@ const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
 const val GENERAL_TIMEOUT = 3_000L
 
 fun createClient(): Client {
-    val unaryClient = OkHttpClient.Builder()
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .build()
+    val unaryClient = OkHttpClient.Builder().protocols(listOf(Protocol.HTTP_1_1)).build()
     return Client(
         options = Client.Options(),
         host = "http://10.0.2.2:8080",
@@ -27,8 +25,7 @@ fun createClient(): Client {
 
 fun String.toDocKey(): Document.Key {
     return Document.Key(
-        lowercase().replace("[^a-z\\d-]".toRegex(), "-")
-            .substring(0, length.coerceAtMost(120)),
+        lowercase().replace("[^a-z\\d-]".toRegex(), "-").substring(0, length.coerceAtMost(120)),
     )
 }
 
@@ -130,7 +127,15 @@ fun withThreeClientsAndDocuments(
         Document.Key,
     ) -> Unit,
 ) {
-    createThreeClientsAndDocuments { client1, client2, client3, document1, document2, document3, key ->
+    createThreeClientsAndDocuments {
+            client1,
+            client2,
+            client3,
+            document1,
+            document2,
+            document3,
+            key,
+        ->
         client1.activateAsync().await()
         client2.activateAsync().await()
         client3.activateAsync().await()

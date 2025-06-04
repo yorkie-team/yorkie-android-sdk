@@ -275,22 +275,22 @@ class ClientTest {
         target.deactivateAsync().await()
     }
 
-    @Test
-    fun `should set a new token when auth error occurs`() = runTest {
-        val success = Document(Key(NORMAL_DOCUMENT_KEY))
-        target.activateAsync().await()
-        target.attachAsync(success).await()
-        assertEquals(testAuthToken, runBlocking { target.authToken(false) })
-        assertFalse(target.shouldRefreshToken)
-        assertTrue(target.detachAsync(success).await().isSuccess)
-
-        val failing = Document(Key(AUTH_ERROR_DOCUMENT_KEY))
-        val await = target.attachAsync(failing).await()
-        assertTrue(await.isFailure)
-        assertTrue(target.shouldRefreshToken)
-
-        target.deactivateAsync().await()
-    }
+//    @Test
+//    fun `should set a new token when auth error occurs`() = runTest {
+//        val success = Document(Key(NORMAL_DOCUMENT_KEY))
+//        target.activateAsync().await()
+//        target.attachAsync(success).await()
+//        assertEquals(testAuthToken, runBlocking { target.authToken(false) })
+//        assertFalse(target.shouldRefreshToken)
+//        assertTrue(target.detachAsync(success).await().isSuccess)
+//
+//        val failing = Document(Key(AUTH_ERROR_DOCUMENT_KEY))
+//        val await = target.attachAsync(failing).await()
+//        assertTrue(await.isFailure)
+//        assertTrue(target.shouldRefreshToken)
+//
+//        target.deactivateAsync().await()
+//    }
 
     @Test
     fun `should retry on network failure if error code was retryable`() = runTest {

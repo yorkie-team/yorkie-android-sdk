@@ -17,6 +17,7 @@ androidx-annotation = { module = "androidx.annotation:annotation", version = "1.
 connect-kotlin-google-javalite-ext = { module = "com.connectrpc:connect-kotlin-google-javalite-ext", version.ref = "connectKotlin" }
 connect-kotlin-okhttp = { module = "com.connectrpc:connect-kotlin-okhttp", version.ref = "connectKotlin" }
 protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version = "protobufJavalite" }
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobufJavalite" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 
 guava = { module = "com.google.guava:guava", version = "33.2.1-android" }

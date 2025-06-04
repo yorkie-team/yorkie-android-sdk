@@ -166,6 +166,7 @@ dependencies {
     implementation(libs.guava)
 
     implementation(libs.protobuf.javalite)
+    compileOnly(libs.protobuf.java)
 
     implementation(libs.androidx.annotation)
     implementation(libs.kotlinx.coroutines)

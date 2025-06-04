@@ -16,9 +16,9 @@ class RgaTreeSplitTest {
     @Test
     fun `should handle edit operations with case1`() {
         var range = RgaTreeSplitPosRange(target.indexToPos(0), target.indexToPos(0))
-        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("ABCD"))
+        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("ABCD"), versionVector = null)
         range = RgaTreeSplitPosRange(target.indexToPos(1), target.indexToPos(3))
-        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("12"))
+        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("12"), versionVector = null)
 
         assertEquals("A12D", target.toString())
     }
@@ -26,9 +26,9 @@ class RgaTreeSplitTest {
     @Test
     fun `should handle edit operations with case2`() {
         var range = RgaTreeSplitPosRange(target.indexToPos(0), target.indexToPos(0))
-        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("ABCD"))
+        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("ABCD"), versionVector = null)
         range = RgaTreeSplitPosRange(target.indexToPos(3), target.indexToPos(3))
-        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("\n"))
+        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("\n"), versionVector = null)
 
         assertEquals("ABC\nD", target.toString())
     }

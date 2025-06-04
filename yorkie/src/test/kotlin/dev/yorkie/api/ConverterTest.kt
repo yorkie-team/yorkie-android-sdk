@@ -101,7 +101,12 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
-        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), null, null)
+        val change = Change(
+            ChangeID.InitialChangeID,
+            listOf(addOperation),
+            null,
+            null,
+        )
         val converted = listOf(change.toPBChange()).toChanges().first()
 
         assertEquals(change, converted)
@@ -146,7 +151,12 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
-        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), null, "add")
+        val change = Change(
+            ChangeID.InitialChangeID,
+            listOf(addOperation),
+            null,
+            "add",
+        )
         val changePack = ChangePack(
             "key",
             CheckPoint.InitialCheckPoint,
@@ -173,7 +183,12 @@ class ConverterTest {
             InitialTimeTicket,
             InitialTimeTicket,
         )
-        val change = Change(ChangeID.InitialChangeID, listOf(addOperation), null, "add")
+        val change = Change(
+            ChangeID.InitialChangeID,
+            listOf(addOperation),
+            null,
+            "add",
+        )
         val changePack = ChangePack(
             "key",
             CheckPoint.InitialCheckPoint,
@@ -266,7 +281,16 @@ class ConverterTest {
         )
         val treeStyleOperation = TreeStyleOperation(
             InitialTimeTicket,
-            CrdtTreePos(CrdtTreeNodeID(InitialTimeTicket, 5), CrdtTreeNodeID(InitialTimeTicket, 5)),
+            CrdtTreePos(
+                CrdtTreeNodeID(
+                    InitialTimeTicket,
+                    5,
+                ),
+                CrdtTreeNodeID(
+                    InitialTimeTicket,
+                    5,
+                ),
+            ),
             CrdtTreePos(
                 CrdtTreeNodeID(InitialTimeTicket, 10),
                 CrdtTreeNodeID(InitialTimeTicket, 10),
@@ -465,7 +489,8 @@ class ConverterTest {
         override var executedAt: TimeTicket,
         override val effectedCreatedAt: TimeTicket,
     ) : Operation() {
-        override fun execute(root: CrdtRoot): List<OperationInfo> = emptyList()
+        override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> =
+            emptyList()
     }
 
     private class TestCrdtElement(

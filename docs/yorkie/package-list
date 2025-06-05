@@ -36,7 +36,7 @@ $dokka.location:dev.yorkie.core/Client/authToken/#kotlin.Boolean/PointingToDecla
 $dokka.location:dev.yorkie.core/Client/broadcast/#dev.yorkie.document.Document#kotlin.String#kotlin.String#dev.yorkie.document.Document.BroadcastOptions/PointingToDeclaration/yorkie/dev.yorkie.core/-client/broadcast.html
 $dokka.location:dev.yorkie.core/Client/changeSyncMode/#dev.yorkie.document.Document#dev.yorkie.core.Client.SyncMode/PointingToDeclaration/yorkie/dev.yorkie.core/-client/change-sync-mode.html
 $dokka.location:dev.yorkie.core/Client/close/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/close.html
-$dokka.location:dev.yorkie.core/Client/deactivateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/deactivate-async.html
+$dokka.location:dev.yorkie.core/Client/deactivateAsync/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/deactivate-async.html
 $dokka.location:dev.yorkie.core/Client/detachAsync/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/detach-async.html
 $dokka.location:dev.yorkie.core/Client/isActive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/is-active.html
 $dokka.location:dev.yorkie.core/Client/removeAsync/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/remove-async.html
@@ -352,6 +352,7 @@ $dokka.location:dev.yorkie.document.time/VersionVector/max/#dev.yorkie.document.
 $dokka.location:dev.yorkie.document.time/VersionVector/maxLamport/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/max-lamport.html
 $dokka.location:dev.yorkie.document.time/VersionVector/set/#kotlin.String#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/set.html
 $dokka.location:dev.yorkie.document.time/VersionVector/size/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/size.html
+$dokka.location:dev.yorkie.document.time/VersionVector/unset/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/unset.html
 $dokka.location:dev.yorkie.document.time/VersionVector/vectorMap/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/vector-map.html
 $dokka.location:dev.yorkie.document////PointingToDeclaration/yorkie/dev.yorkie.document/index.html
 $dokka.location:dev.yorkie.document/CrdtTreeNodeIDStruct///PointingToDeclaration/yorkie/dev.yorkie.document/-crdt-tree-node-i-d-struct/index.html
@@ -374,6 +375,7 @@ $dokka.location:dev.yorkie.document/Document.DocStatus///PointingToDeclaration/
 $dokka.location:dev.yorkie.document/Document.DocStatus/entries/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-doc-status/entries.html
 $dokka.location:dev.yorkie.document/Document.DocStatus/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-doc-status/value-of.html
 $dokka.location:dev.yorkie.document/Document.DocStatus/values/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-doc-status/values.html
+$dokka.location:dev.yorkie.document/Document.Event.AuthError.AuthErrorMethod.Broadcast///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-event/-auth-error/-auth-error-method/-broadcast/index.html
 $dokka.location:dev.yorkie.document/Document.Event.AuthError.AuthErrorMethod.PushPull///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-event/-auth-error/-auth-error-method/-push-pull/index.html
 $dokka.location:dev.yorkie.document/Document.Event.AuthError.AuthErrorMethod.WatchDocuments///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-event/-auth-error/-auth-error-method/-watch-documents/index.html
 $dokka.location:dev.yorkie.document/Document.Event.AuthError.AuthErrorMethod///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-auth-error/-auth-error-method/index.html
@@ -452,6 +454,7 @@ $dokka.location:dev.yorkie.document/Document/garbageLength/#/PointingToDeclarati
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
 $dokka.location:dev.yorkie.document/Document/getRootThreadSafe/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root-thread-safe.html
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
+$dokka.location:dev.yorkie.document/Document/getVersionVector/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-version-vector.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
 $dokka.location:dev.yorkie.document/Document/myPresence/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/my-presence.html
 $dokka.location:dev.yorkie.document/Document/presences/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/presences.html
@@ -481,6 +484,7 @@ $dokka.location:dev.yorkie.util//checkYorkieError/#kotlin.Boolean#dev.yorkie.uti
 $dokka.location:dev.yorkie.util//createSingleThreadDispatcher/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/create-single-thread-dispatcher.html
 $dokka.location:dev.yorkie.util//errorCodeOf/#com.connectrpc.ConnectException/PointingToDeclaration/yorkie/dev.yorkie.util/error-code-of.html
 $dokka.location:dev.yorkie.util//errorMetadataOf/#com.connectrpc.ConnectException/PointingToDeclaration/yorkie/dev.yorkie.util/error-metadata-of.html
+$dokka.location:dev.yorkie.util//versionVectorHelper/#dev.yorkie.document.time.VersionVector#kotlin.Array[kotlin.Pair[kotlin.String,kotlin.Long]]/PointingToDeclaration/yorkie/dev.yorkie.util/version-vector-helper.html
 $dokka.location:dev.yorkie.util/Logger.Companion///PointingToDeclaration/yorkie/dev.yorkie.util/-logger/-companion/index.html
 $dokka.location:dev.yorkie.util/Logger.Companion/init/#dev.yorkie.util.Logger/PointingToDeclaration/yorkie/dev.yorkie.util/-logger/-companion/init.html
 $dokka.location:dev.yorkie.util/Logger///PointingToDeclaration/yorkie/dev.yorkie.util/-logger/index.html

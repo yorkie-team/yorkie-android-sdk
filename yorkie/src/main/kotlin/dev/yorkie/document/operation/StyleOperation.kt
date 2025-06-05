@@ -6,6 +6,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
 
 internal data class StyleOperation(
@@ -20,7 +21,7 @@ internal data class StyleOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot): List<OperationInfo> {
+    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val changes = parentObject.style(
@@ -28,6 +29,7 @@ internal data class StyleOperation(
                 attributes,
                 executedAt,
                 maxCreatedAtMapByActor,
+                versionVector,
             ).textChanges
             changes.map {
                 OperationInfo.StyleOpInfo(

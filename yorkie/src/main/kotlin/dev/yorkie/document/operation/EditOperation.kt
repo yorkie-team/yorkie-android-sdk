@@ -7,6 +7,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
 
 /**
@@ -28,7 +29,7 @@ internal data class EditOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot): List<OperationInfo> {
+    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val result = parentObject.edit(
@@ -37,6 +38,7 @@ internal data class EditOperation(
                 executedAt,
                 attributes,
                 maxCreatedAtMapByActor,
+                versionVector,
             )
             result.gcPairs.forEach(root::registerGCPair)
             result.textChanges.map { (_, _, from, to, content, attributes) ->

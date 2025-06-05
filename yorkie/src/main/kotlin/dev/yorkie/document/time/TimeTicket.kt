@@ -1,6 +1,5 @@
 package dev.yorkie.document.time
 
-import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.TimeTicketStruct
 import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
@@ -34,7 +33,6 @@ public data class TimeTicket(
         internal const val INITIAL_DELIMITER = 0u
         internal const val MAX_DELIMITER = UInt.MAX_VALUE
 
-        @VisibleForTesting
         public const val MAX_LAMPORT = Long.MAX_VALUE
 
         private val NullTimeTicket = TimeTicket(

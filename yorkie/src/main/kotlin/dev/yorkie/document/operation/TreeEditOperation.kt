@@ -7,6 +7,7 @@ import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
 
 /**
@@ -23,7 +24,7 @@ internal data class TreeEditOperation(
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
 
-    override fun execute(root: CrdtRoot): List<OperationInfo> {
+    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
             logError(TAG, "fail to find $parentCreatedAt")
@@ -47,6 +48,7 @@ internal data class TreeEditOperation(
                 editedAt,
                 issueTimeTicket(editedAt),
                 maxCreatedAtMapByActor,
+                versionVector,
             )
         gcPairs.forEach(root::registerGCPair)
 

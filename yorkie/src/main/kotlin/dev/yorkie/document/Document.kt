@@ -280,7 +280,6 @@ public class Document(
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
         if (pack.hasSnapshot) {
             applySnapshot(
-                pack.checkPoint.serverSeq,
                 pack.versionVector,
                 checkNotNull(pack.snapshot),
                 pack.checkPoint.clientSeq,
@@ -309,7 +308,6 @@ public class Document(
      * Applies the given [snapshot] into this document.
      */
     private suspend fun applySnapshot(
-        serverSeq: Long,
         snapshotVector: VersionVector,
         snapshot: ByteString,
         clientSeq: UInt,
@@ -323,7 +321,7 @@ public class Document(
         logDebug("Document.snapshot") {
             "Snapshot: ${snapshot.toSnapshot()}"
         }
-        changeID = changeID.setClocks(serverSeq, snapshotVector)
+        changeID = changeID.setClocks(snapshotVector.maxLamport(), snapshotVector)
         clone = null
         removePushedLocalChanges(clientSeq)
         eventStream.emit(Event.Snapshot(snapshot))
@@ -521,6 +519,13 @@ public class Document(
     }
 
     /**
+     * `getVersionVector` returns the version vector of document
+     */
+    fun getVersionVector(): VersionVector {
+        return changeID.versionVector
+    }
+
+    /**
      * Deletes elements that were removed before the given time.
      */
     @VisibleForTesting
@@ -658,6 +663,7 @@ public class Document(
             enum class AuthErrorMethod(val value: String) {
                 PushPull("PushPull"),
                 WatchDocuments("WatchDocuments"),
+                Broadcast("Broadcast"),
             }
         }
 

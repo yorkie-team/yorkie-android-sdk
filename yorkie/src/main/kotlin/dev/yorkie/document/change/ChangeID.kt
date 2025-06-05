@@ -43,6 +43,13 @@ public data class ChangeID(
      */
     fun syncClocks(other: ChangeID): ChangeID {
         val lamport = if (other.lamport > lamport) other.lamport + 1 else lamport + 1
+
+        var otherVersionVector = other.versionVector
+        if (otherVersionVector.size() == 0) {
+            otherVersionVector = otherVersionVector.deepCopy()
+            otherVersionVector.set(other.actor.value, other.lamport)
+        }
+
         val maxVersionVector = versionVector.max(other.versionVector)
         val newID = copy(
             lamport = lamport,
@@ -57,7 +64,9 @@ public data class ChangeID(
      * is given from the server.
      */
     fun setClocks(otherLamport: Long, vector: VersionVector): ChangeID {
-        val lamport = if (otherLamport > lamport) otherLamport else lamport + 1
+        val lamport = if (otherLamport > lamport) otherLamport + 1 else lamport + 1
+        vector.unset(INITIAL_ACTOR_ID.value)
+
         val maxVersionVector = this.versionVector.max(vector)
         maxVersionVector.set(actor.value, lamport)
         return copy(

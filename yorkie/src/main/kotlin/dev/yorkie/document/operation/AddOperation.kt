@@ -4,6 +4,7 @@ import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
 
 /**
@@ -25,7 +26,7 @@ internal data class AddOperation(
     /**
      * Executes this [AddOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot): List<OperationInfo> {
+    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtArray) {
             val copiedValue = value.deepCopy()

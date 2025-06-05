@@ -3,6 +3,7 @@ package dev.yorkie.document.operation
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 
 /**
  * Represents an operation to be executed on a document.
@@ -22,7 +23,7 @@ internal abstract class Operation {
     /**
      * Executes this [Operation] on the given [root].
      */
-    abstract fun execute(root: CrdtRoot): List<OperationInfo>
+    abstract fun execute(root: CrdtRoot, versionVector: VersionVector? = null): List<OperationInfo>
 
     /**
      * Sets the given [ActorID] to this [Operation].

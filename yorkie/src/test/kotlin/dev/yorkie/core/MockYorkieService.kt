@@ -6,6 +6,7 @@ import com.connectrpc.Headers
 import com.connectrpc.ResponseMessage
 import com.connectrpc.ServerOnlyStreamInterface
 import com.google.protobuf.kotlin.toByteString
+import com.google.rpc.ErrorInfo
 import dev.yorkie.api.PBTimeTicket
 import dev.yorkie.api.toPBChange
 import dev.yorkie.api.toPBTimeTicket
@@ -51,6 +52,9 @@ import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
+import io.mockk.every
+import io.mockk.mockk
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.CompletableDeferred
@@ -99,12 +103,21 @@ class MockYorkieService(
             )
         }
         if (request.changePack.documentKey == AUTH_ERROR_DOCUMENT_KEY) {
+            // Create ErrorInfo with unauthenticated error code
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", ErrUnauthenticated.codeString)
+                .build()
+
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns customError[AUTH_ERROR_DOCUMENT_KEY]!!
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
             return ResponseMessage.Failure(
-                ConnectException(
-                    customError[AUTH_ERROR_DOCUMENT_KEY]!!,
-                ),
-                emptyMap(),
-                emptyMap(),
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
             )
         }
         return ResponseMessage.Success(

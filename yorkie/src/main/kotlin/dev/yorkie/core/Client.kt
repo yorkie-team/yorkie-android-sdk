@@ -108,7 +108,7 @@ import okhttp3.OkHttpClient
  * Therefore you need to [close] the client, when the client is no longer needed.
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
-public class Client constructor(
+public class Client(
     private val options: Options,
     private val unaryClient: OkHttpClient,
     private val streamClient: OkHttpClient,
@@ -880,7 +880,7 @@ public class Client constructor(
                         shouldRefreshToken = true
                         attachment.document.publishEvent(
                             AuthError(
-                                errorMetadataOf(err)["reason"] ?: "AuthError",
+                                errorMetadataOf(err)?.get("reason") ?: "AuthError",
                                 Document.Event.AuthError.AuthErrorMethod.Broadcast,
                             ),
                         )
@@ -957,7 +957,7 @@ public class Client constructor(
                 shouldRefreshToken = true
                 document.publishEvent(
                     AuthError(
-                        errorMetadataOf(connectException)["reason"] ?: "AuthError",
+                        errorMetadataOf(connectException)?.get("reason") ?: "AuthError",
                         method,
                     ),
                 )

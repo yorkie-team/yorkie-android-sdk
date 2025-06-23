@@ -1,6 +1,7 @@
 [versions]
 minSdk = "24"
 compileSdk = "34"
+mockk = "1.14.2"
 targetSdk = "34"
 agp = "8.5.0"
 connectKotlin = "0.7.0"
@@ -16,6 +17,7 @@ protobufJavalite = "4.31.1"
 androidx-annotation = { module = "androidx.annotation:annotation", version = "1.8.2" }
 connect-kotlin-google-javalite-ext = { module = "com.connectrpc:connect-kotlin-google-javalite-ext", version.ref = "connectKotlin" }
 connect-kotlin-okhttp = { module = "com.connectrpc:connect-kotlin-okhttp", version.ref = "connectKotlin" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version = "protobufJavalite" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobufJavalite" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }

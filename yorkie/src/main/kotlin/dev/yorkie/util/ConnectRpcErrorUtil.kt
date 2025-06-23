@@ -38,17 +38,10 @@ internal suspend fun handleConnectException(
 }
 
 fun errorCodeOf(exception: ConnectException): String {
-    val infos = exception.unpackedDetails(ErrorInfo::class)
-    for (info in infos) {
-        info.metadataMap["code"]?.let { return it }
-    }
-    return ""
+    return errorMetadataOf(exception)?.get("code").orEmpty()
 }
 
-fun errorMetadataOf(exception: ConnectException): Map<String, String> {
+fun errorMetadataOf(exception: ConnectException): Map<String, String>? {
     val infos = exception.unpackedDetails(ErrorInfo::class)
-    for (info in infos) {
-        return info.metadataMap
-    }
-    return emptyMap()
+    return infos.firstOrNull()?.metadataMap
 }

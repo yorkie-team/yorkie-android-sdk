@@ -173,7 +173,6 @@ dependencies {
     implementation(libs.apache.commons.collections)
 
     testImplementation(libs.junit)
-    testImplementation(libs.mockito.kotlin)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.gson)

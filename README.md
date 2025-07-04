@@ -37,7 +37,55 @@ To get the latest server locally, run the command below then restart containers 
 
 ```bash
 $ docker pull yorkieteam/yorkie:latest
+$ docker-compose -f docker/docker-compose.yml up --build -d
+```
+
+## Config connect Yorkie Server
+
+### Local
+
+#### Install Yorkie Server
+
+##### Using Docker
+
+```bash
 $ docker compose -f docker/docker-compose.yml up --build -d
+```
+
+##### Using CLI
+
+Install Yorkie CLI following [guidance](https://yorkie.dev/docs/cli).
+
+Note: consider installing version is the same with version of SDK
+
+Start Yorkie server
+
+```bash
+yorkie server --rpc-addr 0.0.0.0:8080
+```
+
+#### Config yorkie local server
+
+```bash
+./scripts/config-yorkie-local-server.sh
+```
+
+### Dev
+Config variables in `local.properties` file
+
+```bash
+YORKIE_SERVER_URL=https://api.yorkie.dev
+```
+
+### Real
+
+Start and create your project and get API Key on [Yorkie](https://yorkie.navercorp.com/)
+
+Config variables in `local.properties` file
+
+```bash
+YORKIE_SERVER_URL=https://yorkie-api.navercorp.com
+YORKIE_API_KEY=Your Yorkie API key
 ```
 
 ## Contributing

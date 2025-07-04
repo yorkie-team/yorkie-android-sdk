@@ -54,7 +54,7 @@ $ docker compose -f docker/docker-compose.yml up --build -d
 
 ##### Using CLI
 
-Install Yorkie CLI following [guidance](https://wiki.navercorp.com/spaces/RTCOLLABPLAT/pages/3562372323/Yorkie-iOS+SDK+%EA%B0%9C%EB%B0%9C+%EC%98%A8%EB%B3%B4%EB%94%A9+%EA%B0%80%EC%9D%B4%EB%93%9C).
+Install Yorkie CLI following [guidance](https://yorkie.dev/docs/cli).
 
 Note: consider installing version is the same with version of SDK
 

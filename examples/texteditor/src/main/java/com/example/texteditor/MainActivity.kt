@@ -32,8 +32,10 @@ class MainActivity : AppCompatActivity() {
                     .build()
                 EditorViewModel(
                     Client(
-                        options = Client.Options(),
-                        host = "https://api.yorkie.dev",
+                        options = Client.Options(
+                            apiKey = BuildConfig.YORKIE_API_KEY,
+                        ),
+                        host = BuildConfig.YORKIE_SERVER_URL,
                         unaryClient = unaryClient,
                         streamClient = unaryClient,
                         dispatcher = createSingleThreadDispatcher(

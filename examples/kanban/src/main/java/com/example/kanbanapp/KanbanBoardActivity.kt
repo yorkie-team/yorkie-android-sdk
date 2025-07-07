@@ -29,19 +29,26 @@ import dev.yorkie.core.Client
 import dev.yorkie.util.Logger
 import dev.yorkie.util.createSingleThreadDispatcher
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 
 @SuppressLint("VisibleForTests")
 class KanbanBoardActivity : ComponentActivity() {
     private val viewModel: KanbanBoardViewModel by viewModels {
         viewModelFactory {
             initializer {
-                val unaryClient = OkHttpClient()
+                val unaryClient = OkHttpClient.Builder()
+                    .protocols(listOf(Protocol.HTTP_1_1))
+                    .build()
                 val client = Client(
-                    options = Client.Options(),
+                    options = Client.Options(
+                        apiKey = BuildConfig.YORKIE_API_KEY,
+                    ),
+                    host = BuildConfig.YORKIE_SERVER_URL,
                     unaryClient = unaryClient,
                     streamClient = unaryClient,
-                    dispatcher = createSingleThreadDispatcher("YorkieClientDispatcher"),
-                    host = "https://api.yorkie.dev",
+                    dispatcher = createSingleThreadDispatcher(
+                        "YorkieClient",
+                    ),
                 )
                 KanbanBoardViewModel(client)
             }

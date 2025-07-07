@@ -344,6 +344,7 @@ class MockYorkieService(
         internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal const val AUTH_ERROR_DOCUMENT_KEY = "AUTH_ERROR_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = ActorID("0000000000ffff0000000000")
+        internal const val TEST_USER_ID = "TEST_USER_ID"
 
         internal val defaultError: MutableMap<String, Code> = mutableMapOf(
             ATTACH_ERROR_DOCUMENT_KEY to Code.UNKNOWN,

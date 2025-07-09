@@ -683,20 +683,24 @@ public class Client(
      * the changes should be applied to other replicas before GC time. For this,
      * if the [document] is no longer used by this [Client], it should be detached.
      */
-    public fun detachAsync(document: Document): Deferred<OperationResult> {
-        return scope.async {
-            checkYorkieError(
-                isActive,
-                YorkieException(ErrClientNotActivated, "client is not active"),
+    @OptIn(DelicateCoroutinesApi::class)
+    public fun detachAsync(
+        document: Document,
+        keepalive: Boolean = false,
+    ): Deferred<OperationResult> {
+        checkYorkieError(
+            isActive,
+            YorkieException(ErrClientNotActivated, "client is not active"),
+        )
+
+        val attachment = attachments.value[document.key]
+            ?: throw YorkieException(
+                ErrDocumentNotAttached,
+                "document(${document.key}) is not attached",
             )
 
+        val task = suspend suspend@{
             document.mutex.withLock {
-                val attachment = attachments.value[document.key]
-                    ?: throw YorkieException(
-                        ErrDocumentNotAttached,
-                        "document(${document.key}) is not attached",
-                    )
-
                 document.updateAsync { _, presence ->
                     presence.clear()
                 }.await()
@@ -710,14 +714,13 @@ public class Client(
                     request,
                     document.key.documentBasedRequestHeader,
                 ).getOrElse {
-                    ensureActive()
                     handleConnectException(it) { exception ->
                         if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
                             shouldRefreshToken = true
                         }
                         deactivateInternal()
                     }
-                    return@async Result.failure(it)
+                    return@suspend Result.failure(it)
                 }
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
@@ -727,6 +730,18 @@ public class Client(
                 }
             }
             SUCCESS
+        }
+
+        return if (keepalive) {
+            GlobalScope.async(Dispatchers.IO) {
+                withContext(NonCancellable) {
+                    task()
+                }
+            }
+        } else {
+            scope.async {
+                task()
+            }
         }
     }
 

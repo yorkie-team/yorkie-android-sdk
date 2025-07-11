@@ -14,11 +14,11 @@ import com.connectrpc.protocols.NetworkProtocol
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
+import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchDocumentResponse
 import dev.yorkie.api.v1.YorkieServiceClient
 import dev.yorkie.api.v1.YorkieServiceClientInterface
-import dev.yorkie.api.v1.activateClientRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.broadcastRequest
 import dev.yorkie.api.v1.deactivateClientRequest
@@ -190,10 +190,11 @@ public class Client(
             }
 
             val activateResponse = service.activateClient(
-                activateClientRequest {
-                    clientKey = options.key
-                },
-                projectBasedRequestHeader,
+                request = ActivateClientRequest.newBuilder()
+                    .setClientKey(options.key)
+                    .putAllMetadata(options.metadata)
+                    .build(),
+                headers = projectBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
                 handleConnectException(it) { exception ->
@@ -1021,6 +1022,11 @@ public class Client(
          * API key of the project used to identify the project.
          */
         public val apiKey: String? = null,
+        /**
+         * `metadata` is the metadata of the client. It is used to store additional
+         * information about the client.
+         */
+        public val metadata: Map<String, String> = emptyMap(),
         /**
          * `fetchAuthToken` provides a token for the auth webhook.
          * When the webhook response status code is 401, this function is called to refresh the token.

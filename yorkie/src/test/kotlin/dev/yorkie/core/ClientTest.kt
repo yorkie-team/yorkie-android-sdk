@@ -20,6 +20,7 @@ import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
+import dev.yorkie.core.MockYorkieService.Companion.TEST_USER_ID
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
@@ -75,6 +76,9 @@ class ClientTest {
             options = Client.Options(
                 key = TEST_KEY,
                 apiKey = TEST_KEY,
+                metadata = mapOf(
+                    "user-id" to TEST_USER_ID,
+                ),
                 fetchAuthToken = { refresh ->
                     if (refresh) {
                         refreshTestAuthToken
@@ -105,6 +109,7 @@ class ClientTest {
             service.activateClient(capture(activateRequestCaptor), any())
         }
         assertEquals(TEST_KEY, activateRequestCaptor.captured.clientKey)
+        assertEquals(TEST_USER_ID, activateRequestCaptor.captured.metadataMap["user-id"])
         assertTrue(target.isActive)
 
         val activatedStatus = assertIs<Client.Status.Activated>(target.status.value)

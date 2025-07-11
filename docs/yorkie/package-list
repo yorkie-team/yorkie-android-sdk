@@ -9,10 +9,11 @@ $dokka.location:dev.yorkie.core/Client.ClientCondition/valueOf/#kotlin.String/Po
 $dokka.location:dev.yorkie.core/Client.ClientCondition/values/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client-condition/values.html
 $dokka.location:dev.yorkie.core/Client.Companion///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-companion/index.html
 $dokka.location:dev.yorkie.core/Client.Options///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/index.html
-$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
+$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
 $dokka.location:dev.yorkie.core/Client.Options/apiKey/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/api-key.html
 $dokka.location:dev.yorkie.core/Client.Options/fetchAuthToken/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/fetch-auth-token.html
 $dokka.location:dev.yorkie.core/Client.Options/key/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/key.html
+$dokka.location:dev.yorkie.core/Client.Options/metadata/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/metadata.html
 $dokka.location:dev.yorkie.core/Client.Options/reconnectStreamDelay/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/reconnect-stream-delay.html
 $dokka.location:dev.yorkie.core/Client.Options/syncLoopDuration/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/sync-loop-duration.html
 $dokka.location:dev.yorkie.core/Client.Status.Activated///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/index.html
@@ -37,7 +38,7 @@ $dokka.location:dev.yorkie.core/Client/broadcast/#dev.yorkie.document.Document#k
 $dokka.location:dev.yorkie.core/Client/changeSyncMode/#dev.yorkie.document.Document#dev.yorkie.core.Client.SyncMode/PointingToDeclaration/yorkie/dev.yorkie.core/-client/change-sync-mode.html
 $dokka.location:dev.yorkie.core/Client/close/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/close.html
 $dokka.location:dev.yorkie.core/Client/deactivateAsync/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/deactivate-async.html
-$dokka.location:dev.yorkie.core/Client/detachAsync/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/detach-async.html
+$dokka.location:dev.yorkie.core/Client/detachAsync/#dev.yorkie.document.Document#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/detach-async.html
 $dokka.location:dev.yorkie.core/Client/isActive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/is-active.html
 $dokka.location:dev.yorkie.core/Client/removeAsync/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/remove-async.html
 $dokka.location:dev.yorkie.core/Client/requireClientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-client-id.html

@@ -13,6 +13,8 @@ jobs:
           java-version: "17"
           distribution: "temurin"
           cache: gradle
+      - name: Set Yorkie Server Url
+        run: echo YORKIE_SERVER_URL="https://api.yorkie.dev" > ./local.properties
       - run: chmod +x gradlew
       - uses: gradle/gradle-build-action@v2
         with:

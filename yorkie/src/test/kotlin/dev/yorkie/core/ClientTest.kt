@@ -23,6 +23,7 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_USER_ID
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.DocStatus
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.Document.Key
@@ -405,6 +406,47 @@ class ClientTest {
             document.close()
             client.close()
         }
+    }
+
+    @Test
+    fun `detachAsync with keepalive true should work even after client close`() = runTest {
+        val service = spyk(MockYorkieService())
+        val client = Client(
+            options = Client.Options(
+                key = TEST_KEY,
+                apiKey = TEST_KEY,
+            ),
+            unaryClient = OkHttpClient(),
+            streamClient = OkHttpClient(),
+            dispatcher = createSingleThreadDispatcher("Client Test"),
+            host = "0.0.0.0",
+        )
+        client.service = service
+
+        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+
+        // Activate and attach document
+        client.activateAsync().await()
+        client.attachAsync(document, syncMode = Manual).await()
+        assertEquals(DocStatus.Attached, document.status)
+
+        // Start detach with keepalive = true
+        val detachDeferred = async {
+            client.detachAsync(document, keepalive = true).await()
+        }
+
+        // Add a small delay to ensure the detach has started
+        delay(10)
+
+        // Close the client while detach might still be in progress
+        client.close()
+
+        // Wait for detach to complete
+        val result = detachDeferred.await()
+
+        // Verify that detach completed successfully despite client being closed
+        assertTrue(result.isSuccess)
+        assertEquals(DocStatus.Detached, document.status)
     }
 
     private fun assertIsTestActorID(clientId: String) {

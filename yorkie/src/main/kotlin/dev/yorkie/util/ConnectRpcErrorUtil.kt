@@ -5,6 +5,7 @@ import com.connectrpc.ConnectException
 import com.google.rpc.ErrorInfo
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
+import dev.yorkie.util.YorkieException.Code.ErrTooManySubscribers
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 
 /**
@@ -28,6 +29,11 @@ internal suspend fun handleConnectException(
     }
 
     val yorkieErrorCode = errorCodeOf(exception)
+
+    if (yorkieErrorCode == ErrTooManySubscribers.codeString) {
+        return true
+    }
+
     if (yorkieErrorCode == ErrClientNotActivated.codeString ||
         yorkieErrorCode == ErrClientNotFound.codeString ||
         yorkieErrorCode == ErrUnauthenticated.codeString

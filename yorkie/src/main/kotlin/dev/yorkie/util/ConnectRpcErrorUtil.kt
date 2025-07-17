@@ -5,6 +5,7 @@ import com.connectrpc.ConnectException
 import com.google.rpc.ErrorInfo
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
+import dev.yorkie.util.YorkieException.Code.ErrTooManyAttachments
 import dev.yorkie.util.YorkieException.Code.ErrTooManySubscribers
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 
@@ -32,6 +33,10 @@ internal suspend fun handleConnectException(
 
     if (yorkieErrorCode == ErrTooManySubscribers.codeString) {
         return true
+    }
+
+    if (yorkieErrorCode == ErrTooManyAttachments.codeString) {
+        return false
     }
 
     if (yorkieErrorCode == ErrClientNotActivated.codeString ||

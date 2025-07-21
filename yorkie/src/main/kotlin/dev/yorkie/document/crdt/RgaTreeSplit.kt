@@ -8,8 +8,10 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
+import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.SplayTreeSet
 import java.util.TreeMap
 
@@ -438,6 +440,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
             override fun deepCopy(): InitialNodeValue = this
 
+            override fun getDataSize(): DataSize = DataSize(
+                data = 0,
+                meta = 0,
+            )
+
             override val length: Int = 0
 
             override fun get(index: Int): Char = throw IndexOutOfBoundsException()
@@ -450,6 +457,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 internal interface RgaTreeSplitValue<T : RgaTreeSplitValue<T>> : CharSequence {
 
     fun deepCopy(): T
+
+    fun getDataSize(): DataSize
 }
 
 internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
@@ -486,6 +495,20 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
 
     override val removedAt: TimeTicket?
         get() = _removedAt
+
+    override val dataSize: DataSize
+        get() {
+            val dataSize = _value.getDataSize()
+            var meta = TIME_TICKET_SIZE
+            if (_removedAt != null) {
+                meta += TIME_TICKET_SIZE
+            }
+
+            return DataSize(
+                data = dataSize.data,
+                meta = meta,
+            )
+        }
 
     val value
         get() = _value

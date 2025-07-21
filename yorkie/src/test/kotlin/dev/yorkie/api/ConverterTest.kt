@@ -46,6 +46,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
@@ -499,5 +500,10 @@ class ConverterTest {
         override var _removedAt: TimeTicket? = null,
     ) : CrdtElement() {
         override fun deepCopy() = this
+
+        override fun getDataSize(): DataSize = DataSize(
+            data = 0,
+            meta = 0,
+        )
     }
 }

@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.DataSize
 
 /**
  * [CrdtArray] represents an array data type containing [CrdtElement]s.
@@ -134,4 +135,12 @@ internal data class CrdtArray(
             }
         }
     }
+
+    /**
+     * `getDataSize` returns the data usage of this element.
+     */
+    override fun getDataSize(): DataSize = DataSize(
+        data = 0,
+        meta = getMetaUsage(),
+    )
 }

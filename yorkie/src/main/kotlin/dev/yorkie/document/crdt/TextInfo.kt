@@ -3,6 +3,7 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.DataSize
 
 internal data class TextChange(
     val type: TextChangeType,
@@ -43,6 +44,22 @@ internal data class TextValue(
 
     override fun deepCopy(): TextValue {
         return copy(_attributes = _attributes.deepCopy())
+    }
+
+    override fun getDataSize(): DataSize {
+        var data = content.length * 2
+        var meta = 0
+
+        for (node in _attributes) {
+            val dataSize = node.dataSize
+            data += dataSize.data
+            meta += dataSize.meta
+        }
+
+        return DataSize(
+            data = data,
+            meta = meta,
+        )
     }
 
     override fun subSequence(startIndex: Int, endIndex: Int): CharSequence {

@@ -181,7 +181,7 @@ internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
 
 internal fun PBCounter.toCrdtCounter(): CrdtCounter {
     val type = type.toCounterType()
-    return if (type == CounterType.IntegerCnt) {
+    return if (type == CounterType.Int) {
         CrdtCounter(
             value = value.toByteArray().asCounterValue(type).toInt(),
             createdAt = createdAt.toTimeTicket(),
@@ -200,8 +200,8 @@ internal fun PBCounter.toCrdtCounter(): CrdtCounter {
 
 internal fun PBValueType.toCounterType(): CounterType {
     return when (this) {
-        PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.IntegerCnt
-        PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.LongCnt
+        PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.Int
+        PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.Long
         else -> throw YorkieException(ErrUnimplemented, "unimplemented value type : $this")
     }
 }
@@ -493,8 +493,8 @@ internal fun CrdtCounter.toPBCounter(): PBJsonElement {
 
 internal fun CounterType.toPBCounterType(): PBValueType {
     return when (this) {
-        CounterType.IntegerCnt -> PBValueType.VALUE_TYPE_INTEGER_CNT
-        CounterType.LongCnt -> PBValueType.VALUE_TYPE_LONG_CNT
+        CounterType.Int -> PBValueType.VALUE_TYPE_INTEGER_CNT
+        CounterType.Long -> PBValueType.VALUE_TYPE_LONG_CNT
     }
 }
 

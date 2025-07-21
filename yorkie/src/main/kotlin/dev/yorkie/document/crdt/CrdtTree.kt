@@ -10,8 +10,10 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
+import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
@@ -576,7 +578,7 @@ internal data class CrdtTree(
         source: Pair<Int, Int>,
         executedAt: TimeTicket,
     ) {
-        TODO("Implement after JS SDK's implementation")
+        // TODO("Implement after JS SDK's implementation")
     }
 
     /**
@@ -615,6 +617,26 @@ internal data class CrdtTree(
      */
     override fun deepCopy(): CrdtElement {
         return copy(root = root.deepCopy())
+    }
+
+    override fun getDataSize(): DataSize {
+        var data = 0
+        var meta = 0
+
+        indexTree.traverse { node, _ ->
+            if (node.isRemoved) {
+                return@traverse
+            }
+
+            val dataSize = node.dataSize
+            data += dataSize.data
+            meta += dataSize.meta
+        }
+
+        return DataSize(
+            data = data,
+            meta = meta + getMetaUsage(),
+        )
     }
 
     /**
@@ -811,6 +833,35 @@ internal data class CrdtTreeNode private constructor(
             if (removed) {
                 onRemovedListener?.onRemoved(this)
             }
+        }
+
+    override val dataSize: DataSize
+        get() {
+            var data = 0
+            var meta = TIME_TICKET_SIZE
+
+            if (isText) {
+                data += size * 2
+            }
+
+            if (isRemoved) {
+                meta += TIME_TICKET_SIZE
+            }
+
+            for (node in _attributes) {
+                if (node.isRemoved) {
+                    continue
+                }
+
+                val dataSize = node.dataSize
+                data += dataSize.data
+                meta += dataSize.meta
+            }
+
+            return DataSize(
+                data = data,
+                meta = meta,
+            )
         }
 
     override val isRemoved: Boolean

@@ -6,6 +6,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.SplayTreeSet
 import java.util.TreeMap
 
@@ -177,6 +178,26 @@ internal data class CrdtText(
 
     override fun deepCopy(): CrdtElement {
         return copy(rgaTreeSplit = rgaTreeSplit.deepCopy())
+    }
+
+    override fun getDataSize(): DataSize {
+        var data = 0
+        var meta = 0
+
+        for (node in rgaTreeSplit) {
+            if (node.isRemoved) {
+                continue
+            }
+
+            val dataSize = node.dataSize
+            data += dataSize.data
+            meta += dataSize.meta
+        }
+
+        return DataSize(
+            data = data,
+            meta = meta + getMetaUsage(),
+        )
     }
 
     override fun toString(): String {

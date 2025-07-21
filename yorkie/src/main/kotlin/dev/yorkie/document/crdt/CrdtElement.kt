@@ -2,7 +2,9 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.JsonStringifier.toJsonString
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
+import dev.yorkie.util.DataSize
 
 /**
  * [CrdtElement] represents an element that has [TimeTicket]s.
@@ -51,5 +53,23 @@ internal abstract class CrdtElement {
         return toJsonString()
     }
 
+    /**
+     * `getMetaUsage` returns the meta usage of this element.
+     */
+    fun getMetaUsage(): Int {
+        var meta = TIME_TICKET_SIZE
+
+        if (_movedAt != null) {
+            meta += TIME_TICKET_SIZE
+        }
+
+        if (_removedAt != null) {
+            meta += TIME_TICKET_SIZE
+        }
+
+        return meta
+    }
+
     abstract fun deepCopy(): CrdtElement
+    abstract fun getDataSize(): DataSize
 }

@@ -7,12 +7,12 @@ import dev.yorkie.util.DataSize
  * [GCPair] is a structure that represents a pair of parent and child for garbage
  * collection.
  */
-internal data class GCPair<T : GCChild>(val parent: GCParent<T>, val child: T)
+data class GCPair<T : GCChild>(val parent: GCParent<T>, val child: T)
 
 /**
  * [GCParent] is an interface for the parent of the garbage collection target.
  */
-internal interface GCParent<T : GCChild> {
+interface GCParent<T : GCChild> {
 
     fun delete(node: T)
 
@@ -25,11 +25,11 @@ internal interface GCParent<T : GCChild> {
 /**
  * [GCChild] is an interface for the child of the garbage collection target.
  */
-internal sealed interface GCChild {
+sealed interface GCChild {
     val removedAt: TimeTicket?
     val dataSize: DataSize
 }
 
-internal sealed interface GCCrdtElement {
+sealed interface GCCrdtElement {
     val gcPairs: List<GCPair<*>>
 }

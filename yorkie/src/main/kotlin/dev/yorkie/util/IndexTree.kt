@@ -367,7 +367,7 @@ internal enum class TokenType {
  * element node, the offset is the index of the child node. If the node is a
  * text node, the offset is the index of the character.
  */
-internal data class TreePos<T : IndexTreeNode<T>>(
+data class TreePos<T : IndexTreeNode<T>>(
     val node: T,
     val offset: Int,
 )
@@ -377,7 +377,7 @@ internal data class TreePos<T : IndexTreeNode<T>>(
  * document of text-based editors.
  */
 @Suppress("UNCHECKED_CAST")
-internal abstract class IndexTreeNode<T : IndexTreeNode<T>> {
+abstract class IndexTreeNode<T : IndexTreeNode<T>> {
     abstract val type: String
 
     protected abstract val childNodes: IndexTreeNodeList<T>
@@ -431,6 +431,25 @@ internal abstract class IndexTreeNode<T : IndexTreeNode<T>> {
      */
     val hasTextChild: Boolean
         get() = children.isNotEmpty() && children.all { it.isText }
+
+    /**
+     * `getChildrenText` returns text value of all text type children.
+     */
+    fun getChildrenText(): String {
+        return when {
+            isText -> {
+                value
+            }
+
+            hasTextChild -> {
+                children.map { it.value }.joinToString("")
+            }
+
+            else -> {
+                ""
+            }
+        }
+    }
 
     var onRemovedListener: OnRemovedListener<T>? = null
 

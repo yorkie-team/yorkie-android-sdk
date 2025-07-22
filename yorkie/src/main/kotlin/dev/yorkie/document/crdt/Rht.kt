@@ -11,7 +11,7 @@ import dev.yorkie.util.DataSize
  * For more details about RHT:
  * @link http://csl.skku.edu/papers/jpdc11.pdf
  */
-internal class Rht : Collection<RhtNode> {
+class Rht : Collection<RhtNode> {
     private val nodeMapByKey = mutableMapOf<String, RhtNode>()
     private var numberOfRemovedElements = 0
 

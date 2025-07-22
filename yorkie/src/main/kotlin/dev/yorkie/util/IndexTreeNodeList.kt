@@ -7,7 +7,7 @@ import java.util.function.UnaryOperator
  * This is a specialized [MutableList] for [IndexTree].
  * It is intended to cache active tree nodes list for better performance.
  */
-internal data class IndexTreeNodeList<E : IndexTreeNode<E>>(
+data class IndexTreeNodeList<E : IndexTreeNode<E>>(
     private val delegate: MutableList<E>,
 ) : MutableList<E> by delegate {
     private var _activeChildren: MutableList<E>? = null

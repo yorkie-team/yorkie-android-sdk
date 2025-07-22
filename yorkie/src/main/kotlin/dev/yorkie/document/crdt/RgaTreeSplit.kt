@@ -499,7 +499,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     override val dataSize: DataSize
         get() {
             val dataSize = _value.getDataSize()
-            var meta = TIME_TICKET_SIZE
+            var meta = dataSize.meta + TIME_TICKET_SIZE
             if (_removedAt != null) {
                 meta += TIME_TICKET_SIZE
             }

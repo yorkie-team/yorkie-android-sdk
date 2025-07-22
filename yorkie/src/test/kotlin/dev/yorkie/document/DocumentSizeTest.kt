@@ -411,7 +411,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 28,
-                meta = 96,
+                meta = 120,
             ),
             actual = document.getDocSize().live,
         )

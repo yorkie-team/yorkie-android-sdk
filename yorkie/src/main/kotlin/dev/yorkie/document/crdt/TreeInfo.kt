@@ -9,7 +9,7 @@ import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
  * [TreeNode] represents the JSON representation of a node in the tree.
  * It is used to serialize and deserialize the tree.
  */
-internal sealed interface TreeNode {
+sealed interface TreeNode {
     val type: String
 
     fun toJsonTreeNode(): JsonTree.TreeNode {
@@ -17,7 +17,7 @@ internal sealed interface TreeNode {
     }
 }
 
-internal data class TreeElementNode(
+data class TreeElementNode(
     override val type: String,
     val childNodes: List<TreeNode> = emptyList(),
     override val attributes: Map<String, String> = emptyMap(),
@@ -59,7 +59,7 @@ internal value class TreeTextNode(override val value: String = "") : TreeNode, J
     }
 }
 
-internal data class TreeChange(
+data class TreeChange(
     val actorID: ActorID,
     val type: TreeChangeType,
     val from: Int,
@@ -72,7 +72,7 @@ internal data class TreeChange(
     val splitLevel: Int = 0,
 )
 
-internal enum class TreeChangeType {
+enum class TreeChangeType {
     Content,
     Style,
     RemoveStyle,

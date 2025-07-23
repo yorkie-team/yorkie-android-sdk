@@ -29,6 +29,7 @@ import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.YorkieException
@@ -482,6 +483,13 @@ public class Document(
         val clone = ensureClone()
         val context = ChangeContext(changeID.next(), clone.root)
         JsonObject(context, clone.root.rootObject)
+    }
+
+    /**
+     * `getDocSize` returns the size of this document.
+     */
+    public fun getDocSize(): DocSize {
+        return root.docSize
     }
 
     /**

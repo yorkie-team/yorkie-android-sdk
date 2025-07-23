@@ -46,11 +46,11 @@ class JsonCounterTest {
             val obj = root.setNewObject("k1")
             val lengthLong = obj.setNewCounter("lengthLong", 1L)
             lengthLong.increase(1000)
-            assertEquals(CounterType.IntegerCnt, lengthLong.target.type)
+            assertEquals(CounterType.Int, lengthLong.target.type)
 
             val lengthInt = obj.setNewCounter("lengthInt", 1)
             lengthInt.increase(1000L)
-            assertEquals(CounterType.LongCnt, lengthInt.target.type)
+            assertEquals(CounterType.Long, lengthInt.target.type)
         }.await()
     }
 }

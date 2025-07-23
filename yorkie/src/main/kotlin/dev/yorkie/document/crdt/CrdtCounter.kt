@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.DataSize
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -27,13 +28,13 @@ internal data class CrdtCounter private constructor(
 
     fun toBytes(): ByteArray {
         return when (type) {
-            CounterType.IntegerCnt ->
+            CounterType.Int ->
                 ByteBuffer
                     .allocate(Int.SIZE_BYTES)
                     .order(ByteOrder.LITTLE_ENDIAN)
                     .putInt(value.toInt())
 
-            CounterType.LongCnt ->
+            CounterType.Long ->
                 ByteBuffer
                     .allocate(Long.SIZE_BYTES)
                     .order(ByteOrder.LITTLE_ENDIAN)
@@ -47,14 +48,26 @@ internal data class CrdtCounter private constructor(
             "Unsupported type of value: ${primitive.type}"
         }
         value = when (type) {
-            CounterType.IntegerCnt -> value.toInt() + primitiveValue.toInt()
-            CounterType.LongCnt -> value.toLong() + primitiveValue.toLong()
+            CounterType.Int -> value.toInt() + primitiveValue.toInt()
+            CounterType.Long -> value.toLong() + primitiveValue.toLong()
         }
     }
 
     override fun deepCopy(): CrdtElement {
         return copy()
     }
+
+    /**
+     * `getDataSize` returns the data usage of this element.
+     */
+    override fun getDataSize(): DataSize = DataSize(
+        data = if (type == CounterType.Int) {
+            4
+        } else {
+            8
+        },
+        meta = getMetaUsage(),
+    )
 
     companion object {
 
@@ -73,21 +86,21 @@ internal data class CrdtCounter private constructor(
         ) = CrdtCounter(value, createdAt, _movedAt, _removedAt)
 
         private fun CounterValue.counterType() = when (this) {
-            is Int -> CounterType.IntegerCnt
-            else -> CounterType.LongCnt
+            is Int -> CounterType.Int
+            else -> CounterType.Long
         }
 
         fun ByteArray.asCounterValue(counterType: CounterType): Number =
             with(ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN)) {
                 when (counterType) {
-                    CounterType.IntegerCnt -> int
-                    CounterType.LongCnt -> long
+                    CounterType.Int -> int
+                    CounterType.Long -> long
                 }
             }
     }
 
     enum class CounterType {
-        IntegerCnt,
-        LongCnt,
+        Int,
+        Long,
     }
 }

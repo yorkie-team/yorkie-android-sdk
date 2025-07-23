@@ -3,6 +3,8 @@ package dev.yorkie.document.crdt
 import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.DataSize
+import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logError
 
 /**
@@ -37,6 +39,41 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
 
     val garbageLength: Int
         get() = getGarbageElementSetSize() + gcPairMap.size
+
+    val docSize: DocSize
+        get() {
+            var liveData = 0
+            var liveMeta = 0
+            var gcData = 0
+            var gcMeta = 0
+
+            elementPairMapByCreatedAt.forEach { createdAt, value ->
+                if (gcElementSetByCreatedAt.contains(createdAt)) {
+                    gcData += value.element.getDataSize().data
+                    gcMeta += value.element.getDataSize().meta
+                } else {
+                    liveData += value.element.getDataSize().data
+                    liveMeta += value.element.getDataSize().meta
+                }
+            }
+
+            gcPairMap.values.forEach {
+                val dataSize = it.child.dataSize
+                gcData += dataSize.data
+                gcMeta += dataSize.meta
+            }
+
+            return DocSize(
+                live = DataSize(
+                    data = liveData,
+                    meta = liveMeta,
+                ),
+                gc = DataSize(
+                    data = gcData,
+                    meta = gcMeta,
+                ),
+            )
+        }
 
     init {
         registerElement(rootObject, null)

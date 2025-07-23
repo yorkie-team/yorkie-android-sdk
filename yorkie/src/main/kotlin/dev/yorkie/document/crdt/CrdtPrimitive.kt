@@ -4,6 +4,7 @@ import com.google.protobuf.ByteString
 import com.google.protobuf.kotlin.toByteString
 import com.google.protobuf.kotlin.toByteStringUtf8
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.DataSize
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Date
@@ -51,6 +52,11 @@ internal data class CrdtPrimitive private constructor(
         }
     }
 
+    override fun getDataSize(): DataSize = DataSize(
+        data = getValueSize(),
+        meta = getMetaUsage(),
+    )
+
     fun toBytes(): ByteString {
         return when (type) {
             Type.Null -> ByteString.EMPTY
@@ -87,6 +93,30 @@ internal data class CrdtPrimitive private constructor(
                     .putLong((value as Date).time)
                     .array()
                     .toByteString()
+            }
+        }
+    }
+
+    /**
+     * `getValueSize` returns the size of the value. The size is similar to
+     * the size of primitives in JavaScript.
+     */
+    private fun getValueSize(): Int {
+        return when (type) {
+            Type.Null, Type.Long, Type.Double, Type.Date -> {
+                8
+            }
+
+            Type.Boolean, Type.Integer -> {
+                4
+            }
+
+            Type.String -> {
+                (value as String).length * 2
+            }
+
+            Type.Bytes -> {
+                (value as ByteString).size()
             }
         }
     }

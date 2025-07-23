@@ -33,6 +33,12 @@ public data class TimeTicket(
         internal const val INITIAL_DELIMITER = 0u
         internal const val MAX_DELIMITER = UInt.MAX_VALUE
 
+        /**
+         * TimeTicketSize is the size of the ticket in bytes.
+         * lamport(int64) + delimiter(uint32) + actorID(12 bytes)
+         */
+        internal const val TIME_TICKET_SIZE = 8 + 4 + 12
+
         public const val MAX_LAMPORT = Long.MAX_VALUE
 
         private val NullTimeTicket = TimeTicket(

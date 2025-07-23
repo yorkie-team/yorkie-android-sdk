@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.DataSize
 
 /**
  * [CrdtObject] represents an object data type, but unlike regular JSON, it has
@@ -81,6 +82,11 @@ internal data class CrdtObject(
         }
         return copy(rht = rhtClone)
     }
+
+    override fun getDataSize(): DataSize = DataSize(
+        data = 0,
+        meta = getMetaUsage(),
+    )
 
     /**
      * Returns the descendants of this object by traversing.

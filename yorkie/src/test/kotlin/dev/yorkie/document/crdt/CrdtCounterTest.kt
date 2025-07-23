@@ -81,7 +81,7 @@ class CrdtCounterTest {
             .order(ByteOrder.LITTLE_ENDIAN)
             .putInt(39)
             .array()
-        val intValue = intInBytes.asCounterValue(CrdtCounter.CounterType.IntegerCnt)
+        val intValue = intInBytes.asCounterValue(CrdtCounter.CounterType.Int)
         assertEquals(39, intValue)
         assertArrayEquals(intInBytes, CrdtCounter(39, InitialTimeTicket).toBytes())
 
@@ -89,7 +89,7 @@ class CrdtCounterTest {
             .order(ByteOrder.LITTLE_ENDIAN)
             .putLong(333L)
             .array()
-        val longValue = longInBytes.asCounterValue(CrdtCounter.CounterType.LongCnt)
+        val longValue = longInBytes.asCounterValue(CrdtCounter.CounterType.Long)
         assertEquals(333L, longValue)
         assertArrayEquals(longInBytes, CrdtCounter(333L, InitialTimeTicket).toBytes())
     }

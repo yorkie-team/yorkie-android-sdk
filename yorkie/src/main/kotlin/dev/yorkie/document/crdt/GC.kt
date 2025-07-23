@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.DataSize
 
 /**
  * [GCPair] is a structure that represents a pair of parent and child for garbage
@@ -26,6 +27,7 @@ internal interface GCParent<T : GCChild> {
  */
 internal sealed interface GCChild {
     val removedAt: TimeTicket?
+    val dataSize: DataSize
 }
 
 internal sealed interface GCCrdtElement {

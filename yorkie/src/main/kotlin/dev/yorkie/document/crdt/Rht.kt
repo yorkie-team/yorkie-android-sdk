@@ -2,7 +2,9 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.escapeString
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
+import dev.yorkie.util.DataSize
 
 /**
  * [Rht] is a replicated hash table by creation time.
@@ -154,6 +156,12 @@ data class RhtNode(
 ) : GCChild {
 
     override val removedAt: TimeTicket? = executedAt.takeIf { isRemoved }
+
+    override val dataSize: DataSize
+        get() = DataSize(
+            data = (key.length + value.length) * 2,
+            meta = TIME_TICKET_SIZE,
+        )
 }
 
 data class RhtSetResult(val prev: RhtNode?, val new: RhtNode?)

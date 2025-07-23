@@ -89,6 +89,7 @@ $dokka.location:dev.yorkie.document.crdt/RgaTreeSplitPos/relativeOffSet/#/Pointi
 $dokka.location:dev.yorkie.document.crdt/RgaTreeSplitPos/toStruct/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rga-tree-split-pos/to-struct.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/index.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/RhtNode/#kotlin.String#kotlin.String#dev.yorkie.document.time.TimeTicket#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/-rht-node.html
+$dokka.location:dev.yorkie.document.crdt/RhtNode/dataSize/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/data-size.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/executedAt/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/executed-at.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/isRemoved/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/is-removed.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/key/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/key.html
@@ -452,6 +453,7 @@ $dokka.location:dev.yorkie.document/Document/events/#/PointingToDeclaration/yor
 $dokka.location:dev.yorkie.document/Document/events/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html
 $dokka.location:dev.yorkie.document/Document/garbageCollect/#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document/-document/garbage-collect.html
 $dokka.location:dev.yorkie.document/Document/garbageLength/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/garbage-length.html
+$dokka.location:dev.yorkie.document/Document/getDocSize/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-doc-size.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
 $dokka.location:dev.yorkie.document/Document/getRootThreadSafe/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root-thread-safe.html
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
@@ -486,6 +488,14 @@ $dokka.location:dev.yorkie.util//createSingleThreadDispatcher/#kotlin.String/Poi
 $dokka.location:dev.yorkie.util//errorCodeOf/#com.connectrpc.ConnectException/PointingToDeclaration/yorkie/dev.yorkie.util/error-code-of.html
 $dokka.location:dev.yorkie.util//errorMetadataOf/#com.connectrpc.ConnectException/PointingToDeclaration/yorkie/dev.yorkie.util/error-metadata-of.html
 $dokka.location:dev.yorkie.util//versionVectorHelper/#dev.yorkie.document.time.VersionVector#kotlin.Array[kotlin.Pair[kotlin.String,kotlin.Long]]/PointingToDeclaration/yorkie/dev.yorkie.util/version-vector-helper.html
+$dokka.location:dev.yorkie.util/DataSize///PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/index.html
+$dokka.location:dev.yorkie.util/DataSize/DataSize/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/-data-size.html
+$dokka.location:dev.yorkie.util/DataSize/data/#/PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/data.html
+$dokka.location:dev.yorkie.util/DataSize/meta/#/PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/meta.html
+$dokka.location:dev.yorkie.util/DocSize///PointingToDeclaration/yorkie/dev.yorkie.util/-doc-size/index.html
+$dokka.location:dev.yorkie.util/DocSize/DocSize/#dev.yorkie.util.DataSize#dev.yorkie.util.DataSize/PointingToDeclaration/yorkie/dev.yorkie.util/-doc-size/-doc-size.html
+$dokka.location:dev.yorkie.util/DocSize/gc/#/PointingToDeclaration/yorkie/dev.yorkie.util/-doc-size/gc.html
+$dokka.location:dev.yorkie.util/DocSize/live/#/PointingToDeclaration/yorkie/dev.yorkie.util/-doc-size/live.html
 $dokka.location:dev.yorkie.util/Logger.Companion///PointingToDeclaration/yorkie/dev.yorkie.util/-logger/-companion/index.html
 $dokka.location:dev.yorkie.util/Logger.Companion/init/#dev.yorkie.util.Logger/PointingToDeclaration/yorkie/dev.yorkie.util/-logger/-companion/init.html
 $dokka.location:dev.yorkie.util/Logger///PointingToDeclaration/yorkie/dev.yorkie.util/-logger/index.html

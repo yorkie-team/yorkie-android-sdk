@@ -51,8 +51,63 @@ tasks.register<Zip>("stuffZip") {
     from("src/stuff")
 }
 
+/*
+ * === Enhanced Protocol Buffer Generation with Incremental Build Support ===
+ *
+ * This configuration optimizes buf generation to only run when necessary:
+ *
+ * 1. **Incremental Builds**: bufGenerate only runs when proto files or buf config change
+ * 2. **Build Cache**: Generated files are cached and reused when possible
+ * 3. **Rate Limit Protection**: Avoids unnecessary network calls to buf.build
+ *
+ * Available tasks:
+ * - `./gradlew :yorkie:cleanGeneratedProto` - Clean generated proto files
+ * - `./gradlew :yorkie:bufGenerate` - Generate proto files (only if needed)
+ */
+
+// Enhanced buf generation with incremental build support
+// Only runs when proto files (.proto) or buf configuration files change
 tasks.named("bufGenerate") {
-    notCompatibleWithConfigurationCache("")
+    notCompatibleWithConfigurationCache("buf generation requires network access")
+
+    // Configure inputs - proto files and buf configuration
+    // This ensures the task only runs when these files change
+    inputs.files(fileTree("proto") {
+        include("**/*.proto")
+    })
+    inputs.files("buf.gen.yaml", "buf.work.yaml", "buf.yaml")
+
+    // Configure outputs - generated code directory
+    // This enables Gradle's up-to-date checking and build cache
+    val generatedDir = "${layout.buildDirectory.asFile.get()}/bufbuild/generated"
+    outputs.dir(generatedDir)
+    outputs.cacheIf { true }
+
+    doFirst {
+        println("Running buf generate - proto files or configuration changed")
+    }
+}
+
+// Clean generated proto files when proto files change
+tasks.register("cleanGeneratedProto") {
+    description = "Clean generated proto files"
+    group = "build"
+    notCompatibleWithConfigurationCache("Deletes files")
+
+    doLast {
+        val generatedDir = File(layout.buildDirectory.asFile.get(), "bufbuild/generated")
+        if (generatedDir.exists()) {
+            generatedDir.deleteRecursively()
+            println("Cleaned generated proto files")
+        }
+    }
+}
+
+// Make bufGenerate depend on cleaning when proto files change
+tasks.named("bufGenerate") {
+    // Only clean and regenerate if proto files actually changed
+    inputs.files(fileTree("proto")).skipWhenEmpty()
+    mustRunAfter("cleanGeneratedProto")
 }
 
 tasks.withType<KotlinCompile> {

@@ -279,6 +279,7 @@ public class Document(
      * 2. Do Garbage collection.
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
+        println("Hahah123 ${pack.hasSnapshot}")
         if (pack.hasSnapshot) {
             applySnapshot(
                 pack.versionVector,

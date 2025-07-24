@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -141,6 +142,14 @@ android {
         debug {
             enableUnitTestCoverage = true
             enableAndroidTestCoverage = true
+
+            // Load properties from local.properties
+            val localProperties = Properties()
+            val localPropertiesFile = rootProject.file("local.properties")
+            if (localPropertiesFile.exists()) {
+                localProperties.load(localPropertiesFile.inputStream())
+            }
+            buildConfigField("String", "YORKIE_SERVER_URL", "\"${localProperties.getProperty("YORKIE_SERVER_URL")?: error("YORKIE_SERVER_URL missing in local.properties")}\"")
         }
         release {
             isMinifyEnabled = false

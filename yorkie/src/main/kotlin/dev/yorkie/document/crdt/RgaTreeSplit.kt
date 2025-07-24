@@ -255,7 +255,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
                 clientLamportAtChange = MAX_LAMPORT
             } else if (versionVector != null && versionVector.size() > 0) {
-                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
+                val actorLamport = versionVector.get(actorID.value)
+                if (actorLamport != null) {
+                    clientLamportAtChange = actorLamport
+                } else {
+                    // If actor is not in version vector, fall back to maxCreatedAtMapByActor
+                    maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
+                }
             } else {
                 maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
             }

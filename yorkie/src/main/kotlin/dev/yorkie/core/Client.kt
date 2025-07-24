@@ -349,7 +349,7 @@ public class Client(
                     }.onFailure {
                         coroutineContext.ensureActive()
                         (it as? ConnectException)?.let { exception ->
-                            handleConnectException(exception) { it ->
+                            handleConnectException(exception) {
                                 if (errorCodeOf(it) == ErrUnauthenticated.codeString) {
                                     shouldRefreshToken = true
                                 }

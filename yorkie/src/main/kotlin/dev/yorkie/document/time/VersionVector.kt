@@ -6,9 +6,14 @@ package dev.yorkie.document.time
  * It is similar to vector clocks but synced with the Lamport timestamp of the change.
  */
 
-public data class VersionVector(
-    val vectorMap: MutableMap<String, Long> = mutableMapOf(),
-) {
+public class VersionVector {
+    private val vectorMap = mutableMapOf<String, Long>()
+
+    fun putAll(vectorMap: Map<String, Long>) {
+        this.vectorMap.putAll(vectorMap)
+    }
+
+    fun getVectorMap() = vectorMap
 
     /**
      * Sets the Lamport timestamp for the given actor.
@@ -51,7 +56,9 @@ public data class VersionVector(
             }
         }
 
-        return VersionVector(maxVector)
+        return VersionVector().apply {
+            putAll(maxVector)
+        }
     }
 
     /**
@@ -70,7 +77,9 @@ public data class VersionVector(
             vectorMap[actorID]?.let { actorID to it }
         }.toMap().toMutableMap()
 
-        return VersionVector(filtered)
+        return VersionVector().apply {
+            putAll(filtered)
+        }
     }
 
     /**
@@ -81,7 +90,9 @@ public data class VersionVector(
     /**
      * Deep copy of this `VersionVector`.
      */
-    fun deepCopy(): VersionVector = VersionVector(vectorMap.toMutableMap())
+    fun deepCopy(): VersionVector = VersionVector().apply {
+        putAll(getVectorMap())
+    }
 
     /**
      * `unset` removes the version for the given actor from the VersionVector.

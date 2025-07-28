@@ -74,13 +74,11 @@ internal data class CrdtTree(
         range: TreePosRange,
         attributes: Map<String, String>?,
         executedAt: TimeTicket,
-        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
         val changes = mutableListOf<TreeChange>()
-        val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
 
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
         traverseInPosRange(
@@ -90,24 +88,9 @@ internal data class CrdtTree(
             toLeft = toLeft,
         ) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(
-                actorID,
-                versionVector,
-                maxCreatedAtMapByActor,
-            )
+            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
-            if (node.canStyle(
-                    executedAt,
-                    maxCreatedAt,
-                    clientLamportAtChange,
-                ) && attributes != null
-            ) {
-                val max = createdAtMapByActor[actorID]
-                val createdAt = node.createdAt
-                if (max == null || max < createdAt) {
-                    createdAtMapByActor[actorID] = createdAt
-                }
-
+            if (node.canStyle(executedAt, clientLamportAtChange) && attributes != null) {
                 val parentOfNode = requireNotNull(node.parent)
                 val previousNode = node.prevSibling ?: parentOfNode
 
@@ -135,7 +118,7 @@ internal data class CrdtTree(
                 }
             }
         }
-        return TreeOperationResult(changes, gcPairs, createdAtMapByActor)
+        return TreeOperationResult(changes, gcPairs)
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {
@@ -185,7 +168,6 @@ internal data class CrdtTree(
         splitLevel: Int,
         executedAt: TimeTicket,
         issueTimeTicket: (() -> TimeTicket)? = null,
-        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
         // 01. find nodes from the given range and split nodes.
@@ -198,7 +180,6 @@ internal data class CrdtTree(
         val nodesToBeRemoved = mutableListOf<CrdtTreeNode>()
         val tokensToBeRemoved = mutableListOf<CrdtTreeToken>()
         val toBeMovedToFromParents = mutableListOf<CrdtTreeNode>()
-        val maxCreatedAtMap = mutableMapOf<ActorID, TimeTicket>()
 
         traverseInPosRange(
             fromParent = fromParent,
@@ -213,25 +194,13 @@ internal data class CrdtTree(
             }
 
             val actorID = node.createdAt.actorID
-            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(
-                actorID,
-                versionVector,
-                maxCreatedAtMapByActor,
-            )
+            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
             if (node.canDelete(
                     executedAt,
-                    maxCreatedAt,
                     clientLamportAtChange,
                 ) || node.parent in nodesToBeRemoved
             ) {
-                val max = maxCreatedAtMap[actorID]
-                val createdAt = node.createdAt
-
-                if (max == null || max < createdAt) {
-                    maxCreatedAtMap[actorID] = createdAt
-                }
-
                 if (tokenType == TokenType.Text || tokenType == TokenType.Start) {
                     nodesToBeRemoved.add(node)
                 }
@@ -326,7 +295,7 @@ internal data class CrdtTree(
                 }
             }
         }
-        return TreeOperationResult(changes, gcPairs, maxCreatedAtMap)
+        return TreeOperationResult(changes, gcPairs)
     }
 
     /**
@@ -449,35 +418,22 @@ internal data class CrdtTree(
         range: TreePosRange,
         attributeToRemove: List<String>,
         executedAt: TimeTicket,
-        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
         val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
         val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
 
         val changes = mutableListOf<TreeChange>()
-        val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
             val actorID = node.createdAt.actorID
-            val (maxCreatedAt, clientLamportAtChange) = getClientInfoForChange(
-                actorID,
-                versionVector,
-                maxCreatedAtMapByActor,
-            )
+            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
             if (node.canStyle(
                     executedAt,
-                    maxCreatedAt,
                     clientLamportAtChange,
                 ) && attributeToRemove.isNotEmpty()
             ) {
-                val max = createdAtMapByActor[actorID]
-                val createdAt = node.createdAt
-                if (max < createdAt) {
-                    createdAtMapByActor[actorID] = createdAt
-                }
-
                 attributeToRemove.forEach { key ->
                     node.removeAttribute(key, executedAt)
                         .map { rhtNode -> GCPair(node, rhtNode) }
@@ -498,7 +454,7 @@ internal data class CrdtTree(
                 ).let(changes::add)
             }
         }
-        return TreeOperationResult(changes, gcPairs, createdAtMapByActor)
+        return TreeOperationResult(changes, gcPairs)
     }
 
     private fun traverseInPosRange(
@@ -789,20 +745,10 @@ internal data class CrdtTree(
     private fun getClientInfoForChange(
         actorID: ActorID,
         versionVector: VersionVector?,
-        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>?,
-    ): Pair<TimeTicket?, Long> {
-        var maxCreatedAt: TimeTicket? = null
-        var clientLamportAtChange = 0L
-
-        if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
-            clientLamportAtChange = MAX_LAMPORT
-        } else if (versionVector != null && versionVector.size() > 0) {
-            clientLamportAtChange = versionVector.get(actorID.value) ?: 0
-        } else {
-            maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
-        }
-
-        return Pair(maxCreatedAt, clientLamportAtChange)
+    ): Long {
+        return versionVector?.let {
+            versionVector.get(actorID.value) ?: 0L
+        } ?: MAX_LAMPORT
     }
 }
 
@@ -1003,30 +949,20 @@ internal data class CrdtTreeNode(
      */
     fun canDelete(
         executedAt: TimeTicket,
-        maxCreatedAt: TimeTicket?,
         clientLamportAtChange: Long,
     ): Boolean {
-        val nodeExisted = if (maxCreatedAt != null) {
-            createdAt <= maxCreatedAt
-        } else {
-            createdAt.lamport <= clientLamportAtChange
-        }
+        val nodeExisted = createdAt.lamport <= clientLamportAtChange
         return nodeExisted && (removedAt == null || executedAt > removedAt)
     }
 
     fun canStyle(
         executedAt: TimeTicket,
-        maxCreatedAt: TimeTicket?,
         clientLamportAtChange: Long,
     ): Boolean {
         if (isText) {
             return false
         }
-        val nodeExisted = if (maxCreatedAt != null) {
-            createdAt <= maxCreatedAt
-        } else {
-            createdAt.lamport <= clientLamportAtChange
-        }
+        val nodeExisted = createdAt.lamport <= clientLamportAtChange
         return nodeExisted && (removedAt == null || executedAt > removedAt)
     }
 

@@ -56,7 +56,7 @@ public class JsonText internal constructor(
         logDebug(TAG, "EDIT: f:$fromIndex->${range.first}, t:$toIndex->${range.second} c:$content")
 
         val executedAt = context.issueTimeTicket()
-        val (maxCreatedAtMapByActor, _, rangeAfterEdit, gcPairs) = runCatching {
+        val (_, rangeAfterEdit, gcPairs) = runCatching {
             target.edit(range, content, executedAt, attributes)
         }.getOrElse {
             when (it) {
@@ -74,7 +74,6 @@ public class JsonText internal constructor(
             EditOperation(
                 fromPos = range.first,
                 toPos = range.second,
-                maxCreatedAtMapByActor = maxCreatedAtMapByActor,
                 content = content,
                 parentCreatedAt = target.createdAt,
                 executedAt = executedAt,
@@ -107,7 +106,7 @@ public class JsonText internal constructor(
 
         val executedAt = context.issueTimeTicket()
         runCatching {
-            val (maxCreatedAtMapByActor, _, gcPairs) = target.style(range, attributes, executedAt)
+            val (_, gcPairs) = target.style(range, attributes, executedAt)
             context.push(
                 StyleOperation(
                     parentCreatedAt = target.createdAt,
@@ -115,7 +114,6 @@ public class JsonText internal constructor(
                     toPos = range.second,
                     attributes = attributes,
                     executedAt = executedAt,
-                    maxCreatedAtMapByActor = maxCreatedAtMapByActor,
                 ),
             )
             gcPairs.forEach(context::registerGCPair)

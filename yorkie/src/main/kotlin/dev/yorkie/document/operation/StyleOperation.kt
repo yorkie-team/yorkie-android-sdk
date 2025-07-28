@@ -4,7 +4,6 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
@@ -12,7 +11,6 @@ import dev.yorkie.util.Logger.Companion.logError
 internal data class StyleOperation(
     val fromPos: RgaTreeSplitPos,
     val toPos: RgaTreeSplitPos,
-    val maxCreatedAtMapByActor: Map<ActorID, TimeTicket>,
     val attributes: Map<String, String>,
     override val parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
@@ -28,7 +26,6 @@ internal data class StyleOperation(
                 RgaTreeSplitPosRange(fromPos, toPos),
                 attributes,
                 executedAt,
-                maxCreatedAtMapByActor,
                 versionVector,
             ).textChanges
             changes.map {

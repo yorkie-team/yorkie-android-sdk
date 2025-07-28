@@ -4,7 +4,6 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
@@ -17,7 +16,6 @@ internal data class TreeStyleOperation(
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
     override var executedAt: TimeTicket,
-    val maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
     val attributes: Map<String, String>? = null,
     val attributesToRemove: List<String>? = null,
 ) : Operation() {
@@ -40,7 +38,6 @@ internal data class TreeStyleOperation(
                     fromPos to toPos,
                     attributes,
                     executedAt,
-                    maxCreatedAtMapByActor,
                     versionVector,
                 )
                 gcPairs.forEach(root::registerGCPair)
@@ -61,7 +58,6 @@ internal data class TreeStyleOperation(
                     fromPos to toPos,
                     attributesToRemove,
                     executedAt,
-                    maxCreatedAtMapByActor,
                     versionVector,
                 )
                 gcPairs.forEach(root::registerGCPair)

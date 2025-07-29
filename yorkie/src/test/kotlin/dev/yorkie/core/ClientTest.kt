@@ -454,6 +454,7 @@ class ClientTest {
     }
 
     private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {
+        println("Hahaha ${initialChangePack.versionVector.vectorMap} ${changePack.toChangePack().versionVector.vectorMap}")
         assertEquals(initialChangePack, changePack.toChangePack())
     }
 
@@ -481,7 +482,6 @@ class ClientTest {
                     PresenceChange.Put(emptyMap()),
                 ),
             ),
-            null,
             null,
             false,
             changePackVersionVector,

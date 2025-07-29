@@ -44,7 +44,6 @@ import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
@@ -163,7 +162,6 @@ class ConverterTest {
             CheckPoint.InitialCheckPoint,
             listOf(change),
             null,
-            null,
             isRemoved = false,
             VersionVector.INITIAL_VERSION_VECTOR,
         )
@@ -173,7 +171,6 @@ class ConverterTest {
         assertEquals(changePack.checkPoint, converted.checkPoint)
         assertEquals(changePack.changes, converted.changes)
         assertEquals(changePack.snapshot, converted.snapshot)
-        assertEquals(changePack.minSyncedTicket, converted.minSyncedTicket)
     }
 
     @Test
@@ -195,7 +192,6 @@ class ConverterTest {
             CheckPoint.InitialCheckPoint,
             listOf(change),
             "snapshot".toByteStringUtf8(),
-            InitialTimeTicket,
             isRemoved = false,
             VersionVector.INITIAL_VERSION_VECTOR,
         )
@@ -205,7 +201,6 @@ class ConverterTest {
         assertEquals(changePack.checkPoint, converted.checkPoint)
         assertEquals(changePack.changes, converted.changes)
         assertEquals(changePack.snapshot, converted.snapshot)
-        assertEquals(changePack.minSyncedTicket, converted.minSyncedTicket)
     }
 
     @Test
@@ -245,7 +240,6 @@ class ConverterTest {
         val editOperationWithoutAttrs = EditOperation(
             nodePos,
             nodePos,
-            mapOf(ActorID("edit") to InitialTimeTicket),
             "edit",
             InitialTimeTicket,
             InitialTimeTicket,
@@ -254,7 +248,6 @@ class ConverterTest {
         val editOperationWithAttrs = EditOperation(
             nodePos,
             nodePos,
-            mapOf(ActorID("edit") to InitialTimeTicket),
             "edit",
             InitialTimeTicket,
             InitialTimeTicket,
@@ -263,7 +256,6 @@ class ConverterTest {
         val styleOperation = StyleOperation(
             nodePos,
             nodePos,
-            emptyMap(),
             mapOf("style" to "bold"),
             InitialTimeTicket,
             InitialTimeTicket,
@@ -275,7 +267,6 @@ class ConverterTest {
                 CrdtTreeNodeID(InitialTimeTicket, 10),
                 CrdtTreeNodeID(InitialTimeTicket, 10),
             ),
-            mapOf(INITIAL_ACTOR_ID to MaxTimeTicket),
             listOf(CrdtTreeText(CrdtTreeNodeID(InitialTimeTicket, 0), "hi")),
             0,
             InitialTimeTicket,
@@ -297,7 +288,6 @@ class ConverterTest {
                 CrdtTreeNodeID(InitialTimeTicket, 10),
             ),
             InitialTimeTicket,
-            mapOf(INITIAL_ACTOR_ID to InitialTimeTicket),
             mapOf("a" to "b"),
             listOf("a"),
         )

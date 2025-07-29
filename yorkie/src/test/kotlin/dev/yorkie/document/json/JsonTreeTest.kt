@@ -780,6 +780,139 @@ class JsonTreeTest {
         )
     }
 
+    @Test
+    fun `should handle split by path`() = runTest {
+        val document = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("tc") {
+                        element("p") {
+                            element("tn") {
+                                text {
+                                    "1234"
+                                }
+                            }
+                        }
+                        element("p") {
+                            element("tn") {
+                                text {
+                                    "5678"
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>1234</tn></p><p><tn>5678</tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+
+        document.updateAsync { root, _ ->
+            root.tree().splitByPath(
+                path = listOf(0, 0, 0, 2),
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>12</tn><tn>34</tn></p><p><tn>5678</tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+
+        document.updateAsync { root, _ ->
+            root.tree().splitByPath(
+                path = listOf(0, 0, 1),
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>12</tn></p><p><tn>34</tn></p><p><tn>5678</tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+
+        document.updateAsync { root, _ ->
+            root.tree().splitByPath(
+                path = listOf(0, 2, 0, 4),
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>12</tn></p>" +
+                "<p><tn>34</tn></p>" +
+                "<p><tn>5678</tn><tn></tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+
+        document.updateAsync { root, _ ->
+            root.tree().splitByPath(
+                path = listOf(0, 2, 1),
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>12</tn></p>" +
+                "<p><tn>34</tn></p>" +
+                "<p><tn>5678</tn></p>" +
+                "<p><tn></tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+    }
+
+    @Test
+    fun `should handle merge by path`() = runTest {
+        val document = Document(Document.Key(""))
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("tc") {
+                        element("p") {
+                            element("tn") {
+                                text {
+                                    "1234"
+                                }
+                            }
+                        }
+                        element("p") {
+                            element("tn") {
+                                text {
+                                    "5678"
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>1234</tn></p><p><tn>5678</tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+
+        document.updateAsync { root, _ ->
+            root.tree().mergeByPath(
+                path = listOf(0, 1),
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>1234</tn><tn>5678</tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+
+        document.updateAsync { root, _ ->
+            root.tree().mergeByPath(
+                path = listOf(0, 0, 1),
+            )
+        }.await()
+        assertEquals(
+            "<doc><tc><p><tn>12345678</tn></p></tc></doc>",
+            document.getRoot().tree().toXml(),
+        )
+    }
+
     companion object {
         private val rootCrdtTree: CrdtTree
             get() = CrdtTree(rootCrdtTreeNode, InitialTimeTicket)

@@ -683,6 +683,13 @@ internal data class CrdtTree(
     }
 
     /**
+     * `pathToTreePos` converts the given path of the node to the TreePos.
+     */
+    fun pathToTreePos(path: List<Int>): TreePos<CrdtTreeNode> {
+        return indexTree.pathToTreePos(path)
+    }
+
+    /**
      * Returns the position range from the given [range].
      */
     fun indexRangeToPosRange(range: Pair<Int, Int>): TreePosRange {
@@ -803,8 +810,7 @@ internal data class CrdtTree(
  * [CrdtTreeNode] is a node of [CrdtTree]. It includes the logical clock and
  * links to other nodes to resolve conflicts.
  */
-@Suppress("DataClassPrivateConstructor")
-internal data class CrdtTreeNode private constructor(
+internal data class CrdtTreeNode(
     val id: CrdtTreeNodeID,
     override val type: String,
     private val _value: String? = null,

@@ -10,7 +10,7 @@ import dev.yorkie.util.DataSize
  * [CrdtElement] represents an element that has [TimeTicket]s.
  */
 @Suppress("PropertyName")
-internal abstract class CrdtElement {
+abstract class CrdtElement {
     abstract val createdAt: TimeTicket
     protected abstract var _movedAt: TimeTicket?
     protected abstract var _removedAt: TimeTicket?

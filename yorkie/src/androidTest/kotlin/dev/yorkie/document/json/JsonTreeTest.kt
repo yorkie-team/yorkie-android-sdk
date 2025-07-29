@@ -2394,6 +2394,334 @@ class JsonTreeTest {
         }
     }
 
+    @Test
+    fun test_can_edit_tree_content_by_split() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("tc") {
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "1234"
+                                        }
+                                    }
+                                }
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "5678"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>1234</tn></p><p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 0, 0, 2),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn><tn>34</tn></p><p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 0, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn></p><p><tn>34</tn></p><p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 2, 0, 4),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn></p>" +
+                    "<p><tn>34</tn></p>" +
+                    "<p><tn>5678</tn><tn></tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 2, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn></p>" +
+                    "<p><tn>34</tn></p>" +
+                    "<p><tn>5678</tn></p>" +
+                    "<p><tn></tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+        }
+    }
+
+    @Test
+    fun test_can_edit_tree_content_by_merge() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("tc") {
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "1234"
+                                        }
+                                    }
+                                }
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "5678"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>1234</tn></p><p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().mergeByPath(
+                        path = listOf(0, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><tc><p><tn>1234</tn><tn>5678</tn></p></tc></doc>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().mergeByPath(
+                        path = listOf(0, 0, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><tc><p><tn>12345678</tn></p></tc></doc>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_can_edit_tree_content_by_split_and_sync() {
+        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("tc") {
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "1234"
+                                        }
+                                    }
+                                }
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "5678"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>1234</tn></p><p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 0, 0, 2),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn><tn>34</tn></p><p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 0, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn></p>" +
+                    "<p><tn>34</tn></p>" +
+                    "<p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 2, 0, 4),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn></p>" +
+                    "<p><tn>34</tn></p>" +
+                    "<p><tn>5678</tn><tn></tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(
+                        path = listOf(0, 2, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>12</tn></p>" +
+                    "<p><tn>34</tn></p>" +
+                    "<p><tn>5678</tn></p>" +
+                    "<p><tn></tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+        }
+    }
+
+    @Test
+    fun test_can_edit_tree_content_by_merge_and_sync() {
+        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("tc") {
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "1234"
+                                        }
+                                    }
+                                }
+                                element("p") {
+                                    element("tn") {
+                                        text {
+                                            "5678"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals(
+                "<doc><tc><p><tn>1234</tn></p><p><tn>5678</tn></p></tc></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().mergeByPath(
+                        path = listOf(0, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals("<doc><tc><p><tn>1234</tn><tn>5678</tn></p></tc></doc>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().mergeByPath(
+                        path = listOf(0, 0, 1),
+                    )
+                },
+                Updater(c2, d2),
+            )
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertTreesXmlEquals("<doc><tc><p><tn>12345678</tn></p></tc></doc>", d1, d2)
+        }
+    }
+
     companion object {
 
         fun JsonObject.rootTree() = getAs<JsonTree>("t")

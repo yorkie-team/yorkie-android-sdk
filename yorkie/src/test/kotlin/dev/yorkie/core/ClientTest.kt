@@ -464,6 +464,7 @@ class ClientTest {
     }
 
     private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {
+        println("Hahaha ${initialChangePack.versionVector.vectorMap} ${changePack.toChangePack().versionVector.vectorMap}")
         assertEquals(initialChangePack, changePack.toChangePack())
     }
 

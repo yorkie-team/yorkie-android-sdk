@@ -1,6 +1,7 @@
 package dev.yorkie.document.change
 
 import com.google.protobuf.ByteString
+import com.google.protobuf.kotlin.isNotEmpty
 import dev.yorkie.document.time.VersionVector
 
 /**
@@ -30,5 +31,5 @@ internal data class ChangePack(
      * Returns the whether this [ChangePack] has a snapshot or not.
      */
     val hasSnapshot
-        get() = snapshot?.isEmpty == false
+        get() = snapshot?.isNotEmpty() == true
 }

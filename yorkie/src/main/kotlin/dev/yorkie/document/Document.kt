@@ -367,7 +367,9 @@ public class Document(
             if (opInfos.isNotEmpty()) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
-            newPresences?.let { emitPresences(it, presenceEvent) }
+            newPresences?.let {
+                emitPresences(it, presenceEvent)
+            }
             changeID = changeID.syncClocks(change.id)
         }
     }

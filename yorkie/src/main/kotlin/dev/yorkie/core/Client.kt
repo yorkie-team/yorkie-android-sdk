@@ -223,7 +223,23 @@ public class Client(
                     conditions[ClientCondition.SYNC_LOOP] = false
                     return@launch
                 }
-                attachments.value.entries.asSyncFlow(true).collect { (document, result) ->
+                val attachments = attachments.value.entries.mapNotNull {
+                    if (it.value.needRealTimeSync()) {
+                        if (it.value.remoteChangeEventReceived) {
+                            AttachmentEntry(
+                                key = it.key,
+                                value = it.value.copy(
+                                    remoteChangeEventReceived = false,
+                                ),
+                            )
+                        } else {
+                            it
+                        }
+                    } else {
+                        null
+                    }
+                }
+                attachments.asSyncFlow().collect { (document, result) ->
                     document.publishEvent(
                         if (result.isSuccess) {
                             conditions[ClientCondition.SYNC_LOOP] = true
@@ -276,7 +292,7 @@ public class Client(
 
                 listOf(AttachmentEntry(it.key, attachment))
             } ?: attachments.value.entries
-            attachments.asSyncFlow(false).collect { (document, result) ->
+            attachments.asSyncFlow().collect { (document, result) ->
                 document.publishEvent(
                     if (result.isSuccess) {
                         SyncStatusChanged.Synced
@@ -293,26 +309,10 @@ public class Client(
         }
     }
 
-    private suspend fun Collection<Entry<Document.Key, Attachment>>.asSyncFlow(
-        realTimeOnly: Boolean,
-    ): Flow<SyncResult> {
+    private suspend fun Collection<Entry<Document.Key, Attachment>>.asSyncFlow(): Flow<SyncResult> {
         return asFlow()
-            .mapNotNull { (key, attachment) ->
-                val (document, documentID, syncMode) = if (realTimeOnly) {
-                    if (!attachment.needRealTimeSync()) {
-                        return@mapNotNull null
-                    }
-                    if (attachment.remoteChangeEventReceived) {
-                        attachment.copy(remoteChangeEventReceived = false).also {
-                            attachments.value += key to it
-                        }
-                    } else {
-                        attachment
-                    }
-                } else {
-                    attachment
-                }
-
+            .mapNotNull { (_, attachment) ->
+                val (document, documentID, syncMode) = attachment
                 SyncResult(
                     document,
                     runCatching {
@@ -337,7 +337,6 @@ public class Client(
                             ) {
                                 return@runCatching
                             }
-
                             document.applyChangePack(responsePack)
                             // NOTE(chacha912): If a document has been removed, watchStream should
                             // be disconnected to not receive an event for that document.

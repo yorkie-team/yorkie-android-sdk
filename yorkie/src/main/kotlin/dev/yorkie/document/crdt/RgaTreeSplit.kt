@@ -526,10 +526,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
-    fun canDelete(
-        executedAt: TimeTicket,
-        clientLamportAtChange: Long,
-    ): Boolean {
+    fun canDelete(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
         val justRemoved = removedAt == null
 
         val nodeExisted = createdAt.lamport <= clientLamportAtChange
@@ -543,10 +540,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if node is able to set style.
      */
-    fun canStyle(
-        executedAt: TimeTicket,
-        clientLamportAtChange: Long,
-    ): Boolean {
+    fun canStyle(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
         val nodeExisted = createdAt.lamport <= clientLamportAtChange
 
         return nodeExisted && (removedAt == null || executedAt > removedAt)

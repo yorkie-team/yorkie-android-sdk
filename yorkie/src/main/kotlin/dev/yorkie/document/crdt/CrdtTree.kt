@@ -742,10 +742,7 @@ internal data class CrdtTree(
     /**
      * Returns the client info for the change.
      */
-    private fun getClientInfoForChange(
-        actorID: ActorID,
-        versionVector: VersionVector?,
-    ): Long {
+    private fun getClientInfoForChange(actorID: ActorID, versionVector: VersionVector?): Long {
         return versionVector?.let {
             versionVector.get(actorID.value) ?: 0L
         } ?: MAX_LAMPORT
@@ -947,18 +944,12 @@ internal data class CrdtTreeNode(
     /**
      * Checks if node is able to delete.
      */
-    fun canDelete(
-        executedAt: TimeTicket,
-        clientLamportAtChange: Long,
-    ): Boolean {
+    fun canDelete(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
         val nodeExisted = createdAt.lamport <= clientLamportAtChange
         return nodeExisted && (removedAt == null || executedAt > removedAt)
     }
 
-    fun canStyle(
-        executedAt: TimeTicket,
-        clientLamportAtChange: Long,
-    ): Boolean {
+    fun canStyle(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
         if (isText) {
             return false
         }

@@ -2,7 +2,6 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.time.ActorID
-import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 
 /**
@@ -81,5 +80,4 @@ enum class TreeChangeType {
 internal data class TreeOperationResult(
     val changes: List<TreeChange>,
     val gcPairs: List<GCPair<*>> = emptyList(),
-    val maxCreatedAtMap: Map<ActorID, TimeTicket>,
 )

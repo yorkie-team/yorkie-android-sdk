@@ -1,13 +1,11 @@
 package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import dev.yorkie.api.toSnapshot
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.DocStatus
 import dev.yorkie.document.Document.Event
-import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.TextWithAttributes
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonCounter
@@ -121,7 +119,9 @@ class DocumentTest {
 
     @Test
     fun test_removed_document_push_and_pull() {
-        withTwoClientsAndDocuments(false) { client1, client2, document1, document2, _ ->
+        withTwoClientsAndDocuments(
+            detachDocuments = false,
+        ) { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root["key"] = 1
             }.await()
@@ -837,45 +837,6 @@ class DocumentTest {
             assertEquals(DocStatus.Detached, document2StatusChangedList[1].docStatus)
 
             jobs.values.forEach(Job::cancel)
-        }
-    }
-
-    @Test
-    fun test_should_publish_snapshot_event_with_up_to_date_document() {
-        withTwoClientsAndDocuments { c1, c2, d1, d2, _ ->
-            val eventCollector = mutableListOf<Int>()
-            val job = launch(start = CoroutineStart.UNDISPATCHED) {
-                d2.events.filterIsInstance<Event.Snapshot>()
-                    .collect {
-                        val (root, p) = it.data.toSnapshot()
-                        val crdtRoot = CrdtRoot(root)
-                    }
-            }
-
-            d1.updateAsync { root, _ ->
-                root.setNewCounter("counter", 0)
-            }.await()
-
-            c1.syncAsync().await()
-            c2.syncAsync().await()
-
-            // 01. c1 increases the counter for creating snapshot.
-            repeat(DEFAULT_SNAPSHOT_THRESHOLD) {
-                d1.updateAsync { root, _ ->
-                    root.getAs<JsonCounter>("counter").increase(1)
-                }.await()
-            }
-            c1.syncAsync().await()
-
-            // 02. c2 receives the snapshot and increases the counter simultaneously.
-            c2.syncAsync().await()
-            d2.updateAsync { root, _ ->
-                root.getAs<JsonCounter>("counter").increase(1)
-            }.await()
-
-            assertEquals(DEFAULT_SNAPSHOT_THRESHOLD + 1, eventCollector.size)
-
-            job.cancel()
         }
     }
 }

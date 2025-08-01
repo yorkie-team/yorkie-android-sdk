@@ -20,7 +20,6 @@ import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 
@@ -67,11 +66,6 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 toPos = it.edit.to.toRgaTreeSplitNodePos(),
                 parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
                 executedAt = it.edit.executedAt.toTimeTicket(),
-                maxCreatedAtMapByActor = buildMap {
-                    it.edit.createdAtMapByActorMap.forEach { entry ->
-                        set(ActorID(entry.key), entry.value.toTimeTicket())
-                    }
-                },
                 content = it.edit.content,
                 attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() }
                     ?: mapOf(),
@@ -85,10 +79,6 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.style.attributesMap,
                 parentCreatedAt = it.style.parentCreatedAt.toTimeTicket(),
                 executedAt = it.style.executedAt.toTimeTicket(),
-                maxCreatedAtMapByActor = it.style.createdAtMapByActorMap.entries
-                    .associate { (actorID, createdAt) ->
-                        ActorID(actorID) to createdAt.toTimeTicket()
-                    },
             )
 
             it.hasTreeEdit() -> TreeEditOperation(
@@ -97,10 +87,6 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 toPos = it.treeEdit.to.toCrdtTreePos(),
                 contents = it.treeEdit.contentsList.toCrdtTreeNodesWhenEdit(),
                 executedAt = it.treeEdit.executedAt.toTimeTicket(),
-                maxCreatedAtMapByActor =
-                it.treeEdit.createdAtMapByActorMap.entries.associate { (key, value) ->
-                    ActorID(key) to value.toTimeTicket()
-                },
                 splitLevel = it.treeEdit.splitLevel,
             )
 
@@ -111,8 +97,6 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.treeStyle.attributesMap,
                 executedAt = it.treeStyle.executedAt.toTimeTicket(),
                 attributesToRemove = it.treeStyle.attributesToRemoveList,
-                maxCreatedAtMapByActor = it.treeStyle.createdAtMapByActorMap.entries
-                    .associate { (key, value) -> ActorID(key) to value.toTimeTicket() },
             )
 
             else -> throw YorkieException(ErrUnimplemented, "unimplemented operations")
@@ -183,9 +167,6 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTextNodePos()
                     content = operation.content
                     executedAt = operation.executedAt.toPBTimeTicket()
-                    operation.maxCreatedAtMapByActor.forEach {
-                        createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
-                    }
                     operation.attributes.forEach { attributes[it.key] = it.value }
                 }
             }
@@ -199,9 +180,6 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTextNodePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
-                    operation.maxCreatedAtMapByActor.forEach {
-                        createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
-                    }
                 }
             }
         }
@@ -214,11 +192,6 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTreePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                     contents.addAll(operation.contents?.toPBTreeNodesWhenEdit().orEmpty())
-                    createdAtMapByActor.putAll(
-                        operation.maxCreatedAtMapByActor.entries.associate {
-                            it.key.value to it.value.toPBTimeTicket()
-                        },
-                    )
                     splitLevel = operation.splitLevel
                 }
             }
@@ -235,9 +208,6 @@ internal fun Operation.toPBOperation(): PBOperation {
                         attributes[key] = value
                     }
                     operation.attributesToRemove?.forEach { attributesToRemove.add(it) }
-                    operation.maxCreatedAtMapByActor?.forEach {
-                        createdAtMapByActor[it.key.value] = it.value.toPBTimeTicket()
-                    }
                 }
             }
         }

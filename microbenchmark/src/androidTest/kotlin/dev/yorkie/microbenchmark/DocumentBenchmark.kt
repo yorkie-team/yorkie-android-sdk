@@ -33,7 +33,7 @@ class DocumentBenchmark {
     fun equals() {
         benchmarkRule.measureRepeated {
             runTest {
-                val docs = runWithTimingDisabled {
+                val docs = runWithMeasurementDisabled {
                     listOf(
                         Document(Document.Key("d1")),
                         Document(Document.Key("d2")),
@@ -56,10 +56,10 @@ class DocumentBenchmark {
     fun nested_updates() {
         benchmarkRule.measureRepeated {
             runTest {
-                val expected = runWithTimingDisabled {
+                val expected = runWithMeasurementDisabled {
                     """{"k1":"v1","k2":{"k4":"v4"},"k3":["v5","v6"]}"""
                 }
-                val document = runWithTimingDisabled {
+                val document = runWithMeasurementDisabled {
                     Document(Document.Key("d1"))
                 }
                 document.updateAsync { root, _ ->
@@ -82,10 +82,10 @@ class DocumentBenchmark {
     fun delete() {
         benchmarkRule.measureRepeated {
             runTest {
-                val document = runWithTimingDisabled {
+                val document = runWithMeasurementDisabled {
                     Document(Document.Key("d1"))
                 }
-                var expected = runWithTimingDisabled {
+                var expected = runWithMeasurementDisabled {
                     """{"k1":"v1","k2":{"k4":"v4"},"k3":["v5","v6"]}"""
                 }
                 document.updateAsync("updates k1, k2, k3") { root, _ ->
@@ -100,7 +100,7 @@ class DocumentBenchmark {
                 }.await()
                 assert(document.toJson() == expected)
 
-                expected = runWithTimingDisabled {
+                expected = runWithMeasurementDisabled {
                     """{"k1":"v1","k3":["v5","v6"]}"""
                 }
                 document.updateAsync("deletes k2") { root, _ ->
@@ -116,7 +116,7 @@ class DocumentBenchmark {
     fun obj() {
         benchmarkRule.measureRepeated {
             runTest {
-                val document = runWithTimingDisabled {
+                val document = runWithMeasurementDisabled {
                     Document(Document.Key("d1"))
                 }
                 document.updateAsync { root, _ ->
@@ -172,7 +172,7 @@ class DocumentBenchmark {
     private fun benchmarkTree(size: Int) {
         benchmarkRule.measureRepeated {
             runTest {
-                val document = runWithTimingDisabled {
+                val document = runWithMeasurementDisabled {
                     Document(Document.Key("d1"))
                 }
                 document.updateAsync { root, _ ->
@@ -190,7 +190,7 @@ class DocumentBenchmark {
     private fun benchmarkTreeDeleteAll(size: Int) {
         benchmarkRule.measureRepeated {
             runTest {
-                val document = runWithTimingDisabled {
+                val document = runWithMeasurementDisabled {
                     Document(Document.Key("d1"))
                 }
                 document.updateAsync { root, _ ->
@@ -201,7 +201,7 @@ class DocumentBenchmark {
                         edit(1, size + 1)
                     }
                 }.await()
-                val expected = runWithTimingDisabled {
+                val expected = runWithMeasurementDisabled {
                     "<doc><p></p></doc>"
                 }
                 assert(document.getRoot().getAs<JsonTree>("tree").toXml() == expected)
@@ -213,7 +213,7 @@ class DocumentBenchmark {
     private fun benchmarkTreeSplitGC(size: Int) {
         benchmarkRule.measureRepeated {
             runTest {
-                val document = runWithTimingDisabled {
+                val document = runWithMeasurementDisabled {
                     Document(Document.Key("d1"))
                 }
                 document.updateAsync { root, _ ->
@@ -244,7 +244,7 @@ class DocumentBenchmark {
     private fun benchmarkTreeEditGC(size: Int) {
         benchmarkRule.measureRepeated {
             runTest {
-                val document = runWithTimingDisabled {
+                val document = runWithMeasurementDisabled {
                     Document(Document.Key("d1"))
                 }
                 document.updateAsync { root, _ ->

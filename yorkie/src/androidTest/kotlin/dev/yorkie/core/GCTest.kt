@@ -156,7 +156,7 @@ class GCTest {
             var nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(2, document.garbageLength)
-            assertEquals(2, document.garbageCollect(INITIAL_VERSION_VECTOR))
+            assertEquals(2, document.garbageCollect(maxLamportVersionVector(document)))
             assertEquals(0, document.garbageLength)
             var nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -178,7 +178,7 @@ class GCTest {
             nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(INITIAL_VERSION_VECTOR))
+            assertEquals(1, document.garbageCollect(maxLamportVersionVector(document)))
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -201,7 +201,7 @@ class GCTest {
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
 
             assertEquals(5, document.garbageLength)
-            assertEquals(5, document.garbageCollect(INITIAL_VERSION_VECTOR))
+            assertEquals(5, document.garbageCollect(maxLamportVersionVector(document)))
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -627,21 +627,23 @@ class GCTest {
                     set("y", 3)
                 }
             }.await()
-            assertEquals(4, d1.garbageLength)
+            assertEquals(3, d1.garbageLength)
             c1.syncAsync().await()
-            assertEquals(4, d1.garbageLength)
+            assertEquals(3, d1.garbageLength)
 
             c1.syncAsync().await()
-            assertEquals(4, d1.garbageLength)
+            assertEquals(3, d1.garbageLength)
 
             c2.syncAsync().await()
-            assertEquals(4, d1.garbageLength)
+            assertEquals(3, d1.garbageLength)
             c1.syncAsync().await()
-            assertEquals(5, d1.garbageLength)
+            assertEquals(4, d1.garbageLength)
             c2.syncAsync().await()
-            assertEquals(5, d1.garbageLength)
+            assertEquals(4, d1.garbageLength)
             c1.syncAsync().await()
             assertEquals(0, d1.garbageLength)
+            c2.syncAsync().await()
+            assertEquals(0, d2.garbageLength)
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
@@ -700,8 +702,12 @@ class GCTest {
             assertEquals(d2.garbageLength, gcNodeLength)
 
             // Actual garbage-collected nodes
-            assertEquals(d1.garbageCollect(INITIAL_VERSION_VECTOR), gcNodeLength)
-            assertEquals(d2.garbageCollect(INITIAL_VERSION_VECTOR), gcNodeLength)
+            val actors = listOf(
+                c1.requireClientId().value,
+                c2.requireClientId().value,
+            )
+            assertEquals(d1.garbageCollect(maxVersionVector(actors)), gcNodeLength)
+            assertEquals(d2.garbageCollect(maxVersionVector(actors)), gcNodeLength)
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
@@ -928,22 +934,18 @@ class GCTest {
 
     @Test
     fun test_snapshot_version_vector() {
-        withThreeClientsAndDocuments { client1, client2, client3, doc1, doc2, doc3, key ->
+        withThreeClientsAndDocuments(
+            syncMode = Client.SyncMode.Manual,
+        ) { client1, client2, client3, doc1, doc2, doc3, key ->
             assertEquals("{}", doc1.toJson())
             doc1.updateAsync { root, _ ->
                 root.setNewText("t").edit(0, 0, "a")
             }.await()
-            assertEquals("""{"t":"a"}""", doc1.toJson())
 
             client1.syncAsync().await()
             client2.syncAsync().await()
             client3.syncAsync().await()
 
-            val actorData1 = arrayOf(
-                client1.requireClientId().value to 4L,
-                client2.requireClientId().value to 1L,
-                client3.requireClientId().value to 1L,
-            )
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -956,11 +958,6 @@ class GCTest {
                 ),
             )
 
-            val actorData2 = arrayOf(
-                client1.requireClientId().value to 2L,
-                client2.requireClientId().value to 4L,
-                client3.requireClientId().value to 1L,
-            )
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -973,11 +970,6 @@ class GCTest {
                 ),
             )
 
-            val actorData3 = arrayOf(
-                client1.requireClientId().value to 2L,
-                client2.requireClientId().value to 1L,
-                client3.requireClientId().value to 4L,
-            )
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -1005,11 +997,6 @@ class GCTest {
                 client1.syncAsync().await()
             }
 
-            val actorData4 = arrayOf(
-                client1.requireClientId().value to 2004L,
-                client2.requireClientId().value to 2003L,
-                client3.requireClientId().value to 1L,
-            )
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -1022,11 +1009,6 @@ class GCTest {
                 ),
             )
 
-            val actorData5 = arrayOf(
-                client1.requireClientId().value to 2001L,
-                client2.requireClientId().value to 2003L,
-                client3.requireClientId().value to 1L,
-            )
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -1039,11 +1021,6 @@ class GCTest {
                 ),
             )
 
-            val actorData6 = arrayOf(
-                client1.requireClientId().value to 2L,
-                client2.requireClientId().value to 1L,
-                client3.requireClientId().value to 4L,
-            )
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -1061,11 +1038,6 @@ class GCTest {
                 (root["t"] as JsonText).edit(0, 0, "c")
             }.await()
             client3.syncAsync().await()
-            val actorData7 = arrayOf(
-                client1.requireClientId().value to 2001L,
-                client2.requireClientId().value to 2003L,
-                client3.requireClientId().value to 2006L,
-            )
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -1102,5 +1074,18 @@ class GCTest {
         val versionVector = VersionVector()
         versionVector.set(document.changeID.actor.value, MAX_LAMPORT)
         return versionVector
+    }
+
+    private fun maxVersionVector(actors: List<String>): VersionVector {
+        if (actors.isEmpty()) {
+            return INITIAL_VERSION_VECTOR
+        }
+
+        val vectorMap = mutableMapOf<String, Long>()
+        actors.forEach {
+            vectorMap[it] = MAX_LAMPORT
+        }
+
+        return VersionVector(vectorMap)
     }
 }

@@ -5,7 +5,6 @@ import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.TreeNode
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
@@ -17,7 +16,6 @@ internal data class TreeEditOperation(
     override val parentCreatedAt: TimeTicket,
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
-    val maxCreatedAtMapByActor: Map<ActorID, TimeTicket>,
     val contents: List<CrdtTreeNode>?,
     val splitLevel: Int,
     override var executedAt: TimeTicket,
@@ -47,7 +45,6 @@ internal data class TreeEditOperation(
                 splitLevel,
                 editedAt,
                 issueTimeTicket(editedAt),
-                maxCreatedAtMapByActor,
                 versionVector,
             )
         gcPairs.forEach(root::registerGCPair)

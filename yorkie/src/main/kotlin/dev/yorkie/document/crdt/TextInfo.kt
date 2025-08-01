@@ -107,14 +107,12 @@ public value class TextWithAttributes(private val value: Pair<String, Map<String
 }
 
 internal data class TextEditResult(
-    val createdAtMapByActor: Map<ActorID, TimeTicket>,
     val textChanges: List<TextChange>,
     val posRange: RgaTreeSplitPosRange,
     val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
 )
 
 internal data class TextStyleResult(
-    val createdAtMapByActor: Map<ActorID, TimeTicket>,
     val textChanges: List<TextChange>,
     val gcPairs: List<GCPair<RhtNode>>,
 )

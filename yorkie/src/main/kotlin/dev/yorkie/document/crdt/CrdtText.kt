@@ -1,9 +1,7 @@
 package dev.yorkie.document.crdt
 
 import android.annotation.SuppressLint
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
@@ -54,7 +52,6 @@ internal data class CrdtText(
         value: String,
         executedAt: TimeTicket,
         attributes: Map<String, String>? = null,
-        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
         versionVector: VersionVector? = null,
     ): TextEditResult {
         val textValue = if (value.isNotEmpty()) {
@@ -65,11 +62,10 @@ internal data class CrdtText(
             null
         }
 
-        val (caretPos, maxCreatedAtMap, contentChanges, gcPairs) = rgaTreeSplit.edit(
+        val (caretPos, contentChanges, gcPairs) = rgaTreeSplit.edit(
             range,
             executedAt,
             textValue,
-            maxCreatedAtMapByActor,
             versionVector,
         )
 
@@ -86,7 +82,7 @@ internal data class CrdtText(
         if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        return TextEditResult(maxCreatedAtMap, changes, caretPos to caretPos, gcPairs)
+        return TextEditResult(changes, caretPos to caretPos, gcPairs)
     }
 
     /**
@@ -99,7 +95,6 @@ internal data class CrdtText(
         range: RgaTreeSplitPosRange,
         attributes: Map<String, String>,
         executedAt: TimeTicket,
-        maxCreatedAtMapByActor: Map<ActorID, TimeTicket>? = null,
         versionVector: VersionVector? = null,
     ): TextStyleResult {
         // 1. Split nodes with from and to.
@@ -108,28 +103,14 @@ internal data class CrdtText(
 
         // 2. Style nodes between from and to.
         val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
-        val createdAtMapByActor = mutableMapOf<ActorID, TimeTicket>()
         val toBeStyleds = nodes.mapNotNull { node ->
             val actorID = node.createdAt.actorID
-            var maxCreatedAt: TimeTicket? = null
-            var clientLamportAtChange = 0L
-
-            if (versionVector == null && maxCreatedAtMapByActor.isNullOrEmpty()) {
-                clientLamportAtChange = MAX_LAMPORT
-            } else if (versionVector != null && versionVector.size() > 0) {
-                clientLamportAtChange = versionVector.get(actorID.value) ?: 0
-            } else {
-                maxCreatedAt = maxCreatedAtMapByActor?.get(actorID) ?: InitialTimeTicket
-            }
+            val clientLamportAtChange = versionVector?.let {
+                versionVector.get(actorID.value) ?: 0L
+            } ?: MAX_LAMPORT
 
             node.takeIf {
-                it.canStyle(executedAt, maxCreatedAt, clientLamportAtChange)
-            }?.also {
-                val updatedMaxCreatedAt = createdAtMapByActor[actorID]
-                val updatedCreatedAt = node.createdAt
-                if (updatedMaxCreatedAt == null || updatedMaxCreatedAt < updatedCreatedAt) {
-                    createdAtMapByActor[actorID] = updatedCreatedAt
-                }
+                it.canStyle(executedAt, clientLamportAtChange)
             }
         }
 
@@ -154,7 +135,7 @@ internal data class CrdtText(
                 )
             }
 
-        return TextStyleResult(createdAtMapByActor, changes, gcPairs)
+        return TextStyleResult(changes, gcPairs)
     }
 
     /**

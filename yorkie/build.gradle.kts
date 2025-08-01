@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -124,6 +125,13 @@ signing {
     sign(publishing.publications)
 }
 
+// Load properties from local.properties
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+
 android {
     namespace = "dev.yorkie"
     version = findProperty("VERSION_NAME").toString()
@@ -136,6 +144,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
 
         buildConfigField("String", "VERSION_NAME", """"$version"""")
+        buildConfigField("String", "YORKIE_SERVER_URL", "\"${localProperties.getProperty("YORKIE_SERVER_URL") ?: error("YORKIE_SERVER_URL missing in local.properties")}\"")
     }
     buildTypes {
         debug {

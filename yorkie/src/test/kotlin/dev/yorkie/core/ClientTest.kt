@@ -150,12 +150,7 @@ class ClientTest {
         }
         assertIsTestActorID(syncRequestCaptor.captured.clientId)
         assertIsInitialChangePack(
-            createInitialChangePack(
-                initialSyncVersionVector,
-                VersionVector(
-                    mapOf(TEST_ACTOR_ID.value to 2),
-                ),
-            ),
+            createInitialChangePack(),
             syncRequestCaptor.captured.changePack,
         )
         assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
@@ -282,12 +277,7 @@ class ClientTest {
         }
         assertIsTestActorID(removeDocumentRequestCaptor.captured.clientId)
         assertEquals(
-            createInitialChangePack(
-                initialRemoveVersionVector,
-                VersionVector(
-                    mapOf(TEST_ACTOR_ID.value to 2),
-                ),
-            ).copy(isRemoved = true),
+            createInitialChangePack().copy(isRemoved = true),
             removeDocumentRequestCaptor.captured.changePack.toChangePack(),
         )
 

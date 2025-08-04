@@ -10,9 +10,7 @@ import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
-import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
-import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
-import dev.yorkie.document.time.VersionVector
+import dev.yorkie.helper.maxVectorOf
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -140,9 +138,7 @@ class GCTest {
             }.await()
 
             fun JsonObject.rootTree() = getAs<JsonTree>("t")
-            val versionVector = VersionVector().apply {
-                set(INITIAL_ACTOR_ID.value, MAX_LAMPORT)
-            }
+            val versionVector = maxVectorOf(listOf())
 
             assertEquals("<r><p></p></r>", doc.getRoot().rootTree().toXml())
             test.steps.forEach { (op, expectedXml, garbageLen) ->
@@ -210,9 +206,7 @@ class GCTest {
 
             assertEquals("""[{"val":"AB"}]""", doc.getRoot().rootText().toJson())
 
-            val versionVector = VersionVector().apply {
-                set(INITIAL_ACTOR_ID.value, MAX_LAMPORT)
-            }
+            val versionVector = maxVectorOf(listOf())
 
             test.steps.forEach { (op, expectedJson, garbageLen) ->
                 doc.updateAsync { root, _ ->

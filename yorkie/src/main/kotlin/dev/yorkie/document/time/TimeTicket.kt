@@ -30,6 +30,7 @@ public data class TimeTicket(
     }
 
     companion object {
+        internal const val INITIAL_LAMPORT = 0L
         internal const val INITIAL_DELIMITER = 0u
         internal const val MAX_DELIMITER = UInt.MAX_VALUE
 
@@ -42,13 +43,21 @@ public data class TimeTicket(
         public const val MAX_LAMPORT = Long.MAX_VALUE
 
         private val NullTimeTicket = TimeTicket(
-            Long.MIN_VALUE,
-            INITIAL_DELIMITER,
-            INITIAL_ACTOR_ID,
+            lamport = Long.MIN_VALUE,
+            delimiter = INITIAL_DELIMITER,
+            actorID = INITIAL_ACTOR_ID,
         )
 
-        public val InitialTimeTicket = TimeTicket(0, INITIAL_DELIMITER, INITIAL_ACTOR_ID)
-        public val MaxTimeTicket = TimeTicket(MAX_LAMPORT, MAX_DELIMITER, MAX_ACTOR_ID)
+        public val InitialTimeTicket = TimeTicket(
+            lamport = INITIAL_LAMPORT,
+            delimiter = INITIAL_DELIMITER,
+            actorID = INITIAL_ACTOR_ID,
+        )
+        public val MaxTimeTicket = TimeTicket(
+            lamport = MAX_LAMPORT,
+            delimiter = MAX_DELIMITER,
+            actorID = MAX_ACTOR_ID,
+        )
 
         public operator fun TimeTicket?.compareTo(other: TimeTicket?): Int {
             return orNull().compareTo(other.orNull())

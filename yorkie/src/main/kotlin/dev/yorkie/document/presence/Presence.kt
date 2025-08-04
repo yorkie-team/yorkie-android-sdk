@@ -21,9 +21,9 @@ public data class Presence internal constructor(
     }
 }
 
-internal sealed class PresenceChange {
+internal sealed interface PresenceChange {
 
-    data class Put(val presence: Map<String, String>) : PresenceChange()
+    data class Put(val presence: Map<String, String>) : PresenceChange
 
-    data object Clear : PresenceChange()
+    data object Clear : PresenceChange
 }

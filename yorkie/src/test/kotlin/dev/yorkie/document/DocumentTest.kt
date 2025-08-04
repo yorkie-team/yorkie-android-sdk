@@ -9,6 +9,7 @@ import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.YorkieException
 import java.util.Date
 import kotlin.test.assertFalse
@@ -259,11 +260,7 @@ class DocumentTest {
         assertEquals("{}", target.toJson())
         assertEquals(2, target.garbageLength)
 
-        target.garbageCollect(
-            VersionVector().apply {
-                set(INITIAL_ACTOR_ID.value, MAX_LAMPORT)
-            },
-        )
+        target.garbageCollect(maxVectorOf(listOf()))
         assertEquals(0, target.garbageLength)
     }
 

@@ -234,7 +234,11 @@ class DocumentBenchmark {
                 }.await()
 
                 assert(document.garbageLength == size)
-                assert(document.garbageCollect(maxLamportVersionVector(document)) == size)
+                assert(
+                    document.garbageCollect(
+                        maxLamportVersionVector(listOf(document.changeID.actor.value)),
+                    ) == size,
+                )
                 assert(document.garbageLength == 0)
                 document.close()
             }
@@ -262,16 +266,20 @@ class DocumentBenchmark {
                 }.await()
 
                 assert(document.garbageLength == size)
-                assert(document.garbageCollect(maxLamportVersionVector(document)) == size)
+                assert(
+                    document.garbageCollect(
+                        maxLamportVersionVector(listOf(document.changeID.actor.value)),
+                    ) == size,
+                )
                 assert(document.garbageLength == 0)
                 document.close()
             }
         }
     }
 
-    private fun maxLamportVersionVector(document: Document): VersionVector {
-        val versionVector = VersionVector()
-        versionVector.set(document.changeID.actor.value, MAX_LAMPORT)
-        return versionVector
+    private fun maxLamportVersionVector(actors: List<String>): VersionVector {
+        return VersionVector(
+            vectorMap = actors.associateWith { MAX_LAMPORT },
+        )
     }
 }

@@ -14,13 +14,19 @@ import dev.yorkie.document.time.TimeTicket
  * Finally returns a [Change] after the modification has been completed.
  */
 internal data class ChangeContext(
-    val id: ChangeID,
+    val prevId: ChangeID,
     val root: CrdtRoot,
     val message: String? = null,
     var presenceChange: PresenceChange? = null,
     private val operations: MutableList<Operation> = mutableListOf(),
     private var delimiter: UInt = TimeTicket.INITIAL_DELIMITER,
 ) {
+    /**
+     * returns the next ID of this context. It will be set to the
+     * document for the next change.returns the next ID of this context.
+     */
+    private val nextId: ChangeID = prevId.next()
+
     /**
      * Returns whether this context has change or not.
      */
@@ -31,7 +37,7 @@ internal data class ChangeContext(
      *  Returns the last time ticket issued in this context.
      */
     val lastTimeTicket: TimeTicket
-        get() = id.createTimeTicket(delimiter)
+        get() = nextId.createTimeTicket(delimiter)
 
     /**
      * Pushes the given operation to this context.
@@ -62,10 +68,20 @@ internal data class ChangeContext(
     }
 
     /**
-     * Creates a new instance of [Change] in this context.
+     * `toChange` creates a new instance of Change in this context.
      */
-    fun getChange(): Change {
-        return Change(id, operations, presenceChange, message)
+    fun toChange(): Change {
+        val id = if (operations.isEmpty()) {
+            prevId.next(true)
+        } else {
+            nextId
+        }
+        return Change(
+            id = id,
+            operations = operations,
+            presenceChange = presenceChange,
+            message = message,
+        )
     }
 
     /**
@@ -73,6 +89,21 @@ internal data class ChangeContext(
      */
     fun issueTimeTicket(): TimeTicket {
         delimiter++
-        return id.createTimeTicket(delimiter)
+        return nextId.createTimeTicket(delimiter)
+    }
+
+    /**
+     * `getNextID` returns the next ID of this context. It will be set to the
+     * document for the next change.returns the next ID of this context.
+     */
+    fun getNextId(): ChangeID {
+        return if (operations.isEmpty()) {
+            prevId
+                .next(true)
+                .setLamport(prevId.lamport)
+                .setVersionVector(prevId.versionVector)
+        } else {
+            nextId
+        }
     }
 }

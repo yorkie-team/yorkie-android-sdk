@@ -13,17 +13,18 @@ public data class Presence internal constructor(
 
     public fun put(data: Map<String, String>) {
         presence.putAll(data)
-        changeContext.presenceChange = PresenceChange.Put(presence)
+        changeContext.presenceChange = PresenceChange.Put(presence.toMap())
     }
 
     public fun clear() {
+        presence.clear()
         changeContext.presenceChange = PresenceChange.Clear
     }
 }
 
-internal sealed class PresenceChange {
+internal sealed interface PresenceChange {
 
-    data class Put(val presence: Map<String, String>) : PresenceChange()
+    data class Put(val presence: Map<String, String>) : PresenceChange
 
-    data object Clear : PresenceChange()
+    data object Clear : PresenceChange
 }

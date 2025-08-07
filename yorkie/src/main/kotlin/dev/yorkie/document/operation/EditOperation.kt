@@ -5,7 +5,6 @@ import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextWithAttributes
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
@@ -16,7 +15,6 @@ import dev.yorkie.util.Logger.Companion.logError
 internal data class EditOperation(
     val fromPos: RgaTreeSplitPos,
     val toPos: RgaTreeSplitPos,
-    val maxCreatedAtMapByActor: Map<ActorID, TimeTicket>,
     val content: String,
     override val parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
@@ -37,7 +35,6 @@ internal data class EditOperation(
                 content,
                 executedAt,
                 attributes,
-                maxCreatedAtMapByActor,
                 versionVector,
             )
             result.gcPairs.forEach(root::registerGCPair)

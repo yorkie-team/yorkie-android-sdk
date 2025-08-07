@@ -1,5 +1,6 @@
 package dev.yorkie.core
 
+import dev.yorkie.BuildConfig
 import dev.yorkie.document.Document
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -16,7 +17,7 @@ fun createClient(): Client {
     val unaryClient = OkHttpClient.Builder().protocols(listOf(Protocol.HTTP_1_1)).build()
     return Client(
         options = Client.Options(),
-        host = "http://10.0.2.2:8080",
+        host = BuildConfig.YORKIE_SERVER_URL,
         unaryClient = unaryClient,
         streamClient = unaryClient,
         dispatcher = createSingleThreadDispatcher("YorkieClient"),
@@ -117,6 +118,7 @@ fun withTwoClientsAndDocuments(
 }
 
 fun withThreeClientsAndDocuments(
+    syncMode: Client.SyncMode = Client.SyncMode.Realtime,
     callback: suspend CoroutineScope.(
         Client,
         Client,
@@ -140,9 +142,18 @@ fun withThreeClientsAndDocuments(
         client2.activateAsync().await()
         client3.activateAsync().await()
 
-        client1.attachAsync(document1).await()
-        client2.attachAsync(document2).await()
-        client3.attachAsync(document3).await()
+        client1.attachAsync(
+            document = document1,
+            syncMode = syncMode,
+        ).await()
+        client2.attachAsync(
+            document = document2,
+            syncMode = syncMode,
+        ).await()
+        client3.attachAsync(
+            document = document3,
+            syncMode = syncMode,
+        ).await()
 
         callback.invoke(
             this,

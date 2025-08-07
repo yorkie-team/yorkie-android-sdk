@@ -19,7 +19,7 @@ jobs:
           distribution: 'zulu'
           cache: 'gradle'
       - name: Set Yorkie Server Url
-        run: echo YORKIE_SERVER_URL="https://api.yorkie.dev" > ./local.properties
+        run: ./scripts/config-yorkie-local-server.sh
       - run: chmod +x gradlew
       - uses: gradle/actions/setup-gradle@v3
       - run: ./gradlew lintKotlin
@@ -37,7 +37,7 @@ jobs:
           distribution: 'zulu'
           cache: 'gradle'
       - name: Set Yorkie Server Url
-        run: echo YORKIE_SERVER_URL="https://api.yorkie.dev" > ./local.properties
+        run: ./scripts/config-yorkie-local-server.sh
       - run: chmod +x gradlew
       - uses: gradle/actions/setup-gradle@v3
       - run: ./gradlew yorkie:testDebugUnitTest
@@ -47,9 +47,58 @@ jobs:
           name: unit-test-artifact
           path: yorkie/build/reports/jacoco/jacocoDebugTestReport/jacocoDebugTestReport.xml
 
+  instrumentation-tests:
+    name: Instrumentation tests
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [ 33 ]
+        target: [ google_apis ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'zulu'
+          cache: 'gradle'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Set Yorkie Server Url
+        run: ./scripts/config-yorkie-local-server.sh
+      - run: chmod +x gradlew
+      - uses: gradle/actions/setup-gradle@v3
+      - run: |
+          docker system prune --all --force
+          docker compose -f docker/docker-compose-ci.yml up --build -d
+      - name: Run instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          force-avd-creation: false
+          ram-size: 2048M
+          disk-size: 6000M
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-metrics
+          disable-animations: true
+          script: |
+            ./gradlew yorkie:connectedDebugAndroidTest --stacktrace --info
+      - if: ${{ matrix.api-level == 33 }}
+        run: ./gradlew yorkie:jacocoDebugTestReport
+      - if: ${{ matrix.api-level == 33 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-artifact
+          path: yorkie/build/reports/jacoco/jacocoDebugTestReport/jacocoDebugTestReport.xml
+
   codecov:
     name: Codecov
-    needs: [ unit-tests ] # TODO add instrumentation-tests later until instrument tests is fixed
+    needs: [ unit-tests, instrumentation-tests ]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

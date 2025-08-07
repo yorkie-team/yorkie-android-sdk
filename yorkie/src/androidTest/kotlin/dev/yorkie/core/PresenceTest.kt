@@ -13,6 +13,7 @@ import dev.yorkie.gson
 import java.util.UUID
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNull
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
@@ -20,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -703,7 +705,7 @@ class PresenceTest {
     @Test
     fun test_receive_document_events_according_to_presence_changes() {
         withTwoClientsAndDocuments(
-            syncMode = Manual,
+            syncMode = Realtime,
             detachDocuments = false,
         ) { c1, c2, d1, d2, _ ->
             val d1Events = mutableListOf<PresenceChanged>()
@@ -731,14 +733,11 @@ class PresenceTest {
                     }
             }
 
-            // c1 in realtime sync
-            c1.changeSyncMode(d1, Realtime)
+            delay(1000)
+
             d2.updateAsync { _, presence ->
                 presence.put(mapOf("k1" to "v1"))
             }.await()
-
-            // c2 in realtime sync
-            c2.changeSyncMode(d2, Realtime)
 
             withTimeout(GENERAL_TIMEOUT) {
                 // watched, presence changed
@@ -767,14 +766,20 @@ class PresenceTest {
 
     @Test
     fun test_emit_the_same_presence_multiple_times() {
-        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+        withTwoClientsAndDocuments(syncMode = Realtime) { _, c2, d1, d2, _ ->
             val d1Events = mutableListOf<PresenceChanged>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                d1.events.filterIsInstance<Others>().collect(d1Events::add)
+                d1.events.filterIsInstance<Others>().toList(d1Events)
             }
 
-            c1.changeSyncMode(d1, Realtime)
-            c2.changeSyncMode(d2, Realtime)
+            delay(1000)
+
+            assertEquals(
+                expected = 1,
+                actual = d1Events.size,
+            )
+
+            assertTrue(d1Events.all { it is Others.Watched })
 
             d2.updateAsync { _, presence ->
                 presence.put(mapOf("a" to "b"))

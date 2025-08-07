@@ -296,10 +296,6 @@ public class Document(
             garbageCollect(pack.versionVector)
         }
 
-        if (!pack.hasSnapshot) {
-            filterVersionVector(pack.versionVector)
-        }
-
         if (pack.isRemoved) {
             applyDocumentStatus(DocStatus.Removed)
         }
@@ -371,7 +367,9 @@ public class Document(
             if (opInfos.isNotEmpty()) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
-            newPresences?.let { emitPresences(it, presenceEvent) }
+            newPresences?.let {
+                emitPresences(it, presenceEvent)
+            }
             changeID = changeID.syncClocks(change.id)
         }
     }
@@ -457,7 +455,6 @@ public class Document(
             checkPoint,
             localChanges,
             null,
-            null,
             forceRemove || status == DocStatus.Removed,
             changeID.versionVector,
         )
@@ -514,16 +511,6 @@ public class Document(
 
     internal fun removeOnlineClient(actorID: ActorID) {
         onlineClients.value -= actorID
-    }
-
-    /**
-     * Filters detached client's Lamport timestamps from the version vector.
-     */
-    private fun filterVersionVector(minSyncedVersionVector: VersionVector) {
-        val versionVector = changeID.versionVector
-        val filteredVersionVector = versionVector.filter(minSyncedVersionVector)
-
-        changeID = changeID.setVersionVector(filteredVersionVector)
     }
 
     /**

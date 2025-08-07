@@ -1,7 +1,7 @@
 package dev.yorkie.document.change
 
 import com.google.protobuf.ByteString
-import dev.yorkie.document.time.TimeTicket
+import com.google.protobuf.kotlin.isNotEmpty
 import dev.yorkie.document.time.VersionVector
 
 /**
@@ -10,7 +10,6 @@ import dev.yorkie.document.time.VersionVector
  * @property documentKey the key of the document.
  * @property checkPoint It is used to determine the client received changes.
  * @property snapshot a byte array that encodes the document.
- * @property minSyncedTicket the minimum logical time taken by clients who attach to the document.
  * It is used to collect garbage on the replica on the client.
  */
 internal data class ChangePack(
@@ -18,7 +17,6 @@ internal data class ChangePack(
     val checkPoint: CheckPoint,
     val changes: List<Change>,
     val snapshot: ByteString?,
-    val minSyncedTicket: TimeTicket?,
     val isRemoved: Boolean,
     val versionVector: VersionVector,
 ) {
@@ -33,5 +31,5 @@ internal data class ChangePack(
      * Returns the whether this [ChangePack] has a snapshot or not.
      */
     val hasSnapshot
-        get() = snapshot?.isEmpty == false
+        get() = snapshot?.isNotEmpty() == true
 }

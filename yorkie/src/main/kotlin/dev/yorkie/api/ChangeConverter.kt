@@ -5,7 +5,6 @@ import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changeID
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.checkpoint
-import dev.yorkie.api.v1.minSyncedTicketOrNull
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
@@ -82,7 +81,6 @@ internal fun PBChangePack.toChangePack(): ChangePack {
         checkPoint = checkpoint.toCheckPoint(),
         changes = changesList.toChanges(),
         snapshot = snapshot.takeUnless { it.isEmpty },
-        minSyncedTicket = minSyncedTicketOrNull?.toTimeTicket(),
         isRemoved = isRemoved,
         versionVector = versionVector.toVersionVector(),
     )
@@ -95,11 +93,6 @@ internal fun ChangePack.toPBChangePack(): PBChangePack {
         checkpoint = changePack.checkPoint.toPBCheckPoint()
         snapshot = changePack.snapshot ?: ByteString.EMPTY
         changes.addAll(changePack.changes.toPBChanges())
-        if (changePack.minSyncedTicket != null) {
-            minSyncedTicket = changePack.minSyncedTicket.toPBTimeTicket()
-        } else {
-            clearMinSyncedTicket()
-        }
         isRemoved = changePack.isRemoved
         versionVector = changePack.versionVector.toPBVersionVector()
     }

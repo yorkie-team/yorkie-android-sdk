@@ -148,16 +148,27 @@ class ClientTest {
                 root.remove("k1")
             }.await()
 
+            // Wait for d1 to receive the sync event
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1SyncEvents.none { it is SyncStatusChanged.Synced }) {
                     delay(50)
                 }
             }
+
+            // Additional wait to ensure the change is applied
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1.getRoot().keys.isNotEmpty()) {
+                    delay(50)
+                }
+            }
+
+            // Wait for d2 to receive its own sync event
             withTimeout(GENERAL_TIMEOUT) {
                 while (d2SyncEvents.isEmpty()) {
                     delay(50)
                 }
             }
+
             val root1 = d1.getRoot()
             assertTrue(root1.keys.isEmpty())
 

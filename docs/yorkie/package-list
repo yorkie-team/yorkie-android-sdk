@@ -407,11 +407,13 @@ $dokka.location:dev.yorkie.document.time/TimeTicket/toStruct/#/PointingToDeclara
 $dokka.location:dev.yorkie.document.time/VersionVector.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/-companion/index.html
 $dokka.location:dev.yorkie.document.time/VersionVector.Companion/INITIAL_VERSION_VECTOR/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/-companion/-i-n-i-t-i-a-l_-v-e-r-s-i-o-n_-v-e-c-t-o-r.html
 $dokka.location:dev.yorkie.document.time/VersionVector///PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/index.html
-$dokka.location:dev.yorkie.document.time/VersionVector/VersionVector/#kotlin.collections.MutableMap[kotlin.String,kotlin.Long]/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/-version-vector.html
+$dokka.location:dev.yorkie.document.time/VersionVector/VersionVector/#kotlin.collections.Map[kotlin.String,kotlin.Long]/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/-version-vector.html
 $dokka.location:dev.yorkie.document.time/VersionVector/afterOrEqual/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/after-or-equal.html
 $dokka.location:dev.yorkie.document.time/VersionVector/deepCopy/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/deep-copy.html
+$dokka.location:dev.yorkie.document.time/VersionVector/equals/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/equals.html
 $dokka.location:dev.yorkie.document.time/VersionVector/filter/#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/filter.html
 $dokka.location:dev.yorkie.document.time/VersionVector/get/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/get.html
+$dokka.location:dev.yorkie.document.time/VersionVector/hashCode/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/hash-code.html
 $dokka.location:dev.yorkie.document.time/VersionVector/iterator/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/iterator.html
 $dokka.location:dev.yorkie.document.time/VersionVector/max/#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/max.html
 $dokka.location:dev.yorkie.document.time/VersionVector/maxLamport/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/max-lamport.html

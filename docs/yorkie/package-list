@@ -56,10 +56,11 @@ $dokka.location:dev.yorkie.document.change/ChangeID/actor/#/PointingToDeclaratio
 $dokka.location:dev.yorkie.document.change/ChangeID/clientSeq/#/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/client-seq.html
 $dokka.location:dev.yorkie.document.change/ChangeID/createTimeTicket/#kotlin.UInt/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/create-time-ticket.html
 $dokka.location:dev.yorkie.document.change/ChangeID/lamport/#/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/lamport.html
-$dokka.location:dev.yorkie.document.change/ChangeID/next/#/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/next.html
+$dokka.location:dev.yorkie.document.change/ChangeID/next/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/next.html
 $dokka.location:dev.yorkie.document.change/ChangeID/serverSeq/#/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/server-seq.html
 $dokka.location:dev.yorkie.document.change/ChangeID/setActor/#dev.yorkie.document.time.ActorID/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/set-actor.html
 $dokka.location:dev.yorkie.document.change/ChangeID/setClocks/#kotlin.Long#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/set-clocks.html
+$dokka.location:dev.yorkie.document.change/ChangeID/setLamport/#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/set-lamport.html
 $dokka.location:dev.yorkie.document.change/ChangeID/setVersionVector/#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/set-version-vector.html
 $dokka.location:dev.yorkie.document.change/ChangeID/syncClocks/#dev.yorkie.document.change.ChangeID/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/sync-clocks.html
 $dokka.location:dev.yorkie.document.change/ChangeID/syncLamport/#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/sync-lamport.html
@@ -520,7 +521,6 @@ $dokka.location:dev.yorkie.document/Document/garbageCollect/#dev.yorkie.document
 $dokka.location:dev.yorkie.document/Document/garbageLength/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/garbage-length.html
 $dokka.location:dev.yorkie.document/Document/getDocSize/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-doc-size.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
-$dokka.location:dev.yorkie.document/Document/getRootThreadSafe/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root-thread-safe.html
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
 $dokka.location:dev.yorkie.document/Document/getVersionVector/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-version-vector.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
@@ -552,7 +552,6 @@ $dokka.location:dev.yorkie.util//checkYorkieError/#kotlin.Boolean#dev.yorkie.uti
 $dokka.location:dev.yorkie.util//createSingleThreadDispatcher/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/create-single-thread-dispatcher.html
 $dokka.location:dev.yorkie.util//errorCodeOf/#com.connectrpc.ConnectException/PointingToDeclaration/yorkie/dev.yorkie.util/error-code-of.html
 $dokka.location:dev.yorkie.util//errorMetadataOf/#com.connectrpc.ConnectException/PointingToDeclaration/yorkie/dev.yorkie.util/error-metadata-of.html
-$dokka.location:dev.yorkie.util//versionVectorHelper/#dev.yorkie.document.time.VersionVector#kotlin.Array[kotlin.Pair[kotlin.String,kotlin.Long]]/PointingToDeclaration/yorkie/dev.yorkie.util/version-vector-helper.html
 $dokka.location:dev.yorkie.util/DataSize///PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/index.html
 $dokka.location:dev.yorkie.util/DataSize/DataSize/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/-data-size.html
 $dokka.location:dev.yorkie.util/DataSize/data/#/PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/data.html

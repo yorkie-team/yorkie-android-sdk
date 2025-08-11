@@ -138,7 +138,7 @@ class ClientTest {
         }
         assertIsTestActorID(attachRequestCaptor.captured.clientId)
         assertIsInitialChangePack(
-            createInitialChangePack(initialAttachVersionVector, initialAttachVersionVector),
+            createInitialChangePack(),
             attachRequestCaptor.captured.changePack,
         )
         assertJsonContentEquals("""{"k1": 4}""", document.toJson())
@@ -150,12 +150,7 @@ class ClientTest {
         }
         assertIsTestActorID(syncRequestCaptor.captured.clientId)
         assertIsInitialChangePack(
-            createInitialChangePack(
-                initialSyncVersionVector,
-                VersionVector(
-                    mapOf(TEST_ACTOR_ID.value to 2),
-                ),
-            ),
+            createInitialChangePack(),
             syncRequestCaptor.captured.changePack,
         )
         assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
@@ -282,12 +277,7 @@ class ClientTest {
         }
         assertIsTestActorID(removeDocumentRequestCaptor.captured.clientId)
         assertEquals(
-            createInitialChangePack(
-                initialRemoveVersionVector,
-                VersionVector(
-                    mapOf(TEST_ACTOR_ID.value to 2),
-                ),
-            ).copy(isRemoved = true),
+            createInitialChangePack().copy(isRemoved = true),
             removeDocumentRequestCaptor.captured.changePack.toChangePack(),
         )
 
@@ -479,14 +469,14 @@ class ClientTest {
         }
 
         private fun createInitialChangePack(
-            changesVersionVector: VersionVector,
+            changesVersionVector: VersionVector = INITIAL_VERSION_VECTOR,
             changePackVersionVector: VersionVector = INITIAL_VERSION_VECTOR,
         ) = ChangePack(
             NORMAL_DOCUMENT_KEY,
             CheckPoint(0, 1u),
             listOf(
                 Change(
-                    ChangeID(1u, 1, TEST_ACTOR_ID, changesVersionVector),
+                    ChangeID(1u, 0, TEST_ACTOR_ID, changesVersionVector),
                     emptyList(),
                     PresenceChange.Put(emptyMap()),
                 ),

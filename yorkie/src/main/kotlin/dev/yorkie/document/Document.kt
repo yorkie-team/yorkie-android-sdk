@@ -149,7 +149,7 @@ public class Document(
 
             val clone = ensureClone()
             val context = ChangeContext(
-                id = changeID.next(),
+                prevId = changeID,
                 root = clone.root,
                 message = message,
             )
@@ -172,11 +172,11 @@ public class Document(
             if (!context.hasChange) {
                 return@async result
             }
-            val change = context.getChange()
+            val change = context.toChange()
             val (operationInfos, newPresences) = change.execute(root, _presences.value)
 
             localChanges += change
-            changeID = change.id
+            changeID = context.getNextId()
 
             if (change.hasOperations) {
                 eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
@@ -487,16 +487,6 @@ public class Document(
      */
     public fun getDocSize(): DocSize {
         return root.docSize
-    }
-
-    /**
-     * Returns a new proxy of deep-copied root.
-     * It ensures thread-safety by avoiding reuse of [clone].
-     */
-    public suspend fun getRootThreadSafe(): JsonObject = withContext(dispatcher) {
-        val clone = ensureClone().deepCopy()
-        val context = ChangeContext(changeID.next(), clone.root)
-        JsonObject(context, clone.root.rootObject)
     }
 
     internal fun getOnlineClients() = onlineClients.value

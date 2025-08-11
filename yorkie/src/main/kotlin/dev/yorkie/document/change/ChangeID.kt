@@ -8,6 +8,15 @@ import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 
 /**
  * Identifies the Change.
+ * @param clientSeq: is the sequence number of the client that created this change.
+ * @param lamport: lamport` is the lamport clock of this change. This is used to determine
+ * the order of changes in logical time. It is optional and only present
+ * if the change has operations.
+ * @param actor: is the creator of this change.
+ * @param versionVector: is the vector clock of this change. This is used to
+ * determine the relationship is causal or not between changes. It is optional
+ * and only present if the change has operations.
+ * @param serverSeq: is optional and only present for changes stored on the server.
  */
 public data class ChangeID(
     val clientSeq: UInt,
@@ -20,7 +29,15 @@ public data class ChangeID(
     /**
      * Creates a next ID of this ID.
      */
-    fun next(): ChangeID {
+    fun next(excludeClocks: Boolean = false): ChangeID {
+        if (excludeClocks) {
+            return copy(
+                clientSeq = clientSeq + 1u,
+                versionVector = INITIAL_VERSION_VECTOR,
+                serverSeq = TimeTicket.INITIAL_LAMPORT,
+            )
+        }
+
         val vector = versionVector.deepCopy()
         vector.set(actor.value, lamport + 1)
         return copy(clientSeq = clientSeq + 1u, lamport = lamport + 1, versionVector = vector)
@@ -38,10 +55,18 @@ public data class ChangeID(
         return copy(lamport = lamport + 1)
     }
 
+    private fun hasClocks(): Boolean {
+        return versionVector.size() > 0 && lamport != TimeTicket.INITIAL_LAMPORT
+    }
+
     /**
      * `syncClocks` syncs logical clocks with the given ID.
      */
     fun syncClocks(other: ChangeID): ChangeID {
+        if (!other.hasClocks()) {
+            return this
+        }
+
         val lamport = if (other.lamport > lamport) other.lamport + 1 else lamport + 1
         val maxVersionVector = versionVector.max(other.versionVector)
         val newID = copy(
@@ -66,6 +91,13 @@ public data class ChangeID(
             lamport = lamport,
             versionVector = maxVersionVector,
         )
+    }
+
+    /**
+     * `setLamport` sets the given lamport clock.
+     */
+    fun setLamport(lamport: Long): ChangeID {
+        return copy(lamport = lamport)
     }
 
     /**

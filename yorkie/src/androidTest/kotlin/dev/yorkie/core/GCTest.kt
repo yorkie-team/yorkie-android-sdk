@@ -12,12 +12,10 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
-import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
-import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.gson
+import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.IndexTreeNode
-import dev.yorkie.util.versionVectorHelper
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
@@ -50,7 +48,12 @@ class GCTest {
             }.await()
             assertJsonContentEquals("""{"1":1,"3":3}""", document.toJson())
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 4,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
             assertEquals(0, document.garbageLength)
 
             document.close()
@@ -76,7 +79,12 @@ class GCTest {
                 document.toJson(),
             )
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 1,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
             assertEquals(0, document.garbageLength)
 
             document.close()
@@ -115,7 +123,12 @@ class GCTest {
                 document.toJson(),
             )
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 4,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
             assertEquals(0, document.garbageLength)
 
             document.close()
@@ -156,7 +169,12 @@ class GCTest {
             var nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(2, document.garbageLength)
-            assertEquals(2, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 2,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
             assertEquals(0, document.garbageLength)
             var nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -178,7 +196,12 @@ class GCTest {
             nodeLengthBeforeGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 1,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -201,7 +224,12 @@ class GCTest {
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
 
             assertEquals(5, document.garbageLength)
-            assertEquals(5, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 5,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
             assertEquals(0, document.garbageLength)
             nodeLengthAfterGC =
                 getNodeLength(document.getRoot().getAs<JsonTree>("t").indexTree.root)
@@ -400,9 +428,7 @@ class GCTest {
                 true,
                 versionVectorHelper(
                     d1.getVersionVector(),
-                    arrayOf(
-                        Pair(c1.requireClientId().value, 1L),
-                    ),
+                    emptyArray(),
                 ),
             )
 
@@ -411,10 +437,7 @@ class GCTest {
                 true,
                 versionVectorHelper(
                     d2.getVersionVector(),
-                    arrayOf(
-                        Pair(c1.requireClientId().value, 1L),
-                        Pair(c2.requireClientId().value, 2L),
-                    ),
+                    emptyArray(),
                 ),
             )
 
@@ -434,7 +457,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 2L),
+                        Pair(c1.requireClientId().value, 1L),
                     ),
                 ),
             )
@@ -449,8 +472,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 3L),
-                        Pair(c2.requireClientId().value, 1L),
+                        Pair(c1.requireClientId().value, 1L),
                     ),
                 ),
             )
@@ -462,8 +484,8 @@ class GCTest {
                 versionVectorHelper(
                     d2.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 2L),
-                        Pair(c2.requireClientId().value, 3L),
+                        Pair(c1.requireClientId().value, 1L),
+                        Pair(c2.requireClientId().value, 2L),
                     ),
                 ),
             )
@@ -483,8 +505,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 4L),
-                        Pair(c2.requireClientId().value, 1L),
+                        Pair(c1.requireClientId().value, 2L),
                     ),
                 ),
             )
@@ -498,8 +519,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 4L),
-                        Pair(c2.requireClientId().value, 1L),
+                        Pair(c1.requireClientId().value, 2L),
                     ),
                 ),
             )
@@ -520,8 +540,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 5L),
-                        Pair(c2.requireClientId().value, 4L),
+                        Pair(c1.requireClientId().value, 2L),
                     ),
                 ),
             )
@@ -706,8 +725,8 @@ class GCTest {
                 c1.requireClientId().value,
                 c2.requireClientId().value,
             )
-            assertEquals(d1.garbageCollect(maxVersionVector(actors)), gcNodeLength)
-            assertEquals(d2.garbageCollect(maxVersionVector(actors)), gcNodeLength)
+            assertEquals(d1.garbageCollect(maxVectorOf(actors)), gcNodeLength)
+            assertEquals(d2.garbageCollect(maxVectorOf(actors)), gcNodeLength)
 
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
@@ -842,7 +861,12 @@ class GCTest {
             document.updateAsync { root, _ ->
                 root.remove("1")
             }.await()
-            assertEquals(size + 1, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = size + 1,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
         }
     }
 
@@ -867,7 +891,12 @@ class GCTest {
             assertEquals("""{"list":[1,3]}""", document.toJson())
 
             assertEquals(1, document.garbageLength)
-            assertEquals(1, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 1,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
             assertEquals(0, document.garbageLength)
         }
     }
@@ -887,7 +916,12 @@ class GCTest {
             }.await()
 
             assertEquals(4, document.garbageLength)
-            assertEquals(4, document.garbageCollect(maxLamportVersionVector(document)))
+            assertEquals(
+                expected = 4,
+                actual = document.garbageCollect(
+                    maxVectorOf(listOf(document.changeID.actor.value)),
+                ),
+            )
         }
     }
 
@@ -927,7 +961,10 @@ class GCTest {
             assertEquals("<doc><p><tn></tn></p></doc>", doc.getRoot().rootTree().toXml())
             assertEquals(3, doc.garbageLength)
 
-            assertEquals(3, doc.garbageCollect(maxLamportVersionVector(doc)))
+            assertEquals(
+                expected = 3,
+                actual = doc.garbageCollect(maxVectorOf(listOf(doc.changeID.actor.value))),
+            )
             assertEquals(0, doc.garbageLength)
         }
     }
@@ -951,9 +988,7 @@ class GCTest {
                 versionVectorHelper(
                     doc1.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 4L),
-                        Pair(client2.requireClientId().value, 1L),
-                        Pair(client3.requireClientId().value, 1L),
+                        Pair(client1.requireClientId().value, 1L),
                     ),
                 ),
             )
@@ -963,9 +998,8 @@ class GCTest {
                 versionVectorHelper(
                     doc2.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 2L),
-                        Pair(client2.requireClientId().value, 4L),
-                        Pair(client3.requireClientId().value, 1L),
+                        Pair(client1.requireClientId().value, 1L),
+                        Pair(client2.requireClientId().value, 2L),
                     ),
                 ),
             )
@@ -975,9 +1009,8 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 2L),
-                        Pair(client2.requireClientId().value, 1L),
-                        Pair(client3.requireClientId().value, 4L),
+                        Pair(client1.requireClientId().value, 1L),
+                        Pair(client3.requireClientId().value, 2L),
                     ),
                 ),
             )
@@ -1002,9 +1035,8 @@ class GCTest {
                 versionVectorHelper(
                     doc1.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 2004L),
-                        Pair(client2.requireClientId().value, 2003L),
-                        Pair(client3.requireClientId().value, 1L),
+                        Pair(client1.requireClientId().value, 2001L),
+                        Pair(client2.requireClientId().value, 2000L),
                     ),
                 ),
             )
@@ -1014,9 +1046,8 @@ class GCTest {
                 versionVectorHelper(
                     doc2.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 2001L),
-                        Pair(client2.requireClientId().value, 2003L),
-                        Pair(client3.requireClientId().value, 1L),
+                        Pair(client1.requireClientId().value, 1998L),
+                        Pair(client2.requireClientId().value, 2000L),
                     ),
                 ),
             )
@@ -1026,9 +1057,8 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 2L),
-                        Pair(client2.requireClientId().value, 1L),
-                        Pair(client3.requireClientId().value, 4L),
+                        Pair(client1.requireClientId().value, 1L),
+                        Pair(client3.requireClientId().value, 2L),
                     ),
                 ),
             )
@@ -1043,9 +1073,9 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 2001L),
-                        Pair(client2.requireClientId().value, 2003L),
-                        Pair(client3.requireClientId().value, 2006L),
+                        Pair(client1.requireClientId().value, 1998L),
+                        Pair(client2.requireClientId().value, 2000L),
+                        Pair(client3.requireClientId().value, 2003L),
                     ),
                 ),
             )
@@ -1068,24 +1098,5 @@ class GCTest {
         return root.allChildren.fold(root.allChildren.size) { acc, child ->
             acc + getNodeLength(child)
         }
-    }
-
-    private fun maxLamportVersionVector(document: Document): VersionVector {
-        val versionVector = VersionVector()
-        versionVector.set(document.changeID.actor.value, MAX_LAMPORT)
-        return versionVector
-    }
-
-    private fun maxVersionVector(actors: List<String>): VersionVector {
-        if (actors.isEmpty()) {
-            return INITIAL_VERSION_VECTOR
-        }
-
-        val vectorMap = mutableMapOf<String, Long>()
-        actors.forEach {
-            vectorMap[it] = MAX_LAMPORT
-        }
-
-        return VersionVector(vectorMap)
     }
 }

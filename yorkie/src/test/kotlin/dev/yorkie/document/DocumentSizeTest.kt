@@ -1,17 +1,23 @@
 package dev.yorkie.document
 
+import dev.yorkie.document.crdt.CrdtTreeNode
+import dev.yorkie.document.crdt.CrdtTreeNodeID
+import dev.yorkie.document.crdt.Rht
+import dev.yorkie.document.crdt.toXml
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.DataSize
 import java.util.Date
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
+import org.junit.Ignore
 
 class DocumentSizeTest {
     private lateinit var document: Document
@@ -359,6 +365,7 @@ class DocumentSizeTest {
         )
     }
 
+    @Suppress("ktlint:standard:max-line-length")
     @Test
     fun `should return correct doc size with text type`() = runTest {
         document.updateAsync { root, _ ->
@@ -412,6 +419,29 @@ class DocumentSizeTest {
             expected = DataSize(
                 data = 28,
                 meta = 120,
+            ),
+            actual = document.getDocSize().live,
+        )
+        assertEquals(
+            expected = DataSize(
+                data = 10,
+                meta = 48,
+            ),
+            actual = document.getDocSize().gc,
+        )
+
+        document.updateAsync { root, _ ->
+            val text = root.getAs<JsonText>("text")
+            text.edit(1, 1, "")
+        }.await()
+        assertEquals(
+            expected = "{\"text\":[{\"attrs\":{\"bold\":\"true\"},\"val\":\"h\"},{\"attrs\":{\"bold\":\"true\"},\"val\":\"ello\"},{\"val\":\" \"}]}",
+            actual = document.toJson(),
+        )
+        assertEquals(
+            expected = DataSize(
+                data = 44,
+                meta = 168,
             ),
             actual = document.getDocSize().live,
         )
@@ -581,6 +611,121 @@ class DocumentSizeTest {
                 meta = 168,
             ),
             actual = document.getDocSize().gc,
+        )
+    }
+
+    @Test
+    fun `should return correct data size with node type`() {
+        val root = CrdtTreeNode(
+            id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+            type = "r",
+        )
+        val para = CrdtTreeNode(
+            id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+            type = "p",
+        )
+        root.append(para)
+        para.append(
+            node = CrdtTreeNode(
+                id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+                type = "text",
+                _value = "helloworld",
+            ),
+        )
+
+        val left = para.children[0]
+        val (rightText, diffText) = left.splitText(5, 0)
+        assertEquals(
+            expected = DataSize(
+                data = 0,
+                meta = 24,
+            ),
+            actual = diffText,
+        )
+        assertEquals(
+            expected = DataSize(
+                data = 10,
+                meta = 24,
+            ),
+            actual = left.dataSize,
+        )
+        assertEquals(
+            expected = DataSize(
+                data = 10,
+                meta = 24,
+            ),
+            actual = rightText?.dataSize,
+        )
+
+        val (rightElem, diffElem) = para.splitElement(1) {
+            TimeTicket.InitialTimeTicket
+        }
+        assertEquals(
+            expected = DataSize(
+                data = 0,
+                meta = 24,
+            ),
+            actual = diffElem,
+        )
+        assertEquals(
+            expected = "<p>hello</p>",
+            actual = para.toXml(),
+        )
+        assertEquals(
+            expected = "<p>world</p>",
+            actual = rightElem?.toXml(),
+        )
+    }
+
+    @Test
+    @Ignore("should be resolved after the JS SDK implementation")
+    fun `test split tree node with attribute`() {
+        val attributes = Rht().apply {
+            set("bold", "true", TimeTicket.InitialTimeTicket)
+        }
+
+        val root = CrdtTreeNode(
+            id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+            type = "r",
+        )
+        val para = CrdtTreeNode(
+            id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+            type = "p",
+            _attributes = attributes,
+        )
+        root.append(para)
+        para.append(
+            node = CrdtTreeNode(
+                id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+                type = "text",
+                _value = "helloworld",
+            ),
+        )
+        assertEquals(
+            expected = "<r><p bold=\"true\">helloworld</p></r>",
+            actual = root.toXml(),
+        )
+
+        val left = para.children[0]
+        left.splitText(5, 0)
+
+        val (rightElem, diffElem) = para.splitElement(1) {
+            TimeTicket.InitialTimeTicket
+        }
+        assertEquals(
+            expected = DataSize(
+                data = 16,
+                meta = 48,
+            ),
+            actual = diffElem,
+        )
+        assertEquals(
+            expected = "<p bold=\"true\">hello</p>",
+            actual = para.toXml(),
+        )
+        assertEquals(
+            expected = "<p bold=\"true\">world</p>",
+            actual = rightElem?.toXml(),
         )
     }
 }

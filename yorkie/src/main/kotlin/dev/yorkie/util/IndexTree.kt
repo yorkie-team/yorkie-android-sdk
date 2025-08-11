@@ -390,6 +390,8 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
     abstract var value: String
         protected set
 
+    abstract val dataSize: DataSize
+
     var parent: T? = null
         protected set
 
@@ -589,23 +591,55 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         child.parent = null
     }
 
-    fun splitText(offset: Int, absOffset: Int): T? {
+    fun splitText(offset: Int, absOffset: Int): Pair<T?, DataSize> {
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+
         if (offset == 0 || offset == size) {
-            return null
+            return Pair(
+                first = null,
+                second = diff,
+            )
         }
 
         val leftValue = value.substring(0, offset)
-        val rightValue = value.substring(offset).ifEmpty { return null }
+        val rightValue = value.substring(offset).ifEmpty {
+            return Pair(
+                first = null,
+                second = diff,
+            )
+        }
+
+        val prevDataSize = dataSize
+
         value = leftValue
 
         val rightNode = cloneText(offset + absOffset)
         rightNode.value = rightValue
         parent?.insertAfterInternal(this as T, rightNode)
 
-        return rightNode
+        // NOTE(hackerwins): Calculate data size after node splitting:
+        // Take the sum of the two split nodes(left and right) minus the size of
+        // the original node. This calculates the net metadata overhead added by
+        // the split operation.
+        diff = addDataSizes(diff, dataSize, rightNode.dataSize)
+        diff = subDataSize(diff, prevDataSize)
+
+        return Pair(
+            first = rightNode,
+            second = diff,
+        )
     }
 
-    fun splitElement(offset: Int, issueTimeTicket: () -> TimeTicket): T {
+    fun splitElement(offset: Int, issueTimeTicket: () -> TimeTicket): Pair<T?, DataSize> {
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+        val prevDataSize = dataSize
+
         val clone = cloneElement(issueTimeTicket)
         parent?.insertAfterInternal(this as T, clone)
         clone.updateAncestorSize()
@@ -623,7 +657,17 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             acc + child.paddedSize
         }
 
-        return clone
+        // NOTE(hackerwins): Calculate data size after node splitting:
+        // Take the sum of the two split nodes(left and right) minus the size of
+        // the original node. This calculates the net metadata overhead added by
+        // the split operation.
+        diff = addDataSizes(diff, dataSize, clone.dataSize)
+        diff = subDataSize(diff, prevDataSize)
+
+        return Pair(
+            first = clone,
+            second = diff,
+        )
     }
 
     private fun insertAfterInternal(targetNode: T, newNode: T) {

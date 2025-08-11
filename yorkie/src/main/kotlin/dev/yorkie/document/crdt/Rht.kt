@@ -93,6 +93,8 @@ class Rht : Collection<RhtNode> {
         numberOfRemovedElements--
     }
 
+    fun getNodeMapByKey(): Map<String, RhtNode> = nodeMapByKey.toMap()
+
     operator fun get(key: String): String? = nodeMapByKey[key]?.value
 
     fun has(key: String): Boolean = nodeMapByKey[key]?.isRemoved == false

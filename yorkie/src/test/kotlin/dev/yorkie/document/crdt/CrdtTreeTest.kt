@@ -41,7 +41,7 @@ class CrdtTreeTest {
         assertFalse(para.isText)
 
         val left = para.children.first()
-        val right = left.splitText(5, 0)
+        val right = left.splitText(5, 0).first
         assertEquals(11, para.size)
         assertFalse(para.isText)
         assertEquals("hello", left.value)
@@ -169,7 +169,7 @@ class CrdtTreeTest {
         var (parent, left) = target.findNodesAndSplitText(
             CrdtTreePos(pNode.id, textNode.id),
             issueTime(),
-        )
+        ).first
         assertEquals(1, target.toIndex(parent, left))
 
         // Find the closest index.TreePos when parentNode in crdt.TreePos is removed.
@@ -178,7 +178,7 @@ class CrdtTreeTest {
         target.edit(0 to 2, null)
         assertEquals("<root></root>", target.toXml())
 
-        target.findNodesAndSplitText(CrdtTreePos(pNode.id, textNode.id), issueTime()).also {
+        target.findNodesAndSplitText(CrdtTreePos(pNode.id, textNode.id), issueTime()).first.also {
             parent = it.first
             left = it.second
         }

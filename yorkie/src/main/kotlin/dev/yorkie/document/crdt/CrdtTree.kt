@@ -20,6 +20,7 @@ import dev.yorkie.util.IndexTreeNodeList
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
+import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.traverseAll
 import java.util.TreeMap
 
@@ -76,8 +77,18 @@ internal data class CrdtTree(
         executedAt: TimeTicket,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
-        val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
-        val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+
+        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
+        val (fromParent, fromLeft) = from
+        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
+        val (toParent, toLeft) = to
+
+        diff = addDataSizes(diff, diffTo, diffFrom)
+
         val changes = mutableListOf<TreeChange>()
 
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
@@ -86,7 +97,7 @@ internal data class CrdtTree(
             fromLeft = fromLeft,
             toParent = toParent,
             toLeft = toLeft,
-        ) { (node, _), _ ->
+        ) { (node, tokenType), _ ->
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
@@ -107,7 +118,7 @@ internal data class CrdtTree(
                         fromPath = toPath(parentOfNode, previousNode),
                         toPath = toPath(node, node),
                         actorID = executedAt.actorID,
-                        attributes = attributes.filterKeys { it in affectedAttrs },
+                        attributes = affectedAttrs,
                     ).let(changes::add)
                 }
 
@@ -116,9 +127,16 @@ internal data class CrdtTree(
                         gcPairs.add(GCPair(node, prev))
                     }
                 }
+
+                for ((key, _) in attributes) {
+                    val curr = node.getAttrs().getNodeMapByKey()[key]
+                    if (curr != null && tokenType != TokenType.End) {
+                        diff = addDataSizes(diff, curr.dataSize)
+                    }
+                }
             }
         }
-        return TreeOperationResult(changes, gcPairs)
+        return TreeOperationResult(changes, gcPairs, diff)
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {
@@ -170,9 +188,18 @@ internal data class CrdtTree(
         issueTimeTicket: (() -> TimeTicket)? = null,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+
         // 01. find nodes from the given range and split nodes.
-        val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
-        val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
+        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
+        val (fromParent, fromLeft) = from
+        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
+        val (toParent, toLeft) = to
+
+        diff = addDataSizes(diff, diffTo, diffFrom)
 
         val fromIndex = toIndex(fromParent, fromLeft)
         val fromPath = toPath(fromParent, fromLeft)
@@ -267,6 +294,8 @@ internal data class CrdtTree(
                     if (fromParent.isRemoved) {
                         node.remove(executedAt)
                         gcPairs.add(GCPair(this, node))
+                    } else {
+                        diff = addDataSizes(diff, node.dataSize)
                     }
                     nodeMapByID[node.id] = node
                 }
@@ -295,7 +324,7 @@ internal data class CrdtTree(
                 }
             }
         }
-        return TreeOperationResult(changes, gcPairs)
+        return TreeOperationResult(changes, gcPairs, diff)
     }
 
     /**
@@ -420,8 +449,17 @@ internal data class CrdtTree(
         executedAt: TimeTicket,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
-        val (fromParent, fromLeft) = findNodesAndSplitText(range.first, executedAt)
-        val (toParent, toLeft) = findNodesAndSplitText(range.second, executedAt)
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+
+        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
+        val (fromParent, fromLeft) = from
+        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
+        val (toParent, toLeft) = to
+
+        diff = addDataSizes(diff, diffTo, diffFrom)
 
         val changes = mutableListOf<TreeChange>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
@@ -454,7 +492,7 @@ internal data class CrdtTree(
                 ).let(changes::add)
             }
         }
-        return TreeOperationResult(changes, gcPairs)
+        return TreeOperationResult(changes, gcPairs, diff)
     }
 
     private fun traverseInPosRange(
@@ -482,7 +520,15 @@ internal data class CrdtTree(
      * If [executedAt] is given, then it is used to find the appropriate left node
      * for concurrent insertion.
      */
-    fun findNodesAndSplitText(pos: CrdtTreePos, executedAt: TimeTicket? = null): TreeNodePair {
+    fun findNodesAndSplitText(
+        pos: CrdtTreePos,
+        executedAt: TimeTicket? = null,
+    ): Pair<TreeNodePair, DataSize> {
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+
         // 01. Find the parent and left sibling node of the given position.
         val (parent, leftSibling) = pos.toTreeNodePair(this)
 
@@ -495,7 +541,11 @@ internal data class CrdtTree(
 
         // 03. Split text node if the left node is a text node.
         if (leftSibling.isText) {
-            leftSibling.split(this, pos.leftSiblingID.offset - leftSibling.id.offset)
+            val (_, splitedDiff) = leftSibling.split(
+                this,
+                pos.leftSiblingID.offset - leftSibling.id.offset,
+            )
+            diff = splitedDiff
         }
 
         // 04. Find the appropriate left node. If some nodes are inserted at the
@@ -512,7 +562,10 @@ internal data class CrdtTree(
             }
         }
 
-        return realParent to updatedLeftSiblingNode
+        return Pair(
+            first = Pair(realParent, updatedLeftSiblingNode),
+            second = diff,
+        )
     }
 
     fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
@@ -675,8 +728,10 @@ internal data class CrdtTree(
      * Converts the given position [range] to the path range.
      */
     fun posRangeToPathRange(range: TreePosRange): Pair<List<Int>, List<Int>> {
-        val (fromParent, fromLeft) = findNodesAndSplitText(range.first)
-        val (toParent, toLeft) = findNodesAndSplitText(range.second)
+        val (from, _) = findNodesAndSplitText(range.first)
+        val (fromParent, fromLeft) = from
+        val (to, _) = findNodesAndSplitText(range.second)
+        val (toParent, toLeft) = to
         return toPath(fromParent, fromLeft) to toPath(toParent, toLeft)
     }
 
@@ -684,8 +739,10 @@ internal data class CrdtTree(
      * Converts the given position range to the path range.
      */
     fun posRangeToIndexRange(range: TreePosRange): Pair<Int, Int> {
-        val (fromParent, fromLeft) = findNodesAndSplitText(range.first)
-        val (toParent, toLeft) = findNodesAndSplitText(range.second)
+        val (from, _) = findNodesAndSplitText(range.first)
+        val (fromParent, fromLeft) = from
+        val (to, _) = findNodesAndSplitText(range.second)
+        val (toParent, toLeft) = to
         return toIndex(fromParent, fromLeft) to toIndex(toParent, toLeft)
     }
 
@@ -841,6 +898,8 @@ internal data class CrdtTreeNode(
     val rhtNodes: Iterable<RhtNode>
         get() = _attributes
 
+    fun getAttrs() = _attributes
+
     init {
         _value?.let { value = it }
     }
@@ -869,8 +928,8 @@ internal data class CrdtTreeNode(
         tree: CrdtTree,
         offset: Int,
         issueTimeTicket: (() -> TimeTicket)? = null,
-    ): CrdtTreeNode? {
-        val split = if (isText) {
+    ): Pair<CrdtTreeNode?, DataSize> {
+        val (split, diff) = if (isText) {
             splitText(offset, id.offset)
         } else {
             splitElement(offset, requireNotNull(issueTimeTicket))
@@ -887,7 +946,7 @@ internal data class CrdtTreeNode(
             tree.registerNode(split)
         }
 
-        return split
+        return Pair(split, diff)
     }
 
     fun setAttributes(

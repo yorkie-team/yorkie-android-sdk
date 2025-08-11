@@ -13,6 +13,8 @@ import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.SplayTreeSet
+import dev.yorkie.util.addDataSizes
+import dev.yorkie.util.subDataSize
 import java.util.TreeMap
 
 internal typealias RgaTreeSplitPosRange = Pair<RgaTreeSplitPos, RgaTreeSplitPos>
@@ -54,8 +56,14 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         versionVector: VersionVector?,
     ): RgaTreeSplitEditResult<T> {
         // 1. Split nodes.
-        val (toLeft, toRight) = findNodeWithSplit(range.second, executedAt)
-        val (fromLeft, fromRight) = findNodeWithSplit(range.first, executedAt)
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+        val (toLeft, toRight, diffTo) = findNodeWithSplit(range.second, executedAt)
+        val (fromLeft, fromRight, diffFrom) = findNodeWithSplit(range.first, executedAt)
+
+        diff = addDataSizes(diff, diffTo, diffFrom)
 
         // 2. Delete between from and to.
         val nodesToDelete = findBetween(fromRight, toRight)
@@ -77,6 +85,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     it,
                 ),
             )
+            diff = addDataSizes(diff, inserted.dataSize)
+
             if (changes.isNotEmpty() && changes.last().from == index) {
                 changes[changes.lastIndex] = changes.last().copy(content = it.toString())
             } else {
@@ -95,7 +105,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         // 4. Add removed nodes.
         val gcPairs = removedNodes.map { (_, node) -> GCPair(this, node) }
 
-        return RgaTreeSplitEditResult(caretPos, changes, gcPairs)
+        return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff)
     }
 
     /**
@@ -104,16 +114,16 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     fun findNodeWithSplit(
         pos: RgaTreeSplitPos,
         executedAt: TimeTicket,
-    ): Pair<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>?> {
+    ): Triple<RgaTreeSplitNode<T>, RgaTreeSplitNode<T>?, DataSize> {
         val absoluteID = pos.absoluteID
         var node = findFloorNodePreferToLeft(absoluteID)
         val relativeOffSet = absoluteID.offset - node.id.offset
-        splitNode(node, relativeOffSet)
+        val (_, diff) = splitNode(node, relativeOffSet)
 
         while (node.hasNext && executedAt < node.next?.createdAt) {
             node = node.next ?: break
         }
-        return node to node.next
+        return Triple(node, node.next, diff)
     }
 
     private fun findFloorNodePreferToLeft(id: RgaTreeSplitNodeID): RgaTreeSplitNode<T> {
@@ -135,15 +145,26 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         }
     }
 
-    private fun splitNode(node: RgaTreeSplitNode<T>, offset: Int): RgaTreeSplitNode<T>? {
+    private fun splitNode(
+        node: RgaTreeSplitNode<T>,
+        offset: Int,
+    ): Pair<RgaTreeSplitNode<T>?, DataSize> {
         if (offset > node.contentLength) {
             throw IllegalArgumentException("offset should be less than or equal to length")
         }
+
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+
         if (offset == 0) {
-            return node
+            return Pair(node, diff)
         } else if (offset == node.contentLength) {
-            return node.next
+            return Pair(node.next, diff)
         }
+
+        val prevSize = node.dataSize
 
         val splitNode = node.split(offset)
         treeByIndex.updateWeight(splitNode)
@@ -151,7 +172,10 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         node.insertionNext?.setInsertionPrev(splitNode)
         splitNode.setInsertionPrev(node)
 
-        return splitNode
+        diff = addDataSizes(diff, node.dataSize, splitNode.dataSize)
+        diff = subDataSize(diff, prevSize)
+
+        return Pair(splitNode, diff)
     }
 
     /**

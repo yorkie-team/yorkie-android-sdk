@@ -6,6 +6,8 @@ import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logError
+import dev.yorkie.util.addDataSizes
+import dev.yorkie.util.subDataSize
 
 /**
  * [CrdtRoot] is a structure that represents the root. It has a hash table of
@@ -34,46 +36,25 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     private val gcPairMap = mutableMapOf<GCChild, GCPair<*>>()
 
+    /**
+     * `docSize` is a structure that represents the size of the document.
+     */
+    var docSize: DocSize = DocSize(
+        live = DataSize(
+            data = 0,
+            meta = 0,
+        ),
+        gc = DataSize(
+            data = 0,
+            meta = 0,
+        ),
+    )
+
     val elementMapSize
         get() = elementPairMapByCreatedAt.size
 
     val garbageLength: Int
         get() = getGarbageElementSetSize() + gcPairMap.size
-
-    val docSize: DocSize
-        get() {
-            var liveData = 0
-            var liveMeta = 0
-            var gcData = 0
-            var gcMeta = 0
-
-            elementPairMapByCreatedAt.forEach { createdAt, value ->
-                if (gcElementSetByCreatedAt.contains(createdAt)) {
-                    gcData += value.element.getDataSize().data
-                    gcMeta += value.element.getDataSize().meta
-                } else {
-                    liveData += value.element.getDataSize().data
-                    liveMeta += value.element.getDataSize().meta
-                }
-            }
-
-            gcPairMap.values.forEach {
-                val dataSize = it.child.dataSize
-                gcData += dataSize.data
-                gcMeta += dataSize.meta
-            }
-
-            return DocSize(
-                live = DataSize(
-                    data = liveData,
-                    meta = liveMeta,
-                ),
-                gc = DataSize(
-                    data = gcData,
-                    meta = gcMeta,
-                ),
-            )
-        }
 
     init {
         registerElement(rootObject, null)
@@ -132,6 +113,10 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     fun registerElement(element: CrdtElement, parent: CrdtContainer?) {
         elementPairMapByCreatedAt[element.createdAt] = CrdtElementPair(element, parent)
 
+        docSize = docSize.copy(
+            live = addDataSizes(docSize.live, element.getDataSize()),
+        )
+
         if (element is CrdtContainer) {
             element.getDescendants { _element, _parent ->
                 registerElement(_element, _parent)
@@ -144,6 +129,13 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * Registers the given [element] to the hash set.
      */
     fun registerRemovedElement(element: CrdtElement) {
+        val docSizeLive = subDataSize(docSize.live, element.getDataSize())
+        docSize = docSize.copy(
+            live = docSizeLive.copy(
+                meta = docSizeLive.meta + TimeTicket.TIME_TICKET_SIZE,
+            ),
+            gc = addDataSizes(docSize.gc, element.getDataSize()),
+        )
         gcElementSetByCreatedAt.add(element.createdAt)
     }
 
@@ -157,6 +149,21 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             return
         }
         gcPairMap[pair.child] = pair
+
+        val size = pair.child.dataSize
+        val docSizeLive = if (pair.child is RhtNode) {
+            subDataSize(docSize.live, size)
+        } else {
+            val dataSize = subDataSize(docSize.live, size)
+            dataSize.copy(
+                meta = dataSize.meta + TimeTicket.TIME_TICKET_SIZE,
+            )
+        }
+        val docSizeGc = addDataSizes(docSize.gc, size)
+        docSize = docSize.copy(
+            live = docSizeLive,
+            gc = docSizeGc,
+        )
     }
 
     private fun getGarbageElementSetSize(): Int {
@@ -224,6 +231,9 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
 
     @VisibleForTesting
     fun deregisterElement(element: CrdtElement) {
+        docSize = docSize.copy(
+            gc = subDataSize(docSize.gc, element.getDataSize()),
+        )
         elementPairMapByCreatedAt.remove(element.createdAt)
         gcElementSetByCreatedAt.remove(element.createdAt)
     }
@@ -233,6 +243,15 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     fun toJson(): String {
         return rootObject.toJson()
+    }
+
+    /**
+     * `acc` accumulates the given DataSize to Live.
+     */
+    fun acc(diff: DataSize) {
+        docSize = docSize.copy(
+            live = addDataSizes(docSize.live, diff),
+        )
     }
 
     companion object {

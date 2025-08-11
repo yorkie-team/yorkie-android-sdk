@@ -22,12 +22,17 @@ internal data class StyleOperation(
     override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
-            val changes = parentObject.style(
+            val result = parentObject.style(
                 RgaTreeSplitPosRange(fromPos, toPos),
                 attributes,
                 executedAt,
                 versionVector,
-            ).textChanges
+            )
+            val changes = result.textChanges
+
+            root.acc(result.dataSize)
+
+            result.gcPairs.forEach(root::registerGCPair)
             changes.map {
                 OperationInfo.StyleOpInfo(
                     it.from,

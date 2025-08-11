@@ -280,7 +280,7 @@ public class JsonTree internal constructor(
 
     private fun styleByRange(range: TreePosRange, attributes: Map<String, String>) {
         val ticket = context.issueTimeTicket()
-        val (_, gcPairs) = target.style(range, attributes, ticket)
+        val (_, gcPairs, diff) = target.style(range, attributes, ticket)
 
         context.push(
             TreeStyleOperation(
@@ -291,6 +291,9 @@ public class JsonTree internal constructor(
                 attributes.toMap(),
             ),
         )
+
+        this.context.acc(diff)
+
         gcPairs.forEach(context::registerGCPair)
     }
 
@@ -306,11 +309,14 @@ public class JsonTree internal constructor(
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
         val executedAt = context.issueTimeTicket()
-        val (_, gcPairs) = target.removeStyle(
+        val (_, gcPairs, diff) = target.removeStyle(
             fromPos to toPos,
             attributesToRemove,
             executedAt,
         )
+
+        this.context.acc(diff)
+
         gcPairs.forEach(context::registerGCPair)
 
         context.push(
@@ -400,13 +406,16 @@ public class JsonTree internal constructor(
         } else {
             contents.map { createCrdtTreeNode(context, it) }
         }
-        val (_, gcPairs) = target.edit(
+        val (_, gcPairs, diff) = target.edit(
             fromPos to toPos,
             crdtNodes.map(CrdtTreeNode::deepCopy).ifEmpty { null },
             splitLevel,
             ticket,
             context::issueTimeTicket,
         )
+
+        this.context.acc(diff)
+
         gcPairs.forEach(context::registerGCPair)
 
         context.push(

@@ -74,6 +74,8 @@ internal data class TextValue(
         return _attributes.set(key, value, executedAt)
     }
 
+    fun getAttrs() = _attributes
+
     /**
      * Deletes the given child node.
      */
@@ -110,9 +112,11 @@ internal data class TextEditResult(
     val textChanges: List<TextChange>,
     val posRange: RgaTreeSplitPosRange,
     val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
+    val dataSize: DataSize,
 )
 
 internal data class TextStyleResult(
     val textChanges: List<TextChange>,
     val gcPairs: List<GCPair<RhtNode>>,
+    val dataSize: DataSize,
 )

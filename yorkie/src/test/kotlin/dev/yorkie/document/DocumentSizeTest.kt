@@ -728,4 +728,32 @@ class DocumentSizeTest {
             actual = rightElem?.toXml(),
         )
     }
+
+    @Test
+    fun `should return correct doc size when deep copy`() = runTest {
+        document.updateAsync { root, _ ->
+            root.setNewCounter("counter", 1)
+        }.await()
+
+        val clone = document.clone?.root?.deepCopy()
+        assertEquals(
+            expected = clone?.docSize,
+            actual = document.getDocSize(),
+        )
+    }
+
+    @Test
+    fun `should return correct doc size when deep copy for nested element`() = runTest {
+        document.updateAsync { root, _ ->
+            root.setNewArray("arr").putNewObject().apply {
+                setNewCounter("counter", 1)
+            }
+        }.await()
+
+        val clone = document.clone?.root?.deepCopy()
+        assertEquals(
+            expected = clone?.docSize,
+            actual = document.getDocSize(),
+        )
+    }
 }

@@ -656,6 +656,12 @@ public class Client(
                     }
                     return@async Result.failure(it)
                 }
+
+                val maxSize = response.maxSizePerDocument
+                if (maxSize > 0) {
+                    document.setMaxSizePerDocument(maxSize)
+                }
+
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
 

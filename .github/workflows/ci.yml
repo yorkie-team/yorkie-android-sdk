@@ -25,30 +25,8 @@ jobs:
       - run: ./gradlew lintKotlin
       - run: ./gradlew lint
 
-  unit-tests:
-    name: Unit tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          java-version: 17
-          distribution: 'zulu'
-          cache: 'gradle'
-      - name: Set Yorkie Server Url
-        run: ./scripts/config-yorkie-local-server.sh
-      - run: chmod +x gradlew
-      - uses: gradle/actions/setup-gradle@v3
-      - run: ./gradlew yorkie:testDebugUnitTest
-      - run: ./gradlew yorkie:jacocoDebugTestReport
-      - uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-artifact
-          path: yorkie/build/reports/jacoco/jacocoDebugTestReport/jacocoDebugTestReport.xml
-
-  instrumentation-tests:
-    name: Instrumentation tests
+  run-tests:
+    name: Run instrumented tests and unit tests
     strategy:
       fail-fast: false
       matrix:
@@ -89,16 +67,21 @@ jobs:
           script: |
             ./gradlew yorkie:connectedDebugAndroidTest --stacktrace --info
       - if: ${{ matrix.api-level == 33 }}
+        name: Run unit tests
+        run: ./gradlew yorkie:testDebugUnitTest
+      - if: ${{ matrix.api-level == 33 }}
+        name: Generate test report
         run: ./gradlew yorkie:jacocoDebugTestReport
       - if: ${{ matrix.api-level == 33 }}
+        name: Upload test report
         uses: actions/upload-artifact@v4
         with:
-          name: android-test-artifact
+          name: test-artifact
           path: yorkie/build/reports/jacoco/jacocoDebugTestReport/jacocoDebugTestReport.xml
 
   codecov:
     name: Codecov
-    needs: [ unit-tests, instrumentation-tests ]
+    needs: [ run-tests ]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

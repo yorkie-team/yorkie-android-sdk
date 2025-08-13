@@ -6,6 +6,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.SplayTreeSet
+import dev.yorkie.util.addDataSizes
 import java.util.TreeMap
 
 /**
@@ -62,7 +63,7 @@ internal data class CrdtText(
             null
         }
 
-        val (caretPos, contentChanges, gcPairs) = rgaTreeSplit.edit(
+        val (caretPos, contentChanges, gcPairs, dataSize) = rgaTreeSplit.edit(
             range,
             executedAt,
             textValue,
@@ -82,7 +83,7 @@ internal data class CrdtText(
         if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        return TextEditResult(changes, caretPos to caretPos, gcPairs)
+        return TextEditResult(changes, caretPos to caretPos, gcPairs, dataSize)
     }
 
     /**
@@ -97,9 +98,16 @@ internal data class CrdtText(
         executedAt: TimeTicket,
         versionVector: VersionVector? = null,
     ): TextStyleResult {
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+
         // 1. Split nodes with from and to.
-        val toRight = rgaTreeSplit.findNodeWithSplit(range.second, executedAt).second
-        val fromRight = rgaTreeSplit.findNodeWithSplit(range.first, executedAt).second
+        val (_, toRight, diffTo) = rgaTreeSplit.findNodeWithSplit(range.second, executedAt)
+        val (_, fromRight, diffFrom) = rgaTreeSplit.findNodeWithSplit(range.first, executedAt)
+
+        diff = addDataSizes(diff, diffTo, diffFrom)
 
         // 2. Style nodes between from and to.
         val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
@@ -124,6 +132,11 @@ internal data class CrdtText(
                     prev?.let {
                         gcPairs.add(GCPair(node.value, prev))
                     }
+
+                    val curr = node.value.getAttrs().getNodeMapByKey()[it.key]
+                    if (curr != null) {
+                        diff = addDataSizes(diff, curr.dataSize)
+                    }
                 }
                 TextChange(
                     TextChangeType.Style,
@@ -135,7 +148,7 @@ internal data class CrdtText(
                 )
             }
 
-        return TextStyleResult(changes, gcPairs)
+        return TextStyleResult(changes, gcPairs, diff)
     }
 
     /**

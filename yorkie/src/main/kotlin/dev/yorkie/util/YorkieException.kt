@@ -35,6 +35,9 @@ public data class YorkieException(
         // ErrDocumentRemoved is returned when the document is removed.
         ErrDocumentRemoved("ErrDocumentRemoved"),
 
+        // ErrDocumentSizeExceedsLimit is returned when the document size exceeds the limit.
+        ErrDocumentSizeExceedsLimit("ErrDocumentSizeExceedsLimit"),
+
         // InvalidObjectKey is returned when the object key is invalid.
         ErrInvalidObjectKey("ErrInvalidObjectKey"),
 

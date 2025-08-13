@@ -37,6 +37,7 @@ import dev.yorkie.util.YorkieException.Code.ErrDocumentRemoved
 import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
+import dev.yorkie.util.totalDocSize
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +78,9 @@ public class Document(
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
+
+    @Volatile
+    private var maxSizeLimit = 0
 
     private val eventStream = MutableSharedFlow<Event>()
     public val events = eventStream.asSharedFlow()
@@ -167,6 +171,19 @@ public class Document(
             }
             if (result.isFailure) {
                 return@async result
+            }
+
+            val size = totalDocSize(this@Document.clone?.root?.docSize)
+            if (
+                !context.isPresenceOnlyChange() &&
+                maxSizeLimit > 0 &&
+                maxSizeLimit < size
+            ) {
+                this@Document.clone = null
+                throw YorkieException(
+                    code = YorkieException.Code.ErrDocumentSizeExceedsLimit,
+                    errorMessage = "document size exceeded: $size > $maxSizeLimit",
+                )
             }
 
             if (!context.hasChange) {
@@ -528,6 +545,20 @@ public class Document(
 
     public fun toJson(): String {
         return root.toJson()
+    }
+
+    /**
+     * `setMaxSizePerDocument` sets the maximum size of this document.
+     */
+    fun setMaxSizePerDocument(size: Int) {
+        this.maxSizeLimit = size
+    }
+
+    /**
+     * `getMaxSizePerDocument` gets the maximum size of this document.
+     */
+    fun getMaxSizePerDocument(): Int {
+        return this.maxSizeLimit
     }
 
     public suspend fun publishEvent(event: Event) {

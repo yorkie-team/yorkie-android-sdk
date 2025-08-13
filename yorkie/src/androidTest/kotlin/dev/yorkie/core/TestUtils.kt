@@ -13,10 +13,13 @@ import okhttp3.Protocol
 const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
 const val GENERAL_TIMEOUT = 3_000L
 
-fun createClient(): Client {
+const val TEST_API_ID = "admin"
+const val TEST_API_PW = "admin"
+
+fun createClient(options: Client.Options = Client.Options()): Client {
     val unaryClient = OkHttpClient.Builder().protocols(listOf(Protocol.HTTP_1_1)).build()
     return Client(
-        options = Client.Options(),
+        options = options,
         host = BuildConfig.YORKIE_SERVER_URL,
         unaryClient = unaryClient,
         streamClient = unaryClient,

@@ -56,7 +56,7 @@ public class JsonText internal constructor(
         logDebug(TAG, "EDIT: f:$fromIndex->${range.first}, t:$toIndex->${range.second} c:$content")
 
         val executedAt = context.issueTimeTicket()
-        val (_, rangeAfterEdit, gcPairs) = runCatching {
+        val (_, rangeAfterEdit, gcPairs, diff) = runCatching {
             target.edit(range, content, executedAt, attributes)
         }.getOrElse {
             when (it) {
@@ -68,6 +68,9 @@ public class JsonText internal constructor(
                 else -> throw it
             }
         }
+
+        this.context.acc(diff)
+
         gcPairs.forEach(context::registerGCPair)
 
         context.push(
@@ -106,7 +109,7 @@ public class JsonText internal constructor(
 
         val executedAt = context.issueTimeTicket()
         runCatching {
-            val (_, gcPairs) = target.style(range, attributes, executedAt)
+            val (_, gcPairs, diff) = target.style(range, attributes, executedAt)
             context.push(
                 StyleOperation(
                     parentCreatedAt = target.createdAt,
@@ -116,6 +119,9 @@ public class JsonText internal constructor(
                     executedAt = executedAt,
                 ),
             )
+
+            this.context.acc(diff)
+
             gcPairs.forEach(context::registerGCPair)
         }.getOrElse {
             when (it) {

@@ -7,6 +7,7 @@ import dev.yorkie.document.crdt.GCPair
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.DataSize
 
 /**
  * Used to record the context of modification when editing a document.
@@ -71,7 +72,7 @@ internal data class ChangeContext(
      * `toChange` creates a new instance of Change in this context.
      */
     fun toChange(): Change {
-        val id = if (operations.isEmpty()) {
+        val id = if (isPresenceOnlyChange()) {
             prevId.next(true)
         } else {
             nextId
@@ -97,7 +98,7 @@ internal data class ChangeContext(
      * document for the next change.returns the next ID of this context.
      */
     fun getNextId(): ChangeID {
-        return if (operations.isEmpty()) {
+        return if (isPresenceOnlyChange()) {
             prevId
                 .next(true)
                 .setLamport(prevId.lamport)
@@ -105,5 +106,20 @@ internal data class ChangeContext(
         } else {
             nextId
         }
+    }
+
+    /**
+     * `isPresenceOnlyChange` returns whether this context is only for presence
+     * change or not.
+     */
+    fun isPresenceOnlyChange(): Boolean {
+        return this.operations.isEmpty()
+    }
+
+    /**
+     * `acc` accumulates the given DataSize to Live size of the root.
+     */
+    fun acc(diff: DataSize) {
+        root.acc(diff)
     }
 }

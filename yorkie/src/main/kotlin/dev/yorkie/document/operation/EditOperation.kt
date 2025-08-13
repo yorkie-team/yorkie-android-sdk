@@ -37,6 +37,9 @@ internal data class EditOperation(
                 attributes,
                 versionVector,
             )
+
+            root.acc(result.dataSize)
+
             result.gcPairs.forEach(root::registerGCPair)
             result.textChanges.map { (_, _, from, to, content, attributes) ->
                 OperationInfo.EditOpInfo(

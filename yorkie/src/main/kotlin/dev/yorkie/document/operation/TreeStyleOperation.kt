@@ -34,12 +34,15 @@ internal data class TreeStyleOperation(
 
         return when {
             attributes?.isNotEmpty() == true -> {
-                val (changes, gcPairs) = tree.style(
+                val (changes, gcPairs, diff) = tree.style(
                     fromPos to toPos,
                     attributes,
                     executedAt,
                     versionVector,
                 )
+
+                root.acc(diff)
+
                 gcPairs.forEach(root::registerGCPair)
                 changes.map {
                     TreeStyleOpInfo(

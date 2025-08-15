@@ -127,7 +127,9 @@ public class Client(
     public val isActive: Boolean
         get() = status.value is Status.Activated
 
-    private val projectBasedRequestHeader = mapOf("x-shard-key" to listOf(options.apiKey.orEmpty()))
+    private val projectBasedRequestHeader = mapOf(
+        "x-shard-key" to listOf("${options.apiKey.orEmpty()}/${options.key}"),
+    )
 
     private val Document.Key.documentBasedRequestHeader
         get() = mapOf(
@@ -772,10 +774,10 @@ public class Client(
             activationJob.cancelChildren()
             try {
                 service.deactivateClient(
-                    deactivateClientRequest {
+                    request = deactivateClientRequest {
                         clientId = requireClientId().value
                     },
-                    projectBasedRequestHeader,
+                    headers = projectBasedRequestHeader,
                 ).getOrThrow()
 
                 deactivateInternal()

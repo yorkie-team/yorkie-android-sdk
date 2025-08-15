@@ -128,7 +128,7 @@ public class Client(
         get() = status.value is Status.Activated
 
     private val projectBasedRequestHeader = mapOf(
-        "x-shard-key" to listOf("${options.apiKey.orEmpty()}/${options.key}")
+        "x-shard-key" to listOf("${options.apiKey.orEmpty()}/${options.key}"),
     )
 
     private val Document.Key.documentBasedRequestHeader

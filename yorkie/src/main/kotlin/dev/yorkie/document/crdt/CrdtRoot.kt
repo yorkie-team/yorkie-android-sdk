@@ -118,8 +118,13 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         )
 
         if (element is CrdtContainer) {
-            element.getDescendants { _element, _parent ->
-                registerElement(_element, _parent)
+            element.getDescendants { elem, par ->
+                elementPairMapByCreatedAt[elem.createdAt] = CrdtElementPair(elem, par)
+
+                docSize = docSize.copy(
+                    live = addDataSizes(docSize.live, elem.getDataSize()),
+                )
+
                 false
             }
         }

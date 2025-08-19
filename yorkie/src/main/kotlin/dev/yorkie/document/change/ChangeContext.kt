@@ -14,14 +14,15 @@ import dev.yorkie.util.DataSize
  * Each time we add an operation, a new time ticket is issued.
  * Finally returns a [Change] after the modification has been completed.
  */
-internal data class ChangeContext(
+internal class ChangeContext(
     val prevId: ChangeID,
     val root: CrdtRoot,
     val message: String? = null,
-    var presenceChange: PresenceChange? = null,
-    private val operations: MutableList<Operation> = mutableListOf(),
-    private var delimiter: UInt = TimeTicket.INITIAL_DELIMITER,
 ) {
+    var presenceChange: PresenceChange? = null
+    private val operations: MutableList<Operation> = mutableListOf()
+    private var delimiter: UInt = TimeTicket.INITIAL_DELIMITER
+
     /**
      * returns the next ID of this context. It will be set to the
      * document for the next change.returns the next ID of this context.

@@ -11,15 +11,13 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.test.BuildConfig
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.postApi
 import dev.yorkie.util.totalDocSize
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
@@ -39,12 +37,13 @@ class DocumentLimitTest {
             .build()
         gson = GsonBuilder().create()
 
-        val loginResponse = postApi<Map<String, Any>>(
+        val loginResponse = client.postApi<Map<String, Any>>(
             url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/LogIn",
             requestMap = mapOf(
                 "username" to TEST_API_ID,
                 "password" to TEST_API_PW,
             ),
+            gson = gson,
         )
         adminToken = loginResponse["token"] as String
     }
@@ -53,7 +52,7 @@ class DocumentLimitTest {
     fun should_successfully_assign_size_limit_to_document() {
         runBlocking {
             val now = System.currentTimeMillis()
-            val createProjectResponse = postApi<Map<String, Any>>(
+            val createProjectResponse = client.postApi<Map<String, Any>>(
                 url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
@@ -61,11 +60,12 @@ class DocumentLimitTest {
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
                 ),
+                gson = gson,
             )
             val projectId = (createProjectResponse["project"] as Map<String, Any>)["id"] as String
             val sizeLimit = 10 * 1024 * 1024
 
-            postApi<Any>(
+            client.postApi<Any>(
                 url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
@@ -76,9 +76,10 @@ class DocumentLimitTest {
                         "max_size_per_document" to sizeLimit,
                     ),
                 ),
+                gson = gson,
             )
 
-            val projectResponse = postApi<Map<String, Any>>(
+            val projectResponse = client.postApi<Map<String, Any>>(
                 url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/GetProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
@@ -86,6 +87,7 @@ class DocumentLimitTest {
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
                 ),
+                gson = gson,
             )
             val project = projectResponse["project"] as Map<String, Any>
             assertEquals(
@@ -117,7 +119,7 @@ class DocumentLimitTest {
     fun should_reject_local_update_that_exceeds_document_size_limit() {
         runBlocking {
             val now = System.currentTimeMillis()
-            val createProjectResponse = postApi<Map<String, Any>>(
+            val createProjectResponse = client.postApi<Map<String, Any>>(
                 url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
@@ -125,12 +127,13 @@ class DocumentLimitTest {
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
                 ),
+                gson = gson,
             )
             val project = createProjectResponse["project"] as Map<String, Any>
             val projectId = project["id"] as String
             val sizeLimit = 76
 
-            postApi<Any>(
+            client.postApi<Any>(
                 url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
@@ -141,6 +144,7 @@ class DocumentLimitTest {
                         "max_size_per_document" to sizeLimit,
                     ),
                 ),
+                gson = gson,
             )
 
             val client = createClient(
@@ -195,7 +199,7 @@ class DocumentLimitTest {
     fun should_allow_remote_updates_even_if_they_exceed_document_size_limit() {
         runBlocking {
             val now = System.currentTimeMillis()
-            val createProjectResponse = postApi<Map<String, Any>>(
+            val createProjectResponse = client.postApi<Map<String, Any>>(
                 url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
@@ -203,6 +207,7 @@ class DocumentLimitTest {
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
                 ),
+                gson = gson,
             )
             val project = createProjectResponse["project"] as Map<String, Any>
             val projectId = project["id"] as String
@@ -210,7 +215,7 @@ class DocumentLimitTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
 
-            postApi<Any>(
+            client.postApi<Any>(
                 url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
@@ -221,6 +226,7 @@ class DocumentLimitTest {
                         "max_size_per_document" to sizeLimit,
                     ),
                 ),
+                gson = gson,
             )
 
             val client1 = createClient(
@@ -319,36 +325,6 @@ class DocumentLimitTest {
             client1.deactivateAsync().await()
             client2.detachAsync(document2).await()
             client2.deactivateAsync().await()
-        }
-    }
-
-    private inline fun <reified ResponseType : Any> postApi(
-        url: String,
-        headers: Map<String, String> = emptyMap(),
-        requestMap: Map<String, Any>,
-    ): ResponseType {
-        val json = gson.toJson(requestMap)
-        val body = json.toRequestBody("application/json".toMediaType())
-
-        val request = Request.Builder()
-            .url(url)
-            .post(body)
-            .apply {
-                headers.forEach { (key, value) ->
-                    addHeader(key, value)
-                }
-            }
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IllegalStateException("HTTP ${response.code}")
-            }
-
-            val bodyStr = response.body?.string()
-                ?: throw IllegalStateException("Empty body")
-
-            return gson.fromJson(bodyStr, ResponseType::class.java)
         }
     }
 }

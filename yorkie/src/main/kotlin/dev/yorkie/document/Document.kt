@@ -29,6 +29,8 @@ import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.schema.Rule
+import dev.yorkie.schema.validateYorkieRuleset
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.OperationResult
@@ -81,6 +83,9 @@ public class Document(
 
     @Volatile
     private var maxSizeLimit = 0
+
+    @Volatile
+    private var schemaRules: List<Rule> = emptyList()
 
     private val eventStream = MutableSharedFlow<Event>()
     public val events = eventStream.asSharedFlow()
@@ -171,6 +176,27 @@ public class Document(
             }
             if (result.isFailure) {
                 return@async result
+            }
+
+            val rules = schemaRules
+            if (!context.isPresenceOnlyChange() && rules.isNotEmpty()) {
+                val validateYorkieRulesetResult = validateYorkieRuleset(
+                    data = this@Document.clone?.root?.rootObject,
+                    ruleset = rules,
+                )
+                if (!validateYorkieRulesetResult.valid) {
+                    this@Document.clone = null
+                    throw YorkieException(
+                        code = YorkieException.Code.ErrDocumentSchemaValidationFailed,
+                        errorMessage = "schema validation failed: ${
+                            validateYorkieRulesetResult
+                                .errors
+                                .joinToString {
+                                    it.message
+                                }
+                        }",
+                    )
+                }
             }
 
             val size = totalDocSize(this@Document.clone?.root?.docSize)
@@ -506,6 +532,13 @@ public class Document(
         return root.docSize
     }
 
+    /**
+     * `getRootObject` returns root object.
+     */
+    internal fun getRootObject(): CrdtObject {
+        return root.rootObject
+    }
+
     internal fun getOnlineClients() = onlineClients.value
 
     internal fun setOnlineClients(actorIDs: Set<ActorID>) {
@@ -559,6 +592,20 @@ public class Document(
      */
     fun getMaxSizePerDocument(): Int {
         return this.maxSizeLimit
+    }
+
+    /**
+     * `getSchemaRules` gets the schema rules of this document.
+     */
+    fun getSchemaRules(): List<Rule> {
+        return this.schemaRules
+    }
+
+    /**
+     * `setSchemaRules` sets the schema rules of this document.
+     */
+    fun setSchemaRules(rules: List<Rule>) {
+        this.schemaRules = rules
     }
 
     public suspend fun publishEvent(event: Event) {

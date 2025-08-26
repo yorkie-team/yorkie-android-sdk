@@ -50,9 +50,9 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
     init {
         viewModelScope.launch {
-            if (document.getRoot().getAsOrNull<JsonText>(TEXT_KEY) == null) {
+            if (document.getRoot().getAsOrNull<JsonText>(CONTENT) == null) {
                 document.updateAsync { root, _ ->
-                    root.setNewText(TEXT_KEY)
+                    root.setNewText(CONTENT)
                 }.await()
             }
 
@@ -66,11 +66,17 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
         viewModelScope.launch {
             document.events.collect { event ->
                 when (event) {
-                    is Document.Event.Snapshot -> syncText()
+                    is Document.Event.Snapshot -> {
+                        syncText()
+                    }
 
-                    is Document.Event.RemoteChange -> emitEditOpInfos(event.changeInfo)
+                    is Document.Event.RemoteChange -> {
+                        emitEditOpInfos(event.changeInfo)
+                    }
 
-                    is PresenceChanged.Others.PresenceChanged -> event.changed.emitSelection()
+                    is PresenceChanged.Others.PresenceChanged -> {
+                        event.changed.emitSelection()
+                    }
 
                     else -> {}
                 }
@@ -80,7 +86,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
     fun syncText() {
         viewModelScope.launch {
-            val content = document.getRoot().getAsOrNull<JsonText>(TEXT_KEY)
+            val content = document.getRoot().getAsOrNull<JsonText>(CONTENT)
             _content.emit(content?.toString().orEmpty())
         }
     }
@@ -98,7 +104,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
                 gson.fromJson(jsonArray.getString(0), TextPosStructure::class.java) ?: return
             val toPos =
                 gson.fromJson(jsonArray.getString(1), TextPosStructure::class.java) ?: return
-            val (from, to) = document.getRoot().getAs<JsonText>(TEXT_KEY)
+            val (from, to) = document.getRoot().getAs<JsonText>(CONTENT)
                 .posRangeToIndexRange(fromPos to toPos)
             _selections.emit(Selection(actorID, from, to))
         }
@@ -111,7 +117,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     ) {
         viewModelScope.launch {
             document.updateAsync { root, _ ->
-                val range = root.getAs<JsonText>(TEXT_KEY).edit(from, to, content.toString())
+                val range = root.getAs<JsonText>(CONTENT).edit(from, to, content.toString())
                 range?.let {
                     handleSelectEvent(range.first, range.second)
                 }
@@ -122,7 +128,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     override fun handleSelectEvent(from: Int, to: Int) {
         viewModelScope.launch {
             document.updateAsync { root, presence ->
-                val range = root.getAs<JsonText>(TEXT_KEY)
+                val range = root.getAs<JsonText>(CONTENT)
                     .indexRangeToPosRange(from to to)?.toList()
                 presence.put(mapOf("selection" to gson.toJson(range)))
             }.await()
@@ -160,7 +166,7 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
 
     companion object {
         private const val DOCUMENT_KEY = "document-key"
-        private const val TEXT_KEY = "text-key"
+        private const val CONTENT = "content"
 
         private val TerminationScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     }

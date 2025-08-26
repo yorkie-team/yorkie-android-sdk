@@ -12,6 +12,7 @@ import com.connectrpc.impl.ProtocolClient
 import com.connectrpc.okhttp.ConnectOkHttpClient
 import com.connectrpc.protocols.NetworkProtocol
 import com.google.protobuf.ByteString
+import dev.yorkie.api.fromSchemaRules
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -84,14 +85,12 @@ import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.channels.onSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.fold
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -225,46 +224,43 @@ public class Client(
                     conditions[ClientCondition.SYNC_LOOP] = false
                     return@launch
                 }
-                val attachments = attachments.value.entries.mapNotNull {
-                    if (it.value.needRealTimeSync()) {
-                        if (it.value.remoteChangeEventReceived) {
-                            AttachmentEntry(
-                                key = it.key,
-                                value = it.value.copy(
-                                    remoteChangeEventReceived = false,
-                                ),
-                            )
-                        } else {
-                            it
-                        }
-                    } else {
-                        null
-                    }
-                }
-                attachments.asSyncFlow().collect { (document, result) ->
-                    document.publishEvent(
-                        if (result.isSuccess) {
-                            conditions[ClientCondition.SYNC_LOOP] = true
-                            SyncStatusChanged.Synced
-                        } else if (
-                            handleConnectException(
-                                result.exceptionOrNull() as? ConnectException,
-                            ) { connectException ->
-                                handleAuthenticationError(connectException, document, PushPull)
+                this@Client.attachments.value.forEach { (documentKey, attachment) ->
+                    if (attachment.needRealTimeSync()) {
+                        attachments.update {
+                            it.toMutableMap().apply {
+                                put(
+                                    key = documentKey,
+                                    value = attachment.copy(
+                                        remoteChangeEventReceived = false,
+                                    ),
+                                )
                             }
-                        ) { // check if the exception is retryable
-                            conditions[ClientCondition.SYNC_LOOP] = true
-                            SyncStatusChanged.SyncFailed(
-                                result.exceptionOrNull(),
-                            )
-                        } else {
-                            conditions[ClientCondition.SYNC_LOOP] = false
-                            SyncStatusChanged.SyncFailed(
-                                result.exceptionOrNull(),
-                            )
-                            return@collect
-                        },
-                    )
+                        }
+                        val (document, result) = syncInternal(attachment, attachment.syncMode)
+                        document.publishEvent(
+                            if (result.isSuccess) {
+                                conditions[ClientCondition.SYNC_LOOP] = true
+                                SyncStatusChanged.Synced
+                            } else if (
+                                handleConnectException(
+                                    result.exceptionOrNull() as? ConnectException,
+                                ) { connectException ->
+                                    handleAuthenticationError(connectException, document, PushPull)
+                                }
+                            ) { // check if the exception is retryable
+                                conditions[ClientCondition.SYNC_LOOP] = true
+                                SyncStatusChanged.SyncFailed(
+                                    result.exceptionOrNull(),
+                                )
+                            } else {
+                                conditions[ClientCondition.SYNC_LOOP] = false
+                                SyncStatusChanged.SyncFailed(
+                                    result.exceptionOrNull(),
+                                )
+                                return@forEach
+                            },
+                        )
+                    }
                 }
                 delay(options.syncLoopDuration.inWholeMilliseconds)
             }
@@ -285,81 +281,93 @@ public class Client(
             shouldRefreshToken = options.fetchAuthToken != null
 
             var failure: Throwable? = null
-            val attachments = document?.let {
-                val attachment = attachments.value[it.key]?.copy(syncMode = SyncMode.Realtime)
+
+            if (document != null) {
+                val attachment = attachments.value[document.key]
                     ?: throw YorkieException(
                         ErrDocumentNotAttached,
                         "document(${document.key}) is not attached",
                     )
-
-                listOf(AttachmentEntry(it.key, attachment))
-            } ?: attachments.value.entries
-            attachments.asSyncFlow().collect { (document, result) ->
-                document.publishEvent(
-                    if (result.isSuccess) {
+                val syncResult = syncInternal(attachment, SyncMode.Realtime)
+                syncResult.document.publishEvent(
+                    if (syncResult.result.isSuccess) {
                         SyncStatusChanged.Synced
                     } else {
-                        val exception = result.exceptionOrNull()
-                        if (failure == null && exception != null) {
+                        val exception = syncResult.result.exceptionOrNull()
+                        if (exception != null) {
                             failure = exception
                         }
                         SyncStatusChanged.SyncFailed(exception)
                     },
                 )
+            } else {
+                attachments.value.forEach { (_, attachment) ->
+                    val syncResult = syncInternal(attachment, attachment.syncMode)
+                    syncResult.document.publishEvent(
+                        if (syncResult.result.isSuccess) {
+                            SyncStatusChanged.Synced
+                        } else {
+                            val exception = syncResult.result.exceptionOrNull()
+                            if (failure == null && exception != null) {
+                                failure = exception
+                            }
+                            SyncStatusChanged.SyncFailed(exception)
+                        },
+                    )
+                }
             }
             failure?.let { Result.failure(it) } ?: SUCCESS
         }
     }
 
-    private suspend fun Collection<Entry<Document.Key, Attachment>>.asSyncFlow(): Flow<SyncResult> {
-        return asFlow()
-            .mapNotNull { (_, attachment) ->
-                val (document, documentID, syncMode) = attachment
-                SyncResult(
-                    document,
-                    runCatching {
-                        document.mutex.withLock {
-                            val request = pushPullChangesRequest {
-                                clientId = requireClientId().value
-                                changePack = document.createChangePack().toPBChangePack()
-                                documentId = documentID
-                                pushOnly = syncMode == SyncMode.RealtimePushOnly
-                            }
-                            val response = service.pushPullChanges(
-                                request,
-                                document.key.documentBasedRequestHeader,
-                            ).getOrThrow()
-                            val responsePack = response.changePack.toChangePack()
-                            // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
-                            // PushPull, ignore the response when the syncMode is PushOnly.
-                            val currentSyncMode = attachments.value[document.key]?.syncMode
-                            if (responsePack.hasChanges &&
-                                currentSyncMode == SyncMode.RealtimePushOnly ||
-                                currentSyncMode == SyncMode.RealtimeSyncOff
-                            ) {
-                                return@runCatching
-                            }
-                            document.applyChangePack(responsePack)
-                            // NOTE(chacha912): If a document has been removed, watchStream should
-                            // be disconnected to not receive an event for that document.
-                            if (document.status == DocStatus.Removed) {
-                                attachments.value -= document.key
-                                mutexForDocuments.remove(document.key)
-                            }
+    private suspend fun syncInternal(attachment: Attachment, syncMode: SyncMode): SyncResult {
+        val (document, documentID) = attachment
+        return SyncResult(
+            document,
+            runCatching {
+                document.mutex.withLock {
+                    val request = pushPullChangesRequest {
+                        clientId = requireClientId().value
+                        changePack = document.createChangePack().toPBChangePack()
+                        documentId = documentID
+                        pushOnly = syncMode == SyncMode.RealtimePushOnly
+                    }
+                    val response = service.pushPullChanges(
+                        request,
+                        document.key.documentBasedRequestHeader,
+                    ).getOrThrow()
+                    val responsePack = response.changePack.toChangePack()
+                    // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
+                    // PushPull, ignore the response when the syncMode is PushOnly.
+                    val currentSyncMode = attachments.value[document.key]?.syncMode
+                    if (responsePack.hasChanges &&
+                        currentSyncMode == SyncMode.RealtimePushOnly ||
+                        currentSyncMode == SyncMode.RealtimeSyncOff
+                    ) {
+                        return@runCatching
+                    }
+                    document.applyChangePack(responsePack)
+                    // NOTE(chacha912): If a document has been removed, watchStream should
+                    // be disconnected to not receive an event for that document.
+                    if (document.status == DocStatus.Removed) {
+                        attachments.update {
+                            it - document.key
                         }
-                    }.onFailure {
-                        coroutineContext.ensureActive()
-                        (it as? ConnectException)?.let { exception ->
-                            handleConnectException(exception) { it ->
-                                if (errorCodeOf(it) == ErrUnauthenticated.codeString) {
-                                    shouldRefreshToken = true
-                                }
-                                deactivateInternal()
-                            }
+                        mutexForDocuments.remove(document.key)
+                    }
+                }
+            }.onFailure {
+                coroutineContext.ensureActive()
+                (it as? ConnectException)?.let { exception ->
+                    handleConnectException(exception) { it ->
+                        if (errorCodeOf(it) == ErrUnauthenticated.codeString) {
+                            shouldRefreshToken = true
                         }
-                    },
-                )
-            }
+                        deactivateInternal()
+                    }
+                }
+            },
+        )
     }
 
     /**
@@ -617,11 +625,15 @@ public class Client(
     /**
      * Attaches the given [Document] to this [Client].
      * It tells the server that this [Client] will synchronize the given [document].
+     * @param initialPresence: is the initial presence of the client.
+     * @param syncMode: defines the synchronization mode of the document.
+     * @param schema: is the schema of the document. It is used to validate the document.
      */
     public fun attachAsync(
         document: Document,
         initialPresence: P = emptyMap(),
         syncMode: SyncMode = SyncMode.Realtime,
+        schema: String? = null,
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
@@ -644,6 +656,9 @@ public class Client(
                 val request = attachDocumentRequest {
                     clientId = clientID.value
                     changePack = document.createChangePack().toPBChangePack()
+                    schema?.let {
+                        schemaKey = it
+                    }
                 }
                 val response = service.attachDocument(
                     request,
@@ -664,13 +679,16 @@ public class Client(
                     document.setMaxSizePerDocument(maxSize)
                 }
 
+                if (response.schemaRulesCount > 0) {
+                    document.setSchemaRules(response.schemaRulesList.fromSchemaRules())
+                }
+
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
 
                 if (document.status == DocStatus.Removed) {
                     return@async SUCCESS
                 }
-
                 document.applyDocumentStatus(DocStatus.Attached)
                 attachments.value += document.key to Attachment(
                     document,

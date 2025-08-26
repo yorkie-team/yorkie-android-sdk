@@ -38,6 +38,9 @@ public data class YorkieException(
         // ErrDocumentSizeExceedsLimit is returned when the document size exceeds the limit.
         ErrDocumentSizeExceedsLimit("ErrDocumentSizeExceedsLimit"),
 
+        // ErrDocumentSchemaValidationFailed is returned when the document schema validation failed.
+        ErrDocumentSchemaValidationFailed("ErrDocumentSchemaValidationFailed"),
+
         // InvalidObjectKey is returned when the object key is invalid.
         ErrInvalidObjectKey("ErrInvalidObjectKey"),
 

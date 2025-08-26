@@ -1,5 +1,7 @@
 $dokka.format:html-v1
 $dokka.linkExtension:html
+$dokka.location:dev.yorkie.api////PointingToDeclaration/yorkie/dev.yorkie.api/index.html
+$dokka.location:dev.yorkie.api//fromSchemaRules/kotlin.collections.List[[Error type: Unresolved type for dev.yorkie.api.v1.Rule]]#/PointingToDeclaration/yorkie/dev.yorkie.api/from-schema-rules.html
 $dokka.location:dev.yorkie.core////PointingToDeclaration/yorkie/dev.yorkie.core/index.html
 $dokka.location:dev.yorkie.core/Client.ClientCondition.SYNC_LOOP///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-client-condition/-s-y-n-c_-l-o-o-p/index.html
 $dokka.location:dev.yorkie.core/Client.ClientCondition.WATCH_LOOP///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-client-condition/-w-a-t-c-h_-l-o-o-p/index.html
@@ -32,7 +34,7 @@ $dokka.location:dev.yorkie.core/Client.SyncMode/values/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.core/Client///PointingToDeclaration/yorkie/dev.yorkie.core/-client/index.html
 $dokka.location:dev.yorkie.core/Client/Client/#dev.yorkie.core.Client.Options#okhttp3.OkHttpClient#okhttp3.OkHttpClient#kotlinx.coroutines.CoroutineDispatcher#kotlin.String#kotlinx.coroutines.CoroutineDispatcher/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
 $dokka.location:dev.yorkie.core/Client/activateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/activate-async.html
-$dokka.location:dev.yorkie.core/Client/attachAsync/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-async.html
+$dokka.location:dev.yorkie.core/Client/attachAsync/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-async.html
 $dokka.location:dev.yorkie.core/Client/authToken/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/auth-token.html
 $dokka.location:dev.yorkie.core/Client/broadcast/#dev.yorkie.document.Document#kotlin.String#kotlin.String#dev.yorkie.document.Document.BroadcastOptions/PointingToDeclaration/yorkie/dev.yorkie.core/-client/broadcast.html
 $dokka.location:dev.yorkie.core/Client/changeSyncMode/#dev.yorkie.document.Document#dev.yorkie.core.Client.SyncMode/PointingToDeclaration/yorkie/dev.yorkie.core/-client/change-sync-mode.html
@@ -523,6 +525,7 @@ $dokka.location:dev.yorkie.document/Document/garbageLength/#/PointingToDeclarati
 $dokka.location:dev.yorkie.document/Document/getDocSize/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-doc-size.html
 $dokka.location:dev.yorkie.document/Document/getMaxSizePerDocument/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-max-size-per-document.html
 $dokka.location:dev.yorkie.document/Document/getRoot/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-root.html
+$dokka.location:dev.yorkie.document/Document/getSchemaRules/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-schema-rules.html
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
 $dokka.location:dev.yorkie.document/Document/getVersionVector/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-version-vector.html
 $dokka.location:dev.yorkie.document/Document/key/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/key.html
@@ -530,6 +533,7 @@ $dokka.location:dev.yorkie.document/Document/myPresence/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.document/Document/presences/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/presences.html
 $dokka.location:dev.yorkie.document/Document/publishEvent/#dev.yorkie.document.Document.Event/PointingToDeclaration/yorkie/dev.yorkie.document/-document/publish-event.html
 $dokka.location:dev.yorkie.document/Document/setMaxSizePerDocument/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document/-document/set-max-size-per-document.html
+$dokka.location:dev.yorkie.document/Document/setSchemaRules/#kotlin.collections.List[dev.yorkie.schema.Rule]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/set-schema-rules.html
 $dokka.location:dev.yorkie.document/Document/status/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/status.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html
 $dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.coroutines.SuspendFunction2[dev.yorkie.document.json.JsonObject,dev.yorkie.document.presence.Presence,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
@@ -549,6 +553,37 @@ $dokka.location:dev.yorkie.document/TimeTicketStruct/actorID/#/PointingToDeclara
 $dokka.location:dev.yorkie.document/TimeTicketStruct/delimiter/#/PointingToDeclaration/yorkie/dev.yorkie.document/-time-ticket-struct/delimiter.html
 $dokka.location:dev.yorkie.document/TimeTicketStruct/lamport/#/PointingToDeclaration/yorkie/dev.yorkie.document/-time-ticket-struct/lamport.html
 $dokka.location:dev.yorkie.document/TimeTicketStruct/toOriginal/#/PointingToDeclaration/yorkie/dev.yorkie.document/-time-ticket-struct/to-original.html
+$dokka.location:dev.yorkie.schema////PointingToDeclaration/yorkie/dev.yorkie.schema/index.html
+$dokka.location:dev.yorkie.schema//validateYorkieRuleset/#kotlin.Any?#kotlin.collections.List[dev.yorkie.schema.Rule]/PointingToDeclaration/yorkie/dev.yorkie.schema/validate-yorkie-ruleset.html
+$dokka.location:dev.yorkie.schema/Rule.ArrayRule///PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-array-rule/index.html
+$dokka.location:dev.yorkie.schema/Rule.ArrayRule/ArrayRule/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-array-rule/-array-rule.html
+$dokka.location:dev.yorkie.schema/Rule.ArrayRule/path/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-array-rule/path.html
+$dokka.location:dev.yorkie.schema/Rule.ArrayRule/type/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-array-rule/type.html
+$dokka.location:dev.yorkie.schema/Rule.ObjectRule///PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-object-rule/index.html
+$dokka.location:dev.yorkie.schema/Rule.ObjectRule/ObjectRule/#kotlin.String#kotlin.String#kotlin.collections.List[kotlin.String]#kotlin.collections.List[kotlin.String]/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-object-rule/-object-rule.html
+$dokka.location:dev.yorkie.schema/Rule.ObjectRule/optional/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-object-rule/optional.html
+$dokka.location:dev.yorkie.schema/Rule.ObjectRule/path/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-object-rule/path.html
+$dokka.location:dev.yorkie.schema/Rule.ObjectRule/properties/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-object-rule/properties.html
+$dokka.location:dev.yorkie.schema/Rule.ObjectRule/type/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-object-rule/type.html
+$dokka.location:dev.yorkie.schema/Rule.PrimitiveRule///PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-primitive-rule/index.html
+$dokka.location:dev.yorkie.schema/Rule.PrimitiveRule/PrimitiveRule/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-primitive-rule/-primitive-rule.html
+$dokka.location:dev.yorkie.schema/Rule.PrimitiveRule/path/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-primitive-rule/path.html
+$dokka.location:dev.yorkie.schema/Rule.PrimitiveRule/type/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-primitive-rule/type.html
+$dokka.location:dev.yorkie.schema/Rule.YorkieTypeRule///PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-yorkie-type-rule/index.html
+$dokka.location:dev.yorkie.schema/Rule.YorkieTypeRule/YorkieTypeRule/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-yorkie-type-rule/-yorkie-type-rule.html
+$dokka.location:dev.yorkie.schema/Rule.YorkieTypeRule/path/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-yorkie-type-rule/path.html
+$dokka.location:dev.yorkie.schema/Rule.YorkieTypeRule/type/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/-yorkie-type-rule/type.html
+$dokka.location:dev.yorkie.schema/Rule///PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/index.html
+$dokka.location:dev.yorkie.schema/Rule/path/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/path.html
+$dokka.location:dev.yorkie.schema/Rule/type/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-rule/type.html
+$dokka.location:dev.yorkie.schema/ValidationError///PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-error/index.html
+$dokka.location:dev.yorkie.schema/ValidationError/ValidationError/#kotlin.String#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-error/-validation-error.html
+$dokka.location:dev.yorkie.schema/ValidationError/message/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-error/message.html
+$dokka.location:dev.yorkie.schema/ValidationError/path/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-error/path.html
+$dokka.location:dev.yorkie.schema/ValidationResult///PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-result/index.html
+$dokka.location:dev.yorkie.schema/ValidationResult/ValidationResult/#kotlin.Boolean#kotlin.collections.List[dev.yorkie.schema.ValidationError]/PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-result/-validation-result.html
+$dokka.location:dev.yorkie.schema/ValidationResult/errors/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-result/errors.html
+$dokka.location:dev.yorkie.schema/ValidationResult/valid/#/PointingToDeclaration/yorkie/dev.yorkie.schema/-validation-result/valid.html
 $dokka.location:dev.yorkie.util////PointingToDeclaration/yorkie/dev.yorkie.util/index.html
 $dokka.location:dev.yorkie.util//SUCCESS/#/PointingToDeclaration/yorkie/dev.yorkie.util/-s-u-c-c-e-s-s.html
 $dokka.location:dev.yorkie.util//addDataSizes/#dev.yorkie.util.DataSize#kotlin.Array[dev.yorkie.util.DataSize]/PointingToDeclaration/yorkie/dev.yorkie.util/add-data-sizes.html
@@ -632,6 +667,7 @@ $dokka.location:dev.yorkie.util/YorkieException.Code.ErrClientNotFound///Pointin
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrDocumentNotAttached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-document-not-attached/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrDocumentNotDetached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-document-not-detached/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrDocumentRemoved///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-document-removed/index.html
+$dokka.location:dev.yorkie.util/YorkieException.Code.ErrDocumentSchemaValidationFailed///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-document-schema-validation-failed/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrDocumentSizeExceedsLimit///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-document-size-exceeds-limit/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrInvalidArgument///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-invalid-argument/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrInvalidObjectKey///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-invalid-object-key/index.html
@@ -651,6 +687,7 @@ $dokka.location:dev.yorkie.util/YorkieException///PointingToDeclaration/yorkie/
 $dokka.location:dev.yorkie.util/YorkieException/YorkieException/#dev.yorkie.util.YorkieException.Code#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/-yorkie-exception.html
 $dokka.location:dev.yorkie.util/YorkieException/code/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/code.html
 $dokka.location:dev.yorkie.util/YorkieException/errorMessage/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/error-message.html
+dev.yorkie.api
 dev.yorkie.core
 dev.yorkie.document
 dev.yorkie.document.change
@@ -659,5 +696,6 @@ dev.yorkie.document.json
 dev.yorkie.document.operation
 dev.yorkie.document.presence
 dev.yorkie.document.time
+dev.yorkie.schema
 dev.yorkie.util
 

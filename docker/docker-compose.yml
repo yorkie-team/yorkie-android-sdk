@@ -1,10 +1,10 @@
 services:
   yorkie:
-    image: 'yorkieteam/yorkie:0.6.18'
+    image: 'yorkieteam/yorkie:0.6.20'
     container_name: 'yorkie'
     restart: always
     ports:
       - '8080:8080'
       - '8081:8081'
     command: >
-      server --enable-pprof --rpc-addr 0.0.0.0:8080
+      server --pprof-enabled --rpc-addr 0.0.0.0:8080

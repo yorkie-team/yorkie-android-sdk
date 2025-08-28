@@ -1,6 +1,6 @@
 services:
   yorkie:
-    image: 'yorkieteam/yorkie:0.6.20'
+    image: 'yorkieteam/yorkie:0.6.21'
     container_name: 'yorkie'
     restart: always
     ports:

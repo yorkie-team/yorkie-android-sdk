@@ -171,6 +171,7 @@ class RulesetValidatorTest {
             Rule.ArrayRule(
                 path = "\$.items",
                 type = "array",
+                items = emptyList(),
             ),
         )
 

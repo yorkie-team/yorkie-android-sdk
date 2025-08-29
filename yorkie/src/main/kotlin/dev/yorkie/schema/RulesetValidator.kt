@@ -98,7 +98,7 @@ internal fun getPrimitiveType(type: String): CrdtPrimitive.Type {
  */
 internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
     when (rule.type) {
-        "string", "boolean", "integer", "double", "long", "date", "bytes", "null" -> {
+        in Rule.PrimitiveRule.Type.entries.map { it.value } -> {
             if (value !is CrdtPrimitive || value.type != getPrimitiveType(rule.type)) {
                 return ValidationResult(
                     valid = false,
@@ -111,8 +111,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                 )
             }
         }
-
-        "object" -> {
+        Rule.ObjectRule.TYPE -> {
             if (value !is CrdtObject) {
                 return ValidationResult(
                     valid = false,
@@ -125,8 +124,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                 )
             }
         }
-
-        "array" -> {
+        Rule.ArrayRule.TYPE -> {
             if (value !is CrdtArray) {
                 return ValidationResult(
                     valid = false,
@@ -139,8 +137,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                 )
             }
         }
-
-        "yorkie.Text" -> {
+        Rule.YorkieTypeRule.Type.TEXT.value -> {
             if (value !is CrdtText) {
                 return ValidationResult(
                     valid = false,
@@ -153,8 +150,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                 )
             }
         }
-
-        "yorkie.Tree" -> {
+        Rule.YorkieTypeRule.Type.TREE.value -> {
             if (value !is CrdtTree) {
                 return ValidationResult(
                     valid = false,
@@ -167,8 +163,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                 )
             }
         }
-
-        "yorkie.Counter" -> {
+        Rule.YorkieTypeRule.Type.COUNTER.value -> {
             if (value !is CrdtCounter) {
                 return ValidationResult(
                     valid = false,
@@ -181,7 +176,6 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                 )
             }
         }
-
         else -> {
             throw Exception("Unknown rule type: ${rule.type}")
         }

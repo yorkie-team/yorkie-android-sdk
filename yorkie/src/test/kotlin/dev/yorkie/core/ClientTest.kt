@@ -1,5 +1,6 @@
 package dev.yorkie.core
 
+import android.util.Base64
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import dev.yorkie.api.PBChangePack
@@ -41,6 +42,8 @@ import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.handleConnectException
 import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.spyk
 import kotlin.test.assertEquals
@@ -192,6 +195,9 @@ class ClientTest {
 
     @Test
     fun `should emit according event when watch stream fails`() = runTest {
+        mockkStatic(Base64::class)
+        every { Base64.encodeToString(any(), any()) } returns "mockk"
+
         val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
         target.activateAsync().await()
         target.attachAsync(document).await()

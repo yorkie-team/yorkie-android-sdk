@@ -7,7 +7,6 @@ import com.connectrpc.ResponseMessage
 import com.connectrpc.ServerOnlyStreamInterface
 import com.google.protobuf.kotlin.toByteString
 import com.google.rpc.ErrorInfo
-import dev.yorkie.api.PBTimeTicket
 import dev.yorkie.api.toPBChange
 import dev.yorkie.api.toPBTimeTicket
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -137,7 +136,6 @@ class MockYorkieService(
                             ),
                         ).toPBChange(),
                     )
-                    minSyncedTicket = PBTimeTicket.getDefaultInstance()
                 }
                 documentId = changePack.documentKey
             },
@@ -176,7 +174,6 @@ class MockYorkieService(
         return ResponseMessage.Success(
             pushPullChangesResponse {
                 changePack = changePack {
-                    minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
                     changes.add(
                         change {
                             operations.add(createSetOperation())
@@ -313,7 +310,6 @@ class MockYorkieService(
         return ResponseMessage.Success(
             removeDocumentResponse {
                 changePack = changePack {
-                    minSyncedTicket = InitialTimeTicket.toPBTimeTicket()
                     changes.add(
                         change {
                             operations.add(createSetOperation())

@@ -71,8 +71,6 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                     ?: mapOf(),
             )
 
-            it.hasSelect() -> null
-
             it.hasStyle() -> StyleOperation(
                 fromPos = it.style.from.toRgaTreeSplitNodePos(),
                 toPos = it.style.to.toRgaTreeSplitNodePos(),

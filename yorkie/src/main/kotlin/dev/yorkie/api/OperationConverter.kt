@@ -1,6 +1,7 @@
 package dev.yorkie.api
 
 import dev.yorkie.api.v1.OperationKt.add
+import dev.yorkie.api.v1.OperationKt.arraySet
 import dev.yorkie.api.v1.OperationKt.edit
 import dev.yorkie.api.v1.OperationKt.increase
 import dev.yorkie.api.v1.OperationKt.move
@@ -11,6 +12,7 @@ import dev.yorkie.api.v1.OperationKt.treeEdit
 import dev.yorkie.api.v1.OperationKt.treeStyle
 import dev.yorkie.api.v1.operation
 import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
@@ -95,6 +97,13 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.treeStyle.attributesMap,
                 executedAt = it.treeStyle.executedAt.toTimeTicket(),
                 attributesToRemove = it.treeStyle.attributesToRemoveList,
+            )
+
+            it.hasArraySet() -> ArraySetOperation(
+                createdAt = it.arraySet.createdAt.toTimeTicket(),
+                value = it.arraySet.value.toCrdtElement(),
+                parentCreatedAt = it.arraySet.parentCreatedAt.toTimeTicket(),
+                executedAt = it.arraySet.executedAt.toTimeTicket(),
             )
 
             else -> throw YorkieException(ErrUnimplemented, "unimplemented operations")
@@ -206,6 +215,17 @@ internal fun Operation.toPBOperation(): PBOperation {
                         attributes[key] = value
                     }
                     operation.attributesToRemove?.forEach { attributesToRemove.add(it) }
+                }
+            }
+        }
+
+        is ArraySetOperation -> {
+            operation {
+                arraySet = arraySet {
+                    parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
+                    createdAt = operation.createdAt.toPBTimeTicket()
+                    value = operation.value.toPBJsonElementSimple()
+                    executedAt = operation.executedAt.toPBTimeTicket()
                 }
             }
         }

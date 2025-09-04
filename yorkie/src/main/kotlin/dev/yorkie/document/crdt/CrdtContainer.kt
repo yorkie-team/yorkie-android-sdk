@@ -9,9 +9,9 @@ internal abstract class CrdtContainer : CrdtElement() {
 
     abstract fun subPathOf(createdAt: TimeTicket): String?
 
-    abstract fun delete(element: CrdtElement)
+    abstract fun purge(element: CrdtElement)
 
-    abstract fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement
+    abstract fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement
 
     abstract fun getDescendants(callback: (CrdtElement, CrdtContainer) -> Boolean)
 }

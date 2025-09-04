@@ -98,6 +98,10 @@ public sealed class OperationInfo {
         override var path: String = INITIAL_PATH,
     ) : OperationInfo(), TreeOperationInfo
 
+    public data class ArraySetOpInfo(
+        override var path: String = INITIAL_PATH,
+    ) : OperationInfo(), ArrayOperationInfo
+
     companion object {
         private const val INITIAL_PATH = "initial path"
     }

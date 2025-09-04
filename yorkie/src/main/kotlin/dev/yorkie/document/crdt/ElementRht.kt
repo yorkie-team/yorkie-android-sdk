@@ -1,14 +1,12 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.util.Logger.Companion.logError
+import dev.yorkie.util.YorkieException
 
 /**
  * [ElementRht] is a hashtable with logical clock(Replicated hashtable).
  */
 internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
-    private val logTag = "ElementRhtTag"
-
     private val nodeMapByKey: MutableMap<String, Node<T>> = mutableMapOf()
 
     private val nodeMapByCreatedAt: MutableMap<TimeTicket, Node<T>> = mutableMapOf()
@@ -39,9 +37,12 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
      *
      * @throws NoSuchElementException if [Node] doesn't exist.
      */
-    fun remove(createdAt: TimeTicket, executedAt: TimeTicket): T {
+    fun delete(createdAt: TimeTicket, executedAt: TimeTicket): T {
         val node = nodeMapByCreatedAt[createdAt]
-            ?: throw NoSuchElementException("The ElementRhtNode by $createdAt doesn't exist.")
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "fail to find $createdAt",
+            )
         node.remove(executedAt)
         return node.value
     }
@@ -70,14 +71,14 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
     }
 
     /**
-     * Physically deletes [element] from [nodeMapByCreatedAt] and [nodeMapByKey]
+     * `purge` physically purge child element.
      */
-    fun delete(element: T) {
+    fun purge(element: T) {
         val node = nodeMapByCreatedAt[element.createdAt]
-        if (node == null) {
-            logError(logTag, "fail to find ${element.createdAt}")
-            return
-        }
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "fail to find ${element.createdAt}",
+            )
 
         val nodeByKey = nodeMapByKey[node.strKey]
         if (node == nodeByKey) {

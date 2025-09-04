@@ -32,17 +32,21 @@ internal data class CrdtArray(
     }
 
     /**
-     * Physically deletes the given [element].
+     * `delete` deletes the element of the given creation time.
      */
-    override fun delete(element: CrdtElement) {
-        elements.delete(element)
+    override fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
+        return elements.delete(createdAt, executedAt)
     }
 
     /**
      * Adds a new node with [value] after the node created at [prevCreatedAt].
      */
-    fun insertAfter(prevCreatedAt: TimeTicket, value: CrdtElement) {
-        elements.insertAfter(prevCreatedAt, value)
+    fun insertAfter(
+        prevCreatedAt: TimeTicket,
+        value: CrdtElement,
+        executedAt: TimeTicket = value.createdAt,
+    ) {
+        elements.insertAfter(prevCreatedAt, value, executedAt)
     }
 
     /**
@@ -74,6 +78,17 @@ internal data class CrdtArray(
     }
 
     /**
+     * `set` sets the given element at the given position of the creation time.
+     */
+    fun set(
+        createdAt: TimeTicket,
+        value: CrdtElement,
+        executedAt: TimeTicket,
+    ): CrdtElement {
+        return elements.set(createdAt, value, executedAt)
+    }
+
+    /**
      * Returns a creation time of the previous node.
      */
     fun getPrevCreatedAt(createdAt: TimeTicket): TimeTicket {
@@ -81,10 +96,10 @@ internal data class CrdtArray(
     }
 
     /**
-     * Removes the node of the given [createdAt].
+     * `purge` physically purges element.
      */
-    override fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
-        return elements.remove(createdAt, executedAt)
+    override fun purge(element: CrdtElement) {
+        elements.purge(element)
     }
 
     /**

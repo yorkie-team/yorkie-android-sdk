@@ -1,7 +1,11 @@
 $dokka.format:html-v1
 $dokka.linkExtension:html
 $dokka.location:dev.yorkie.api////PointingToDeclaration/yorkie/dev.yorkie.api/index.html
+$dokka.location:dev.yorkie.api//base64ToByteArray/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.api/base64-to-byte-array.html
+$dokka.location:dev.yorkie.api//bytesToHex/#kotlin.ByteArray?/PointingToDeclaration/yorkie/dev.yorkie.api/bytes-to-hex.html
 $dokka.location:dev.yorkie.api//fromSchemaRules/kotlin.collections.List[[Error type: Unresolved type for dev.yorkie.api.v1.Rule]]#/PointingToDeclaration/yorkie/dev.yorkie.api/from-schema-rules.html
+$dokka.location:dev.yorkie.api//hexToBytes/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.api/hex-to-bytes.html
+$dokka.location:dev.yorkie.api//uint8ArrayToBase64/#kotlin.ByteArray/PointingToDeclaration/yorkie/dev.yorkie.api/uint8-array-to-base64.html
 $dokka.location:dev.yorkie.core////PointingToDeclaration/yorkie/dev.yorkie.core/index.html
 $dokka.location:dev.yorkie.core/Client.ClientCondition.SYNC_LOOP///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-client-condition/-s-y-n-c_-l-o-o-p/index.html
 $dokka.location:dev.yorkie.core/Client.ClientCondition.WATCH_LOOP///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-client-condition/-w-a-t-c-h_-l-o-o-p/index.html

@@ -2,6 +2,7 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertThrows
@@ -49,21 +50,21 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle remove operations`() {
-        assertThrows(NoSuchElementException::class.java) {
-            target.remove(timeTickets[0], timeTickets[1])
+        assertThrows(YorkieException::class.java) {
+            target.delete(timeTickets[0], timeTickets[1])
         }
 
         assertEquals(0, target.length)
 
         crdtElements.forEach(target::insert)
 
-        target.remove(timeTickets[1], timeTickets[2])
+        target.delete(timeTickets[1], timeTickets[2])
         assertEquals("A1B0C1D1E1F1G1", target.toTestString())
-        target.remove(timeTickets[2], timeTickets[3])
+        target.delete(timeTickets[2], timeTickets[3])
         assertEquals("A1B0C0D1E1F1G1", target.toTestString())
-        target.remove(timeTickets[3], timeTickets[4])
+        target.delete(timeTickets[3], timeTickets[4])
         assertEquals("A1B0C0D0E1F1G1", target.toTestString())
-        target.remove(timeTickets[6], timeTickets[5])
+        target.delete(timeTickets[6], timeTickets[5])
         assertEquals("A1B0C0D0E1F1G1", target.toTestString())
 
         assertEquals(crdtElements.size - 3, target.length)
@@ -91,8 +92,8 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle delete operations`() {
-        assertThrows(NoSuchElementException::class.java) {
-            target.delete(crdtElements[0])
+        assertThrows(YorkieException::class.java) {
+            target.purge(crdtElements[0])
         }
 
         assertEquals(0, target.length)
@@ -100,13 +101,13 @@ class RgaTreeListTest {
         crdtElements.forEach(target::insert)
         assertEquals(crdtElements.size, target.length)
 
-        target.delete(crdtElements[0])
+        target.purge(crdtElements[0])
         assertEquals(crdtElements.size - 1, target.length)
         assertEquals("B1C1D1E1F1G1", target.toTestString())
-        target.delete(crdtElements[1])
+        target.purge(crdtElements[1])
         assertEquals(crdtElements.size - 2, target.length)
         assertEquals("C1D1E1F1G1", target.toTestString())
-        target.delete(crdtElements[2])
+        target.purge(crdtElements[2])
         assertEquals(crdtElements.size - 3, target.length)
         assertEquals("D1E1F1G1", target.toTestString())
     }
@@ -124,7 +125,7 @@ class RgaTreeListTest {
 
     @Test
     fun `should handle moving an element after the given element`() {
-        assertThrows(NoSuchElementException::class.java) {
+        assertThrows(YorkieException::class.java) {
             target.moveAfter(timeTickets[0], timeTickets[1], timeTickets[1])
         }
 

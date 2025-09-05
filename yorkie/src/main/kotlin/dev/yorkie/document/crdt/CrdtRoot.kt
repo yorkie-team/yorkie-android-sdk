@@ -202,7 +202,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
             val removedAt = pair.element.removedAt
             if (removedAt != null && minSyncedVersionVector.afterOrEqual(removedAt)) {
-                pair.parent?.delete(pair.element)
+                pair.parent?.purge(pair.element)
                 count += garbageCollectInternal(pair.element)
             }
         }

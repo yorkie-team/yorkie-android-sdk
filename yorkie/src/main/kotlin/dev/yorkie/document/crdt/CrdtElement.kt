@@ -20,7 +20,7 @@ abstract class CrdtElement {
 
     var movedAt: TimeTicket?
         get() = _movedAt
-        private set(value) {
+        set(value) {
             _movedAt = value
         }
 

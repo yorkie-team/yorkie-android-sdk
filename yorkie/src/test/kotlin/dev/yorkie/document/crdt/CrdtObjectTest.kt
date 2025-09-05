@@ -2,6 +2,7 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -58,11 +59,10 @@ class CrdtObjectTest {
         setTargetSampleValues()
         assertEquals(5, target.memberNodes.toList().size)
 
-        target.delete(crdtElements[0])
+        target.purge(crdtElements[0])
         assertEquals("B1C2D3E4", getTestString())
-        target.delete(crdtElements[3])
+        target.purge(crdtElements[3])
         assertEquals("B1C2E4", getTestString())
-        target.delete(CrdtPrimitive(100, TimeTicket.InitialTimeTicket))
     }
 
     @Test
@@ -70,12 +70,12 @@ class CrdtObjectTest {
         setTargetSampleValues()
         assertEquals(5, target.memberNodes.toList().size)
 
-        target.remove(timeTickets[0], timeTickets[1])
+        target.delete(timeTickets[0], timeTickets[1])
         assertEquals("B1C2D3E4", getTestString())
-        target.remove(timeTickets[2], timeTickets[1])
+        target.delete(timeTickets[2], timeTickets[1])
         assertEquals("B1C2D3E4", getTestString())
-        assertThrows(NoSuchElementException::class.java) {
-            target.remove(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
+        assertThrows(YorkieException::class.java) {
+            target.delete(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
         }
     }
 

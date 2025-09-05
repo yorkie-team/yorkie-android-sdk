@@ -4,6 +4,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.util.SplayTreeSet
+import dev.yorkie.util.YorkieException
 
 /**
  * [RgaTreeList] is a replicated growable array.
@@ -52,7 +53,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
         prevCreatedAt: TimeTicket,
         value: CrdtElement,
         executedAt: TimeTicket = value.createdAt,
-    ) {
+    ): Node {
         val prevNode = findNextBeforeExecutedAt(prevCreatedAt, executedAt)
         val newNode = Node.createAfter(prevNode, value)
         if (prevNode == last) {
@@ -60,6 +61,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
         }
         nodeMapByIndex.insertAfter(prevNode, newNode)
         nodeMapByCreatedAt[newNode.createdAt] = newNode
+        return newNode
     }
 
     /**
@@ -69,12 +71,17 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
      */
     private fun findNextBeforeExecutedAt(createdAt: TimeTicket, executedAt: TimeTicket): Node {
         var node = nodeMapByCreatedAt[createdAt]
-            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "can't find the given node createdAt: $createdAt",
+            )
 
-        var nodeNext = node.next
-        while (nodeNext != null && executedAt < nodeNext.positionedAt) {
-            node = nodeNext
-            nodeNext = node.next
+        while (node.value.movedAt != null && node.value.movedAt > executedAt) {
+            node = node.movedFrom ?: break
+        }
+
+        while (node.next != null && executedAt < node.next?.positionedAt) {
+            node = node.next ?: break
         }
         return node
     }
@@ -87,32 +94,60 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
         createdAt: TimeTicket,
         executedAt: TimeTicket,
     ) {
-        val prevNode = nodeMapByCreatedAt[prevCreatedAt]
-            ?: throw NoSuchElementException("can't find the given node createdAt: $prevCreatedAt")
-        val node = nodeMapByCreatedAt[createdAt]
-            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
+        var prevNode = nodeMapByCreatedAt[prevCreatedAt]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "can't find the given node createdAt: $prevCreatedAt",
+            )
+        var node = nodeMapByCreatedAt[createdAt]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "can't find the given node createdAt: $createdAt",
+            )
 
-        if (prevNode != node && node.value.movedAt < executedAt) {
-            delete(node)
-            insertAfter(prevNode.createdAt, node.value, executedAt)
-            node.value.move(executedAt)
+        if (prevNode != node && executedAt > node.positionedAt) {
+            val movedFrom = node.prev
+            var nextNode = node.next
+            release(node)
+
+            node = insertAfter(prevNode.createdAt, node.value, executedAt)
+            node.value.movedAt = executedAt
+            node.movedFrom = movedFrom
+
+            while (nextNode != null && nextNode.positionedAt > executedAt) {
+                prevNode = node
+                node = nextNode
+                nextNode = node.next
+
+                release(node)
+                node = insertAfter(prevNode.createdAt, node.value, executedAt)
+                node.value.movedAt = executedAt
+                node.movedFrom = movedFrom
+            }
         }
     }
 
     /**
-     * Physically deletes the given [element].
+     * `delete` deletes the node of the given creation time.
      */
-    fun delete(element: CrdtElement) {
-        val node = nodeMapByCreatedAt[element.createdAt]
-            ?: throw NoSuchElementException("can't find the given createdAt: ${element.createdAt}")
-        delete(node)
+    fun delete(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
+        val node = nodeMapByCreatedAt[createdAt]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "cant find the given node: $createdAt",
+            )
+        val alreadyRemoved = node.isRemoved
+        if (node.remove(editedAt) && !alreadyRemoved) {
+            nodeMapByIndex.splay(node)
+        }
+        return node.value
     }
 
-    private fun delete(node: Node) {
+    private fun release(node: Node) {
         if (last == node) {
             last = requireNotNull(node.prev)
         }
-        node.delete()
+        node.release()
         nodeMapByIndex.delete(node)
         nodeMapByCreatedAt.remove(node.value.createdAt)
     }
@@ -165,15 +200,14 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     /**
      * Removes the node of the given [createdAt].
      */
-    fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
-        val node = nodeMapByCreatedAt[createdAt]
-            ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
+    fun purge(element: CrdtElement) {
+        val node = nodeMapByCreatedAt[element.createdAt]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "can't find the given node createdAt: ${element.createdAt}",
+            )
 
-        val alreadyRemoved = node.isRemoved
-        if (node.remove(executedAt) && !alreadyRemoved) {
-            nodeMapByIndex.splay(node)
-        }
-        return node.value
+        release(node)
     }
 
     /**
@@ -185,6 +219,24 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
             nodeMapByIndex.splay(node)
         }
         return node.value
+    }
+
+    /**
+     * `set` sets the given element at the given creation time.
+     */
+    fun set(
+        createdAt: TimeTicket,
+        element: CrdtElement,
+        executedAt: TimeTicket,
+    ): CrdtElement {
+        val node = nodeMapByCreatedAt[createdAt]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "cant find the given node: $createdAt",
+            )
+
+        insertAfter(node.createdAt, element, executedAt)
+        return delete(createdAt, executedAt)
     }
 
     override fun iterator(): Iterator<Node> {
@@ -213,6 +265,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     class Node(val value: CrdtElement) {
         var prev: Node? = null
         var next: Node? = null
+        var movedFrom: Node? = null
 
         val createdAt: TimeTicket
             get() = value.createdAt
@@ -227,9 +280,12 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
             return value.remove(removedAt)
         }
 
-        fun delete() {
+        fun release() {
             prev?.next = next
             next?.prev = prev
+
+            prev = null
+            next = null
         }
 
         companion object {

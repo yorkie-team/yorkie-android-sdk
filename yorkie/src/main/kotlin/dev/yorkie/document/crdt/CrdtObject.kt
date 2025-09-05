@@ -32,8 +32,8 @@ internal data class CrdtObject(
     /**
      * Physically deletes the given [element].
      */
-    override fun delete(element: CrdtElement) {
-        rht.delete(element)
+    override fun purge(element: CrdtElement) {
+        rht.purge(element)
     }
 
     /**
@@ -46,8 +46,8 @@ internal data class CrdtObject(
     /**
      * Removes the element of the given key.
      */
-    override fun remove(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
-        return rht.remove(createdAt, executedAt)
+    override fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
+        return rht.delete(createdAt, executedAt)
     }
 
     /**

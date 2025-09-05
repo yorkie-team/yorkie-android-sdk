@@ -2,6 +2,7 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -100,17 +101,17 @@ class ElementRhtTest {
         val primitive1 = CrdtPrimitive("value1", TimeTicket.InitialTimeTicket)
         elementRht["test1"] = primitive1
         val removedPrimitive =
-            elementRht.remove(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
+            elementRht.delete(TimeTicket.InitialTimeTicket, TimeTicket.InitialTimeTicket)
         assertEquals(primitive1, removedPrimitive)
 
-        assertThrows(NoSuchElementException::class.java) {
-            elementRht.remove(
+        assertThrows(YorkieException::class.java) {
+            elementRht.delete(
                 generateTimeTicket(99, 99, "3"),
                 generateTimeTicket(100, 100, "3"),
             )
         }
-        assertThrows(NoSuchElementException::class.java) {
-            elementRht.remove(
+        assertThrows(YorkieException::class.java) {
+            elementRht.delete(
                 generateTimeTicket(101, 101, "4"),
                 TimeTicket.InitialTimeTicket,
             )
@@ -163,7 +164,7 @@ class ElementRhtTest {
         val primitive3 = CrdtPrimitive("value3", ticket3)
         elementRht["test3"] = primitive3
 
-        elementRht.delete(primitive2)
+        elementRht.purge(primitive2)
         assertThrows(NoSuchElementException::class.java) {
             elementRht["test2"]
         }
@@ -182,7 +183,7 @@ class ElementRhtTest {
         elementRht["test1"] = primitive1
         assertTrue(elementRht.has("test1"))
 
-        elementRht.remove(ticket1, generateTimeTicket(1, 2, "11"))
+        elementRht.delete(ticket1, generateTimeTicket(1, 2, "11"))
         assertFalse(elementRht.has("test1"))
     }
 

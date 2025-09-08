@@ -163,7 +163,6 @@ public class Document(
                 message = message,
             )
             val actorID = changeID.actor
-
             val result = runCatching {
                 val proxy = JsonObject(context, clone.root.rootObject)
                 updater.invoke(
@@ -472,7 +471,9 @@ public class Document(
         presences: Presences,
     ): Boolean {
         return when (event) {
-            is MyPresence.Initialized -> presences.keys.containsAll(event.initialized.keys)
+            is MyPresence.Initialized -> {
+                presences.keys.containsAll(event.initialized.keys)
+            }
             is MyPresence.PresenceChanged -> {
                 val actorID = event.changed.actorID
                 event.changed.presence == presences[actorID]

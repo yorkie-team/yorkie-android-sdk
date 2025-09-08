@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="cursor_selection_background">#F5F5F5</color>
+    <color name="cursor_selection_border">#E0E0E0</color>
+    <color name="cursor_selected">#2196F3</color>
+    <color name="cursor_unselected">#9E9E9E</color>
+</resources> 

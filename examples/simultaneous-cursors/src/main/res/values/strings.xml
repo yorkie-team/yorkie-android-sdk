@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Simultaneous Cursors</string>
+    <string name="users_count_single">1 user here</string>
+    <string name="users_count_multiple">%d users are here</string>
+    <string name="cursor_shape_heart">Heart</string>
+    <string name="cursor_shape_thumbs">Thumbs</string>
+    <string name="cursor_shape_pen">Pen</string>
+    <string name="cursor_shape_cursor">Cursor</string>
+</resources> 

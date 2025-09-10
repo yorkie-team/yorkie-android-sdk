@@ -131,6 +131,7 @@ class ClientTest {
             assertEquals("$", localSetEvent.changeInfo.operations.first().path)
             d1ChangeEvents.clear()
 
+            delay(100)
             val remoteSetEvent = assertIs<RemoteChange>(d2ChangeEvents.last())
             val remoteSetOperation = assertIs<OperationInfo.SetOpInfo>(
                 remoteSetEvent.changeInfo.operations.first(),

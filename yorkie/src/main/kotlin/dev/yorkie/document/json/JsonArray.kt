@@ -147,7 +147,7 @@ public class JsonArray internal constructor(
     public fun setNewObject(index: Int): JsonObject {
         val createdAt = context.issueTimeTicket()
         val prevElement = getCrdtElement(index)
-        val obj = CrdtObject(context.issueTimeTicket(), rht = ElementRht())
+        val obj = CrdtObject(createdAt, rht = ElementRht())
         setValueInternal(prevElement, obj, createdAt)
         return obj.toJsonElement(context)
     }

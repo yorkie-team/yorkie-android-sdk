@@ -392,7 +392,7 @@ public class Client(
                         previous
                     } else {
                         previous?.job?.cancel()
-                        WatchJobHolder(attachment.documentID, createWatchJob(attachment))
+                        WatchJobHolder(attachment.documentID, createWatchJob(key, attachment))
                     }
                 }
             }
@@ -400,7 +400,7 @@ public class Client(
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private fun createWatchJob(attachment: Attachment): Job {
+    private fun createWatchJob(documentKey: Document.Key, attachment: Attachment): Job {
         var latestStream: ServerOnlyStreamInterface<*, *>? = null
         return scope.launch(activationJob) {
             var shouldContinue = true
@@ -426,6 +426,20 @@ public class Client(
                                 attachment.document.publishEvent(
                                     StreamConnectionChanged.Connected,
                                 )
+
+                                attachments.update { attachments ->
+                                    attachments.toMutableMap().apply {
+                                        attachments[documentKey]?.let { attachment ->
+                                            put(
+                                                documentKey,
+                                                attachment.copy(
+                                                    remoteChangeEventReceived = true,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+
                                 handleWatchDocumentsResponse(
                                     attachment.document.key,
                                     it,

@@ -29,7 +29,7 @@ internal data class RemoveOperation(
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtContainer) {
             val key = parentObject.subPathOf(createdAt)
-            val element = parentObject.remove(createdAt, executedAt)
+            val element = parentObject.delete(createdAt, executedAt)
             root.registerRemovedElement(element)
             val index = if (parentObject is CrdtArray) key?.toInt() else null
             listOf(OperationInfo.RemoveOpInfo(key, index, root.createPath(parentCreatedAt)))

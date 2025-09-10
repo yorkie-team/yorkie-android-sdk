@@ -7,9 +7,11 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
 import java.util.Date
 
 /**
@@ -117,7 +119,7 @@ public class JsonArray internal constructor(
 
     public fun remove(createdAt: TimeTicket): JsonElement {
         val executedAt = context.issueTimeTicket()
-        val deleted = target.remove(createdAt, executedAt)
+        val deleted = target.delete(createdAt, executedAt)
         context.push(
             RemoveOperation(
                 createdAt = deleted.createdAt,
@@ -147,7 +149,6 @@ public class JsonArray internal constructor(
 
     private fun moveInternal(prevCreatedAt: TimeTicket, createdAt: TimeTicket) {
         val executedAt = context.issueTimeTicket()
-        target.moveAfter(prevCreatedAt, createdAt, executedAt)
         context.push(
             MoveOperation(
                 parentCreatedAt = target.createdAt,
@@ -156,6 +157,99 @@ public class JsonArray internal constructor(
                 executedAt = executedAt,
             ),
         )
+        target.moveAfter(prevCreatedAt, createdAt, executedAt)
+    }
+
+    /**
+     * `setInteger` sets the element of the given index.
+     */
+    public fun setInteger(index: Int, value: Int): JsonElement {
+        val prev = target[index]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "index out of bounds: $index",
+            )
+
+        val ticket = context.issueTimeTicket()
+        val element = CrdtPrimitive(
+            value = value,
+            createdAt = ticket,
+        )
+        val copiedValue = element.deepCopy()
+        context.push(
+            ArraySetOperation(
+                createdAt = prev.createdAt,
+                value = copiedValue,
+                parentCreatedAt = target.createdAt,
+                executedAt = ticket,
+            ),
+        )
+
+        return target.toJsonElement(context)
+    }
+
+    /**
+     * `insertIntegerAfter` inserts a value after the given index.
+     */
+    public fun insertIntegerAfter(index: Int, value: Int): JsonElement {
+        val prev = target[index]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "index out of bounds: $index",
+            )
+
+        val ticket = context.issueTimeTicket()
+        val element = CrdtPrimitive(
+            value = value,
+            createdAt = ticket,
+        )
+        target.insertAfter(prev.createdAt, element)
+        context.registerElement(element, target)
+        context.push(
+            AddOperation(
+                prevCreatedAt = prev.createdAt,
+                value = element.deepCopy(),
+                parentCreatedAt = target.createdAt,
+                executedAt = ticket,
+            ),
+        )
+
+        return target.toJsonElement(context)
+    }
+
+    /**
+     * `insertBefore` inserts a value before the given next element.
+     */
+    public fun insertBefore(nextCreatedAt: TimeTicket, value: Any) {
+        putPrimitive(value, target.getPrevCreatedAt(nextCreatedAt))
+    }
+
+    /**
+     * `moveAfterByIndex` moves the element after the given index.
+     */
+    public fun moveAfterByIndex(prevIndex: Int, targetIndex: Int) {
+        val prevElem = target[prevIndex]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "index out of bounds: $prevIndex",
+            )
+
+        val targetElem = target[targetIndex]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "index out of bounds: $targetIndex",
+            )
+
+        val ticket = context.issueTimeTicket()
+        context.push(
+            MoveOperation(
+                prevCreatedAt = prevElem.createdAt,
+                createdAt = targetElem.createdAt,
+                parentCreatedAt = target.createdAt,
+                executedAt = ticket,
+            ),
+        )
+        target.moveAfter(prevElem.createdAt, targetElem.createdAt, ticket)
     }
 
     override fun contains(element: JsonElement): Boolean {

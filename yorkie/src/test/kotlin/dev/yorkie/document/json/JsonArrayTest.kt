@@ -8,6 +8,7 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.util.YorkieException
 import java.util.Date
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -100,7 +101,7 @@ class JsonArrayTest {
         target.remove(obj.target.createdAt)
         assertTrue(target.isEmpty())
 
-        assertThrows(NoSuchElementException::class.java) {
+        assertThrows(YorkieException::class.java) {
             target.remove(TimeTicket.MaxTimeTicket)
         }
     }

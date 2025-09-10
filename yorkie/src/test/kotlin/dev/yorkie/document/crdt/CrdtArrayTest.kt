@@ -31,13 +31,13 @@ class CrdtArrayTest {
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
         assertEquals(crdtElements.size, target.length)
 
-        target.remove(timeTickets[1], timeTickets[2])
+        target.delete(timeTickets[1], timeTickets[2])
         assertEquals("ACDEFG", target.toTestString())
-        target.remove(timeTickets[2], timeTickets[3])
+        target.delete(timeTickets[2], timeTickets[3])
         assertEquals("ADEFG", target.toTestString())
-        target.remove(timeTickets[3], timeTickets[4])
+        target.delete(timeTickets[3], timeTickets[4])
         assertEquals("AEFG", target.toTestString())
-        target.remove(timeTickets[6], timeTickets[5])
+        target.delete(timeTickets[6], timeTickets[5])
         assertEquals("AEFG", target.toTestString())
 
         assertEquals(crdtElements.size - 3, target.length)
@@ -50,13 +50,13 @@ class CrdtArrayTest {
         crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
         assertEquals(crdtElements.size, target.length)
 
-        target.delete(crdtElements[0])
+        target.purge(crdtElements[0])
         assertEquals(crdtElements.size - 1, target.length)
         assertEquals("BCDEFG", target.toTestString())
-        target.delete(crdtElements[1])
+        target.purge(crdtElements[1])
         assertEquals(crdtElements.size - 2, target.length)
         assertEquals("CDEFG", target.toTestString())
-        target.delete(crdtElements[2])
+        target.purge(crdtElements[2])
         assertEquals(crdtElements.size - 3, target.length)
         assertEquals("DEFG", target.toTestString())
     }

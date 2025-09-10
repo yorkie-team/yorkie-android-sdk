@@ -181,9 +181,12 @@ $dokka.location:dev.yorkie.document.json/JsonArray/get/#dev.yorkie.document.time
 $dokka.location:dev.yorkie.document.json/JsonArray/get/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/get.html
 $dokka.location:dev.yorkie.document.json/JsonArray/getAs/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/get-as.html
 $dokka.location:dev.yorkie.document.json/JsonArray/getAs/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/get-as.html
+$dokka.location:dev.yorkie.document.json/JsonArray/insertBefore/#dev.yorkie.document.time.TimeTicket#kotlin.Any/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/insert-before.html
+$dokka.location:dev.yorkie.document.json/JsonArray/insertIntegerAfter/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/insert-integer-after.html
 $dokka.location:dev.yorkie.document.json/JsonArray/isEmpty/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/is-empty.html
 $dokka.location:dev.yorkie.document.json/JsonArray/iterator/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/iterator.html
 $dokka.location:dev.yorkie.document.json/JsonArray/moveAfter/#dev.yorkie.document.time.TimeTicket#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/move-after.html
+$dokka.location:dev.yorkie.document.json/JsonArray/moveAfterByIndex/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/move-after-by-index.html
 $dokka.location:dev.yorkie.document.json/JsonArray/moveBefore/#dev.yorkie.document.time.TimeTicket#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/move-before.html
 $dokka.location:dev.yorkie.document.json/JsonArray/moveFront/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/move-front.html
 $dokka.location:dev.yorkie.document.json/JsonArray/moveLast/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/move-last.html
@@ -199,6 +202,7 @@ $dokka.location:dev.yorkie.document.json/JsonArray/putNewArray/#dev.yorkie.docum
 $dokka.location:dev.yorkie.document.json/JsonArray/putNewObject/#dev.yorkie.document.time.TimeTicket?/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/put-new-object.html
 $dokka.location:dev.yorkie.document.json/JsonArray/remove/#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/remove.html
 $dokka.location:dev.yorkie.document.json/JsonArray/removeAt/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/remove-at.html
+$dokka.location:dev.yorkie.document.json/JsonArray/setInteger/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/set-integer.html
 $dokka.location:dev.yorkie.document.json/JsonArray/size/#/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-array/size.html
 $dokka.location:dev.yorkie.document.json/JsonCounter///PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-counter/index.html
 $dokka.location:dev.yorkie.document.json/JsonCounter/increase/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.json/-json-counter/increase.html
@@ -321,6 +325,9 @@ $dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo/AddOpInfo/
 $dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo/index/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/--index--.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.AddOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-add-op-info/path.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.ArrayOperationInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-array-operation-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.ArraySetOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-array-set-op-info/index.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.ArraySetOpInfo/ArraySetOpInfo/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-array-set-op-info/-array-set-op-info.html
+$dokka.location:dev.yorkie.document.operation/OperationInfo.ArraySetOpInfo/path/#/PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-array-set-op-info/path.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.Companion///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-companion/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.CounterOperationInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-counter-operation-info/index.html
 $dokka.location:dev.yorkie.document.operation/OperationInfo.EditOpInfo///PointingToDeclaration/yorkie/dev.yorkie.document.operation/-operation-info/-edit-op-info/index.html

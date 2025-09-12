@@ -461,7 +461,8 @@ public class Client(
                                 handleWatchStreamFailure(
                                     document = attachment.document,
                                     stream = stream,
-                                    cause = it ?: ClosedReceiveChannelException("Channel was closed"),
+                                    cause = it
+                                        ?: ClosedReceiveChannelException("Channel was closed"),
                                     cancelled = attachment.cancelled,
                                 )
                             }

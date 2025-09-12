@@ -12,6 +12,7 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.gson
 import dev.yorkie.helper.maxVectorOf
@@ -1075,6 +1076,7 @@ class GCTest {
                     arrayOf(
                         Pair(client1.requireClientId().value, 1998L),
                         Pair(client2.requireClientId().value, 2000L),
+                        Pair(INITIAL_ACTOR_ID.value, 2002L),
                         Pair(client3.requireClientId().value, 2003L),
                     ),
                 ),

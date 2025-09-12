@@ -7,6 +7,7 @@ internal data class Attachment(
     val documentID: String,
     val syncMode: Client.SyncMode = Client.SyncMode.Realtime,
     val remoteChangeEventReceived: Boolean = false,
+    val cancelled: Boolean = false,
 ) {
 
     fun needRealTimeSync(): Boolean {

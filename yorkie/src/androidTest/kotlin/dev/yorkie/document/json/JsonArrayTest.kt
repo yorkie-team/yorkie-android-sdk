@@ -5,12 +5,451 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 class JsonArrayTest {
     @Test
+    fun should_handle_delete_operations() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("k1").apply {
+                    put("1")
+                    put("2")
+                    put("3")
+                }
+            }.await()
+            assertEquals(
+                expected = "{\"k1\":[\"1\",\"2\",\"3\"]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val k1 = root.getAs<JsonArray>("k1")
+                k1.removeAt(1)
+                k1.put("4")
+            }.await()
+            assertEquals(
+                expected = "{\"k1\":[\"1\",\"3\",\"4\"]}",
+                actual = document.toJson(),
+            )
+        }
+    }
+
+    @Test
+    fun can_push_array_element_after_delete_operation() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("k1").apply {
+                    put("1")
+                    put("2")
+                    put("3")
+                }
+            }.await()
+            assertEquals(
+                expected = "{\"k1\":[\"1\",\"2\",\"3\"]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val k1 = root.getAs<JsonArray>("k1")
+                k1.removeAt(1)
+                k1.put("4")
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val k1 = root.getAs<JsonArray>("k1")
+                k1.putNewArray().apply {
+                    put(4)
+                    put(5)
+                    put(6)
+                }
+                assertEquals(
+                    expected = "{\"k1\":[\"1\",\"3\",\"4\",[4,5,6]]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            assertEquals(
+                expected = "{\"k1\":[\"1\",\"3\",\"4\",[4,5,6]]}",
+                actual = document.toJson(),
+            )
+        }
+    }
+
+    @Test
+    fun can_push_object_element_after_delete_operation() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("k1").apply {
+                    put("1")
+                    put("2")
+                    put("3")
+                }
+            }.await()
+            assertEquals(
+                expected = "{\"k1\":[\"1\",\"2\",\"3\"]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val k1 = root.getAs<JsonArray>("k1")
+                k1.removeAt(1)
+                k1.put("4")
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val k1 = root.getAs<JsonArray>("k1")
+                k1.putNewObject().apply {
+                    set("a", "1")
+                    set("b", "2")
+                }
+                assertEquals(
+                    expected = "{\"k1\":[\"1\",\"3\",\"4\",{\"a\":\"1\",\"b\":\"2\"}]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            assertEquals(
+                expected = "{\"k1\":[\"1\",\"3\",\"4\",{\"a\":\"1\",\"b\":\"2\"}]}",
+                actual = document.toJson(),
+            )
+        }
+    }
+
+    @Test
+    fun can_push_array() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("arr").apply {
+                    put(1)
+                    put(2)
+                    put(3)
+                    putNewArray().apply {
+                        put(4)
+                        put(5)
+                        put(6)
+                    }
+                }
+                assertEquals(
+                    expected = "{\"arr\":[1,2,3,[4,5,6]]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+            assertEquals(
+                expected = "{\"arr\":[1,2,3,[4,5,6]]}",
+                actual = document.toJson(),
+            )
+        }
+    }
+
+    @Test
+    fun can_push_element_then_delete_it_by_ID_in_array() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            var target: JsonElement? = null
+            document.updateAsync { root, _ ->
+                val list = root.setNewArray("list")
+                list.put(4)
+                list.put(3)
+                list.put(2)
+                list.put(1)
+                target = list[2]
+            }.await()
+
+            assertEquals(
+                expected = "{\"list\":[4,3,2,1]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                list.remove(target!!.id)
+            }.await()
+            assertEquals(
+                expected = "{\"list\":[4,3,1]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                list.put(2)
+            }.await()
+            assertEquals(
+                expected = "{\"list\":[4,3,1,2]}",
+                actual = document.toJson(),
+            )
+        }
+    }
+
+    @Test
+    fun can_insert_an_element_after_the_given_element_in_array() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            var prev: JsonElement? = null
+            document.updateAsync { root, _ ->
+                val list = root.setNewArray("list")
+                list.put(1)
+                list.put(2)
+                list.put(4)
+                prev = list[1]
+            }.await()
+
+            assertEquals(
+                expected = "{\"list\":[1,2,4]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                list.put(3, prev!!.id)
+            }.await()
+            assertEquals(
+                expected = "{\"list\":[1,2,3,4]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                list.removeAt(1)
+            }.await()
+            assertEquals(
+                expected = "{\"list\":[1,3,4]}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                prev = list[0]
+                list.put(2, prev!!.id)
+            }.await()
+            assertEquals(
+                expected = "{\"list\":[1,2,3,4]}",
+                actual = document.toJson(),
+            )
+
+            val root = document.getRoot()
+            val list = root.getAs<JsonArray>("list")
+            for (idx in list.indices) {
+                val element = list[idx] as JsonPrimitive
+                assertEquals(idx + 1, element.value)
+            }
+        }
+    }
+
+    @Test
+    fun can_move_an_element_before_the_given_element_in_array() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("list").apply {
+                    put(0)
+                    put(1)
+                    put(2)
+                }
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val next = list[0]
+                val item = list[2]
+                list.moveBefore(next.id, item.id)
+                assertEquals(
+                    expected = "{\"list\":[2,0,1]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val next = list[0]
+                val item = list[2]
+                list.moveBefore(next.id, item.id)
+                assertEquals(
+                    expected = "{\"list\":[1,2,0]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+        }
+    }
+
+    @Test
+    fun can_move_an_element_after_the_given_element_in_array() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("list").apply {
+                    put(0)
+                    put(1)
+                    put(2)
+                }
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val prev = list[0]
+                val item = list[2]
+                list.moveAfter(prev.id, item.id)
+                assertEquals(
+                    expected = "{\"list\":[0,2,1]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val prev = list[0]
+                val item = list[2]
+                list.moveAfter(prev.id, item.id)
+                assertEquals(
+                    expected = "{\"list\":[0,1,2]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+        }
+    }
+
+    @Test
+    fun can_insert_an_element_at_the_first_of_array() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("list").apply {
+                    put(0)
+                    put(1)
+                    put(2)
+                }
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val item = list[2]
+                list.moveFront(item.id)
+                assertEquals(
+                    expected = "{\"list\":[2,0,1]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val item = list[1]
+                list.moveFront(item.id)
+                assertEquals(
+                    expected = "{\"list\":[0,2,1]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val item = list[0]
+                list.moveFront(item.id)
+                assertEquals(
+                    expected = "{\"list\":[0,2,1]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+        }
+    }
+
+    @Test
+    fun can_move_an_element_at_the_last_of_array() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+            assertEquals(
+                expected = "{}",
+                actual = document.toJson(),
+            )
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("list").apply {
+                    put(0)
+                    put(1)
+                    put(2)
+                }
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val item = list[2]
+                list.moveLast(item.id)
+                assertEquals(
+                    expected = "{\"list\":[0,1,2]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val item = list[1]
+                list.moveLast(item.id)
+                assertEquals(
+                    expected = "{\"list\":[0,2,1]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val item = list[0]
+                list.moveLast(item.id)
+                assertEquals(
+                    expected = "{\"list\":[2,1,0]}",
+                    actual = root.toJson(),
+                )
+            }.await()
+        }
+    }
+
+    @Test
     fun can_handle_concurrent_insertAfter_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             var prev: JsonElement? = null
             document1.updateAsync { root, _ ->
                 val k1 = root.setNewArray("k1").apply {
@@ -54,7 +493,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                k1.put("2.1", k1[1]!!.id)
+                k1.put("2.1", k1[1].id)
                 assertEquals(
                     expected = "{\"k1\":[1,2,\"2.1\",3,4]}",
                     actual = root.toJson(),
@@ -62,7 +501,7 @@ class JsonArrayTest {
             }.await()
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                k1.put("2.2", k1[1]!!.id)
+                k1.put("2.2", k1[1].id)
                 assertEquals(
                     expected = "{\"k1\":[1,2,\"2.2\",3,4]}",
                     actual = root.toJson(),
@@ -78,7 +517,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_moveBefore_operations_with_same_position() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(0)
@@ -97,8 +536,8 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[0]!!
-                val item = k1[2]!!
+                val next = k1[0]
+                val item = k1[2]
                 k1.moveBefore(next.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[2,0,1]}",
@@ -108,8 +547,8 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[0]!!
-                val item = k1[2]!!
+                val next = k1[0]
+                val item = k1[2]
                 k1.moveBefore(next.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[1,2,0]}",
@@ -119,8 +558,8 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[0]!!
-                val item = k1[1]!!
+                val next = k1[0]
+                val item = k1[1]
                 k1.moveBefore(next.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[1,0,2]}",
@@ -130,8 +569,8 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[0]!!
-                val item = k1[1]!!
+                val next = k1[0]
+                val item = k1[1]
                 k1.moveBefore(next.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[0,1,2]}",
@@ -148,7 +587,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_moveBefore_operations_from_different_position() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(0)
@@ -167,8 +606,8 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[0]!!
-                val item = k1[1]!!
+                val next = k1[0]
+                val item = k1[1]
                 k1.moveBefore(next.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[1,0,2]}",
@@ -178,8 +617,8 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[1]!!
-                val item = k1[2]!!
+                val next = k1[1]
+                val item = k1[2]
                 k1.moveBefore(next.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[0,2,1]}",
@@ -196,7 +635,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_moveFront_operations_with_different_index() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(0)
@@ -215,7 +654,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[2]!!
+                val item = k1[2]
                 k1.moveFront(item.id)
                 assertEquals(
                     expected = "{\"k1\":[2,0,1]}",
@@ -225,7 +664,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[2]!!
+                val item = k1[2]
                 k1.moveFront(item.id)
                 assertEquals(
                     expected = "{\"k1\":[1,2,0]}",
@@ -235,7 +674,7 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[1]!!
+                val item = k1[1]
                 k1.moveFront(item.id)
                 assertEquals(
                     expected = "{\"k1\":[1,0,2]}",
@@ -245,7 +684,7 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[1]!!
+                val item = k1[1]
                 k1.moveFront(item.id)
                 assertEquals(
                     expected = "{\"k1\":[0,1,2]}",
@@ -262,7 +701,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_moveFront_operations_with_same_index() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(0)
@@ -281,7 +720,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[2]!!
+                val item = k1[2]
                 k1.moveFront(item.id)
                 assertEquals(
                     expected = "{\"k1\":[2,0,1]}",
@@ -291,7 +730,7 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[2]!!
+                val item = k1[2]
                 k1.moveFront(item.id)
                 assertEquals(
                     expected = "{\"k1\":[2,0,1]}",
@@ -308,7 +747,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_moveAfter_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(0)
@@ -327,7 +766,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[1]!!
+                val item = k1[1]
                 k1.moveLast(item.id)
                 assertEquals(
                     expected = "{\"k1\":[0,2,1]}",
@@ -337,7 +776,7 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val item = k1[0]!!
+                val item = k1[0]
                 k1.moveLast(item.id)
                 assertEquals(
                     expected = "{\"k1\":[1,2,0]}",
@@ -354,7 +793,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_insertAfter_and_moveBefore_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             var prev: JsonElement? = null
             document1.updateAsync { root, _ ->
                 val k1 = root.setNewArray("k1").apply {
@@ -392,15 +831,15 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[0]!!
-                val item = k1[1]!!
+                val next = k1[0]
+                val item = k1[1]
                 k1.moveBefore(next.id, item.id)
             }.await()
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val next = k1[0]!!
-                val item = k1[2]!!
+                val next = k1[0]
+                val item = k1[2]
                 k1.moveBefore(next.id, item.id)
             }.await()
 
@@ -413,7 +852,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_moveAfter() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(0)
@@ -432,8 +871,8 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val prev = k1[0]!!
-                val item = k1[1]!!
+                val prev = k1[0]
+                val item = k1[1]
                 k1.moveAfter(prev.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[0,1,2]}",
@@ -443,8 +882,8 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val prev = k1[0]!!
-                val item = k1[2]!!
+                val prev = k1[0]
+                val item = k1[2]
                 k1.moveAfter(prev.id, item.id)
                 assertEquals(
                     expected = "{\"k1\":[0,2,1]}",
@@ -461,7 +900,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_add_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put("1")
@@ -491,8 +930,8 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_delete_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
-            var prev: JsonElement? = null
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
+            var prev: JsonElement?
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(1)
@@ -531,7 +970,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_concurrent_insertBefore_and_delete_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             var prev: JsonElement? = null
 
             document1.updateAsync { root, _ ->
@@ -559,7 +998,7 @@ class JsonArrayTest {
                 val k1 = root.getAs<JsonArray>("k1")
                 // Insert before by adding element and moving it before the target
                 k1.put(2)
-                val element2 = k1[k1.size - 1]!!
+                val element2 = k1[k1.size - 1]
                 k1.moveBefore(prev!!.id, element2.id)
                 assertEquals(
                     expected = "{\"k1\":[2,1]}",
@@ -586,7 +1025,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_complex_concurrent_insertBefore_and_delete_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             var prev: JsonElement? = null
 
             document1.updateAsync { root, _ ->
@@ -634,7 +1073,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val targetElement = k1[3]!!
+                val targetElement = k1[3]
                 assertEquals(4, k1.size)
                 k1.insertBefore(targetElement.id, 6)
                 assertEquals(
@@ -646,7 +1085,7 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                val targetElement = k1[0]!!
+                val targetElement = k1[0]
                 assertEquals(4, k1.size)
                 k1.insertBefore(targetElement.id, 7)
                 assertEquals(
@@ -674,7 +1113,7 @@ class JsonArrayTest {
 
     @Test
     fun can_handle_simple_array_set_operations() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(-1)
@@ -693,7 +1132,7 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                k1.setInteger(1, -4)
+                k1[1] = -4
                 assertEquals(
                     expected = "{\"k1\":[-1,-4,-3]}",
                     actual = root.toJson(),
@@ -702,7 +1141,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                k1.setInteger(0, -5)
+                k1[0] = -5
                 assertEquals(
                     expected = "{\"k1\":[-5,-2,-3]}",
                     actual = root.toJson(),
@@ -780,7 +1219,7 @@ class JsonArrayTest {
 
     @Test
     fun array_set_by_index_test() {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 root.setNewArray("k1").apply {
                     put(-1)
@@ -799,7 +1238,7 @@ class JsonArrayTest {
 
             document2.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                k1.setInteger(1, -4)
+                k1[1] = -4
                 assertEquals(
                     expected = "{\"k1\":[-1,-4,-3]}",
                     actual = root.toJson(),
@@ -808,7 +1247,7 @@ class JsonArrayTest {
 
             document1.updateAsync { root, _ ->
                 val k1 = root.getAs<JsonArray>("k1")
-                k1.setInteger(0, -5)
+                k1[0] = -5
                 assertEquals(
                     expected = "{\"k1\":[-5,-2,-3]}",
                     actual = root.toJson(),
@@ -825,9 +1264,72 @@ class JsonArrayTest {
         }
     }
 
+    @Test
+    fun can_handle_array_set_operation_by_proxy() {
+        runBlocking {
+            val document = Document(Document.Key("test-doc"))
+
+            document.updateAsync { root, _ ->
+                root.setNewArray("list").apply {
+                    put("a")
+                    put("b")
+                    put("c")
+                }
+            }.await()
+            assertEquals("{\"list\":[\"a\",\"b\",\"c\"]}", document.toJson())
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val prev = list[0]
+                list.put("newV", prev.id)
+            }.await()
+            assertEquals("{\"list\":[\"a\",\"newV\",\"b\",\"c\"]}", document.toJson())
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val prev = list[0]
+                list.put("newV", prev.id)
+            }.await()
+            assertEquals("{\"list\":[\"a\",\"newV\",\"newV\",\"b\",\"c\"]}", document.toJson())
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                list[0] = "setV"
+            }.await()
+            assertEquals("{\"list\":[\"setV\",\"newV\",\"newV\",\"b\",\"c\"]}", document.toJson())
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val idx = list.indexOfFirst { (it as? JsonPrimitive)?.value == "setV" }
+                if (idx >= 0) {
+                    list[idx] = "setV2"
+                }
+            }.await()
+            assertEquals("{\"list\":[\"setV2\",\"newV\",\"newV\",\"b\",\"c\"]}", document.toJson())
+
+            document.updateAsync { root, _ ->
+                val list = root.getAs<JsonArray>("list")
+                val idx = list.indexOfFirst { (it as? JsonPrimitive)?.value == "setV2" }
+                if (idx >= 0) {
+                    list.setNewArray(idx).apply {
+                        put("s")
+                        put("e")
+                        put("t")
+                        put("V")
+                        put("3")
+                    }
+                }
+            }.await()
+            assertEquals(
+                "{\"list\":[[\"s\",\"e\",\"t\",\"V\",\"3\"],\"newV\",\"newV\",\"b\",\"c\"]}",
+                document.toJson(),
+            )
+        }
+    }
+
     // Helper functions
     private fun testConcurrentOperations(op1: ArrayOp, op2: ArrayOp) {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             document1.updateAsync { root, _ ->
                 val a = root.setNewArray("a")
                 initArr.forEach { a.put(it) }
@@ -863,7 +1365,7 @@ class JsonArrayTest {
     }
 
     private fun testComplicatedConcurrentOperation(op: ComplicatedArrayOp) {
-        withTwoClientsAndDocuments { client1, client2, document1, document2, key ->
+        withTwoClientsAndDocuments { client1, client2, document1, document2, _ ->
             // Reset documents for each test case
             document1.updateAsync { root, _ ->
                 val a = root.setNewArray("a")
@@ -888,14 +1390,14 @@ class JsonArrayTest {
                 val a = root.getAs<JsonArray>("a")
                 // Move element at index 2 after element at oneIdx
                 a.moveAfter(
-                    a[COMPLICATED_ONE_IDX]!!.id,
-                    a[2]!!.id,
+                    a[COMPLICATED_ONE_IDX].id,
+                    a[2].id,
                 )
 
                 // Move element at index 3 after element at index 2
                 a.moveAfter(
-                    a[2]!!.id,
-                    a[3]!!.id,
+                    a[2].id,
+                    a[3].id,
                 )
             }.await()
 
@@ -962,14 +1464,14 @@ class JsonArrayTest {
             ArrayOp("insert.prev") { arr, cid ->
                 arr.insertIntegerAfter(ONE_IDX, newValues[cid])
             },
-            ArrayOp("insert.prev.next") { arr, cid ->
+            ArrayOp("insert.prev!!.next") { arr, cid ->
                 arr.insertIntegerAfter(ONE_IDX - 1, newValues[cid])
             },
             // move
             ArrayOp("move.prev") { arr, cid ->
                 arr.moveAfterByIndex(ONE_IDX, otherIdxs[cid])
             },
-            ArrayOp("move.prev.next") { arr, cid ->
+            ArrayOp("move.prev!!.next") { arr, cid ->
                 arr.moveAfterByIndex(ONE_IDX - 1, otherIdxs[cid])
             },
             ArrayOp("move.target") { arr, cid ->
@@ -977,7 +1479,7 @@ class JsonArrayTest {
             },
             // set by index
             ArrayOp("set.target") { arr, cid ->
-                arr.setInteger(ONE_IDX, newValues[cid])
+                arr[ONE_IDX] = newValues[cid]
             },
             // remove
             ArrayOp("remove.target") { arr, _ ->
@@ -993,29 +1495,29 @@ class JsonArrayTest {
         private val complicatedOperations = listOf(
             // insert
             ComplicatedArrayOp("insert") { arr ->
-                arr.put(COMPLICATED_NEW_VALUE, arr[COMPLICATED_ONE_IDX]!!.id)
+                arr.put(COMPLICATED_NEW_VALUE, arr[COMPLICATED_ONE_IDX].id)
             },
             // move
             ComplicatedArrayOp("move") { arr ->
                 arr.moveAfter(
-                    arr[COMPLICATED_OTHER_IDX]!!.id,
-                    arr[COMPLICATED_ONE_IDX]!!.id,
+                    arr[COMPLICATED_OTHER_IDX].id,
+                    arr[COMPLICATED_ONE_IDX].id,
                 )
             },
             // set (implemented as delete + insert)
             ComplicatedArrayOp("set") { arr ->
-                val targetElement = arr[COMPLICATED_ONE_IDX]!!
+                val targetElement = arr[COMPLICATED_ONE_IDX]
                 arr.remove(targetElement.id)
                 if (COMPLICATED_ONE_IDX > 0) {
-                    arr.put(COMPLICATED_NEW_VALUE, arr[COMPLICATED_ONE_IDX - 1]!!.id)
+                    arr.put(COMPLICATED_NEW_VALUE, arr[COMPLICATED_ONE_IDX - 1].id)
                 } else {
-                    val firstElement = arr[0]!!
+                    val firstElement = arr[0]
                     arr.insertBefore(firstElement.id, COMPLICATED_NEW_VALUE)
                 }
             },
             // remove
             ComplicatedArrayOp("remove") { arr ->
-                arr.remove(arr[COMPLICATED_ONE_IDX]!!.id)
+                arr.remove(arr[COMPLICATED_ONE_IDX].id)
             },
         )
     }

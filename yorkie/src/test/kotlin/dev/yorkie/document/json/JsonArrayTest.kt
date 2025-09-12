@@ -166,7 +166,7 @@ class JsonArrayTest {
 
     @Test
     fun `should return null when index for get function does not exist`() {
-        assertNull(target[0])
+        assertNull(target.getOrNull(0))
     }
 
     @Test
@@ -176,7 +176,7 @@ class JsonArrayTest {
 
     @Test
     fun `should return null when TimeTicket for get function does not exist`() {
-        assertNull(target[TimeTicket.MaxTimeTicket])
+        assertNull(target.getOrNull(TimeTicket.MaxTimeTicket))
     }
 
     @Test

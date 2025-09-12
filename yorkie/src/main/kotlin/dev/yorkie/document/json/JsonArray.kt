@@ -26,12 +26,31 @@ public class JsonArray internal constructor(
     override val size: Int
         get() = target.length
 
-    public operator fun get(index: Int): JsonElement? {
+    public operator fun get(index: Int): JsonElement {
+        return getCrdtElement(index).toJsonElement(context)
+    }
+
+    public operator fun get(createdAt: TimeTicket): JsonElement {
+        val element = target[createdAt] ?: throw YorkieException(
+            code = YorkieException.Code.ErrInvalidArgument,
+            errorMessage = "element not found: $createdAt",
+        )
+        return element.toJsonElement(context)
+    }
+
+    public fun getOrNull(index: Int): JsonElement? {
         return target[index]?.toJsonElement(context)
     }
 
-    public operator fun get(createdAt: TimeTicket): JsonElement? {
+    public fun getOrNull(createdAt: TimeTicket): JsonElement? {
         return target[createdAt]?.toJsonElement(context)
+    }
+
+    private fun getCrdtElement(index: Int): CrdtElement {
+        return target[index] ?: throw YorkieException(
+            code = YorkieException.Code.ErrInvalidArgument,
+            errorMessage = "index out of bounds: $index",
+        )
     }
 
     @Suppress("NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
@@ -103,6 +122,43 @@ public class JsonArray internal constructor(
         )
     }
 
+    public operator fun set(index: Int, value: Int): JsonElement = setPrimitive(index, value)
+
+    public operator fun set(index: Int, value: Boolean): JsonElement = setPrimitive(index, value)
+
+    public operator fun set(index: Int, value: Long): JsonElement = setPrimitive(index, value)
+
+    public operator fun set(index: Int, value: Double): JsonElement = setPrimitive(index, value)
+
+    public operator fun set(index: Int, value: String): JsonElement = setPrimitive(index, value)
+
+    public operator fun set(index: Int, value: ByteArray): JsonElement = setPrimitive(index, value)
+
+    public operator fun set(index: Int, value: Date): JsonElement = setPrimitive(index, value)
+
+    public fun setNewArray(index: Int): JsonArray {
+        val createdAt = context.issueTimeTicket()
+        val prevElement = getCrdtElement(index)
+        val array = CrdtArray(createdAt)
+        setValueInternal(prevElement, array, createdAt)
+        return array.toJsonElement(context)
+    }
+
+    public fun setNewObject(index: Int): JsonObject {
+        val createdAt = context.issueTimeTicket()
+        val prevElement = getCrdtElement(index)
+        val obj = CrdtObject(createdAt, rht = ElementRht())
+        setValueInternal(prevElement, obj, createdAt)
+        return obj.toJsonElement(context)
+    }
+
+    private fun setPrimitive(index: Int, value: Any): JsonElement {
+        val createdAt = context.issueTimeTicket()
+        val prevElement = getCrdtElement(index)
+        val element = CrdtPrimitive(value, createdAt)
+        return setValueInternal(prevElement, element, createdAt)
+    }
+
     public fun removeAt(index: Int): JsonElement? {
         val executedAt = context.issueTimeTicket()
         val deleted = target.removeByIndex(index, executedAt) ?: return null
@@ -161,29 +217,25 @@ public class JsonArray internal constructor(
     }
 
     /**
-     * `setInteger` sets the element of the given index.
+     * `setValue` sets the element of the given index.
      */
-    public fun setInteger(index: Int, value: Int): JsonElement {
-        val prev = target[index]
-            ?: throw YorkieException(
-                code = YorkieException.Code.ErrInvalidArgument,
-                errorMessage = "index out of bounds: $index",
-            )
-
-        val ticket = context.issueTimeTicket()
-        val element = CrdtPrimitive(
-            value = value,
-            createdAt = ticket,
-        )
+    private fun setValueInternal(
+        prevElement: CrdtElement,
+        element: CrdtElement,
+        createdAt: TimeTicket,
+    ): JsonElement {
         val copiedValue = element.deepCopy()
         context.push(
             ArraySetOperation(
-                createdAt = prev.createdAt,
+                createdAt = prevElement.createdAt,
                 value = copiedValue,
                 parentCreatedAt = target.createdAt,
-                executedAt = ticket,
+                executedAt = createdAt,
             ),
         )
+
+        target.set(prevElement.createdAt, element, createdAt)
+        context.registerElement(element, target)
 
         return target.toJsonElement(context)
     }

@@ -83,7 +83,6 @@ public data class ChangeID(
      */
     fun setClocks(otherLamport: Long, vector: VersionVector): ChangeID {
         val lamport = if (otherLamport > lamport) otherLamport + 1 else lamport + 1
-        vector.unset(INITIAL_ACTOR_ID.value)
 
         val maxVersionVector = this.versionVector.max(vector)
         maxVersionVector.set(actor.value, lamport)

@@ -452,22 +452,26 @@ public class Client(
                                 }
                                 shouldContinue =
                                     handleWatchStreamFailure(
-                                        attachment.document,
-                                        stream,
-                                        it,
+                                        document = attachment.document,
+                                        stream = stream,
+                                        cause = it,
+                                        cancelled = attachment.cancelled,
                                     )
                             }.onClosed {
                                 handleWatchStreamFailure(
-                                    attachment.document,
-                                    stream,
-                                    it ?: ClosedReceiveChannelException("Channel was closed"),
+                                    document = attachment.document,
+                                    stream = stream,
+                                    cause = it
+                                        ?: ClosedReceiveChannelException("Channel was closed"),
+                                    cancelled = attachment.cancelled,
                                 )
                             }
                         } ?: run {
                             handleWatchStreamFailure(
-                                attachment.document,
-                                stream,
-                                TimeoutException("channel timed out"),
+                                document = attachment.document,
+                                stream = stream,
+                                cause = TimeoutException("channel timed out"),
+                                cancelled = attachment.cancelled,
                             )
                             shouldContinue = true
                         }
@@ -499,13 +503,14 @@ public class Client(
         document: Document,
         stream: ServerOnlyStreamInterface<*, *>,
         cause: Throwable?,
+        cancelled: Boolean,
     ): Boolean {
         onWatchStreamCanceled(document)
         stream.safeClose()
 
         cause?.let(::sendWatchStreamException)
 
-        if (handleAuthenticationError(cause, document, WatchDocuments)) {
+        if (handleAuthenticationError(cause, document, WatchDocuments) && !cancelled) {
             coroutineContext.ensureActive()
             delay(options.reconnectStreamDelay.inWholeMilliseconds)
             return true
@@ -992,13 +997,18 @@ public class Client(
                 ErrDocumentNotAttached,
                 "document(${document.key}) is not attached",
             )
+        val cancelled = syncMode == SyncMode.Manual
         attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
             attachment.copy(
                 syncMode = syncMode,
                 remoteChangeEventReceived = true,
+                cancelled = cancelled,
             )
         } else {
-            attachment.copy(syncMode = syncMode)
+            attachment.copy(
+                syncMode = syncMode,
+                cancelled = cancelled,
+            )
         }
     }
 

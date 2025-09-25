@@ -130,9 +130,7 @@ class SimultaneousCursorsViewModel : ViewModel() {
                 ).await()
 
                 // Initial clients list is empty
-            } catch (e: Exception) {
-                // Handle connection error
-                e.printStackTrace()
+            } catch (_: Exception) {
             }
         }
     }

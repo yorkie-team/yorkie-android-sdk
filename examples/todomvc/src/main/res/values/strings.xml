@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TodoMVC</string>
+    <string name="add_todo_hint">What needs to be done?</string>
+    <string name="all_filter">All</string>
+    <string name="active_filter">Active</string>
+    <string name="completed_filter">Completed</string>
+    <string name="clear_completed">Clear completed</string>
+    <string name="items_left">%d items left</string>
+    <string name="item_left">%d item left</string>
+    <string name="no_items_left">No items left</string>
+    <string name="mark_all_complete">Mark all as complete</string>
+</resources>

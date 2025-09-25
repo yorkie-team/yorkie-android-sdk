@@ -32,8 +32,8 @@ internal data class SetOperation(
         return if (parentObject is CrdtObject) {
             val copiedValue = value.deepCopy()
             val removed = parentObject.set(key, copiedValue)
-            removed?.let(root::registerRemovedElement)
             root.registerElement(copiedValue, parentObject)
+            removed?.let(root::registerRemovedElement)
             listOf(OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)))
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

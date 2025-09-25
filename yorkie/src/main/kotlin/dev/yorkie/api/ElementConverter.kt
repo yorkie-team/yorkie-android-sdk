@@ -87,6 +87,14 @@ internal fun ByteString.toCrdtTree(): CrdtTree {
     return PBJsonElement.parseFrom(this).tree.toCrdtTree()
 }
 
+internal fun ByteString.toCrdtArray(): CrdtArray {
+    return PBJsonElement.parseFrom(this).jsonArray.toCrdtArray()
+}
+
+internal fun ByteString.toCrdtObject(): CrdtObject {
+    return PBJsonElement.parseFrom(this).jsonObject.toCrdtObject()
+}
+
 internal fun CrdtElement.toByteString(): ByteString {
     return when (this) {
         is CrdtObject -> toPBJsonObject()
@@ -516,12 +524,24 @@ internal fun CrdtTree.toPBTree(): PBJsonElement {
 
 internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
     return when (type) {
-        PBValueType.VALUE_TYPE_JSON_OBJECT -> CrdtObject(
-            createdAt.toTimeTicket(),
-            rht = ElementRht(),
-        )
+        PBValueType.VALUE_TYPE_JSON_OBJECT -> {
+            if (value.isEmpty) {
+                CrdtObject(
+                    createdAt = createdAt.toTimeTicket(),
+                    rht = ElementRht(),
+                )
+            } else {
+                value.toCrdtObject()
+            }
+        }
 
-        PBValueType.VALUE_TYPE_JSON_ARRAY -> CrdtArray(createdAt.toTimeTicket())
+        PBValueType.VALUE_TYPE_JSON_ARRAY -> {
+            if (value.isEmpty) {
+                CrdtArray(createdAt.toTimeTicket())
+            } else {
+                value.toCrdtArray()
+            }
+        }
         PBValueType.VALUE_TYPE_TEXT -> CrdtText(RgaTreeSplit(), createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_NULL,
         PBValueType.VALUE_TYPE_BOOLEAN,

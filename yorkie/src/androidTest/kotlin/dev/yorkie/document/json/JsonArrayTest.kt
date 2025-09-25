@@ -1196,6 +1196,217 @@ class JsonArrayTest {
         testConcurrentOperations(concurrencyOperations[5], concurrencyOperations[4])
     }
 
+    // insert.prev.next vs all operations (7 tests)
+    @Test
+    fun array_concurrency_table_test_insert_prev_next_vs_insert_prev() {
+        testConcurrentOperations(concurrencyOperations[1], concurrencyOperations[0])
+    }
+
+    @Test
+    fun array_concurrency_table_test_insert_prev_next_vs_insert_prev_next() {
+        testConcurrentOperations(concurrencyOperations[1], concurrencyOperations[1])
+    }
+
+    @Test
+    fun array_concurrency_table_test_insert_prev_next_vs_move_prev() {
+        testConcurrentOperations(concurrencyOperations[1], concurrencyOperations[2])
+    }
+
+    @Test
+    fun array_concurrency_table_test_insert_prev_next_vs_move_prev_next() {
+        testConcurrentOperations(concurrencyOperations[1], concurrencyOperations[3])
+    }
+
+    @Test
+    fun array_concurrency_table_test_insert_prev_next_vs_move_target() {
+        testConcurrentOperations(concurrencyOperations[1], concurrencyOperations[4])
+    }
+
+    @Test
+    fun array_concurrency_table_test_insert_prev_next_vs_set_target() {
+        testConcurrentOperations(concurrencyOperations[1], concurrencyOperations[5])
+    }
+
+    @Test
+    fun array_concurrency_table_test_insert_prev_next_vs_remove_target() {
+        testConcurrentOperations(concurrencyOperations[1], concurrencyOperations[6])
+    }
+
+    // move.prev vs all operations (7 tests)
+    @Test
+    fun array_concurrency_table_test_move_prev_vs_insert_prev() {
+        testConcurrentOperations(concurrencyOperations[2], concurrencyOperations[0])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_vs_insert_prev_next() {
+        testConcurrentOperations(concurrencyOperations[2], concurrencyOperations[1])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_vs_move_prev() {
+        testConcurrentOperations(concurrencyOperations[2], concurrencyOperations[2])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_vs_move_prev_next() {
+        testConcurrentOperations(concurrencyOperations[2], concurrencyOperations[3])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_vs_move_target() {
+        testConcurrentOperations(concurrencyOperations[2], concurrencyOperations[4])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_vs_set_target() {
+        testConcurrentOperations(concurrencyOperations[2], concurrencyOperations[5])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_vs_remove_target() {
+        testConcurrentOperations(concurrencyOperations[2], concurrencyOperations[6])
+    }
+
+    // move.prev.next vs all operations (7 tests)
+    @Test
+    fun array_concurrency_table_test_move_prev_next_vs_insert_prev() {
+        testConcurrentOperations(concurrencyOperations[3], concurrencyOperations[0])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_next_vs_insert_prev_next() {
+        testConcurrentOperations(concurrencyOperations[3], concurrencyOperations[1])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_next_vs_move_prev() {
+        testConcurrentOperations(concurrencyOperations[3], concurrencyOperations[2])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_next_vs_move_prev_next() {
+        testConcurrentOperations(concurrencyOperations[3], concurrencyOperations[3])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_next_vs_move_target() {
+        testConcurrentOperations(concurrencyOperations[3], concurrencyOperations[4])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_next_vs_set_target() {
+        testConcurrentOperations(concurrencyOperations[3], concurrencyOperations[5])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_prev_next_vs_remove_target() {
+        testConcurrentOperations(concurrencyOperations[3], concurrencyOperations[6])
+    }
+
+    // move.target vs all operations (7 tests)
+    @Test
+    fun array_concurrency_table_test_move_target_vs_insert_prev() {
+        testConcurrentOperations(concurrencyOperations[4], concurrencyOperations[0])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_target_vs_insert_prev_next() {
+        testConcurrentOperations(concurrencyOperations[4], concurrencyOperations[1])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_target_vs_move_prev() {
+        testConcurrentOperations(concurrencyOperations[4], concurrencyOperations[2])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_target_vs_move_prev_next() {
+        testConcurrentOperations(concurrencyOperations[4], concurrencyOperations[3])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_target_vs_move_target() {
+        testConcurrentOperations(concurrencyOperations[4], concurrencyOperations[4])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_target_vs_set_target() {
+        testConcurrentOperations(concurrencyOperations[4], concurrencyOperations[5])
+    }
+
+    @Test
+    fun array_concurrency_table_test_move_target_vs_remove_target() {
+        testConcurrentOperations(concurrencyOperations[4], concurrencyOperations[6])
+    }
+
+    // set.target vs all operations (6 remaining tests - move_target already exists)
+    @Test
+    fun array_concurrency_table_test_set_target_vs_insert_prev() {
+        testConcurrentOperations(concurrencyOperations[5], concurrencyOperations[0])
+    }
+
+    @Test
+    fun array_concurrency_table_test_set_target_vs_insert_prev_next() {
+        testConcurrentOperations(concurrencyOperations[5], concurrencyOperations[1])
+    }
+
+    @Test
+    fun array_concurrency_table_test_set_target_vs_move_prev() {
+        testConcurrentOperations(concurrencyOperations[5], concurrencyOperations[2])
+    }
+
+    @Test
+    fun array_concurrency_table_test_set_target_vs_move_prev_next() {
+        testConcurrentOperations(concurrencyOperations[5], concurrencyOperations[3])
+    }
+
+    @Test
+    fun array_concurrency_table_test_set_target_vs_set_target() {
+        testConcurrentOperations(concurrencyOperations[5], concurrencyOperations[5])
+    }
+
+    @Test
+    fun array_concurrency_table_test_set_target_vs_remove_target() {
+        testConcurrentOperations(concurrencyOperations[5], concurrencyOperations[6])
+    }
+
+    // remove.target vs all operations (7 tests)
+    @Test
+    fun array_concurrency_table_test_remove_target_vs_insert_prev() {
+        testConcurrentOperations(concurrencyOperations[6], concurrencyOperations[0])
+    }
+
+    @Test
+    fun array_concurrency_table_test_remove_target_vs_insert_prev_next() {
+        testConcurrentOperations(concurrencyOperations[6], concurrencyOperations[1])
+    }
+
+    @Test
+    fun array_concurrency_table_test_remove_target_vs_move_prev() {
+        testConcurrentOperations(concurrencyOperations[6], concurrencyOperations[2])
+    }
+
+    @Test
+    fun array_concurrency_table_test_remove_target_vs_move_prev_next() {
+        testConcurrentOperations(concurrencyOperations[6], concurrencyOperations[3])
+    }
+
+    @Test
+    fun array_concurrency_table_test_remove_target_vs_move_target() {
+        testConcurrentOperations(concurrencyOperations[6], concurrencyOperations[4])
+    }
+
+    @Test
+    fun array_concurrency_table_test_remove_target_vs_set_target() {
+        testConcurrentOperations(concurrencyOperations[6], concurrencyOperations[5])
+    }
+
+    @Test
+    fun array_concurrency_table_test_remove_target_vs_remove_target() {
+        testConcurrentOperations(concurrencyOperations[6], concurrencyOperations[6])
+    }
+
     // Can handle complicated concurrent array operations
     data class ComplicatedArrayOp(
         val opName: String,

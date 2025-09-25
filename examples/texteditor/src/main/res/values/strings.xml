@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">texteditor</string>
+    <string name="peers">peers:</string>
 </resources>

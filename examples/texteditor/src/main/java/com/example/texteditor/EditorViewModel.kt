@@ -14,21 +14,52 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.util.createSingleThreadDispatcher
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import org.json.JSONArray
 import dev.yorkie.document.RgaTreeSplitPosStruct as TextPosStructure
 
-class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.TextEventHandler {
-    private val document = Document(Document.Key(DOCUMENT_KEY))
+class EditorViewModel : ViewModel(), YorkieEditText.TextEventHandler {
+    private val unaryClient = OkHttpClient.Builder()
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .build()
+
+    private val client = Client(
+        options = Client.Options(
+            apiKey = BuildConfig.YORKIE_API_KEY,
+        ),
+        host = BuildConfig.YORKIE_SERVER_URL,
+        unaryClient = unaryClient,
+        streamClient = unaryClient,
+        dispatcher = createSingleThreadDispatcher("YorkieClient"),
+    )
+
+    private val document = Document(
+        Document.Key(
+            run {
+                val date = Date()
+                val formatter = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
+                "codemirror6-${formatter.format(date)}"
+            },
+        ),
+    )
 
     private val _content = MutableSharedFlow<String>()
     val content = _content.asSharedFlow()
@@ -46,19 +77,24 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     val selectionColors: Map<ActorID, Int>
         get() = _selectionColors
 
+    private val _peers = MutableStateFlow<List<String>>(emptyList())
+    val peers = _peers.asStateFlow()
+
+    private var myClientId = ""
+
     private val gson = Gson()
 
     init {
         viewModelScope.launch {
-            if (document.getRoot().getAsOrNull<JsonText>(CONTENT) == null) {
-                document.updateAsync { root, _ ->
-                    root.setNewText(CONTENT)
-                }.await()
-            }
-
             if (client.activateAsync().await().isSuccess &&
                 client.attachAsync(document).await().isSuccess
             ) {
+                if (document.getRoot().getAsOrNull<JsonText>(CONTENT) == null) {
+                    document.updateAsync { root, _ ->
+                        root.setNewText(CONTENT)
+                    }.await()
+                }
+
                 client.syncAsync().await()
             }
         }
@@ -74,8 +110,43 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
                         emitEditOpInfos(event.changeInfo)
                     }
 
+                    is PresenceChanged.MyPresence.Initialized -> {
+                        _peers.update {
+                            event.initialized.keys.map { it.value }
+                        }
+                    }
+
                     is PresenceChanged.Others.PresenceChanged -> {
                         event.changed.emitSelection()
+                        _peers.update {
+                            val actorId = event.changed.actorID.value
+                            if (actorId !in it) {
+                                it + actorId
+                            } else {
+                                it
+                            }
+                        }
+                    }
+
+                    is PresenceChanged.MyPresence.PresenceChanged -> {
+                        _peers.update {
+                            val actorId = event.changed.actorID.value
+                            val peers = ArrayList<String>().apply {
+                                addAll(it)
+                            }
+                            if (myClientId != actorId) {
+                                peers.remove(myClientId)
+                                peers.add(actorId)
+                                myClientId = actorId
+                            }
+                            peers
+                        }
+                    }
+
+                    is PresenceChanged.Others.Unwatched -> {
+                        _peers.update {
+                            it.filter { it != event.changed.actorID.value }
+                        }
                     }
 
                     else -> {}
@@ -126,12 +197,14 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     }
 
     override fun handleSelectEvent(from: Int, to: Int) {
-        viewModelScope.launch {
-            document.updateAsync { root, presence ->
-                val range = root.getAs<JsonText>(CONTENT)
-                    .indexRangeToPosRange(from to to)?.toList()
-                presence.put(mapOf("selection" to gson.toJson(range)))
-            }.await()
+        if (client.isActive && document.status == Document.DocStatus.Attached) {
+            viewModelScope.launch {
+                document.updateAsync { root, presence ->
+                    val range = root.getAs<JsonText>(CONTENT)
+                        .indexRangeToPosRange(from to to)?.toList()
+                    presence.put(mapOf("selection" to gson.toJson(range)))
+                }.await()
+            }
         }
     }
 
@@ -165,7 +238,6 @@ class EditorViewModel(private val client: Client) : ViewModel(), YorkieEditText.
     data class Selection(val clientID: ActorID, val from: Int, val to: Int)
 
     companion object {
-        private const val DOCUMENT_KEY = "document-key"
         private const val CONTENT = "content"
 
         private val TerminationScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())

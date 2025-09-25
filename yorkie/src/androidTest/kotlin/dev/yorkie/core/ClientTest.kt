@@ -771,6 +771,7 @@ class ClientTest {
             fun JsonObject.rootText() = getAs<JsonText>("t")
 
             assertIs<SyncStatusChanged.Synced>(d2SyncEvents.last())
+            delay(100L)
             assertEquals("a", d1.getRoot().rootText().toString())
             assertEquals("a", d2.getRoot().rootText().toString())
 

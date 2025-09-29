@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Scheduler</string>
+    <string name="calendar_title">Calendar</string>
+    <string name="add_event">Add Event</string>
+    <string name="edit_event">Edit Event</string>
+    <string name="delete_event">Delete Event</string>
+    <string name="event_text_hint">Enter event text here</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="selected_date">Selected Date: %s</string>
+    <string name="no_events">No events for this date</string>
+    <string name="loading">Loading...</string>
+    <string name="error_connection">Failed to connect to server</string>
+    <string name="peers_online">Online users: %s</string>
+</resources>
+
+
+

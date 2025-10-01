@@ -16,4 +16,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Yorkie Android SDK"
-include(":examples:kanban", ":examples:texteditor", ":examples:todomvc", ":examples:simultaneous-cursors", ":examples:scheduler", ":yorkie", ":microbenchmark")
+include(":examples:kanban", ":examples:texteditor", ":examples:todomvc", ":examples:simultaneous-cursors", ":examples:scheduler", ":examples:rich-text-editor", ":yorkie", ":microbenchmark")

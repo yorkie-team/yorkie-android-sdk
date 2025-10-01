@@ -47,6 +47,7 @@ fun SimultaneousCursorsApp(
             viewModel.updatePointerDown(false)
         },
         onDrag = { offset ->
+            viewModel.updatePointerDown(true)
             viewModel.updateCursorPosition(offset.x, offset.y)
         },
         onCursorShapeSelect = viewModel::updateCursorShape,

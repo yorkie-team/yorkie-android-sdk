@@ -49,6 +49,8 @@ class SimultaneousCursorsViewModel : ViewModel() {
     private var currentDrawingLine: MutableList<Offset> = mutableListOf()
     private var isDrawing: Boolean = false
 
+    private var myClientId = ""
+
     private val unaryClient = OkHttpClient.Builder()
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
@@ -101,6 +103,7 @@ class SimultaneousCursorsViewModel : ViewModel() {
                             }
 
                             is PresenceChanged.MyPresence.PresenceChanged -> {
+                                myClientId = event.changed.actorID.value
                                 updateClientPresence(
                                     event.changed.actorID.value,
                                     event.changed.presence,
@@ -170,6 +173,7 @@ class SimultaneousCursorsViewModel : ViewModel() {
             cursorShape = cursorShape,
             cursor = CursorPosition(xPos, yPos),
             pointerDown = pointerDown,
+            isMyself = clientId == myClientId,
         )
 
         // Get previous presence to check for state changes

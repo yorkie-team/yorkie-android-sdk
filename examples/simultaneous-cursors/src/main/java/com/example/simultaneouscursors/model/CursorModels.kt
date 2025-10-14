@@ -10,6 +10,7 @@ data class CursorPresence(
     val cursorShape: CursorShape = CursorShape.CURSOR,
     val cursor: CursorPosition = CursorPosition(),
     val pointerDown: Boolean = false,
+    val isMyself: Boolean = false,
 )
 
 data class ClientPresence(

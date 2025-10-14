@@ -91,8 +91,13 @@ fun AnimatedCursor(clientPresence: ClientPresence, modifier: Modifier = Modifier
         )
 
         // User name label positioned above the cursor
+        val name = clientPresence.presence.name ?: "Anonymous"
         Text(
-            text = clientPresence.presence.name ?: "Anonymous",
+            text = if (clientPresence.presence.isMyself) {
+                "$name (Me)"
+            } else {
+                name
+            },
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             color = Color.White,

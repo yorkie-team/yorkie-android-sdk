@@ -1,6 +1,7 @@
 package com.example.simultaneouscursors.viewmodel
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.simultaneouscursors.BuildConfig
@@ -15,6 +16,7 @@ import dev.yorkie.core.Client
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.util.createSingleThreadDispatcher
+import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -121,6 +123,7 @@ class SimultaneousCursorsViewModel : ViewModel() {
                     document = document,
                     initialPresence = mapOf(
                         "name" to "\"$name\"",
+                        "color" to "\"${randomColorString()}\"",
                         "cursorShape" to "\"cursor\"",
                         "cursor" to gson.toJson(
                             mapOf(
@@ -141,6 +144,11 @@ class SimultaneousCursorsViewModel : ViewModel() {
     private fun updateClientPresence(clientId: String, presenceData: Map<String, String>) {
         val name = try {
             gson.fromJson(presenceData["name"], String::class.java)
+        } catch (e: JsonSyntaxException) {
+            null
+        }
+        val color = try {
+            gson.fromJson(presenceData["color"], String::class.java)
         } catch (e: JsonSyntaxException) {
             null
         }
@@ -174,6 +182,7 @@ class SimultaneousCursorsViewModel : ViewModel() {
             cursor = CursorPosition(xPos, yPos),
             pointerDown = pointerDown,
             isMyself = clientId == myClientId,
+            color = color,
         )
 
         // Get previous presence to check for state changes
@@ -232,7 +241,7 @@ class SimultaneousCursorsViewModel : ViewModel() {
         }
     }
 
-    fun updateCursorPosition(x: Float, y: Float) {
+    private fun updateCursorPosition(x: Float, y: Float) {
         // Add point to current drawing line if pen is being used and pointer is down
         if (_uiState.value.selectedCursorShape == CursorShape.PEN && isDrawing) {
             currentDrawingLine.add(Offset(x, y))
@@ -266,25 +275,52 @@ class SimultaneousCursorsViewModel : ViewModel() {
         currentScreenHeight = height
     }
 
-    fun updatePointerDown(isDown: Boolean) {
-        // Handle pen drawing logic
+    fun startDragging(offset: Offset) {
         if (_uiState.value.selectedCursorShape == CursorShape.PEN) {
-            if (isDown && !isDrawing) {
-                // Start new drawing line
-                isDrawing = true
-                currentDrawingLine.clear()
-                _uiState.value = _uiState.value.copy(currentDrawingLinePreview = emptyList())
-            } else if (!isDown && isDrawing) {
-                // Finish current drawing line - clear it (don't save)
-                isDrawing = false
-                _uiState.value = _uiState.value.copy(currentDrawingLinePreview = emptyList())
+            updateCursorPosition(offset.x, offset.y)
+            viewModelScope.launch {
+                document.updateAsync { _, presence ->
+                    presence.put(mapOf("pointerDown" to "true"))
+                }.await()
+            }
+        } else {
+            updateCursorPosition(offset.x, offset.y)
+            viewModelScope.launch {
+                document.updateAsync { _, presence ->
+                    presence.put(mapOf("pointerDown" to "false"))
+                }.await()
             }
         }
+    }
 
-        viewModelScope.launch {
-            document.updateAsync { _, presence ->
-                presence.put(mapOf("pointerDown" to isDown.toString()))
-            }.await()
+    fun endDragging() {
+        if (_uiState.value.selectedCursorShape == CursorShape.PEN) {
+            viewModelScope.launch {
+                document.updateAsync { _, presence ->
+                    presence.put(mapOf("pointerDown" to "false"))
+                }.await()
+            }
+        }
+    }
+
+    fun pressDown(offset: Offset) {
+        updateCursorPosition(offset.x, offset.y)
+        if (_uiState.value.selectedCursorShape != CursorShape.PEN) {
+            viewModelScope.launch {
+                document.updateAsync { _, presence ->
+                    presence.put(mapOf("pointerDown" to "true"))
+                }.await()
+            }
+        }
+    }
+
+    fun release() {
+        if (_uiState.value.selectedCursorShape != CursorShape.PEN) {
+            viewModelScope.launch {
+                document.updateAsync { _, presence ->
+                    presence.put(mapOf("pointerDown" to "false"))
+                }.await()
+            }
         }
     }
 
@@ -313,6 +349,19 @@ class SimultaneousCursorsViewModel : ViewModel() {
         )
 
         return "${adjectives.random()} ${nouns.random()}"
+    }
+
+    private fun randomColorString(): String {
+        val hue = Random.nextFloat() * 360f
+        val saturation = 0.6f + Random.nextFloat() * 0.4f
+        val value = 0.25f + Random.nextFloat() * 0.25f
+
+        val color = Color.hsv(hue, saturation, value)
+
+        val r = (color.red * 255).toInt()
+        val g = (color.green * 255).toInt()
+        val b = (color.blue * 255).toInt()
+        return String.format("#%02X%02X%02X", r, g, b)
     }
 
     companion object {

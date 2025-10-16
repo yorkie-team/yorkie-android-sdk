@@ -27,33 +27,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.toColorInt
 import com.example.simultaneouscursors.model.ClientPresence
 import com.example.simultaneouscursors.model.CursorShape
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlinx.coroutines.delay
-
-/**
- * Generates a consistent dark background color for a client based on their clientID
- * Text will always be white for good contrast
- */
-private fun generateClientBackgroundColor(clientID: String): Color {
-    val hash = clientID.hashCode()
-    // Use HSV color space to ensure distinct dark colors
-    val hue = (abs(hash) % 360).toFloat()
-    val saturation = 0.6f + (abs(hash shr 8) % 40) / 100f // 0.6-1.0 for vibrant colors
-    val value = 0.25f + (abs(hash shr 16) % 25) / 100f // 0.25-0.5 for dark colors
-    return Color.hsv(hue, saturation, value)
-}
 
 @Composable
 fun AnimatedCursor(clientPresence: ClientPresence, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     val cursorSize = 24.dp
-
-    // Generate consistent background color for this client
-    val clientBackgroundColor = generateClientBackgroundColor(clientPresence.clientID)
 
     // Animate cursor position
     val animatedX by animateFloatAsState(
@@ -92,6 +76,7 @@ fun AnimatedCursor(clientPresence: ClientPresence, modifier: Modifier = Modifier
 
         // User name label positioned above the cursor
         val name = clientPresence.presence.name ?: "Anonymous"
+        val color = clientPresence.presence.color?.toColor() ?: Color.Black
         Text(
             text = if (clientPresence.presence.isMyself) {
                 "$name (Me)"
@@ -104,7 +89,7 @@ fun AnimatedCursor(clientPresence: ClientPresence, modifier: Modifier = Modifier
             modifier = Modifier
                 .offset(x = 8.dp, y = (-16).dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(clientBackgroundColor.copy(alpha = 0.9f))
+                .background(color.copy(alpha = 0.9f))
                 .padding(horizontal = 4.dp, vertical = 2.dp),
         )
 
@@ -117,6 +102,7 @@ fun AnimatedCursor(clientPresence: ClientPresence, modifier: Modifier = Modifier
                     )
                 }
             }
+
             CursorShape.PEN -> {
                 if (clientPresence.presence.pointerDown) {
                     PenTrail(
@@ -124,7 +110,10 @@ fun AnimatedCursor(clientPresence: ClientPresence, modifier: Modifier = Modifier
                     )
                 }
             }
-            else -> { /* No special effect */ }
+
+            else -> {
+                Unit
+            }
         }
     }
 }
@@ -139,8 +128,8 @@ private fun AnimationEffect(cursorShape: CursorShape, modifier: Modifier = Modif
             FloatingParticle(
                 id = index,
                 startX = Random.nextFloat() * 60f - 30f,
-                startY = 0f,
-                targetY = -120f - Random.nextFloat() * 40f,
+                startY = -30f,
+                targetY = -200f - Random.nextFloat() * 60f,
                 horizontalDrift = Random.nextFloat() * 20f - 10f,
                 delay = index * 100L,
             )
@@ -188,7 +177,7 @@ private fun FloatingParticleView(
         } else {
             particle.startY
         },
-        animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+        animationSpec = tween(durationMillis = 800, easing = LinearEasing),
         label = "particle_y_${particle.id}",
     )
 
@@ -199,21 +188,21 @@ private fun FloatingParticleView(
         } else {
             particle.startX
         },
-        animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+        animationSpec = tween(durationMillis = 800, easing = LinearEasing),
         label = "particle_x_${particle.id}",
     )
 
     // Animate opacity (fade out as it goes up)
     val alpha by animateFloatAsState(
         targetValue = if (animationStarted) 0f else 1f,
-        animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+        animationSpec = tween(durationMillis = 800, easing = LinearEasing),
         label = "particle_alpha_${particle.id}",
     )
 
     // Animate scale (slight grow and shrink)
     val scale by animateFloatAsState(
         targetValue = if (animationStarted) 0.8f else 1.2f,
-        animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+        animationSpec = tween(durationMillis = 800, easing = LinearEasing),
         label = "particle_scale_${particle.id}",
     )
 
@@ -245,4 +234,8 @@ private fun PenTrail(color: Color, modifier: Modifier = Modifier) {
             center = Offset(size.width / 2, size.height / 2),
         )
     }
+}
+
+private fun String.toColor(): Color {
+    return Color(this.toColorInt())
 }

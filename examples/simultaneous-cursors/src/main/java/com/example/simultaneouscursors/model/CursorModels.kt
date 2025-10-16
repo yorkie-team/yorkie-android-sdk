@@ -11,6 +11,7 @@ data class CursorPresence(
     val cursor: CursorPosition = CursorPosition(),
     val pointerDown: Boolean = false,
     val isMyself: Boolean = false,
+    val color: String? = null,
 )
 
 data class ClientPresence(

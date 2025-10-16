@@ -1,6 +1,10 @@
 package com.example.simultaneouscursors.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -12,12 +16,35 @@ import com.example.simultaneouscursors.model.CursorShape
 
 @Composable
 fun CursorIcon(cursorShape: CursorShape, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        when (cursorShape) {
-            CursorShape.CURSOR -> drawCursor()
-            CursorShape.HEART -> drawHeart()
-            CursorShape.THUMBS -> drawThumbsUp()
-            CursorShape.PEN -> drawPen()
+    when (cursorShape) {
+        CursorShape.HEART -> {
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "Heart",
+                modifier = modifier,
+                tint = Color.Red,
+            )
+        }
+
+        CursorShape.THUMBS -> {
+            Icon(
+                imageVector = Icons.Filled.ThumbUp,
+                contentDescription = "Thumbs Up",
+                modifier = modifier,
+                tint = Color.Yellow,
+            )
+        }
+
+        CursorShape.PEN -> {
+            Canvas(modifier = modifier) {
+                drawPen()
+            }
+        }
+
+        CursorShape.CURSOR -> {
+            Canvas(modifier = modifier) {
+                drawCursor()
+            }
         }
     }
 }
@@ -90,36 +117,6 @@ private fun DrawScope.drawHeart() {
         path = path,
         color = Color.Red,
     )
-}
-
-private fun DrawScope.drawThumbsUp() {
-    val width = size.width
-    val height = size.height
-
-    val path = Path().apply {
-        // Wrist / base rectangle
-        moveTo(width * 0.25f, height * 0.75f)
-        lineTo(width * 0.25f, height * 0.45f)
-        lineTo(width * 0.45f, height * 0.45f)
-        lineTo(width * 0.45f, height * 0.75f)
-        close()
-
-        // Thumb
-        moveTo(width * 0.45f, height * 0.45f)
-        lineTo(width * 0.65f, height * 0.20f)
-        lineTo(width * 0.75f, height * 0.25f)
-        lineTo(width * 0.60f, height * 0.45f)
-        close()
-
-        // Fingers block
-        moveTo(width * 0.45f, height * 0.45f)
-        lineTo(width * 0.85f, height * 0.45f)
-        lineTo(width * 0.85f, height * 0.75f)
-        lineTo(width * 0.45f, height * 0.75f)
-        close()
-    }
-
-    drawPath(path = path, color = Color.Yellow)
 }
 
 private fun DrawScope.drawPen() {

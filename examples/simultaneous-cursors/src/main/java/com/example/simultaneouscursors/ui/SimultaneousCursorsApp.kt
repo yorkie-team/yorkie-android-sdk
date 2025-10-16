@@ -39,17 +39,11 @@ fun SimultaneousCursorsApp(
                 size.height.toFloat(),
             )
         },
-        onDragStart = { offset ->
-            viewModel.updatePointerDown(true)
-            viewModel.updateCursorPosition(offset.x, offset.y)
-        },
-        onDragEnd = {
-            viewModel.updatePointerDown(false)
-        },
-        onDrag = { offset ->
-            viewModel.updatePointerDown(true)
-            viewModel.updateCursorPosition(offset.x, offset.y)
-        },
+        onDragStart = viewModel::startDragging,
+        onDragEnd = viewModel::endDragging,
+        onDrag = viewModel::startDragging,
+        onPresDown = viewModel::pressDown,
+        onRelease = viewModel::release,
         onCursorShapeSelect = viewModel::updateCursorShape,
         modifier = modifier,
     )
@@ -62,6 +56,8 @@ fun SimultaneousCursorsContent(
     onDragStart: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onDrag: (Offset) -> Unit,
+    onPresDown: (Offset) -> Unit,
+    onRelease: () -> Unit,
     onCursorShapeSelect: (CursorShape) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -74,12 +70,8 @@ fun SimultaneousCursorsContent(
             }
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = { offset ->
-                        onDragStart(offset)
-                    },
-                    onDragEnd = {
-                        onDragEnd()
-                    },
+                    onDragStart = onDragStart,
+                    onDragEnd = onDragEnd,
                     onDrag = { change, _ ->
                         onDrag(change.position)
                     },
@@ -88,11 +80,11 @@ fun SimultaneousCursorsContent(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
-                        onDragStart(offset)
+                        onPresDown(offset)
                         try {
                             tryAwaitRelease()
                         } finally {
-                            onDragEnd()
+                            onRelease()
                         }
                     },
                 )

@@ -1,9 +1,9 @@
 [versions]
 minSdk = "24"
-compileSdk = "34"
+compileSdk = "35"
 mockk = "1.14.2"
-targetSdk = "34"
-agp = "8.5.0"
+targetSdk = "35"
+agp = "8.9.1"
 connectKotlin = "0.7.0"
 okhttp = "4.12.0"
 coroutines = "1.8.1"
@@ -38,7 +38,7 @@ androidx-lifecycle-viewmodel = { group = "androidx.lifecycle", name = "lifecycle
 androidx-lifecycle-runtime = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "androidxLifecycle" }
 androidx-benchmark = { group = "androidx.benchmark", name = "benchmark-junit4", version.ref = "androidxBenchmark" }
 
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2024.06.00" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version = "2025.10.00" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }

@@ -1,5 +1,12 @@
 package com.example.richtexteditor.ui.viewmodel
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.forEachChange
+import androidx.compose.foundation.text.input.placeCursorAtEnd
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.richtexteditor.BuildConfig
@@ -31,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -42,8 +50,6 @@ data class EditorUiState(
     val error: String? = null,
     val peers: List<String> = emptyList(),
     val selectionPeers: Map<ActorID, Selection?> = emptyMap(),
-    val content: String = "",
-    val textSelection: Pair<Int, Int> = Pair(0, 0),
     val styleOperations: List<OperationInfo.StyleOpInfo> = emptyList(),
     val isBold: Boolean = false,
     val isItalic: Boolean = false,
@@ -58,6 +64,7 @@ data class Selection(
     val color: String,
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 class EditorViewModel : ViewModel() {
     private val unaryClient = OkHttpClient.Builder()
         .protocols(listOf(Protocol.HTTP_1_1))
@@ -86,6 +93,8 @@ class EditorViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(EditorUiState())
     val uiState = _uiState.asStateFlow()
 
+    val textFieldState = TextFieldState()
+
     private var myClientId = ActorID("")
 
     private val gson = GsonBuilder()
@@ -99,7 +108,7 @@ class EditorViewModel : ViewModel() {
                     client.attachAsync(
                         document,
                         initialPresence = mapOf(
-                            "username" to "\"Fiction\"",
+                            "username" to "\"${generateDisplayName()}\"",
                             "color" to "\"${randomColorString()}\"",
                         ),
                     ).await().isSuccess
@@ -207,6 +216,12 @@ class EditorViewModel : ViewModel() {
                     }
                 }
             }
+
+            launch {
+                snapshotFlow { textFieldState.selection }.collectLatest {
+                    handleSelectEvent(textFieldState.selection.start, textFieldState.selection.end)
+                }
+            }
         }
     }
 
@@ -216,18 +231,24 @@ class EditorViewModel : ViewModel() {
     private suspend fun syncTextSnapShot() {
         val content = document.getRoot().getAsOrNull<JsonText>(CONTENT)
         val newStyleOperations = ArrayList<OperationInfo.StyleOpInfo>()
-        content?.values?.forEachIndexed { index, textWithAttributes ->
+        var idx = 0
+        content?.values?.forEach { textWithAttributes ->
             newStyleOperations.add(
                 OperationInfo.StyleOpInfo(
-                    from = index,
-                    to = index + 1,
+                    from = idx,
+                    to = idx + textWithAttributes.text.length,
                     attributes = textWithAttributes.attributes,
                 ),
             )
+            idx += textWithAttributes.text.length
+        }
+        textFieldState.edit {
+            val newContent = content.toString()
+            replace(0, length, newContent)
+            placeCursorAtEnd()
         }
         _uiState.update {
             it.copy(
-                content = content?.toString().orEmpty(),
                 styleOperations = newStyleOperations,
             )
         }
@@ -236,20 +257,23 @@ class EditorViewModel : ViewModel() {
     private suspend fun syncTextRemoteChanged(changeInfo: Document.Event.ChangeInfo) {
         val content = document.getRoot().getAsOrNull<JsonText>(CONTENT)
         val newStyleOperations = ArrayList<OperationInfo.StyleOpInfo>()
-        content?.values?.forEachIndexed { index, textWithAttributes ->
+        var idx = 0
+        content?.values?.forEach { textWithAttributes ->
             newStyleOperations.add(
                 OperationInfo.StyleOpInfo(
-                    from = index,
-                    to = index + 1,
+                    from = idx,
+                    to = idx + textWithAttributes.text.length,
                     attributes = textWithAttributes.attributes,
                 ),
             )
+            idx += textWithAttributes.text.length
         }
 
         // Adjust local text selection based on remote edits
         val editOperations = changeInfo.operations
             .filterIsInstance<OperationInfo.EditOpInfo>()
-        var (currentFrom, currentTo) = _uiState.value.textSelection
+        var currentFrom = textFieldState.selection.start
+        var currentTo = textFieldState.selection.end
         for (editOpInfo in editOperations) {
             val newSelection = calculateNewSelection(
                 currentFrom = currentFrom,
@@ -262,14 +286,20 @@ class EditorViewModel : ViewModel() {
             currentTo = newSelection.second
         }
 
+        textFieldState.edit {
+            replace(0, length, content.toString())
+            selection = TextRange(
+                start = currentFrom.coerceIn(0, length),
+                end = currentTo.coerceIn(0, length),
+            )
+        }
+
         _uiState.update { state ->
             state.copy(
-                content = content?.toString().orEmpty(),
                 styleOperations = newStyleOperations,
                 selectionPeers = document.presences.value.mapValues {
                     it.value.mapToSelection(it.key)
                 },
-                textSelection = Pair(currentFrom, currentTo),
             )
         }
     }
@@ -309,73 +339,75 @@ class EditorViewModel : ViewModel() {
         }
     }
 
-    fun changeContent(content: String) {
-        _uiState.update {
-            it.copy(
-                content = content,
-            )
-        }
-    }
-
-    /**
-     * Handles local edit events from the UI and syncs to Yorkie document
-     */
-    fun handleEditEvent(
-        from: Int,
-        to: Int,
-        content: String,
-    ) {
-        val styles = ArrayList<EditStyle>()
-        if (_uiState.value.isBold) {
-            styles.add(EditStyle.BOLD)
-        }
-        if (_uiState.value.isItalic) {
-            styles.add(EditStyle.ITALIC)
-        }
-        if (_uiState.value.isUnderline) {
-            styles.add(EditStyle.UNDERLINE)
-        }
-        if (_uiState.value.isStrikethrough) {
-            styles.add(EditStyle.STRIKETHROUGH)
-        }
-
-        val newStyleOperations = ArrayList<OperationInfo.StyleOpInfo>()
-        newStyleOperations.add(
-            OperationInfo.StyleOpInfo(
-                from = from,
-                to = to,
-                attributes = styles.associate {
-                    it.key to "true"
-                },
-            ),
-        )
-        _uiState.update {
-            it.copy(
-                styleOperations = it.styleOperations + newStyleOperations,
-            )
-        }
-
+    fun editContent(changes: TextFieldBuffer.ChangeList, newContent: CharSequence) {
         viewModelScope.launch {
             document.updateAsync { root, _ ->
-                root.getAs<JsonText>(CONTENT).edit(
-                    fromIndex = from,
-                    toIndex = to,
-                    content = content,
-                    attributes = styles.associate {
-                        it.key to "true"
-                    },
-                )
+                changes.forEachChange { range, originalRange ->
+                    val content = if (range.start == range.end) {
+                        ""
+                    } else {
+                        newContent.substring(range.start, range.end)
+                    }
+                    val (fromIndex, toIndex) = if (range.end >= originalRange.end) {
+                        range.start to range.end - 1
+                    } else {
+                        originalRange.start to originalRange.end
+                    }
+
+                    val styles = ArrayList<EditStyle>()
+                    if (content.isNotEmpty()) {
+                        if (_uiState.value.isBold) {
+                            styles.add(EditStyle.BOLD)
+                        }
+                        if (_uiState.value.isItalic) {
+                            styles.add(EditStyle.ITALIC)
+                        }
+                        if (_uiState.value.isUnderline) {
+                            styles.add(EditStyle.UNDERLINE)
+                        }
+                        if (_uiState.value.isStrikethrough) {
+                            styles.add(EditStyle.STRIKETHROUGH)
+                        }
+                    }
+
+                    root.getAs<JsonText>(CONTENT).edit(
+                        fromIndex = fromIndex,
+                        toIndex = toIndex,
+                        content = content,
+                        attributes = styles.associate {
+                            it.key to "true"
+                        },
+                    )
+                }
             }.await()
+            syncTextStyle()
         }
     }
 
-    fun handleSelectEvent(from: Int, to: Int) {
-        viewModelScope.launch {
-            // Update local state
-            _uiState.update {
-                it.copy(textSelection = from to to)
-            }
+    private suspend fun syncTextStyle() {
+        val newStyleOperations = ArrayList<OperationInfo.StyleOpInfo>()
+        var idx = 0
+        val t = StringBuilder()
+        document.getRoot().getAsOrNull<JsonText>(CONTENT)?.values?.forEach { textWithAttributes ->
+            t.append(textWithAttributes.text)
+            newStyleOperations.add(
+                OperationInfo.StyleOpInfo(
+                    from = idx,
+                    to = idx + textWithAttributes.text.length,
+                    attributes = textWithAttributes.attributes,
+                ),
+            )
+            idx += textWithAttributes.text.length
+        }
+        _uiState.update {
+            it.copy(
+                styleOperations = newStyleOperations,
+            )
+        }
+    }
 
+    private fun handleSelectEvent(from: Int, to: Int) {
+        viewModelScope.launch {
             // Update Yorkie presence
             document.updateAsync { root, presence ->
                 val range = root.getAs<JsonText>(CONTENT)
@@ -392,19 +424,19 @@ class EditorViewModel : ViewModel() {
     ) {
         _uiState.update(updateState)
 
-        val textSelection = _uiState.value.textSelection
-        if (textSelection.first < textSelection.second) {
+        val textSelection = textFieldState.selection
+        if (textSelection.start < textSelection.end) {
             viewModelScope.launch {
                 document.updateAsync { root, _ ->
                     root.getAs<JsonText>(CONTENT).style(
-                        fromIndex = textSelection.first,
-                        toIndex = textSelection.second,
+                        fromIndex = textSelection.start,
+                        toIndex = textSelection.end,
                         attributes = mapOf(
                             style.key to if (!currentValue) "true" else "null",
                         ),
                     )
                 }.await()
-                syncTextSnapShot()
+                syncTextStyle()
             }
         }
     }
@@ -510,6 +542,25 @@ class EditorViewModel : ViewModel() {
         val random = Random.Default
         val color = (0xFFFFFF and random.nextInt()).toString(16).padStart(6, '0')
         return "#$color"
+    }
+
+    /**
+     * Generates a user-friendly display name from a clientID.
+     * This creates a consistent name for each client based on their ID.
+     */
+    private fun generateDisplayName(): String {
+        // List of friendly adjectives and nouns for generating names
+        val adjectives = listOf(
+            "Happy", "Swift", "Bright", "Cool", "Smart", "Quick", "Bold", "Calm",
+            "Wise", "Kind", "Brave", "Sharp", "Gentle", "Strong", "Clever", "Warm",
+        )
+
+        val nouns = listOf(
+            "Fox", "Eagle", "Tiger", "Wolf", "Bear", "Lion", "Hawk", "Owl",
+            "Deer", "Rabbit", "Dolphin", "Whale", "Shark", "Panda", "Koala", "Penguin",
+        )
+
+        return "${adjectives.random()} ${nouns.random()}"
     }
 
     override fun onCleared() {

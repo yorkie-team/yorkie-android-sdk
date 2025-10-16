@@ -1,5 +1,6 @@
 package com.example.richtexteditor.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.Card
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
@@ -25,6 +30,7 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.StrikethroughS
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -34,14 +40,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -53,19 +55,92 @@ import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
 import kotlin.math.roundToInt
 
+class CustomOutputTransformation : OutputTransformation {
+    var styleOperations: List<OperationInfo.StyleOpInfo> by mutableStateOf(emptyList())
+    var selectionPeers: Map<ActorID, Selection?> by mutableStateOf(emptyMap())
+
+    override fun TextFieldBuffer.transformOutput() {
+        if (styleOperations.isNotEmpty()) {
+            // Apply all style operations to the text
+            styleOperations.forEach {
+                val from = it.from
+                val to = if (it.from == it.to) {
+                    it.to + 1
+                } else {
+                    it.to
+                }
+
+                if (to in (from + 1)..length) {
+                    val attributes = it.attributes
+                    if (attributes["bold"]?.toBoolean() == true) {
+                        addStyle(
+                            spanStyle = SpanStyle(
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            start = from,
+                            end = to,
+                        )
+                    }
+
+                    if (attributes["italic"]?.toBoolean() == true) {
+                        addStyle(
+                            spanStyle = SpanStyle(
+                                fontStyle = FontStyle.Italic,
+                            ),
+                            start = from,
+                            end = to,
+                        )
+                    }
+
+                    val textDecorations = ArrayList<TextDecoration>()
+                    if (attributes["underline"]?.toBoolean() == true) {
+                        textDecorations.add(TextDecoration.Underline)
+                    }
+                    if (attributes["strike"]?.toBoolean() == true) {
+                        textDecorations.add(TextDecoration.LineThrough)
+                    }
+
+                    addStyle(
+                        spanStyle = SpanStyle(
+                            textDecoration = TextDecoration.combine(textDecorations),
+                        ),
+                        start = from,
+                        end = to,
+                    )
+                }
+            }
+        }
+
+        // Apply background colors for each remote cursor position
+        selectionPeers.values.filterNotNull().forEach { selection ->
+            val start = selection.from.coerceIn(0, length)
+            val end = selection.to.coerceIn(0, length)
+
+            if (start < end) {
+                // Selection range - highlight the entire range
+                addStyle(
+                    spanStyle = SpanStyle(
+                        background = selection.color.toColor().copy(alpha = 0.3f),
+                    ),
+                    start = start,
+                    end = end,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RichTextEditor(
-    content: String,
-    textSelection: Pair<Int, Int>,
+    textFieldState: TextFieldState,
     isBold: Boolean,
     isItalic: Boolean,
     isUnderline: Boolean,
     isStrikethrough: Boolean,
     styleOperations: List<OperationInfo.StyleOpInfo>,
     selectionPeers: Map<ActorID, Selection?>,
-    onValueChanged: (String) -> Unit,
-    onEditEvent: (from: Int, to: Int, content: String) -> Unit,
-    onTextSelected: (Int, Int) -> Unit,
+    onContentChanged: (TextFieldBuffer.ChangeList, CharSequence) -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
@@ -74,6 +149,21 @@ fun RichTextEditor(
     modifier: Modifier = Modifier,
 ) {
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
+    val inputTransformation = remember {
+        InputTransformation {
+            onContentChanged(changes, asCharSequence())
+        }
+    }
+
+    val outputTransformation = remember {
+        CustomOutputTransformation()
+    }
+
+    LaunchedEffect(styleOperations, selectionPeers) {
+        outputTransformation.styleOperations = styleOperations
+        outputTransformation.selectionPeers = selectionPeers
+    }
 
     Column(
         modifier = modifier,
@@ -200,82 +290,23 @@ fun RichTextEditor(
             Box {
                 // Text field with embedded remote cursor highlights
                 BasicTextField(
-                    value = TextFieldValue(
-                        annotatedString = buildAnnotatedStringWithCursors(
-                            text = content,
-                            peers = selectionPeers,
-                            styleOperations = styleOperations,
-                        ),
-                        selection = TextRange(
-                            textSelection.first,
-                            textSelection.second,
-                        ),
-                    ),
-                    onValueChange = { newValue ->
-                        val newText = newValue.text
-
-                        onValueChanged(newText)
-
-                        // Notify selection change
-                        onTextSelected(newValue.selection.start, newValue.selection.end)
-
-                        if (content != newText) {
-                            // Calculate the actual changed range for efficient updates
-                            var from = 0
-
-                            // Find the start of the change
-                            while (from < content.length && from < newText.length &&
-                                content[from] == newText[from]
-                            ) {
-                                from++
-                            }
-
-                            // Find the end of the change
-                            var oldEnd = content.length
-                            var newEnd = newText.length
-                            while (oldEnd > from && newEnd > from &&
-                                content[oldEnd - 1] == newText[newEnd - 1]
-                            ) {
-                                oldEnd--
-                                newEnd--
-                            }
-                            val to = oldEnd
-
-                            val changedContent = newText.substring(from, newEnd)
-
-                            onEditEvent(
-                                from,
-                                to,
-                                changedContent,
-                            )
-                        }
-                    },
+                    state = textFieldState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
                         .height(300.dp)
                         .background(Color.White, RoundedCornerShape(4.dp)),
-                    decorationBox = @Composable { innerTextField ->
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            if (content.isEmpty()) {
-                                Text(
-                                    text = "Start typing...",
-                                    style = MaterialTheme.typography.body1,
-                                    color = Color.Gray.copy(alpha = 0.5f),
-                                )
-                            }
-                            innerTextField()
-                        }
-                    },
                     onTextLayout = {
-                        textLayoutResult = it
+                        textLayoutResult = it.invoke()
                     },
+                    inputTransformation = inputTransformation,
+                    outputTransformation = outputTransformation,
                 )
 
                 // Cursor overlay for remote cursors when from == to
                 if (textLayoutResult != null) {
                     RemoteCursorOverlay(
-                        text = content,
+                        text = textFieldState.text.toString(),
                         selectionPeers = selectionPeers,
                         textLayoutResult = textLayoutResult!!,
                         modifier = Modifier
@@ -284,106 +315,6 @@ fun RichTextEditor(
                             .padding(16.dp),
                     )
                 }
-            }
-        }
-    }
-}
-
-/**
- * Builds an AnnotatedString with background colors for remote cursor positions
- */
-private fun buildAnnotatedStringWithCursors(
-    text: String,
-    peers: Map<ActorID, Selection?>,
-    styleOperations: List<OperationInfo.StyleOpInfo>,
-): AnnotatedString {
-    return buildAnnotatedString {
-        append(text)
-
-        if (styleOperations.isNotEmpty()) {
-            // Build comprehensive styled text that includes all style operations
-            val textLength = text.length
-
-            // Apply all style operations to the text
-            styleOperations.forEach {
-                val from = it.from
-                val to = if (it.from == it.to) {
-                    it.to + 1
-                } else {
-                    it.to
-                }
-
-                if (to in (from + 1)..textLength) {
-                    val attributes = it.attributes
-                    if (attributes["bold"]?.toBoolean() == true) {
-                        addStyle(
-                            style = SpanStyle(
-                                fontWeight = FontWeight.Bold,
-                            ),
-                            start = from,
-                            end = to,
-                        )
-                    } else {
-                        addStyle(
-                            style = SpanStyle(
-                                fontWeight = FontWeight.Normal,
-                            ),
-                            start = from,
-                            end = to,
-                        )
-                    }
-
-                    if (attributes["italic"]?.toBoolean() == true) {
-                        addStyle(
-                            style = SpanStyle(
-                                fontStyle = FontStyle.Italic,
-                            ),
-                            start = from,
-                            end = to,
-                        )
-                    } else {
-                        addStyle(
-                            style = SpanStyle(
-                                fontStyle = FontStyle.Normal,
-                            ),
-                            start = from,
-                            end = to,
-                        )
-                    }
-
-                    val textDecorations = ArrayList<TextDecoration>()
-                    if (attributes["underline"]?.toBoolean() == true) {
-                        textDecorations.add(TextDecoration.Underline)
-                    }
-                    if (attributes["strike"]?.toBoolean() == true) {
-                        textDecorations.add(TextDecoration.LineThrough)
-                    }
-
-                    addStyle(
-                        style = SpanStyle(
-                            textDecoration = TextDecoration.combine(textDecorations),
-                        ),
-                        start = from,
-                        end = to,
-                    )
-                }
-            }
-        }
-
-        // Apply background colors for each remote cursor position
-        peers.values.filterNotNull().forEach { selection ->
-            val start = selection.from.coerceIn(0, text.length)
-            val end = selection.to.coerceIn(0, text.length)
-
-            if (start < end) {
-                // Selection range - highlight the entire range
-                addStyle(
-                    style = SpanStyle(
-                        background = selection.color.toColor().copy(alpha = 0.3f),
-                    ),
-                    start = start,
-                    end = end,
-                )
             }
         }
     }

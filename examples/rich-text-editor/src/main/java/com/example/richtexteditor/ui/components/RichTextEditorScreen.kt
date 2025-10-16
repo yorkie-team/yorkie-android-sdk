@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Card
 import androidx.compose.material.CircularProgressIndicator
@@ -28,8 +30,7 @@ import dev.yorkie.document.time.ActorID
 fun RichTextEditorScreen(
     isLoading: Boolean,
     error: String?,
-    content: String,
-    textSelection: Pair<Int, Int>,
+    textFieldState: TextFieldState,
     isBold: Boolean,
     isItalic: Boolean,
     isUnderline: Boolean,
@@ -37,9 +38,7 @@ fun RichTextEditorScreen(
     styleOperations: List<OperationInfo.StyleOpInfo>,
     peers: List<String>,
     selectionPeers: Map<ActorID, Selection?>,
-    onValueChanged: (String) -> Unit,
-    onEditEvent: (from: Int, to: Int, content: String) -> Unit,
-    onTextSelected: (Int, Int) -> Unit,
+    onContentChanged: (TextFieldBuffer.ChangeList, CharSequence) -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
@@ -92,17 +91,14 @@ fun RichTextEditorScreen(
             else -> {
                 // Rich Text Editor
                 RichTextEditor(
-                    content = content,
-                    textSelection = textSelection,
+                    textFieldState = textFieldState,
                     isBold = isBold,
                     isItalic = isItalic,
                     isUnderline = isUnderline,
                     isStrikethrough = isStrikethrough,
                     styleOperations = styleOperations,
                     selectionPeers = selectionPeers,
-                    onValueChanged = onValueChanged,
-                    onEditEvent = onEditEvent,
-                    onTextSelected = onTextSelected,
+                    onContentChanged = onContentChanged,
                     onToggleBold = onToggleBold,
                     onToggleItalic = onToggleItalic,
                     onToggleUnderline = onToggleUnderline,

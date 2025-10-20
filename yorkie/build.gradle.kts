@@ -1,3 +1,4 @@
+import com.android.build.gradle.tasks.SourceJarTask
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -73,9 +74,11 @@ tasks.named("bufGenerate") {
 
     // Configure inputs - proto files and buf configuration
     // This ensures the task only runs when these files change
-    inputs.files(fileTree("proto") {
-        include("**/*.proto")
-    })
+    inputs.files(
+        fileTree("proto") {
+            include("**/*.proto")
+        },
+    )
     inputs.files("buf.gen.yaml", "buf.work.yaml", "buf.yaml")
 
     // Configure outputs - generated code directory
@@ -115,14 +118,22 @@ tasks.withType<KotlinCompile> {
     dependsOn("bufGenerate")
 }
 
-signing {
-    useInMemoryPgpKeys(
-        System.getenv("PGP_KEY_ID"),
-        System.getenv("PGP_SECRET_KEY"),
-        System.getenv("PGP_PASSWORD"),
-    )
-    sign(tasks["stuffZip"])
-    sign(publishing.publications)
+tasks.withType<SourceJarTask>().configureEach {
+    if (name == "sourceReleaseJar") {
+        dependsOn("bufGenerate")
+    }
+}
+
+if (gradle.startParameter.taskNames.any { it.contains("publish") && !it.contains("MavenLocal") }) {
+    signing {
+        useInMemoryPgpKeys(
+            System.getenv("PGP_KEY_ID"),
+            System.getenv("PGP_SECRET_KEY"),
+            System.getenv("PGP_PASSWORD"),
+        )
+        sign(tasks["stuffZip"])
+        sign(publishing.publications)
+    }
 }
 
 // Load properties from local.properties
@@ -144,7 +155,11 @@ android {
         consumerProguardFiles("consumer-rules.pro")
 
         buildConfigField("String", "VERSION_NAME", """"$version"""")
-        buildConfigField("String", "YORKIE_SERVER_URL", "\"${localProperties.getProperty("YORKIE_SERVER_URL") ?: error("YORKIE_SERVER_URL missing in local.properties")}\"")
+        buildConfigField(
+            "String",
+            "YORKIE_SERVER_URL",
+            "\"${localProperties.getProperty("YORKIE_SERVER_URL") ?: error("YORKIE_SERVER_URL missing in local.properties")}\"",
+        )
     }
     buildTypes {
         debug {
@@ -178,11 +193,14 @@ android {
             withSourcesJar()
             withJavadocJar()
         }
+        //noinspection WrongGradleMethod
         extensions.configure<PublishingExtension> {
             repositories {
                 maven {
-                    name = "OSSRH"
-                    setUrl("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
+                    name = "CentralPortal"
+                    url =
+                        uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
+
                     credentials {
                         username = System.getenv("MAVEN_USERNAME")
                         password = System.getenv("MAVEN_PASSWORD")

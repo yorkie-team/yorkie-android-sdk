@@ -2,12 +2,12 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 @Suppress("DSL_SCOPE_VIOLATION")
 plugins {
-    id("com.android.application") version libs.versions.agp apply false
-    id("com.android.library") version libs.versions.agp apply false
-    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-    id("com.google.protobuf") version "0.9.4" apply false
-    id("org.jmailen.kotlinter") version "4.1.1" apply true
-    id("org.jetbrains.dokka") version "1.9.10" apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.protobuf) apply false
+    alias(libs.plugins.kotlinter) apply true
+    alias(libs.plugins.dokka) apply false
     alias(libs.plugins.androidx.benchmark) apply false
 }
 

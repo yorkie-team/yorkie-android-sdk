@@ -1,26 +1,12 @@
-@Suppress("DSL_SCOPE_VIOLATION")
 plugins {
-    id("com.android.library")
-    kotlin("android")
+    alias(libs.plugins.yorkie.android.library)
     alias(libs.plugins.androidx.benchmark)
 }
 
 android {
     namespace = "dev.yorkie.microbenchmark"
-    compileSdk = libs.versions.compileSdk.get().toInt()
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
 
     defaultConfig {
-        minSdk = libs.versions.minSdk.get().toInt()
-
         testInstrumentationRunner = "androidx.benchmark.junit4.AndroidBenchmarkRunner"
         testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] =
             "EMULATOR,LOW-BATTERY,UNLOCKED"

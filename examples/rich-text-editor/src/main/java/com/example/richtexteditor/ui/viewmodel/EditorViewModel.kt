@@ -348,11 +348,6 @@ class EditorViewModel : ViewModel() {
                     } else {
                         newContent.substring(range.start, range.end)
                     }
-                    val (fromIndex, toIndex) = if (range.end >= originalRange.end) {
-                        range.start to range.end - 1
-                    } else {
-                        originalRange.start to originalRange.end
-                    }
 
                     val styles = ArrayList<EditStyle>()
                     if (content.isNotEmpty()) {
@@ -371,8 +366,8 @@ class EditorViewModel : ViewModel() {
                     }
 
                     root.getAs<JsonText>(CONTENT).edit(
-                        fromIndex = fromIndex,
-                        toIndex = toIndex,
+                        fromIndex = originalRange.start,
+                        toIndex = originalRange.end,
                         content = content,
                         attributes = styles.associate {
                             it.key to "true"

@@ -1,6 +1,7 @@
 package com.example.richtexteditor
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -16,6 +17,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.richtexteditor.ui.components.RichTextEditorScreen
 import com.example.richtexteditor.ui.theme.RichTextEditorTheme
 import com.example.richtexteditor.ui.viewmodel.EditorViewModel
+import dev.yorkie.util.Logger
 
 class MainActivity : ComponentActivity() {
     private val viewModel: EditorViewModel by viewModels {
@@ -37,6 +39,32 @@ class MainActivity : ComponentActivity() {
                     RichTextEditorApp(viewModel)
                 }
             }
+        }
+    }
+
+    companion object {
+        init {
+            Logger.init(
+                object : Logger {
+                    override val minimumPriority: Int = Log.DEBUG
+
+                    override fun d(
+                        tag: String,
+                        message: String?,
+                        throwable: Throwable?,
+                    ) {
+                        Log.d(tag, message.orEmpty(), throwable)
+                    }
+
+                    override fun e(
+                        tag: String,
+                        message: String?,
+                        throwable: Throwable?,
+                    ) {
+                        Log.e(tag, message.orEmpty(), throwable)
+                    }
+                },
+            )
         }
     }
 }

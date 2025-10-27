@@ -42,7 +42,7 @@ jobs:
       - name: Publish to Maven Central
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: publish publishToCentralPortal
+          arguments: publishToCentralPortal
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_PORT_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORT_TOKEN }}

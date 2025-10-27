@@ -1,6 +1,4 @@
 import com.android.build.gradle.LibraryExtension
-import java.net.URLEncoder
-import java.util.Base64
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -13,8 +11,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.bundling.Zip
 import org.gradle.kotlin.dsl.configure
@@ -22,6 +19,8 @@ import org.gradle.kotlin.dsl.create
 import org.gradle.kotlin.dsl.getByType
 import org.gradle.kotlin.dsl.register
 import org.gradle.plugins.signing.SigningExtension
+import java.net.URLEncoder
+import java.util.Base64
 
 class MavenPublishConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
@@ -167,20 +166,27 @@ class MavenPublishConventionPlugin : Plugin<Project> {
 }
 
 abstract class UploadToCentralPortalTask : DefaultTask() {
-    @get:InputFile
+    @get:Internal
     abstract val bundleFile: RegularFileProperty
 
-    @get:Input
+    @get:Internal
     abstract val deploymentName: Property<String>
 
-    @get:org.gradle.api.tasks.Internal
+    @get:Internal
     abstract val username: Property<String>
 
-    @get:org.gradle.api.tasks.Internal
+    @get:Internal
     abstract val password: Property<String>
 
     @TaskAction
     fun upload() {
+        val bundle = bundleFile.get().asFile
+
+        // Validate bundle file exists at execution time
+        if (!bundle.exists()) {
+            error("Bundle file does not exist: ${bundle.absolutePath}")
+        }
+
         val uriBase = "https://central.sonatype.com/api/v1/publisher/upload"
         val publishingType = "USER_MANAGED"
         val encodedName = URLEncoder.encode(deploymentName.get(), Charsets.UTF_8)
@@ -188,7 +194,6 @@ abstract class UploadToCentralPortalTask : DefaultTask() {
 
         val bearerToken = Base64.getEncoder()
             .encodeToString("${username.get()}:${password.get()}".toByteArray())
-        val bundle = bundleFile.get().asFile
 
         println("Uploading to Central Portal: $uri")
         println("Bundle file: ${bundle.absolutePath}")

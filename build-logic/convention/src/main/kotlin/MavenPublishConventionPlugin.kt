@@ -145,6 +145,7 @@ class MavenPublishConventionPlugin : Plugin<Project> {
             // Package Maven artifacts for Central Portal
             val packageMavenArtifacts = tasks.register<Zip>("packageMavenArtifacts") {
                 group = "publish"
+                dependsOn("publishReleasePublicationToCentralPortalRepository")
                 from(mavenReleasePublishUrl)
                 archiveFileName.set("${project.name}-artifacts.zip")
                 destinationDirectory.set(layout.buildDirectory)

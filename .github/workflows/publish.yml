@@ -18,7 +18,7 @@ jobs:
       - run: chmod +x gradlew
       - uses: gradle/gradle-build-action@v2
         with:
-          arguments: publish
+          arguments: publish publishToCentralPortal
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_PORT_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORT_TOKEN }}

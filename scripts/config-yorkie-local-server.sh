@@ -23,6 +23,7 @@ LOCAL_PROPS_FILE="./local.properties"
 touch "$LOCAL_PROPS_FILE"
 
 YORKIE_SERVER_URL="http://$PRIVATE_IP:8080"
+echo "YORKIE_SERVER_URL: $YORKIE_SERVER_URL"
 
 # Update or insert YORKIE_SERVER_URL
 if grep -q "^YORKIE_SERVER_URL=" "$LOCAL_PROPS_FILE"; then

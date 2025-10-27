@@ -1,0 +1,51 @@
+name: Manual Publish to Maven Central
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.0.1 or 0.0.1-SNAPSHOT)'
+        required: true
+        type: string
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: gradle
+
+      - name: Set Yorkie Server Url
+        run: echo YORKIE_SERVER_URL="https://api.yorkie.dev" > ./local.properties
+
+      - name: Update version in gradle.properties
+        run: |
+          if ! grep -q "^VERSION_NAME=" gradle.properties; then
+            echo "❌ VERSION_NAME not found in gradle.properties"
+            exit 1
+          fi
+          sed -i "s/^VERSION_NAME=.*/VERSION_NAME=${{ inputs.version }}/" gradle.properties
+          echo "✅ Updated VERSION_NAME to ${{ inputs.version }}"
+          if ! grep "^VERSION_NAME=${{ inputs.version }}" gradle.properties; then
+            echo "❌ Failed to update VERSION_NAME"
+            exit 1
+          fi
+          grep "^VERSION_NAME=" gradle.properties
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Publish to Maven Central
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: publish publishToCentralPortal
+        env:
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_PORT_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORT_TOKEN }}
+          PGP_KEY_ID: ${{ secrets.PGP_KEY_ID }}
+          PGP_SECRET_KEY: ${{ secrets.PGP_SECRET_KEY }}
+          PGP_PASSWORD: ${{ secrets.PGP_PASSWORD }}

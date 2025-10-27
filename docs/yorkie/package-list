@@ -1,5 +1,7 @@
 $dokka.format:html-v1
 $dokka.linkExtension:html
+$dokka.location:com.google.protobuf////PointingToDeclaration/yorkie/com.google.protobuf/index.html
+$dokka.location:com.google.protobuf/Generated///PointingToDeclaration/yorkie/com.google.protobuf/-generated/index.html
 $dokka.location:dev.yorkie.api////PointingToDeclaration/yorkie/dev.yorkie.api/index.html
 $dokka.location:dev.yorkie.api//base64ToByteArray/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.api/base64-to-byte-array.html
 $dokka.location:dev.yorkie.api//bytesToHex/#kotlin.ByteArray?/PointingToDeclaration/yorkie/dev.yorkie.api/bytes-to-hex.html
@@ -753,6 +755,7 @@ $dokka.location:dev.yorkie.util/YorkieException///PointingToDeclaration/yorkie/
 $dokka.location:dev.yorkie.util/YorkieException/YorkieException/#dev.yorkie.util.YorkieException.Code#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/-yorkie-exception.html
 $dokka.location:dev.yorkie.util/YorkieException/code/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/code.html
 $dokka.location:dev.yorkie.util/YorkieException/errorMessage/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/error-message.html
+com.google.protobuf
 dev.yorkie.api
 dev.yorkie.core
 dev.yorkie.document

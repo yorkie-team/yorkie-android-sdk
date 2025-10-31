@@ -70,28 +70,29 @@ yorkie server --rpc-addr 0.0.0.0:8080
 ./scripts/config-yorkie-local-server.sh
 ```
 
-### Dev
-Config variables in `local.properties` file
+### Public Cloud
+
+Start and create your project and get API Key on [Public Cloud](https://yorkie.dev)
+
+Config variables in `local.properties` file with your Yorkie Public Cloud server URL and API key
 
 ```bash
 YORKIE_SERVER_URL=https://api.yorkie.dev
+YORKIE_API_KEY=Your Yorkie API key
 ```
 
-### Real
+### Self-Hosted Server
 
-Start and create your project and get API Key on [Yorkie](https://yorkie.navercorp.com/)
-
-Config variables in `local.properties` file
+If you're running your own Yorkie server, config variables in `local.properties` file with your server URL and API key
 
 ```bash
-YORKIE_SERVER_URL=https://yorkie-api.navercorp.com
+YORKIE_SERVER_URL=https://your-yorkie-server.com
 YORKIE_API_KEY=Your Yorkie API key
 ```
 
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting patches and the contribution workflow.
-
 
 ## Contributors ✨
 

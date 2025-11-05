@@ -1,6 +1,6 @@
 package dev.yorkie.core
 
-import dev.yorkie.BuildConfig
+import androidx.test.platform.app.InstrumentationRegistry
 import dev.yorkie.document.Document
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -13,6 +13,25 @@ import okhttp3.Protocol
 const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
 const val GENERAL_TIMEOUT = 3_000L
 
+/**
+ * Gets a test configuration value from instrumentation arguments.
+ *
+ * For Android instrumentation tests, configuration is passed via testInstrumentationRunnerArguments
+ * which are read from local.properties at build time and passed to the test runner.
+ *
+ * This avoids polluting the main BuildConfig with test-only configuration.
+ */
+private fun getTestArgument(key: String, defaultValue: String = ""): String {
+    return InstrumentationRegistry.getArguments().getString(key)
+        ?: defaultValue.takeIf { it.isNotEmpty() }
+        ?: error("$key not found in instrumentation arguments")
+}
+
+/**
+ * Gets the Yorkie server URL for tests
+ */
+fun getYorkieServerUrl(): String = getTestArgument("YORKIE_SERVER_URL")
+
 const val TEST_API_ID = "admin"
 const val TEST_API_PW = "admin"
 
@@ -20,7 +39,7 @@ fun createClient(options: Client.Options = Client.Options()): Client {
     val unaryClient = OkHttpClient.Builder().protocols(listOf(Protocol.HTTP_1_1)).build()
     return Client(
         options = options,
-        host = BuildConfig.YORKIE_SERVER_URL,
+        host = getYorkieServerUrl(),
         unaryClient = unaryClient,
         streamClient = unaryClient,
         dispatcher = createSingleThreadDispatcher("YorkieClient"),

@@ -19,9 +19,6 @@ jobs:
           distribution: "temurin"
           cache: gradle
 
-      - name: Set Yorkie Server Url
-        run: echo YORKIE_SERVER_URL="https://api.yorkie.dev" > ./local.properties
-
       - name: Update version in gradle.properties
         run: |
           if ! grep -q "^VERSION_NAME=" gradle.properties; then
@@ -39,10 +36,24 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Determine publish task
+        id: publish-task
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
+            echo "Publishing SNAPSHOT version to Central Portal"
+            echo "task=publishReleasePublicationToCentralPortalRepository" >> $GITHUB_OUTPUT
+            echo "type=SNAPSHOT" >> $GITHUB_OUTPUT
+          else
+            echo "Publishing RELEASE version to Central Portal"
+            echo "task=publishToCentralPortal" >> $GITHUB_OUTPUT
+            echo "type=RELEASE" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish to Maven Central
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: publishToCentralPortal
+          arguments: ${{ steps.publish-task.outputs.task }}
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_PORT_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORT_TOKEN }}

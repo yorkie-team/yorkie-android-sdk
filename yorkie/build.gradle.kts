@@ -25,11 +25,14 @@ android {
 
     defaultConfig {
         buildConfigField("String", "VERSION_NAME", """"$version"""")
-        buildConfigField(
-            "String",
-            "YORKIE_SERVER_URL",
-            "\"${localProperties.getProperty("YORKIE_SERVER_URL") ?: error("YORKIE_SERVER_URL missing in local.properties")}\"",
-        )
+
+        // CRITICAL: Export ProGuard rules to consumer apps
+        // Without this, the rules in proguard-rules.pro won't apply to apps using this library
+        consumerProguardFiles("proguard-rules.pro")
+
+        // Pass local.properties values as instrumentation arguments for androidTest
+        testInstrumentationRunnerArguments["YORKIE_SERVER_URL"] =
+            localProperties.getProperty("YORKIE_SERVER_URL", "")
     }
 
     buildTypes {
@@ -38,10 +41,10 @@ android {
             enableAndroidTestCoverage = true
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
+                "proguard-rules.pro"
             )
         }
     }

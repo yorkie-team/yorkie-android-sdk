@@ -1,21 +1,46 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.kts.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Yorkie Android SDK ProGuard Rules
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# =============================================================================
+# Yorkie SDK Public API
+# =============================================================================
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Core API
+-keep class dev.yorkie.core.Client { *; }
+-keep class dev.yorkie.core.Client$** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Document API - Keep everything
+-keep class dev.yorkie.document.** { *; }
+
+# Utilities
+-keep class dev.yorkie.util.Logger { *; }
+-keep class dev.yorkie.util.Logger$** { *; }
+-keep class dev.yorkie.util.CreateSingleThreadDispatcherKt { *; }
+
+# =============================================================================
+# Protocol Buffers - CRITICAL: Prevent obfuscation for protobuf to work
+# =============================================================================
+
+# Keep generated protobuf API - allow optimization but preserve field names
+-keepclassmembers class dev.yorkie.api.v1.** {
+    <fields>;
+}
+-keepnames class dev.yorkie.api.v1.**
+
+# Keep only necessary protobuf runtime classes
+-keep class com.google.protobuf.MessageLite { *; }
+-keep class com.google.protobuf.GeneratedMessageLite { *; }
+-keep class com.google.protobuf.ExtensionRegistryLite { *; }
+-dontwarn com.google.protobuf.**
+
+# Keep protobuf generated classes with @Generated annotation
+-keep @com.google.protobuf.Generated class dev.yorkie.api.v1.** { *; }
+
+# Keep protobuf MessageLite hierarchy (for protobuf-javalite)
+-keep class * extends com.google.protobuf.GeneratedMessageLite { *; }
+-keepnames class * extends com.google.protobuf.GeneratedMessageLite
+-keepclassmembernames class * extends com.google.protobuf.GeneratedMessageLite { *; }
+
+# Keep protobuf Message hierarchy (for standard protobuf-java)
+-keep class * extends com.google.protobuf.GeneratedMessage { *; }
+-keepnames class * extends com.google.protobuf.GeneratedMessage
+-keepclassmembernames class * extends com.google.protobuf.GeneratedMessage { *; }

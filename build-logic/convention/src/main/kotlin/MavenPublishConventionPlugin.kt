@@ -1,12 +1,16 @@
 import com.android.build.gradle.LibraryExtension
+import java.net.URLEncoder
+import java.util.Base64
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.credentials.PasswordCredentials
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.publish.PublishingExtension
@@ -19,8 +23,6 @@ import org.gradle.kotlin.dsl.create
 import org.gradle.kotlin.dsl.getByType
 import org.gradle.kotlin.dsl.register
 import org.gradle.plugins.signing.SigningExtension
-import java.net.URLEncoder
-import java.util.Base64
 
 class MavenPublishConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
@@ -142,25 +144,40 @@ class MavenPublishConventionPlugin : Plugin<Project> {
                 }
             }
 
-            // Package Maven artifacts for Central Portal
+            // Package Maven artifacts for Central Portal (release versions only)
             val packageMavenArtifacts = tasks.register<Zip>("packageMavenArtifacts") {
                 group = "publish"
+                // Only run for non-SNAPSHOT versions (SNAPSHOTs are published directly)
+                enabled = !projectVersion.endsWith("-SNAPSHOT")
+                onlyIf { !projectVersion.endsWith("-SNAPSHOT") }
+
                 dependsOn("publishReleasePublicationToCentralPortalRepository")
                 from(mavenReleasePublishUrl)
                 archiveFileName.set("${project.name}-artifacts.zip")
                 destinationDirectory.set(layout.buildDirectory)
             }
 
-            // Upload to Sonatype Central Portal
+            // Upload to Sonatype Central Portal (release versions only)
             tasks.register<UploadToCentralPortalTask>("publishToCentralPortal") {
                 group = "publish"
-                description = "Publishes artifacts to Sonatype Central Portal"
+                description = "Publishes release artifacts to Sonatype Central Portal (SNAPSHOTs are published directly via publishReleasePublicationToCentralPortalRepository)"
+
+                // Only run for non-SNAPSHOT versions
+                enabled = !projectVersion.endsWith("-SNAPSHOT")
+                onlyIf { !projectVersion.endsWith("-SNAPSHOT") }
+
                 dependsOn(packageMavenArtifacts)
 
                 bundleFile.set(packageMavenArtifacts.flatMap { it.archiveFile })
                 deploymentName.set("${project.name}-$projectVersion")
                 username.set(sonatypeUsername)
                 password.set(sonatypePassword)
+
+                doFirst {
+                    if (projectVersion.endsWith("-SNAPSHOT")) {
+                        throw GradleException("publishToCentralPortal is only for release versions. For SNAPSHOTs, use: ./gradlew publishReleasePublicationToCentralPortalRepository")
+                    }
+                }
             }
         }
     }

@@ -10,6 +10,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.richtexteditor.BuildConfig
+import com.example.richtexteditor.data.RgaTreeSplitPosDto
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonDeserializationContext
 import com.google.gson.JsonDeserializer
@@ -23,7 +24,6 @@ import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChanged
-import dev.yorkie.document.RgaTreeSplitPosStruct
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
@@ -307,14 +307,16 @@ class EditorViewModel : ViewModel() {
     private suspend fun Map<String, String>.mapToSelection(actorID: ActorID): Selection? {
         if (actorID == myClientId) return null
 
-        val jsonArray = gson.fromJson<List<RgaTreeSplitPosStruct>>(
+        // Deserialize to DTO first (ProGuard-safe with @SerializedName)
+        val jsonArray = gson.fromJson<List<RgaTreeSplitPosDto>>(
             this["selection"],
-            object : TypeToken<List<RgaTreeSplitPosStruct>>() {}.type,
+            object : TypeToken<List<RgaTreeSplitPosDto>>() {}.type,
         )
         return try {
             if (jsonArray != null && jsonArray.size >= 2) {
-                val fromPos = jsonArray[0]
-                val toPos = jsonArray[1]
+                // Convert DTO to SDK struct
+                val fromPos = jsonArray[0].toRgaTreeSplitPosStruct()
+                val toPos = jsonArray[1].toRgaTreeSplitPosStruct()
 
                 val content = document.getRoot().getAsOrNull<JsonText>(CONTENT) ?: return null
 
@@ -407,7 +409,9 @@ class EditorViewModel : ViewModel() {
             document.updateAsync { root, presence ->
                 val range = root.getAs<JsonText>(CONTENT)
                     .indexRangeToPosRange(from to to)?.toList().orEmpty()
-                presence.put(mapOf("selection" to gson.toJson(range)))
+                // Convert to DTO for ProGuard-safe serialization
+                val rangeDto = range.map { RgaTreeSplitPosDto.fromRgaTreeSplitPosStruct(it) }
+                presence.put(mapOf("selection" to gson.toJson(rangeDto)))
             }.await()
         }
     }

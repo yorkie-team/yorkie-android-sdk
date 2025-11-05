@@ -6,9 +6,9 @@ import dev.yorkie.core.Client
 import dev.yorkie.core.TEST_API_ID
 import dev.yorkie.core.TEST_API_PW
 import dev.yorkie.core.createClient
+import dev.yorkie.core.getYorkieServerUrl
 import dev.yorkie.core.toDocKey
 import dev.yorkie.document.json.JsonText
-import dev.yorkie.test.BuildConfig
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.postApi
@@ -27,6 +27,7 @@ class DocumentLimitTest {
     private lateinit var gson: Gson
 
     private lateinit var adminToken: String
+    private lateinit var yorkieServerUrl: String
 
     @Before
     fun setup() {
@@ -37,8 +38,10 @@ class DocumentLimitTest {
             .build()
         gson = GsonBuilder().create()
 
+        yorkieServerUrl = getYorkieServerUrl()
+
         val loginResponse = client.postApi<Map<String, Any>>(
-            url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/LogIn",
+            url = "$yorkieServerUrl/yorkie.v1.AdminService/LogIn",
             requestMap = mapOf(
                 "username" to TEST_API_ID,
                 "password" to TEST_API_PW,
@@ -53,7 +56,7 @@ class DocumentLimitTest {
         runBlocking {
             val now = System.currentTimeMillis()
             val createProjectResponse = client.postApi<Map<String, Any>>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateProject",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -66,7 +69,7 @@ class DocumentLimitTest {
             val sizeLimit = 10 * 1024 * 1024
 
             client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateProject",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -80,7 +83,7 @@ class DocumentLimitTest {
             )
 
             val projectResponse = client.postApi<Map<String, Any>>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/GetProject",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/GetProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -120,7 +123,7 @@ class DocumentLimitTest {
         runBlocking {
             val now = System.currentTimeMillis()
             val createProjectResponse = client.postApi<Map<String, Any>>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateProject",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -134,7 +137,7 @@ class DocumentLimitTest {
             val sizeLimit = 76
 
             client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateProject",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -200,7 +203,7 @@ class DocumentLimitTest {
         runBlocking {
             val now = System.currentTimeMillis()
             val createProjectResponse = client.postApi<Map<String, Any>>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateProject",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -216,7 +219,7 @@ class DocumentLimitTest {
             val documentKey = UUID.randomUUID().toString().toDocKey()
 
             client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateProject",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),

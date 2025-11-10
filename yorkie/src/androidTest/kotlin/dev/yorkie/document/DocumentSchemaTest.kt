@@ -6,8 +6,8 @@ import dev.yorkie.core.Client
 import dev.yorkie.core.TEST_API_ID
 import dev.yorkie.core.TEST_API_PW
 import dev.yorkie.core.createClient
+import dev.yorkie.core.getYorkieServerUrl
 import dev.yorkie.core.toDocKey
-import dev.yorkie.test.BuildConfig
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.parseError
 import dev.yorkie.util.postApi
@@ -25,6 +25,7 @@ class DocumentSchemaTest {
     private lateinit var gson: Gson
 
     private lateinit var adminToken: String
+    private lateinit var yorkieServerUrl: String
 
     private val time = System.currentTimeMillis()
 
@@ -37,8 +38,10 @@ class DocumentSchemaTest {
             .build()
         gson = GsonBuilder().create()
 
+        yorkieServerUrl = getYorkieServerUrl()
+
         val loginResponse = client.postApi<Map<String, Any>>(
-            url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/LogIn",
+            url = "$yorkieServerUrl/yorkie.v1.AdminService/LogIn",
             requestMap = mapOf(
                 "username" to TEST_API_ID,
                 "password" to TEST_API_PW,
@@ -48,7 +51,7 @@ class DocumentSchemaTest {
         adminToken = loginResponse["token"] as String
 
         client.postApi<Any>(
-            url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateSchema",
+            url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateSchema",
             headers = mapOf(
                 "Authorization" to adminToken,
             ),
@@ -68,7 +71,7 @@ class DocumentSchemaTest {
         )
 
         client.postApi<Any>(
-            url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/CreateSchema",
+            url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateSchema",
             headers = mapOf(
                 "Authorization" to adminToken,
             ),
@@ -178,7 +181,7 @@ class DocumentSchemaTest {
             client.detachAsync(document1).await()
 
             this@DocumentSchemaTest.client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -221,7 +224,7 @@ class DocumentSchemaTest {
 
             val exception = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
-                    url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                    url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
                         "Authorization" to adminToken,
                     ),
@@ -272,7 +275,7 @@ class DocumentSchemaTest {
 
             val exception = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
-                    url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                    url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
                         "Authorization" to adminToken,
                     ),
@@ -323,7 +326,7 @@ class DocumentSchemaTest {
             // Should fail when document is attached
             val exception = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
-                    url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                    url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
                         "Authorization" to adminToken,
                     ),
@@ -348,7 +351,7 @@ class DocumentSchemaTest {
 
             // Should succeed after detach
             this@DocumentSchemaTest.client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -409,7 +412,7 @@ class DocumentSchemaTest {
             // Should fail when document is attached
             val exception1 = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
-                    url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                    url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
                         "Authorization" to adminToken,
                     ),
@@ -435,7 +438,7 @@ class DocumentSchemaTest {
             // Should fail when document is attached
             val exception2 = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
-                    url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                    url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
                         "Authorization" to adminToken,
                     ),
@@ -458,7 +461,7 @@ class DocumentSchemaTest {
 
             // Should succeed with compatible schema
             this@DocumentSchemaTest.client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -529,7 +532,7 @@ class DocumentSchemaTest {
             // after features like conditional types are implemented in schema-ruleset.
             val exception = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
-                    url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                    url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
                         "Authorization" to adminToken,
                     ),
@@ -576,7 +579,7 @@ class DocumentSchemaTest {
             client.syncAsync(document).await()
 
             this@DocumentSchemaTest.client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),
@@ -631,7 +634,7 @@ class DocumentSchemaTest {
             // Should fail with incompatible root update
             val exception1 = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
-                    url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                    url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
                         "Authorization" to adminToken,
                     ),
@@ -654,7 +657,7 @@ class DocumentSchemaTest {
 
             // Should succeed with compatible root update
             this@DocumentSchemaTest.client.postApi<Any>(
-                url = "${BuildConfig.YORKIE_SERVER_URL}/yorkie.v1.AdminService/UpdateDocument",
+                url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
                     "Authorization" to adminToken,
                 ),

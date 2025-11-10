@@ -1,15 +1,6 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.yorkie.android.application)
     alias(libs.plugins.yorkie.android.application.compose)
-}
-
-// Load properties from local.properties
-val localProperties = Properties()
-val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localProperties.load(localPropertiesFile.inputStream())
 }
 
 android {
@@ -19,14 +10,12 @@ android {
         applicationId = "com.example.simultaneouscursors"
         versionCode = 1
         versionName = "1.0"
-
-        buildConfigField("String", "YORKIE_SERVER_URL", "\"${localProperties.getProperty("YORKIE_SERVER_URL") ?: "http://localhost:8080"}\"")
-        buildConfigField("String", "YORKIE_API_KEY", "\"${localProperties.getProperty("YORKIE_API_KEY").orEmpty()}\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isShrinkResources = true
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

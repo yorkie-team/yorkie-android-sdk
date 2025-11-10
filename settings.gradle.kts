@@ -6,6 +6,9 @@ pluginManagement {
         gradlePluginPortal()
         google()
         mavenCentral()
+        maven {
+            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+        }
     }
 }
 dependencyResolutionManagement {
@@ -17,4 +20,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Yorkie Android SDK"
-include(":examples:kanban", ":examples:texteditor", ":examples:todomvc", ":examples:simultaneous-cursors", ":examples:scheduler", ":examples:rich-text-editor", ":yorkie", ":microbenchmark")
+include(":examples:kanban", ":examples:todomvc", ":examples:simultaneous-cursors", ":examples:scheduler", ":examples:rich-text-editor", ":yorkie", ":microbenchmark")

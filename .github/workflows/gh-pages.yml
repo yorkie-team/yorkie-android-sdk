@@ -15,8 +15,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
-      - name: Set Yorkie Server Url
-        run: echo YORKIE_SERVER_URL="https://api.yorkie.dev" > ./local.properties
       - run: ./gradlew dokkaHtml --no-configuration-cache
       - uses: JamesIves/github-pages-deploy-action@v4.4.1
         with:

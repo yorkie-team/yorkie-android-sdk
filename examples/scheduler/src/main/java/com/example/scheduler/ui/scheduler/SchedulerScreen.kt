@@ -18,12 +18,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+<<<<<<<< HEAD:examples/scheduler/src/main/java/com/example/scheduler/ui/scheduler/SchedulerScreen.kt
+========
+import androidx.lifecycle.viewmodel.compose.viewModel
+>>>>>>>> 6b752103 (Add enter key manually feature for example apps):examples/scheduler/src/main/java/com/example/scheduler/ui/scheduler/SchedulerApp.kt
 import com.example.scheduler.R
 import java.text.SimpleDateFormat
 import java.util.Locale
 
 @Composable
+<<<<<<<< HEAD:examples/scheduler/src/main/java/com/example/scheduler/ui/scheduler/SchedulerScreen.kt
 fun SchedulerScreen(modifier: Modifier = Modifier, viewModel: SchedulerViewModel) {
+========
+fun SchedulerScreen(modifier: Modifier = Modifier, viewModel: SchedulerViewModel = viewModel()) {
+>>>>>>>> 6b752103 (Add enter key manually feature for example apps):examples/scheduler/src/main/java/com/example/scheduler/ui/scheduler/SchedulerApp.kt
     val state = viewModel.state.collectAsState()
 
     SchedulerScreen(

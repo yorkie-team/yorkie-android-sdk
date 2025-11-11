@@ -296,5 +296,14 @@ class TodoViewModel(
                     return TodoViewModel(decodedDocumentKey) as T
                 }
             }
+
+        fun provideFactory(documentKey: String?): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    return TodoViewModel(
+                        documentKey ?: throw IllegalArgumentException("Document Key is not found"),
+                    ) as T
+                }
+            }
     }
 }

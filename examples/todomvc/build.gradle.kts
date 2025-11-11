@@ -26,6 +26,8 @@ android {
 
 dependencies {
     implementation(project(":yorkie"))
+    implementation(project(":feature:enter-document-key"))
+
     implementation(libs.androidx.core)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
@@ -37,4 +39,6 @@ dependencies {
 
     implementation(libs.androidx.compose.material)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.timber)
 }

@@ -1,9 +1,11 @@
 package com.example.todomvc.ui.todo
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
@@ -27,6 +29,8 @@ fun TodoToggleAll(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(Color.White, RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

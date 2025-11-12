@@ -348,49 +348,47 @@ fun TodoScreen(
         } else {
             // Main content
             if (state.todos.isNotEmpty()) {
-                Card(
+                // Toggle all section
+                TodoToggleAll(
+                    allCompleted = state.allCompleted,
+                    onToggleAll = { onAction(TodoAction.ToggleAll) },
+                )
+
+                LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    elevation = 2.dp,
+                        .weight(1f)
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .background(Color.White, RoundedCornerShape(16.dp)),
                 ) {
-                    Column {
-                        // Toggle all section
-                        TodoToggleAll(
-                            allCompleted = state.allCompleted,
-                            onToggleAll = { onAction(TodoAction.ToggleAll) },
-                        )
-
-                        // Todo list
-                        LazyColumn {
-                            items(
-                                items = state.filteredTodos,
-                                key = { it.id },
-                            ) { todo ->
-                                TodoItem(
-                                    todo = todo,
-                                    onComplete = { onAction(TodoAction.CompleteTodo(todo.id)) },
-                                    onEdit = { text ->
-                                        onAction(
-                                            TodoAction.EditTodo(
-                                                todo.id,
-                                                text,
-                                            ),
-                                        )
-                                    },
-                                    onDelete = { onAction(TodoAction.DeleteTodo(todo.id)) },
+                    items(
+                        items = state.filteredTodos,
+                        key = { it.id },
+                    ) { todo ->
+                        TodoItem(
+                            todo = todo,
+                            onComplete = { onAction(TodoAction.CompleteTodo(todo.id)) },
+                            onEdit = { text ->
+                                onAction(
+                                    TodoAction.EditTodo(
+                                        todo.id,
+                                        text,
+                                    ),
                                 )
-                            }
-                        }
-
-                        // Footer
-                        TodoFooter(
-                            activeCount = state.activeCount,
-                            completedCount = state.completedCount,
-                            onClearCompleted = { onAction(TodoAction.ClearCompleted) },
+                            },
+                            onDelete = { onAction(TodoAction.DeleteTodo(todo.id)) },
                         )
                     }
                 }
+
+                // Footer
+                TodoFooter(
+                    activeCount = state.activeCount,
+                    completedCount = state.completedCount,
+                    onClearCompleted = { onAction(TodoAction.ClearCompleted) },
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
 

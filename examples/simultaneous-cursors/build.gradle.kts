@@ -26,6 +26,7 @@ android {
 
 dependencies {
     implementation(project(":yorkie"))
+    implementation(project(":feature:enter-document-key"))
 
     // Core Android dependencies
     implementation(libs.androidx.core)
@@ -45,6 +46,8 @@ dependencies {
 
     // Gson
     implementation(libs.gson)
+
+    implementation(libs.timber)
 
     // Debug
     debugImplementation(libs.androidx.compose.ui.test.manifest)

@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.kotlinter) apply true
     alias(libs.plugins.dokka) apply false
     alias(libs.plugins.androidx.benchmark) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
 }
 
 tasks.withType<KotlinCompile> {

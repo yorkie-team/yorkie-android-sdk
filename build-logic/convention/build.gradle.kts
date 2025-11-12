@@ -20,6 +20,10 @@ gradlePlugin {
             id = libs.plugins.yorkie.android.library.asProvider().get().pluginId
             implementationClass = "AndroidLibraryConventionPlugin"
         }
+        register("androidLibraryComposeConvention") {
+            id = libs.plugins.yorkie.android.library.compose.get().pluginId
+            implementationClass = "AndroidLibraryComposeConventionPlugin"
+        }
         register("mavenPublishConvention") {
             id = libs.plugins.yorkie.maven.publish.get().pluginId
             implementationClass = "MavenPublishConventionPlugin"
@@ -39,6 +43,10 @@ gradlePlugin {
         register("androidApplicationComposeConvention") {
             id = libs.plugins.yorkie.android.application.compose.get().pluginId
             implementationClass = "AndroidApplicationComposeConventionPlugin"
+        }
+        register("androidFeatureConvention") {
+            id = libs.plugins.yorkie.android.feature.get().pluginId
+            implementationClass = "AndroidFeatureConventionPlugin"
         }
     }
 }

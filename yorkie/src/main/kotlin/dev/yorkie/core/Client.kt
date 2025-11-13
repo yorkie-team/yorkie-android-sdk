@@ -523,9 +523,7 @@ public class Client(
     private suspend fun onWatchStreamCanceled(document: Document) {
         if (document.status == DocStatus.Attached && status.value is Status.Activated) {
             document.publishEvent(
-                Initialized(
-                    (requireClientId() to document.myPresence).asPresences(),
-                ),
+                Initialized(document.presences.value),
             )
             document.setOnlineClients(emptySet())
             document.publishEvent(StreamConnectionChanged.Disconnected)

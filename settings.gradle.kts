@@ -1,6 +1,5 @@
 @file:Suppress("UnstableApiUsage")
 
-
 pluginManagement {
     includeBuild("build-logic")
     repositories {
@@ -27,7 +26,7 @@ include(":examples:todomvc")
 include(":examples:simultaneous-cursors")
 include(":examples:scheduler")
 include(":examples:rich-text-editor")
+include(":examples:core:common")
+include(":examples:feature:enter-document-key")
 include(":yorkie")
 include(":microbenchmark")
-include(":core:common")
-include(":feature:enter-document-key")

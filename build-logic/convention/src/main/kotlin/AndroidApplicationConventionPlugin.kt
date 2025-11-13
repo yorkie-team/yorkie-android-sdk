@@ -42,7 +42,7 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
             }
 
             dependencies {
-                "implementation"(project(":core:common"))
+                "implementation"(project(":examples:core:common"))
                 "implementation"(libs.findLibrary("androidx.navigation.compose").get())
                 "implementation"(libs.findLibrary("kotlinx.serialization.json").get())
             }

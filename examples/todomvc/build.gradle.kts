@@ -26,7 +26,7 @@ android {
 
 dependencies {
     implementation(project(":yorkie"))
-    implementation(project(":feature:enter-document-key"))
+    implementation(project(":examples:feature:enter-document-key"))
 
     implementation(libs.androidx.core)
     implementation(libs.androidx.appcompat)

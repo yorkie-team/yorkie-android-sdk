@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.yorkie.core.common"
+    namespace = "com.example.core.common"
 }
 
 dependencies {

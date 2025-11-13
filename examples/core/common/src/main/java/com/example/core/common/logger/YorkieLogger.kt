@@ -1,7 +1,7 @@
-package dev.yorkie.core.common.logger
+package com.example.core.common.logger
 
 import android.util.Log
-import dev.yorkie.core.common.BuildConfig
+import com.example.core.common.BuildConfig
 import dev.yorkie.util.Logger
 import timber.log.Timber
 

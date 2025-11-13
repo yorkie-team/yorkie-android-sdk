@@ -20,7 +20,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             SimultaneousCursorsTheme {
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize(),
                     color = MaterialTheme.colors.background,
                 ) {
                     SimultaneousCursorsAppHost(navController = rememberNavController())

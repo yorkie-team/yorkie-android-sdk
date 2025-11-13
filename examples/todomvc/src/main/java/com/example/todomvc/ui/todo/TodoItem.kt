@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.Card
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.Icon
@@ -58,98 +57,90 @@ fun TodoItem(
         }
     }
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 1.dp, vertical = 0.5.dp),
-        elevation = 0.dp,
-        backgroundColor = colorResource(id = R.color.todo_item_background),
-    ) {
-        if (isEditing) {
-            // Edit mode
-            OutlinedTextField(
-                value = editText,
-                onValueChange = { editText = it },
-                textStyle = TextStyle(
+    if (isEditing) {
+        // Edit mode
+        OutlinedTextField(
+            value = editText,
+            onValueChange = { editText = it },
+            textStyle = TextStyle(
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Light,
+            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    if (editText.isNotBlank()) {
+                        onEdit(editText.trim())
+                    } else {
+                        onDelete()
+                    }
+                    isEditing = false
+                },
+            ),
+            singleLine = true,
+            colors = TextFieldDefaults.outlinedTextFieldColors(
+                backgroundColor = Color.White,
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    } else {
+        // View mode
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Checkbox
+            Checkbox(
+                checked = todo.completed,
+                onCheckedChange = { onComplete() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = Color(0xFF5DC2AF),
+                    uncheckedColor = Color(0xFFE6E6E6),
+                ),
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Todo text
+            Text(
+                text = todo.text,
+                style = TextStyle(
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Light,
-                ),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        if (editText.isNotBlank()) {
-                            onEdit(editText.trim())
-                        } else {
-                            onDelete()
-                        }
-                        isEditing = false
+                    color = if (todo.completed) {
+                        colorResource(id = R.color.todo_completed_text)
+                    } else {
+                        colorResource(id = R.color.todo_active_text)
+                    },
+                    textDecoration = if (todo.completed) {
+                        TextDecoration.LineThrough
+                    } else {
+                        TextDecoration.None
                     },
                 ),
-                singleLine = true,
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    backgroundColor = Color.White,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                ),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .weight(1f)
+                    .clickable { isEditing = true },
             )
-        } else {
-            // View mode
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+
+            // Delete button
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(24.dp),
             ) {
-                // Checkbox
-                Checkbox(
-                    checked = todo.completed,
-                    onCheckedChange = { onComplete() },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = Color(0xFF5DC2AF),
-                        uncheckedColor = Color(0xFFE6E6E6),
-                    ),
+                Icon(
+                    imageVector = Icons.Default.Clear,
+                    contentDescription = "Delete",
+                    tint = Color(0xFFCC9A9A),
+                    modifier = Modifier.size(20.dp),
                 )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Todo text
-                Text(
-                    text = todo.text,
-                    style = TextStyle(
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Light,
-                        color = if (todo.completed) {
-                            colorResource(id = R.color.todo_completed_text)
-                        } else {
-                            colorResource(id = R.color.todo_active_text)
-                        },
-                        textDecoration = if (todo.completed) {
-                            TextDecoration.LineThrough
-                        } else {
-                            TextDecoration.None
-                        },
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { isEditing = true },
-                )
-
-                // Delete button
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(24.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Delete",
-                        tint = Color(0xFFCC9A9A),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
             }
         }
     }

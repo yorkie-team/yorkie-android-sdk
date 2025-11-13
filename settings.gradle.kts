@@ -1,5 +1,6 @@
 @file:Suppress("UnstableApiUsage")
 
+
 pluginManagement {
     includeBuild("build-logic")
     repositories {
@@ -21,13 +22,12 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Yorkie Android SDK"
 
-include(
-    ":examples:kanban",
-    ":examples:todomvc",
-    ":examples:simultaneous-cursors",
-    ":examples:scheduler",
-    ":examples:rich-text-editor",
-    ":yorkie",
-    ":microbenchmark",
-    ":feature:enter-document-key",
-)
+include(":examples:kanban")
+include(":examples:todomvc")
+include(":examples:simultaneous-cursors")
+include(":examples:scheduler")
+include(":examples:rich-text-editor")
+include(":yorkie")
+include(":microbenchmark")
+include(":core:common")
+include(":feature:enter-document-key")

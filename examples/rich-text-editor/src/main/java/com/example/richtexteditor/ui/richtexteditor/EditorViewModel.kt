@@ -160,6 +160,11 @@ class EditorViewModel(
                                     selectionPeers = selectionPeers,
                                 )
                             }
+
+                            handleSelectEvent(
+                                textFieldState.selection.start,
+                                textFieldState.selection.end,
+                            )
                         }
 
                         else -> {}

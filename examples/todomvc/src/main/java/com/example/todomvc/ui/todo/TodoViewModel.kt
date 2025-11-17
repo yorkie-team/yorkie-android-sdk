@@ -170,11 +170,13 @@ class TodoViewModel(
 
         viewModelScope.launch {
             document.updateAsync { root, _ ->
-                root.getAs<JsonArray>(DOCUMENT_TODOS_KEY).putNewObject().apply {
+                val todos = root.getAs<JsonArray>(DOCUMENT_TODOS_KEY)
+                todos.putNewObject().apply {
                     set("id", UUID.randomUUID().toString())
                     set("text", text.trim())
                     set("completed", false)
                 }
+                updateTodosFromDocument(todos)
             }.await()
         }
     }
@@ -186,6 +188,7 @@ class TodoViewModel(
                 val todoToRemove = todos.filterIsInstance<JsonObject>()
                     .find { it.getAs<JsonPrimitive>("id").getValueAs<String>() == id }
                 todoToRemove?.let { todos.remove(it.id) }
+                updateTodosFromDocument(todos)
             }.await()
         }
     }
@@ -202,6 +205,7 @@ class TodoViewModel(
                 todos.filterIsInstance<JsonObject>()
                     .find { it.getAs<JsonPrimitive>("id").getValueAs<String>() == id }
                     ?.set("text", text.trim())
+                updateTodosFromDocument(todos)
             }.await()
         }
     }
@@ -217,6 +221,7 @@ class TodoViewModel(
                             todo.getAs<JsonPrimitive>("completed").getValueAs<Boolean>()
                         todo["completed"] = !currentCompleted
                     }
+                updateTodosFromDocument(todos)
             }.await()
         }
     }
@@ -228,6 +233,7 @@ class TodoViewModel(
                 val completedTodos = todos.filterIsInstance<JsonObject>()
                     .filter { it.getAs<JsonPrimitive>("completed").getValueAs<Boolean>() }
                 completedTodos.forEach { todos.remove(it.id) }
+                updateTodosFromDocument(todos)
             }.await()
         }
     }
@@ -243,6 +249,7 @@ class TodoViewModel(
                 todoObjects.forEach { todo ->
                     todo["completed"] = !allCompleted
                 }
+                updateTodosFromDocument(todos)
             }.await()
         }
     }

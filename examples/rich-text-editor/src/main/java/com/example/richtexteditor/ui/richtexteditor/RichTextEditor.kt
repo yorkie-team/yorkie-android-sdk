@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.InputTransformation
@@ -148,6 +149,7 @@ fun RichTextEditor(
     modifier: Modifier = Modifier,
 ) {
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val scrollState = rememberScrollState()
 
     val inputTransformation = remember {
         InputTransformation {
@@ -300,6 +302,7 @@ fun RichTextEditor(
                     },
                     inputTransformation = inputTransformation,
                     outputTransformation = outputTransformation,
+                    scrollState = scrollState,
                 )
 
                 // Cursor overlay for remote cursors when from == to
@@ -308,6 +311,7 @@ fun RichTextEditor(
                         text = textFieldState.text.toString(),
                         selectionPeers = selectionPeers,
                         textLayoutResult = textLayoutResult!!,
+                        scrollOffsetY = scrollState.value.toFloat(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(300.dp)
@@ -331,6 +335,7 @@ private fun RemoteCursorOverlay(
     text: String,
     selectionPeers: Map<ActorID, Selection?>,
     textLayoutResult: TextLayoutResult,
+    scrollOffsetY: Float,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier) {
@@ -344,6 +349,7 @@ private fun RemoteCursorOverlay(
                 calculateAccurateCursorPosition(
                     cursorIndex = cursorPosition,
                     textLayoutResult = textLayoutResult,
+                    scrollOffsetY = scrollOffsetY,
                 )?.let { cursorPositionInfo ->
                     // Position the cursor indicator with name label
                     // Cursor indicator
@@ -403,11 +409,13 @@ private data class CursorPositionInfo(
 
 /**
  * Calculate cursor position using the simplest possible approach
+ * Adjusts for scroll offset to keep cursors aligned with scrolled text
  */
 @Composable
 private fun calculateAccurateCursorPosition(
     cursorIndex: Int,
     textLayoutResult: TextLayoutResult,
+    scrollOffsetY: Float,
 ): CursorPositionInfo? {
     val density = LocalDensity.current
 
@@ -422,10 +430,14 @@ private fun calculateAccurateCursorPosition(
         } else if (cursorRect.width == 0f && cursorRect.height == 0f) {
             null
         } else {
+            // Apply scroll offset to the cursor position
+            val adjustedTop = cursorRect.top - scrollOffsetY
+            val adjustedBottom = cursorRect.bottom - scrollOffsetY
+
             CursorPositionInfo(
                 left = cursorRect.left.roundToInt(),
-                top = cursorRect.top.roundToInt(),
-                bottom = cursorRect.bottom.roundToInt(),
+                top = adjustedTop.roundToInt(),
+                bottom = adjustedBottom.roundToInt(),
                 height = with(density) { cursorRect.height.toDp() },
             )
         }

@@ -68,6 +68,8 @@ fun TodoScreen(
 ) {
     var showFilterDropdown by remember { mutableStateOf(false) }
     var showAddTodoDialog by remember { mutableStateOf(false) }
+    var showEditTodoDialog by remember { mutableStateOf(false) }
+    var editingTodo by remember { mutableStateOf<Todo?>(null) }
 
     Column(
         modifier = modifier
@@ -368,13 +370,9 @@ fun TodoScreen(
                         TodoItem(
                             todo = todo,
                             onComplete = { onAction(TodoAction.CompleteTodo(todo.id)) },
-                            onEdit = { text ->
-                                onAction(
-                                    TodoAction.EditTodo(
-                                        todo.id,
-                                        text,
-                                    ),
-                                )
+                            onEditClick = {
+                                editingTodo = todo
+                                showEditTodoDialog = true
                             },
                             onDelete = { onAction(TodoAction.DeleteTodo(todo.id)) },
                         )
@@ -400,6 +398,22 @@ fun TodoScreen(
                     showAddTodoDialog = false
                 },
                 onDismiss = { showAddTodoDialog = false },
+            )
+        }
+
+        // Edit Todo Dialog
+        if (showEditTodoDialog && editingTodo != null) {
+            EditTodoDialog(
+                currentText = editingTodo!!.text,
+                onEditTodo = { text ->
+                    onAction(TodoAction.EditTodo(editingTodo!!.id, text))
+                    showEditTodoDialog = false
+                    editingTodo = null
+                },
+                onDismiss = {
+                    showEditTodoDialog = false
+                    editingTodo = null
+                },
             )
         }
     }
@@ -440,6 +454,67 @@ private fun AddTodoDialog(onAddTodo: (String) -> Unit, onDismiss: () -> Unit) {
             ) {
                 Text(
                     text = "Add",
+                    fontWeight = FontWeight.Bold,
+                    color = if (todoText.isNotBlank()) {
+                        MaterialTheme.colors.primary
+                    } else {
+                        MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
+                    },
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = "Cancel",
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f),
+                )
+            }
+        },
+        backgroundColor = MaterialTheme.colors.surface,
+        contentColor = MaterialTheme.colors.onSurface,
+    )
+}
+
+@Composable
+private fun EditTodoDialog(
+    currentText: String,
+    onEditTodo: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var todoText by remember { mutableStateOf(currentText) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Edit Todo",
+                style = MaterialTheme.typography.h6,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            OutlinedTextField(
+                value = todoText,
+                onValueChange = { todoText = it },
+                label = { Text("Todo text") },
+                placeholder = { Text("Enter your todo item...") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
+                maxLines = 3,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (todoText.isNotBlank()) {
+                        onEditTodo(todoText.trim())
+                    }
+                },
+                enabled = todoText.isNotBlank(),
+            ) {
+                Text(
+                    text = "Save",
                     fontWeight = FontWeight.Bold,
                     color = if (todoText.isNotBlank()) {
                         MaterialTheme.colors.primary

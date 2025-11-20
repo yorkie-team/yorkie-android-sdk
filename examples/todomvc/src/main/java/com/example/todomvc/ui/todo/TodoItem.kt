@@ -56,7 +56,7 @@ fun TodoItem(
         Text(
             text = todo.text,
             style = TextStyle(
-                fontSize = 24.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Light,
                 color = if (todo.completed) {
                     colorResource(id = R.color.todo_completed_text)

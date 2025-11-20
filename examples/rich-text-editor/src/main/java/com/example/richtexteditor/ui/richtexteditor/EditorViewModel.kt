@@ -238,7 +238,9 @@ class EditorViewModel(
 
             if (document.getRoot().getAsOrNull<JsonText>(CONTENT) == null) {
                 document.updateAsync { root, _ ->
-                    root.setNewText(CONTENT)
+                    root.setNewText(CONTENT).apply {
+                        edit(0, 0, "\n")
+                    }
                 }.await()
             }
 
@@ -276,7 +278,7 @@ class EditorViewModel(
             idx += textWithAttributes.text.length
         }
         textFieldState.edit {
-            val newContent = content.toString()
+            val newContent = content.toString().dropLineBreakLast()
             replace(0, length, newContent)
             placeCursorAtEnd()
         }
@@ -320,7 +322,7 @@ class EditorViewModel(
         }
 
         textFieldState.edit {
-            replace(0, length, content.toString())
+            replace(0, length, content.toString().dropLineBreakLast())
             selection = TextRange(
                 start = currentFrom.coerceIn(0, length),
                 end = currentTo.coerceIn(0, length),
@@ -593,6 +595,12 @@ class EditorViewModel(
         )
 
         return "${adjectives.random()} ${nouns.random()}"
+    }
+
+    private fun String.dropLineBreakLast() = if (endsWith("\n")) {
+        dropLast(1)
+    } else {
+        this
     }
 
     override fun onCleared() {

@@ -359,7 +359,7 @@ fun TodoScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
+                        .weight(weight = 1f, fill = false)
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .background(Color.White, RoundedCornerShape(16.dp)),
                 ) {

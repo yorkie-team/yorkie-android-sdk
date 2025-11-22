@@ -3,6 +3,7 @@ package com.example.todomvc.ui.todo
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.core.common.client.YorkieClient
 import com.example.todomvc.BuildConfig
 import dev.yorkie.core.Client
 import dev.yorkie.document.Document
@@ -22,25 +23,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import timber.log.Timber
 
 class TodoViewModel(
     documentKey: String,
 ) : ViewModel() {
-
-    private val unaryClient = OkHttpClient.Builder()
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .build()
-
     private val client = Client(
         options = Client.Options(
             apiKey = BuildConfig.YORKIE_API_KEY,
         ),
         host = BuildConfig.YORKIE_SERVER_URL,
-        unaryClient = unaryClient,
-        streamClient = unaryClient,
+        unaryClient = YorkieClient.createUnaryClient(),
+        streamClient = YorkieClient.createStreamClient(),
         dispatcher = createSingleThreadDispatcher(
             "YorkieClient",
         ),

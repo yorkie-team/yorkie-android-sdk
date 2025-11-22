@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.core.common.client.YorkieClient
 import com.example.simultaneouscursors.BuildConfig
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonSyntaxException
@@ -24,8 +25,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import timber.log.Timber
 
 data class SimultaneousCursorsUiState(
@@ -61,10 +60,6 @@ class SimultaneousCursorsViewModel(
 
     private var myClientId = ""
 
-    private val unaryClient = OkHttpClient.Builder()
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .build()
-
     private val gson = GsonBuilder().create()
 
     private val client = Client(
@@ -72,8 +67,8 @@ class SimultaneousCursorsViewModel(
             apiKey = BuildConfig.YORKIE_API_KEY,
         ),
         host = BuildConfig.YORKIE_SERVER_URL,
-        unaryClient = unaryClient,
-        streamClient = unaryClient,
+        unaryClient = YorkieClient.createUnaryClient(),
+        streamClient = YorkieClient.createStreamClient(),
         dispatcher = createSingleThreadDispatcher("YorkieClient"),
     )
 

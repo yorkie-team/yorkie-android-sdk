@@ -51,7 +51,7 @@ android {
 }
 
 dependencies {
-    api(libs.bundles.rpc)
+    implementation(libs.bundles.rpc)
     implementation(libs.guava)
 
     implementation(libs.protobuf.javalite)

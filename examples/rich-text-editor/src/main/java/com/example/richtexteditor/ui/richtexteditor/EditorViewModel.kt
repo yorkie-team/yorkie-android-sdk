@@ -10,6 +10,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.core.common.client.YorkieClient
 import com.example.richtexteditor.BuildConfig
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonDeserializationContext
@@ -41,8 +42,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import timber.log.Timber
 
 data class EditorUiState(
@@ -68,17 +67,13 @@ data class Selection(
 class EditorViewModel(
     documentKey: String,
 ) : ViewModel() {
-    private val unaryClient = OkHttpClient.Builder()
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .build()
-
     private val client = Client(
         options = Client.Options(
             apiKey = BuildConfig.YORKIE_API_KEY,
         ),
         host = BuildConfig.YORKIE_SERVER_URL,
-        unaryClient = unaryClient,
-        streamClient = unaryClient,
+        unaryClient = YorkieClient.createUnaryClient(),
+        streamClient = YorkieClient.createStreamClient(),
         dispatcher = createSingleThreadDispatcher("YorkieClient"),
     )
 

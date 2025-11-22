@@ -64,6 +64,8 @@ import kotlin.math.pow
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -174,6 +176,9 @@ public class Client(
                     )?.let { interceptor ->
                         add { interceptor }
                     }
+                },
+                timeoutOracle = {
+                    5.toDuration(DurationUnit.MINUTES)
                 },
             ),
         ),

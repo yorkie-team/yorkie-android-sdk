@@ -70,7 +70,7 @@ fun EnterDocumentKeyScreen(onNextClick: (String) -> Unit, modifier: Modifier = M
 
         Button(
             onClick = {
-                if (text.length in 4..20) {
+                if (text.length in 4..120) {
                     onNextClick(text)
                 } else {
                     error = EnterDocumentKeyError.EXCEED_LENGTH

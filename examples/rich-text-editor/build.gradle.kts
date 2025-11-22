@@ -36,6 +36,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.material)
     implementation(libs.gson)
-    implementation(libs.okhttp)
     implementation(libs.timber)
 }

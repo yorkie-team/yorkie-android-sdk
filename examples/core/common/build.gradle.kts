@@ -10,5 +10,6 @@ dependencies {
     implementation(project(":yorkie"))
 
     implementation(libs.androidx.core)
+    api(libs.okhttp)
     implementation(libs.timber)
 }

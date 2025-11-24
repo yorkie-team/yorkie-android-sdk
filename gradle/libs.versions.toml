@@ -88,9 +88,6 @@ androidx-test-junit = { group = "androidx.test.ext", name = "junit-ktx", version
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidxTestEspresso" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 
-[bundles]
-rpc = ["okhttp", "connect-kotlin-okhttp", "connect-kotlin-google-javalite-ext"]
-
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }

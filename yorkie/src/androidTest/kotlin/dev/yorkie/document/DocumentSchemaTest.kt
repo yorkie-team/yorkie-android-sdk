@@ -104,7 +104,7 @@ class DocumentSchemaTest {
                 schema = "noexist@1",
             ).await()
             assertEquals(
-                expected = "noexist 1: schema not found",
+                expected = "find schema of noexist@1: schema not found",
                 actual = result.exceptionOrNull()?.message.orEmpty(),
             )
         }

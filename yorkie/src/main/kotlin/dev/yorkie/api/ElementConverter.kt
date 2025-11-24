@@ -456,7 +456,7 @@ internal fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
         }
     }
     return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), textValue).apply {
-        remove(this@toRgaTreeSplitNode.removedAtOrNull?.toTimeTicket())
+        setRemovedAt(this@toRgaTreeSplitNode.removedAtOrNull?.toTimeTicket())
     }
 }
 

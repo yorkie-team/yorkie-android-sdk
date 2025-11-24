@@ -95,35 +95,35 @@ class RulesetValidatorTest {
             expected = listOf(
                 ValidationError(
                     path = "\$.field1",
-                    message = "Expected null at path \$.field1",
+                    message = "expected null at path \$.field1",
                 ),
                 ValidationError(
                     path = "\$.field2",
-                    message = "Expected boolean at path \$.field2",
+                    message = "expected boolean at path \$.field2",
                 ),
                 ValidationError(
                     path = "\$.field3",
-                    message = "Expected integer at path \$.field3",
+                    message = "expected integer at path \$.field3",
                 ),
                 ValidationError(
                     path = "\$.field4",
-                    message = "Expected double at path \$.field4",
+                    message = "expected double at path \$.field4",
                 ),
                 ValidationError(
                     path = "\$.field5",
-                    message = "Expected long at path \$.field5",
+                    message = "expected long at path \$.field5",
                 ),
                 ValidationError(
                     path = "\$.field6",
-                    message = "Expected string at path \$.field6",
+                    message = "expected string at path \$.field6",
                 ),
                 ValidationError(
                     path = "\$.field7",
-                    message = "Expected date at path \$.field7",
+                    message = "expected date at path \$.field7",
                 ),
                 ValidationError(
                     path = "\$.field8",
-                    message = "Expected bytes at path \$.field8",
+                    message = "expected bytes at path \$.field8",
                 ),
             ),
             actual = result.errors,
@@ -158,7 +158,7 @@ class RulesetValidatorTest {
             expected = listOf(
                 ValidationError(
                     path = "\$.user",
-                    message = "Expected object at path \$.user",
+                    message = "expected object at path \$.user",
                 ),
             ),
             actual = result.errors,
@@ -194,7 +194,7 @@ class RulesetValidatorTest {
             expected = listOf(
                 ValidationError(
                     path = "\$.items",
-                    message = "Expected array at path \$.items",
+                    message = "expected array at path \$.items",
                 ),
             ),
             actual = result.errors,
@@ -245,7 +245,7 @@ class RulesetValidatorTest {
             expected = listOf(
                 ValidationError(
                     path = "\$.user.name",
-                    message = "Expected string at path \$.user.name",
+                    message = "expected string at path \$.user.name",
                 ),
             ),
             actual = result.errors,
@@ -295,15 +295,15 @@ class RulesetValidatorTest {
             expected = listOf(
                 ValidationError(
                     path = "\$.text",
-                    message = "Expected yorkie.Text at path \$.text",
+                    message = "expected yorkie.Text at path \$.text",
                 ),
                 ValidationError(
                     path = "\$.tree",
-                    message = "Expected yorkie.Tree at path \$.tree",
+                    message = "expected yorkie.Tree at path \$.tree",
                 ),
                 ValidationError(
                     path = "\$.counter",
-                    message = "Expected yorkie.Counter at path \$.counter",
+                    message = "expected yorkie.Counter at path \$.counter",
                 ),
             ),
             actual = result.errors,

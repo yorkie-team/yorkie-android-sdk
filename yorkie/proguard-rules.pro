@@ -14,7 +14,6 @@
 # Utilities
 -keep class dev.yorkie.util.Logger { *; }
 -keep class dev.yorkie.util.Logger$** { *; }
--keep class dev.yorkie.util.CreateSingleThreadDispatcherKt { *; }
 
 # =============================================================================
 # Protocol Buffers - CRITICAL: Prevent obfuscation for protobuf to work

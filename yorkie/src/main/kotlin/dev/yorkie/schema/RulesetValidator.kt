@@ -105,7 +105,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                     errors = listOf(
                         ValidationError(
                             path = rule.path,
-                            message = "Expected ${rule.type} at path ${rule.path}",
+                            message = "expected ${rule.type} at path ${rule.path}",
                         ),
                     ),
                 )
@@ -118,7 +118,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                     errors = listOf(
                         ValidationError(
                             path = rule.path,
-                            message = "Expected object at path ${rule.path}",
+                            message = "expected object at path ${rule.path}",
                         ),
                     ),
                 )
@@ -131,7 +131,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                     errors = listOf(
                         ValidationError(
                             path = rule.path,
-                            message = "Expected array at path ${rule.path}",
+                            message = "expected array at path ${rule.path}",
                         ),
                     ),
                 )
@@ -144,7 +144,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                     errors = listOf(
                         ValidationError(
                             path = rule.path,
-                            message = "Expected yorkie.Text at path ${rule.path}",
+                            message = "expected yorkie.Text at path ${rule.path}",
                         ),
                     ),
                 )
@@ -157,7 +157,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                     errors = listOf(
                         ValidationError(
                             path = rule.path,
-                            message = "Expected yorkie.Tree at path ${rule.path}",
+                            message = "expected yorkie.Tree at path ${rule.path}",
                         ),
                     ),
                 )
@@ -170,7 +170,7 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                     errors = listOf(
                         ValidationError(
                             path = rule.path,
-                            message = "Expected yorkie.Counter at path ${rule.path}",
+                            message = "expected yorkie.Counter at path ${rule.path}",
                         ),
                     ),
                 )

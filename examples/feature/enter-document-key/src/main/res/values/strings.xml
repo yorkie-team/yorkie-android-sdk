@@ -2,5 +2,5 @@
 <resources>
     <string name="enter_document_key">Enter Document Key</string>
     <string name="next">Next</string>
-    <string name="document_key_length_error">Document Key must be in 4–20 length</string>
+    <string name="document_key_length_error">Document Key must be in 4–120 length</string>
 </resources>

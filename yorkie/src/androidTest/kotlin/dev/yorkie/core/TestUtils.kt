@@ -3,12 +3,9 @@ package dev.yorkie.core
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.yorkie.document.Document
 import dev.yorkie.document.time.VersionVector
-import dev.yorkie.util.createSingleThreadDispatcher
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
 
 const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
 const val GENERAL_TIMEOUT = 3_000L
@@ -36,13 +33,9 @@ const val TEST_API_ID = "admin"
 const val TEST_API_PW = "admin"
 
 fun createClient(options: Client.Options = Client.Options()): Client {
-    val unaryClient = OkHttpClient.Builder().protocols(listOf(Protocol.HTTP_1_1)).build()
     return Client(
         options = options,
         host = getYorkieServerUrl(),
-        unaryClient = unaryClient,
-        streamClient = unaryClient,
-        dispatcher = createSingleThreadDispatcher("YorkieClient"),
     )
 }
 

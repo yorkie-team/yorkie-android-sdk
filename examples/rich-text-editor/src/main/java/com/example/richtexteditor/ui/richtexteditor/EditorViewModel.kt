@@ -10,7 +10,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.core.common.client.YorkieClient
 import com.example.richtexteditor.BuildConfig
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonDeserializationContext
@@ -28,7 +27,6 @@ import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.time.ActorID
-import dev.yorkie.util.createSingleThreadDispatcher
 import java.lang.reflect.Type
 import java.net.URLDecoder
 import kotlin.random.Random
@@ -72,9 +70,6 @@ class EditorViewModel(
             apiKey = BuildConfig.YORKIE_API_KEY,
         ),
         host = BuildConfig.YORKIE_SERVER_URL,
-        unaryClient = YorkieClient.createUnaryClient(),
-        streamClient = YorkieClient.createStreamClient(),
-        dispatcher = createSingleThreadDispatcher("YorkieClient"),
     )
 
     private val document = Document(

@@ -26,6 +26,13 @@ class VersionVector(vectorMap: Map<String, Long> = emptyMap()) {
     fun get(actorID: String): Long? = vectorMap[actorID]
 
     /**
+     * `has` checks if the given actor exists in the VersionVector.
+     */
+    fun has(actorID: String): Boolean {
+        return this.vectorMap.containsKey(actorID)
+    }
+
+    /**
      * Returns the maximum Lamport value from the vector.
      */
     fun maxLamport(): Long = vectorMap.values.maxOrNull() ?: 0

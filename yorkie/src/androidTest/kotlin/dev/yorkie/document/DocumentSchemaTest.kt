@@ -104,7 +104,7 @@ class DocumentSchemaTest {
                 schema = "noexist@1",
             ).await()
             assertEquals(
-                expected = "noexist 1: schema not found",
+                expected = "find schema of noexist@1: schema not found",
                 actual = result.exceptionOrNull()?.message.orEmpty(),
             )
         }
@@ -133,7 +133,7 @@ class DocumentSchemaTest {
             assertEquals(
                 expected = YorkieException(
                     code = YorkieException.Code.ErrDocumentSchemaValidationFailed,
-                    errorMessage = "schema validation failed: Expected string at path \$.title",
+                    errorMessage = "schema validation failed: expected string at path \$.title",
                 ),
                 actual = exception,
             )
@@ -289,7 +289,7 @@ class DocumentSchemaTest {
                 )
             }
             assertEquals(
-                expected = "schema validation failed: Expected integer at path \$.title",
+                expected = "schema validation failed: expected integer at path \$.title",
                 actual = parseError(
                     error = exception.message.orEmpty(),
                     gson = gson,
@@ -452,7 +452,7 @@ class DocumentSchemaTest {
                 )
             }
             assertEquals(
-                expected = "schema validation failed: Expected integer at path \$.title",
+                expected = "schema validation failed: expected integer at path \$.title",
                 actual = parseError(
                     error = exception2.message.orEmpty(),
                     gson = gson,
@@ -495,7 +495,7 @@ class DocumentSchemaTest {
             assertEquals(
                 expected = YorkieException(
                     code = YorkieException.Code.ErrDocumentSchemaValidationFailed,
-                    errorMessage = "schema validation failed: Expected string at path \$.title",
+                    errorMessage = "schema validation failed: expected string at path \$.title",
                 ),
                 actual = exception,
             )
@@ -546,7 +546,7 @@ class DocumentSchemaTest {
                 )
             }
             assertEquals(
-                expected = "schema validation failed: Expected integer at path \$.title",
+                expected = "schema validation failed: expected integer at path \$.title",
                 actual = parseError(
                     error = exception.message.orEmpty(),
                     gson = gson,
@@ -648,7 +648,7 @@ class DocumentSchemaTest {
                 )
             }
             assertEquals(
-                expected = "schema validation failed: Expected string at path \$.title",
+                expected = "schema validation failed: expected string at path \$.title",
                 actual = parseError(
                     error = exception1.message.orEmpty(),
                     gson = gson,
@@ -691,7 +691,7 @@ class DocumentSchemaTest {
             assertEquals(
                 expected = YorkieException(
                     code = YorkieException.Code.ErrDocumentSchemaValidationFailed,
-                    errorMessage = "schema validation failed: Expected string at path \$.title",
+                    errorMessage = "schema validation failed: expected string at path \$.title",
                 ),
                 actual = exception,
             )

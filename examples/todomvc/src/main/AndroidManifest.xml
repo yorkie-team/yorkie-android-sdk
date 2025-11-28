@@ -14,7 +14,7 @@
         android:theme="@style/Theme.TodoMVC"
         tools:targetApi="31">
         <activity
-            android:name=".TodoActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.TodoMVC">
             <intent-filter>

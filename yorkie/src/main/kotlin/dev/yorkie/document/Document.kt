@@ -75,9 +75,10 @@ import kotlinx.coroutines.withContext
 public class Document(
     public val key: Key,
     private val options: Options = Options(),
-    private val dispatcher: CoroutineDispatcher = createSingleThreadDispatcher("Document($key)"),
-    private val snapshotDispatcher: CoroutineDispatcher = dispatcher,
 ) : Closeable {
+    private val dispatcher: CoroutineDispatcher =
+        createSingleThreadDispatcher("Document($key)")
+
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
 
@@ -351,7 +352,7 @@ public class Document(
         snapshot: ByteString,
         clientSeq: UInt,
     ) {
-        val (root, presences) = withContext(snapshotDispatcher) {
+        val (root, presences) = withContext(dispatcher) {
             val (root, p) = snapshot.toSnapshot()
             CrdtRoot(root) to p.asPresences()
         }
@@ -474,6 +475,7 @@ public class Document(
             is MyPresence.Initialized -> {
                 presences.keys.containsAll(event.initialized.keys)
             }
+
             is MyPresence.PresenceChanged -> {
                 val actorID = event.changed.actorID
                 event.changed.presence == presences[actorID]

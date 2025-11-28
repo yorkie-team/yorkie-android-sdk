@@ -3,7 +3,6 @@ package com.example.todomvc.ui.todo
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.core.common.client.YorkieClient
 import com.example.todomvc.BuildConfig
 import dev.yorkie.core.Client
 import dev.yorkie.document.Document
@@ -11,7 +10,6 @@ import dev.yorkie.document.Document.Key
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonPrimitive
-import dev.yorkie.util.createSingleThreadDispatcher
 import java.net.URLDecoder
 import java.util.UUID
 import kotlin.text.Charsets.UTF_8
@@ -33,11 +31,6 @@ class TodoViewModel(
             apiKey = BuildConfig.YORKIE_API_KEY,
         ),
         host = BuildConfig.YORKIE_SERVER_URL,
-        unaryClient = YorkieClient.createUnaryClient(),
-        streamClient = YorkieClient.createStreamClient(),
-        dispatcher = createSingleThreadDispatcher(
-            "YorkieClient",
-        ),
     )
 
     private val document = Document(Key(documentKey))

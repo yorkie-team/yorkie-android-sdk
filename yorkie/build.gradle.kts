@@ -51,7 +51,9 @@ android {
 }
 
 dependencies {
-    implementation(libs.bundles.rpc)
+    api(libs.okhttp)
+    implementation(libs.connect.kotlin.okhttp)
+    implementation(libs.connect.kotlin.google.javalite.ext)
     implementation(libs.guava)
 
     implementation(libs.protobuf.javalite)

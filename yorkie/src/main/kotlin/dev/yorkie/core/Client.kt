@@ -51,12 +51,14 @@ import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 import dev.yorkie.util.checkYorkieError
+import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.errorCodeOf
 import dev.yorkie.util.errorMetadataOf
 import dev.yorkie.util.handleConnectException
 import java.io.Closeable
 import java.io.InterruptedIOException
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlin.collections.Map.Entry
 import kotlin.coroutines.coroutineContext
@@ -68,7 +70,6 @@ import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -110,13 +111,18 @@ import okhttp3.OkHttpClient
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
  */
 public class Client(
-    private val options: Options,
-    private val unaryClient: OkHttpClient,
-    private val streamClient: OkHttpClient,
-    private val dispatcher: CoroutineDispatcher,
     host: String,
-    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val options: Options,
+    private val unaryClient: OkHttpClient = OkHttpClient.Builder()
+        .build(),
+    private val streamClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.MINUTES)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .writeTimeout(0, TimeUnit.MILLISECONDS)
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .build(),
 ) : Closeable {
+    private val dispatcher = createSingleThreadDispatcher("YorkieClient")
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val activationJob = SupervisorJob()
 
@@ -167,7 +173,7 @@ public class Client(
                 host = host,
                 serializationStrategy = GoogleJavaLiteProtobufStrategy(),
                 networkProtocol = NetworkProtocol.CONNECT,
-                ioCoroutineContext = ioDispatcher,
+                ioCoroutineContext = Dispatchers.IO,
                 interceptors = buildList {
                     add { UserAgentInterceptor }
                     options.authInterceptor(

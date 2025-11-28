@@ -1,13 +1,11 @@
 package dev.yorkie.document.crdt
 
-import android.annotation.SuppressLint
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.RgaTreeSplitNodeIDStruct
 import dev.yorkie.document.RgaTreeSplitPosStruct
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
@@ -212,63 +210,47 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
     private fun deleteNodes(
         candidates: List<RgaTreeSplitNode<T>>,
-        executedAt: TimeTicket,
-        versionVector: VersionVector?,
+        editedAt: TimeTicket,
+        vector: VersionVector?,
     ): Pair<MutableList<ContentChange>, Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>> {
         if (candidates.isEmpty()) {
             return Pair(mutableListOf(), emptyMap())
         }
 
-        // There are 2 types of nodes in [candidates]: should delete, should not delete.
-        // [nodesToKeep] contains nodes that should not be deleted.
-        // It is used to find the boundary of the range to be deleted.
-        val (nodesToDelete, nodesToKeep) = filterNodes(
-            candidates,
-            executedAt,
-            versionVector,
-        )
-        val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
+        val isLocal = vector == null
 
-        // First, we need to collect indexes for change.
-        val changes = makeChanges(nodesToKeep, executedAt)
-        nodesToDelete.forEach { node ->
-            // Then, make nodes be tombstones and map that.
-            removedNodes[node.id] = node
-            node.remove(executedAt)
-        }
-        // Finally, remove index nodes of tombstones.
-        deleteIndexNodes(nodesToKeep)
-
-        return Pair(changes, removedNodes)
-    }
-
-    @SuppressLint("VisibleForTests")
-    private fun filterNodes(
-        candidates: List<RgaTreeSplitNode<T>>,
-        executedAt: TimeTicket,
-        versionVector: VersionVector?,
-    ): Pair<List<RgaTreeSplitNode<T>>, List<RgaTreeSplitNode<T>?>> {
-        val nodesToDelete = mutableListOf<RgaTreeSplitNode<T>>()
-        val nodesToKeep = mutableListOf<RgaTreeSplitNode<T>?>()
-
+        // 01. Collect nodes to remove and keep.
+        val nodesToRemove = ArrayList<RgaTreeSplitNode<T>>()
+        val nodesToKeep = ArrayList<RgaTreeSplitNode<T>?>()
         val (leftEdge, rightEdge) = findEdgesOfCandidates(candidates)
         nodesToKeep.add(leftEdge)
-
-        candidates.forEach { node ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange: Long = versionVector?.let {
-                versionVector.get(actorID.value) ?: 0L
-            } ?: MAX_LAMPORT
-
-            if (node.canDelete(executedAt, clientLamportAtChange)) {
-                nodesToDelete.add(node)
+        for (node in candidates) {
+            val creationKnown = isLocal || vector?.afterOrEqual(node.createdAt) == true
+            if (node.canRemove(creationKnown)) {
+                nodesToRemove.add(node)
             } else {
                 nodesToKeep.add(node)
             }
         }
         nodesToKeep.add(rightEdge)
 
-        return nodesToDelete to nodesToKeep
+        // 02. Create value changes with previous indexes before deletion.
+        val changes = makeChanges(nodesToKeep, editedAt)
+
+        // 03. Mark tombstones for removal.
+        val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
+        for (node in nodesToRemove) {
+            removedNodes[node.id] = node
+            val creationKnown = isLocal || vector?.afterOrEqual(node.createdAt) == true
+            node.remove(
+                removedAt = editedAt,
+                tombstoneKnown = node.isRemoved && creationKnown,
+            )
+        }
+
+        // 04. Clear the index tree of the given deletion boundaries.
+        deleteIndexNodes(nodesToKeep)
+        return Pair(changes, removedNodes)
     }
 
     /**
@@ -550,14 +532,16 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     /**
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
      */
-    fun canDelete(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
-        val justRemoved = removedAt == null
-
-        val nodeExisted = createdAt.lamport <= clientLamportAtChange
-
-        if (nodeExisted && (removedAt == null || executedAt > removedAt)) {
-            return justRemoved
+    fun canRemove(creationKnown: Boolean): Boolean {
+        // Skip if the node's creation was not visible to this operation.
+        if (!creationKnown) {
+            return false
         }
+
+        if (_removedAt == null) {
+            return true
+        }
+
         return false
     }
 
@@ -571,10 +555,26 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     }
 
     /**
-     * Removes this [RgaTreeSplitNode] at the given [executedAt].
+     * Sets the remove time of this node.
      */
-    fun remove(executedAt: TimeTicket?) {
-        _removedAt = executedAt
+    fun setRemovedAt(removedAt: TimeTicket?) {
+        _removedAt = removedAt
+    }
+
+    /**
+     * Removes the node of the given edited time.
+     */
+    fun remove(removedAt: TimeTicket, tombstoneKnown: Boolean) {
+        if (_removedAt == null) {
+            _removedAt = removedAt
+            return
+        }
+
+        // Overwrite only if prior tombstone was not known
+        // (concurrent or unseen) and newer.
+        if (!tombstoneKnown && removedAt > _removedAt) {
+            _removedAt = removedAt
+        }
     }
 
     fun createPosRange(): RgaTreeSplitPosRange {

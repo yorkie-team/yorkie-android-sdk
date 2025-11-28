@@ -5,7 +5,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.core.common.client.YorkieClient
 import com.example.simultaneouscursors.BuildConfig
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonSyntaxException
@@ -13,7 +12,6 @@ import com.google.gson.reflect.TypeToken
 import dev.yorkie.core.Client
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChanged
-import dev.yorkie.util.createSingleThreadDispatcher
 import java.net.URLDecoder
 import kotlin.random.Random
 import kotlin.text.Charsets.UTF_8
@@ -67,9 +65,6 @@ class SimultaneousCursorsViewModel(
             apiKey = BuildConfig.YORKIE_API_KEY,
         ),
         host = BuildConfig.YORKIE_SERVER_URL,
-        unaryClient = YorkieClient.createUnaryClient(),
-        streamClient = YorkieClient.createStreamClient(),
-        dispatcher = createSingleThreadDispatcher("YorkieClient"),
     )
 
     private val document = Document(Document.Key(documentKey))

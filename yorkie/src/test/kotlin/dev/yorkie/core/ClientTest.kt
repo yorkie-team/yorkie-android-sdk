@@ -39,7 +39,6 @@ import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
-import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.handleConnectException
 import io.mockk.coVerify
 import io.mockk.every
@@ -60,7 +59,6 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -92,9 +90,6 @@ class ClientTest {
                     }
                 },
             ),
-            unaryClient = OkHttpClient(),
-            streamClient = OkHttpClient(),
-            dispatcher = createSingleThreadDispatcher("Client Test"),
             host = "0.0.0.0",
         )
         target.service = service
@@ -329,15 +324,12 @@ class ClientTest {
             val yorkieService = spyk<YorkieServiceClientInterface>(MockYorkieService())
 
             val client = Client(
-                Client.Options(
+                host = "0.0.0.0",
+                options = Client.Options(
                     key = TEST_KEY,
                     apiKey = TEST_KEY,
                     syncLoopDuration = 500.milliseconds,
                 ),
-                OkHttpClient(),
-                OkHttpClient(),
-                createSingleThreadDispatcher("Client Test"),
-                host = "0.0.0.0",
             )
             client.service = yorkieService
 
@@ -421,14 +413,11 @@ class ClientTest {
     fun `detachAsync with keepalive true should work even after client close`() = runTest {
         val service = spyk(MockYorkieService())
         val client = Client(
+            host = "0.0.0.0",
             options = Client.Options(
                 key = TEST_KEY,
                 apiKey = TEST_KEY,
             ),
-            unaryClient = OkHttpClient(),
-            streamClient = OkHttpClient(),
-            dispatcher = createSingleThreadDispatcher("Client Test"),
-            host = "0.0.0.0",
         )
         client.service = service
 

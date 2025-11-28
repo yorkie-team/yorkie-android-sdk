@@ -38,7 +38,7 @@ $dokka.location:dev.yorkie.core/Client.SyncMode/needRealTimeSync/#/PointingToDec
 $dokka.location:dev.yorkie.core/Client.SyncMode/valueOf/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-sync-mode/value-of.html
 $dokka.location:dev.yorkie.core/Client.SyncMode/values/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-sync-mode/values.html
 $dokka.location:dev.yorkie.core/Client///PointingToDeclaration/yorkie/dev.yorkie.core/-client/index.html
-$dokka.location:dev.yorkie.core/Client/Client/#dev.yorkie.core.Client.Options#okhttp3.OkHttpClient#okhttp3.OkHttpClient#kotlinx.coroutines.CoroutineDispatcher#kotlin.String#kotlinx.coroutines.CoroutineDispatcher/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
+$dokka.location:dev.yorkie.core/Client/Client/#kotlin.String#dev.yorkie.core.Client.Options#okhttp3.OkHttpClient#okhttp3.OkHttpClient/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
 $dokka.location:dev.yorkie.core/Client/activateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/activate-async.html
 $dokka.location:dev.yorkie.core/Client/attachAsync/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-async.html
 $dokka.location:dev.yorkie.core/Client/authToken/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/auth-token.html
@@ -440,6 +440,7 @@ $dokka.location:dev.yorkie.document.time/VersionVector/deepCopy/#/PointingToDecl
 $dokka.location:dev.yorkie.document.time/VersionVector/equals/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/equals.html
 $dokka.location:dev.yorkie.document.time/VersionVector/filter/#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/filter.html
 $dokka.location:dev.yorkie.document.time/VersionVector/get/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/get.html
+$dokka.location:dev.yorkie.document.time/VersionVector/has/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/has.html
 $dokka.location:dev.yorkie.document.time/VersionVector/hashCode/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/hash-code.html
 $dokka.location:dev.yorkie.document.time/VersionVector/iterator/#/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/iterator.html
 $dokka.location:dev.yorkie.document.time/VersionVector/max/#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document.time/-version-vector/max.html
@@ -538,7 +539,7 @@ $dokka.location:dev.yorkie.document/Document.Options///PointingToDeclaration/yo
 $dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
 $dokka.location:dev.yorkie.document/Document.Options/disableGC/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/disable-g-c.html
 $dokka.location:dev.yorkie.document/Document///PointingToDeclaration/yorkie/dev.yorkie.document/-document/index.html
-$dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key#dev.yorkie.document.Document.Options#kotlinx.coroutines.CoroutineDispatcher#kotlinx.coroutines.CoroutineDispatcher/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
+$dokka.location:dev.yorkie.document/Document/Document/#dev.yorkie.document.Document.Key#dev.yorkie.document.Document.Options/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
 $dokka.location:dev.yorkie.document/Document/changeID/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/change-i-d.html
 $dokka.location:dev.yorkie.document/Document/close/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/close.html
 $dokka.location:dev.yorkie.document/Document/events/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/events.html

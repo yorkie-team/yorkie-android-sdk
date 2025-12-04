@@ -811,7 +811,9 @@ public class Client(
      * @param keepalive 비활성화 요청을 앱이 종료되더라도 완료하도록 보장합니다. 페이지 언로드 또는 앱 종료 시에 사용합니다.
      */
     @OptIn(DelicateCoroutinesApi::class)
-    public fun deactivateAsync(keepalive: Boolean = false): Deferred<OperationResult> {
+    public fun deactivateAsync(
+        deactivateOptions: DeactivateOptions = DeactivateOptions(),
+    ): Deferred<OperationResult> {
         if (!isActive) {
             return CompletableDeferred(SUCCESS)
         }
@@ -822,6 +824,9 @@ public class Client(
                 service.deactivateClient(
                     request = deactivateClientRequest {
                         clientId = requireClientId().value
+                        deactivateOptions.synchronous?.let {
+                            synchronous = it
+                        }
                     },
                     headers = projectBasedRequestHeader,
                 ).getOrThrow()
@@ -839,7 +844,7 @@ public class Client(
             }
         }
 
-        return if (keepalive) {
+        return if (deactivateOptions.keepalive == true) {
             GlobalScope.async(Dispatchers.IO) {
                 withContext(NonCancellable) {
                     task()
@@ -1118,6 +1123,26 @@ public class Client(
          * The default value is `1000`(ms).
          */
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
+    )
+
+    /**
+     * `DeactivateOptions` are user-settable options used when deactivating clients.
+     */
+    public data class DeactivateOptions(
+        /**
+         * `keepalive` is used to enable the keepalive option when deactivating.
+         * If true, the client will request deactivation immediately using `fetch`
+         * with the `keepalive` option enabled. This is useful for ensuring the
+         * deactivation request completes even if the page is being unloaded.
+         */
+        val keepalive: Boolean? = null,
+
+        /**
+         * `synchronous` is used to enable the synchronous option when deactivating.
+         * If true, the server will wait for all pending operations to complete
+         * before deactivating.
+         */
+        val synchronous: Boolean? = null,
     )
 
     /**

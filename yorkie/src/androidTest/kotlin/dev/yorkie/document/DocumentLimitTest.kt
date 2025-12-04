@@ -58,7 +58,7 @@ class DocumentLimitTest {
             val createProjectResponse = client.postApi<Map<String, Any>>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "Bearer $adminToken",
                 ),
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
@@ -71,7 +71,7 @@ class DocumentLimitTest {
             client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "Bearer $adminToken",
                 ),
                 requestMap = mapOf(
                     "id" to projectId,
@@ -85,7 +85,7 @@ class DocumentLimitTest {
             val projectResponse = client.postApi<Map<String, Any>>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/GetProject",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "Bearer $adminToken",
                 ),
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
@@ -125,7 +125,7 @@ class DocumentLimitTest {
             val createProjectResponse = client.postApi<Map<String, Any>>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "Bearer $adminToken",
                 ),
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
@@ -139,7 +139,7 @@ class DocumentLimitTest {
             client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "Bearer $adminToken",
                 ),
                 requestMap = mapOf(
                     "id" to projectId,
@@ -205,7 +205,7 @@ class DocumentLimitTest {
             val createProjectResponse = client.postApi<Map<String, Any>>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateProject",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "Bearer $adminToken",
                 ),
                 requestMap = mapOf(
                     "name" to "doc-size-$now",
@@ -221,7 +221,7 @@ class DocumentLimitTest {
             client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "Bearer $adminToken",
                 ),
                 requestMap = mapOf(
                     "id" to projectId,

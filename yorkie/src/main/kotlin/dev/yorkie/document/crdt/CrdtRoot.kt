@@ -213,6 +213,10 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             val removedAt = pair.child.removedAt
             if (removedAt != null && minSyncedVersionVector.afterOrEqual(removedAt)) {
                 pair.parent.deleteChild(pair.child)
+                docSize = DocSize(
+                    live = docSize.live,
+                    gc = subDataSize(docSize.gc, pair.child.dataSize),
+                )
                 iterator.remove()
                 count++
             }

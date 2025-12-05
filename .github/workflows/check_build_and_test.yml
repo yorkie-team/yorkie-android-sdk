@@ -1,8 +1,6 @@
-name: Android CI
+name: Check Build & Test
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches:
       - develop
@@ -59,6 +57,11 @@ jobs:
           remove-codeql: true
           remove-docker-images: true
           remove-large-packages: true  # ths is slow, but recently we need that last ~2GB as of 20251120
+
+      - name: Install missing X11 deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-xcb1 libxcb1 libx11-6
 
       - name: Enable KVM
         run: |

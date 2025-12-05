@@ -5,6 +5,8 @@ import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
+import dev.yorkie.document.time.TimeTicket
+import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -913,6 +915,41 @@ class JsonTextTest {
             assertJsonContentEquals("""{"k1":[]}""", d1.toJson())
             assertJsonContentEquals("""{"k1":[]}""", d2.toJson())
             assertJsonContentEquals(d1.toJson(), d2.toJson())
+
+            for (n in d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                assertEquals(
+                    expected = true,
+                    actual = n.removedAt != null,
+                )
+            }
+
+            for (n in d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                assertEquals(
+                    expected = true,
+                    actual = n.removedAt != null,
+                )
+            }
+
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            val timeStamp = HashSet<TimeTicket>()
+            for (n in d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                if (n.removedAt != null) {
+                    timeStamp.add(n.removedAt!!)
+                }
+            }
+
+            for (n in d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                if (n.removedAt != null) {
+                    timeStamp.add(n.removedAt!!)
+                }
+            }
+
+            assertEquals(
+                expected = 1,
+                actual = timeStamp.size,
+            )
         }
     }
 }

@@ -24,7 +24,8 @@ class DocumentSchemaTest {
     private lateinit var client: OkHttpClient
     private lateinit var gson: Gson
 
-    private lateinit var adminToken: String
+    private lateinit var projectApiKey: String
+    private lateinit var projectSecretKey: String
     private lateinit var yorkieServerUrl: String
 
     private val time = System.currentTimeMillis()
@@ -48,15 +49,29 @@ class DocumentSchemaTest {
             ),
             gson = gson,
         )
-        adminToken = loginResponse["token"] as String
+        val adminToken = loginResponse["token"] as String
+
+        val createProjectResponse = client.postApi<Map<String, Any>>(
+            url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateProject",
+            headers = mapOf(
+                "Authorization" to "Bearer $adminToken",
+            ),
+            requestMap = mapOf(
+                "name" to "schema-test-${System.currentTimeMillis()}",
+            ),
+            gson = gson,
+        )
+        projectApiKey =
+            (createProjectResponse["project"] as Map<String, Any>)["publicKey"] as String
+        projectSecretKey =
+            (createProjectResponse["project"] as Map<String, Any>)["secretKey"] as String
 
         client.postApi<Any>(
             url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateSchema",
             headers = mapOf(
-                "Authorization" to adminToken,
+                "Authorization" to "API-Key $projectSecretKey",
             ),
             requestMap = mapOf(
-                "projectName" to "default",
                 "schemaName" to "schema1-$time",
                 "schemaVersion" to 1,
                 "schemaBody" to "type Document = {title: string;};",
@@ -73,10 +88,9 @@ class DocumentSchemaTest {
         client.postApi<Any>(
             url = "$yorkieServerUrl/yorkie.v1.AdminService/CreateSchema",
             headers = mapOf(
-                "Authorization" to adminToken,
+                "Authorization" to "API-Key $projectSecretKey",
             ),
             requestMap = mapOf(
-                "projectName" to "default",
                 "schemaName" to "schema2-$time",
                 "schemaVersion" to 1,
                 "schemaBody" to "type Document = {title: integer;};",
@@ -94,7 +108,9 @@ class DocumentSchemaTest {
     @Test
     fun can_attach_document_with_schema() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
@@ -113,7 +129,9 @@ class DocumentSchemaTest {
     @Test
     fun should_reject_local_update_that_violates_schema() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
@@ -158,7 +176,9 @@ class DocumentSchemaTest {
     @Test
     fun can_update_schema_with_new_rules_via_UpdateDocument_API() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -183,10 +203,9 @@ class DocumentSchemaTest {
             this@DocumentSchemaTest.client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "projectName" to "default",
                     "documentKey" to documentKey.value,
                     "root" to "{\"title\": Int(123)}",
                     "schemaKey" to "schema2-$time@1",
@@ -211,7 +230,9 @@ class DocumentSchemaTest {
     @Test
     fun should_reject_schema_update_when_document_is_attached() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -226,10 +247,9 @@ class DocumentSchemaTest {
                 this@DocumentSchemaTest.client.postApi<Any>(
                     url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
-                        "Authorization" to adminToken,
+                        "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "projectName" to "default",
                         "documentKey" to documentKey.value,
                         "root" to "{\"title\": Int(123)}",
                         "schemaKey" to "schema2-$time@1",
@@ -252,7 +272,9 @@ class DocumentSchemaTest {
     @Test
     fun should_reject_schema_update_when_existing_root_violates_new_schema() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -277,10 +299,9 @@ class DocumentSchemaTest {
                 this@DocumentSchemaTest.client.postApi<Any>(
                     url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
-                        "Authorization" to adminToken,
+                        "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "projectName" to "default",
                         "documentKey" to documentKey.value,
                         "root" to "{\"title\": Long(123)}",
                         "schemaKey" to "schema2-$time@1",
@@ -303,7 +324,9 @@ class DocumentSchemaTest {
     @Test
     fun can_detach_schema_via_UpdateDocument_API() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -328,10 +351,9 @@ class DocumentSchemaTest {
                 this@DocumentSchemaTest.client.postApi<Any>(
                     url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
-                        "Authorization" to adminToken,
+                        "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "projectName" to "default",
                         "documentKey" to documentKey.value,
                         "root" to "",
                         "schemaKey" to "",
@@ -353,10 +375,9 @@ class DocumentSchemaTest {
             this@DocumentSchemaTest.client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "projectName" to "default",
                     "documentKey" to documentKey.value,
                     "root" to "",
                     "schemaKey" to "",
@@ -390,7 +411,9 @@ class DocumentSchemaTest {
     @Test
     fun can_attach_schema_via_UpdateDocument_API() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -414,10 +437,9 @@ class DocumentSchemaTest {
                 this@DocumentSchemaTest.client.postApi<Any>(
                     url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
-                        "Authorization" to adminToken,
+                        "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "projectName" to "default",
                         "documentKey" to documentKey.value,
                         "root" to "",
                         "schemaKey" to "schema2-$time@1",
@@ -440,10 +462,9 @@ class DocumentSchemaTest {
                 this@DocumentSchemaTest.client.postApi<Any>(
                     url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
-                        "Authorization" to adminToken,
+                        "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "projectName" to "default",
                         "documentKey" to documentKey.value,
                         "root" to "",
                         "schemaKey" to "schema2-$time@1",
@@ -463,10 +484,9 @@ class DocumentSchemaTest {
             this@DocumentSchemaTest.client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "projectName" to "default",
                     "documentKey" to documentKey.value,
                     "root" to "",
                     "schemaKey" to "schema1-$time@1",
@@ -507,7 +527,9 @@ class DocumentSchemaTest {
     @Test
     fun can_update_schema_only() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -534,10 +556,9 @@ class DocumentSchemaTest {
                 this@DocumentSchemaTest.client.postApi<Any>(
                     url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
-                        "Authorization" to adminToken,
+                        "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "projectName" to "default",
                         "documentKey" to documentKey.value,
                         "root" to "",
                         "schemaKey" to "schema2-$time@1",
@@ -559,7 +580,9 @@ class DocumentSchemaTest {
     @Test
     fun can_update_root_only() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -581,10 +604,9 @@ class DocumentSchemaTest {
             this@DocumentSchemaTest.client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "projectName" to "default",
                     "documentKey" to documentKey.value,
                     "root" to "{\"title\": Int(123)}",
                     "schemaKey" to "",
@@ -610,7 +632,9 @@ class DocumentSchemaTest {
     @Test
     fun can_update_root_only_when_document_has_attached_schema() {
         runBlocking {
-            val client = createClient()
+            val client = createClient(
+                options = Client.Options(apiKey = projectApiKey),
+            )
             client.activateAsync().await()
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
@@ -636,10 +660,9 @@ class DocumentSchemaTest {
                 this@DocumentSchemaTest.client.postApi<Any>(
                     url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                     headers = mapOf(
-                        "Authorization" to adminToken,
+                        "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "projectName" to "default",
                         "documentKey" to documentKey.value,
                         "root" to "{\"title\": Int(123)}",
                         "schemaKey" to "",
@@ -659,10 +682,9 @@ class DocumentSchemaTest {
             this@DocumentSchemaTest.client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
                 headers = mapOf(
-                    "Authorization" to adminToken,
+                    "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "projectName" to "default",
                     "documentKey" to documentKey.value,
                     "root" to "{\"title\": \"world\"}",
                     "schemaKey" to "",

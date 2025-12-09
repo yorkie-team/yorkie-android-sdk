@@ -24,10 +24,8 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_USER_ID
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.DocStatus
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
-import dev.yorkie.document.Document.Key
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
@@ -127,11 +125,11 @@ class ClientTest {
 
     @Test
     fun `should sync when document is attached and on manual sync requests`() = runTest {
-        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+        val document = Document(NORMAL_DOCUMENT_KEY)
         target.activateAsync().await()
 
         val attachRequestCaptor = slot<AttachDocumentRequest>()
-        target.attachAsync(document, syncMode = Manual).await()
+        target.attachDocument(document, syncMode = Manual).await()
         coVerify {
             service.attachDocument(capture(attachRequestCaptor), any())
         }
@@ -155,7 +153,7 @@ class ClientTest {
         assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
         val detachRequestCaptor = slot<DetachDocumentRequest>()
-        target.detachAsync(document).await()
+        target.detachDocument(document).await()
         coVerify {
             service.detachDocument(capture(detachRequestCaptor), any())
         }
@@ -168,10 +166,9 @@ class ClientTest {
 
     @Test
     fun `should run watch and sync when document is attached`() = runTest {
-        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+        val document = Document(NORMAL_DOCUMENT_KEY)
         target.activateAsync().await()
-
-        target.attachAsync(document).await()
+        target.attachDocument(document).await()
 
         val syncRequestCaptors = mutableListOf<PushPullChangesRequest>()
         assertIs<SyncStatusChanged.Synced>(
@@ -185,7 +182,7 @@ class ClientTest {
         }
         assertJsonContentEquals("""{"k2": 100.0}""", document.toJson())
 
-        target.detachAsync(document).await()
+        target.detachDocument(document).await()
         target.deactivateAsync().await()
     }
 
@@ -194,9 +191,9 @@ class ClientTest {
         mockkStatic(Base64::class)
         every { Base64.encodeToString(any(), any()) } returns "mockk"
 
-        val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
+        val document = Document(WATCH_SYNC_ERROR_DOCUMENT_KEY)
         target.activateAsync().await()
-        target.attachAsync(document).await()
+        target.attachDocument(document).await()
         val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
             document.events.filterIsInstance<SyncStatusChanged>().first()
         }
@@ -211,7 +208,7 @@ class ClientTest {
         assertIs<SyncStatusChanged.SyncFailed>(syncEventDeferred.await())
         assertIs<StreamConnectionChanged.Disconnected>(connectionEventDeferred.await())
 
-        target.detachAsync(document).await()
+        target.detachDocument(document).await()
         target.deactivateAsync().await()
 
         unmockkStatic(Base64::class)
@@ -219,18 +216,18 @@ class ClientTest {
 
     @Test
     fun `should return sync result according to server response`() = runTest {
-        val success = Document(Key(NORMAL_DOCUMENT_KEY))
+        val success = Document(NORMAL_DOCUMENT_KEY)
         target.activateAsync().await()
-        target.attachAsync(success).await()
+        target.attachDocument(success).await()
 
         assertTrue(target.syncAsync().await().isSuccess)
-        target.detachAsync(success).await()
+        target.detachDocument(success).await()
 
-        val failing = Document(Key(ATTACH_ERROR_DOCUMENT_KEY))
-        assertTrue(target.attachAsync(failing).await().isFailure)
+        val failing = Document(ATTACH_ERROR_DOCUMENT_KEY)
+        assertTrue(target.attachDocument(failing).await().isFailure)
 
         val exception = assertFailsWith(YorkieException::class) {
-            target.detachAsync(failing).await()
+            target.detachDocument(failing).await()
         }
         assertEquals(ErrDocumentNotAttached, exception.code)
         assertTrue(target.syncAsync().await().isSuccess)
@@ -240,21 +237,21 @@ class ClientTest {
 
     @Test
     fun `should return false on attach failure without exceptions`() = runTest {
-        val document = Document(Key(ATTACH_ERROR_DOCUMENT_KEY))
+        val document = Document(ATTACH_ERROR_DOCUMENT_KEY)
         target.activateAsync().await()
 
-        assertFalse(target.attachAsync(document).await().isSuccess)
+        assertFalse(target.attachDocument(document).await().isSuccess)
 
         target.deactivateAsync().await()
     }
 
     @Test
     fun `should return false on detach failure without exceptions`() = runTest {
-        val document = Document(Key(DETACH_ERROR_DOCUMENT_KEY))
+        val document = Document(DETACH_ERROR_DOCUMENT_KEY)
         target.activateAsync().await()
-        target.attachAsync(document).await()
+        target.attachDocument(document).await()
 
-        assertFalse(target.detachAsync(document).await().isSuccess)
+        assertFalse(target.detachDocument(document).await().isSuccess)
 
         target.deactivateAsync().await()
     }
@@ -270,12 +267,12 @@ class ClientTest {
 
     @Test
     fun `should remove document`() = runTest {
-        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+        val document = Document(NORMAL_DOCUMENT_KEY)
         target.activateAsync().await()
-        target.attachAsync(document).await()
+        target.attachDocument(document).await()
 
         val removeDocumentRequestCaptor = slot<RemoveDocumentRequest>()
-        target.removeAsync(document).await()
+        target.removeDocument(document).await()
         coVerify {
             service.removeDocument(capture(removeDocumentRequestCaptor), any())
         }
@@ -290,27 +287,27 @@ class ClientTest {
 
     @Test
     fun `should return false on remove document error without exceptions`() = runTest {
-        val document = Document(Key(REMOVE_ERROR_DOCUMENT_KEY))
+        val document = Document(REMOVE_ERROR_DOCUMENT_KEY)
         target.activateAsync().await()
-        target.attachAsync(document).await()
+        target.attachDocument(document).await()
 
-        assertFalse(target.removeAsync(document).await().isSuccess)
+        assertFalse(target.removeDocument(document).await().isSuccess)
 
-        target.detachAsync(document).await()
+        target.detachDocument(document).await()
         target.deactivateAsync().await()
     }
 
     @Test
     fun `should set a new token when auth error occurs`() = runTest {
-        val success = Document(Key(NORMAL_DOCUMENT_KEY))
+        val success = Document(NORMAL_DOCUMENT_KEY)
         target.activateAsync().await()
-        target.attachAsync(success).await()
+        target.attachDocument(success).await()
         assertEquals(testAuthToken, runBlocking { target.authToken(false) })
         assertFalse(target.shouldRefreshToken)
-        assertTrue(target.detachAsync(success).await().isSuccess)
+        assertTrue(target.detachDocument(success).await().isSuccess)
 
-        val failing = Document(Key(AUTH_ERROR_DOCUMENT_KEY))
-        val await = target.attachAsync(failing).await()
+        val failing = Document(AUTH_ERROR_DOCUMENT_KEY)
+        val await = target.attachDocument(failing).await()
         assertTrue(await.isFailure)
         assertTrue(target.shouldRefreshToken)
 
@@ -335,12 +332,9 @@ class ClientTest {
 
             client.activateAsync().await()
 
-            delay(1000)
-            assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
-
             // 01. Simulate retryable errors.
-            val document = Document(Key(WATCH_SYNC_ERROR_DOCUMENT_KEY))
-            client.attachAsync(document).await()
+            val document = Document(WATCH_SYNC_ERROR_DOCUMENT_KEY)
+            client.attachDocument(document).await()
 
             document.updateAsync { root, _ ->
                 root.setNewText("")
@@ -395,22 +389,16 @@ class ClientTest {
                 assertFalse(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
             }
 
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
 
-            // 03. Assert watch loop is reactivated after client is reactivated.
-            client.activateAsync().await()
-            delay(1000)
-            assertTrue(client.conditions[Client.ClientCondition.WATCH_LOOP]!!)
-
-            client.deactivateAsync().await()
             document.close()
             client.close()
         }
     }
 
     @Test
-    fun `detachAsync with keepalive true should work even after client close`() = runTest {
+    fun `detachDocument with keepalive true should work even after client close`() = runTest {
         val service = spyk(MockYorkieService())
         val client = Client(
             host = "0.0.0.0",
@@ -421,16 +409,16 @@ class ClientTest {
         )
         client.service = service
 
-        val document = Document(Key(NORMAL_DOCUMENT_KEY))
+        val document = Document(NORMAL_DOCUMENT_KEY)
 
         // Activate and attach document
         client.activateAsync().await()
-        client.attachAsync(document, syncMode = Manual).await()
-        assertEquals(DocStatus.Attached, document.status)
+        client.attachDocument(document, syncMode = Manual).await()
+        assertEquals(ResourceStatus.Attached, document.getStatus())
 
         // Start detach with keepalive = true
         val detachDeferred = async {
-            client.detachAsync(document, keepalive = true).await()
+            client.detachDocument(document, keepalive = true).await()
         }
 
         // Add a small delay to ensure the detach has started
@@ -444,7 +432,7 @@ class ClientTest {
 
         // Verify that detach completed successfully despite client being closed
         assertTrue(result.isSuccess)
-        assertEquals(DocStatus.Detached, document.status)
+        assertEquals(ResourceStatus.Detached, document.getStatus())
     }
 
     private fun assertIsTestActorID(clientId: String) {

@@ -3,11 +3,11 @@ package dev.yorkie.document.presence
 import dev.yorkie.document.change.ChangeContext
 
 /**
- * [Presence] represents a proxy for the Presence to be manipulated from the outside.
+ * [DocPresence] represents a proxy for the Presence to be manipulated from the outside.
  */
-public data class Presence internal constructor(
+public class DocPresence internal constructor(
     private val changeContext: ChangeContext,
-    private val initialPresence: P,
+    initialPresence: P,
 ) {
     private val presence = initialPresence.toMutableMap()
 

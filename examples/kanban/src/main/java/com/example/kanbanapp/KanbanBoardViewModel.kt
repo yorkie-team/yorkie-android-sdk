@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.yorkie.core.Client
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.Key
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonPrimitive
@@ -17,7 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class KanbanBoardViewModel(private val client: Client) : ViewModel() {
-    private val document = Document(Key(DOCUMENT_KEY))
+    private val document = Document(DOCUMENT_KEY)
 
     private val _list = MutableStateFlow<ImmutableList<KanbanColumn>>(persistentListOf())
     val list: StateFlow<ImmutableList<KanbanColumn>> = _list.asStateFlow()
@@ -28,7 +27,7 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
     init {
         viewModelScope.launch {
             if (client.activateAsync().await().isSuccess &&
-                client.attachAsync(document).await().isSuccess
+                client.attachDocument(document).await().isSuccess
             ) {
                 client.syncAsync().await()
             }
@@ -106,7 +105,7 @@ class KanbanBoardViewModel(private val client: Client) : ViewModel() {
     fun broadcastMessage() {
         val payload = "hello".toList().shuffled().joinToString("")
         viewModelScope.launch {
-            client.broadcast(document, BROADCAST_GREETING, payload)
+            client.broadcast(document.getKey(), BROADCAST_GREETING, payload)
                 .await().isSuccess
         }
     }

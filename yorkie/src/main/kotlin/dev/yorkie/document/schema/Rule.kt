@@ -1,4 +1,4 @@
-package dev.yorkie.schema
+package dev.yorkie.document.schema
 
 sealed interface Rule {
     val path: String

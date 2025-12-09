@@ -1,4 +1,4 @@
-package dev.yorkie.schema
+package dev.yorkie.document.schema
 
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtCounter

@@ -1,6 +1,5 @@
 package dev.yorkie
 
-import dev.yorkie.document.Document
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
@@ -50,8 +49,7 @@ internal interface OpCode {
     }
 }
 
-fun String.toDocKey(): Document.Key {
-    return Document.Key(
-        lowercase().replace("[^a-z\\d-]".toRegex(), "-").substring(0, length.coerceAtMost(120)),
-    )
+fun String.toDocKey(): String {
+    return lowercase().replace("[^a-z\\d-]".toRegex(), "-")
+        .substring(0, length.coerceAtMost(120))
 }

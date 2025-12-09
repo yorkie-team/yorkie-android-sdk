@@ -106,14 +106,14 @@ class DocumentLimitTest {
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
-            client.attachAsync(document).await()
+            client.attachDocument(document).await()
 
             assertEquals(
                 expected = sizeLimit,
                 actual = document.getMaxSizePerDocument(),
             )
 
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
     }
@@ -158,7 +158,7 @@ class DocumentLimitTest {
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
-            client.attachAsync(document).await()
+            client.attachDocument(document).await()
 
             document.updateAsync { root, _ ->
                 root.setNewText("text")
@@ -193,7 +193,7 @@ class DocumentLimitTest {
                 actual = exception,
             )
 
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
     }
@@ -240,7 +240,7 @@ class DocumentLimitTest {
             client1.activateAsync().await()
 
             val document1 = Document(documentKey)
-            client1.attachAsync(document1).await()
+            client1.attachDocument(document1).await()
 
             val client2 = createClient(
                 options = Client.Options(
@@ -250,7 +250,7 @@ class DocumentLimitTest {
             client2.activateAsync().await()
 
             val document2 = Document(documentKey)
-            client2.attachAsync(document2).await()
+            client2.attachDocument(document2).await()
 
             document1.updateAsync { root, _ ->
                 root.setNewText("text")
@@ -324,9 +324,9 @@ class DocumentLimitTest {
                 actual = exception,
             )
 
-            client1.detachAsync(document1).await()
+            client1.detachDocument(document1).await()
             client1.deactivateAsync().await()
-            client2.detachAsync(document2).await()
+            client2.detachDocument(document2).await()
             client2.deactivateAsync().await()
         }
     }

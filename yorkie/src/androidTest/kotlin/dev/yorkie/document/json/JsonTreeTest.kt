@@ -22,7 +22,7 @@ import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
-import dev.yorkie.document.presence.Presence
+import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.gson
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -2040,7 +2040,7 @@ class JsonTreeTest {
             val d3 = Document(key)
             val c3 = createClient()
             c3.activateAsync().await()
-            c3.attachAsync(d3, syncMode = Manual).await()
+            c3.attachDocument(d3, syncMode = Manual).await()
             assertTreesXmlEquals(d2.getRoot().rootTree().toXml(), d3)
 
             updateAndSync(
@@ -2791,7 +2791,7 @@ class JsonTreeTest {
         data class Updater(
             val client: Client,
             val document: Document,
-            val updater: (suspend (JsonObject, Presence) -> Unit)? = null,
+            val updater: (suspend (JsonObject, DocPresence) -> Unit)? = null,
         )
 
         data class SimpleTreeEditOpInfo(

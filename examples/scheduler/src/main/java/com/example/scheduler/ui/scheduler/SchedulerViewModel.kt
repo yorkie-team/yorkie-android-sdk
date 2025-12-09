@@ -7,7 +7,6 @@ import com.example.scheduler.BuildConfig
 import com.google.gson.Gson
 import dev.yorkie.core.Client
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.Key
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonPrimitive
@@ -34,7 +33,7 @@ class SchedulerViewModel(
         host = BuildConfig.YORKIE_SERVER_URL,
     )
 
-    private val document = Document(Key(documentKey))
+    private val document = Document(documentKey)
 
     private val _state = MutableStateFlow(
         SchedulerState(
@@ -102,20 +101,20 @@ class SchedulerViewModel(
                 return
             }
 
-            val attachAsyncResult = client.attachAsync(
+            val attachDocumentResult = client.attachDocument(
                 document,
                 initialPresence = mapOf("userName" to "\"${randomPeers.random()}\""),
             ).await()
-            if (!attachAsyncResult.isSuccess) {
+            if (!attachDocumentResult.isSuccess) {
                 _state.value = _state.value.copy(
                     isLoading = false,
                     error = "Failed to attach document to Yorkie server",
                 )
                 Timber.e(
                     "${this@SchedulerViewModel::class.java.name}#init: %s",
-                    "Failed to attach document ${document.key} " +
+                    "Failed to attach document ${document.getKey()} " +
                         "to Yorkie server ${BuildConfig.YORKIE_SERVER_URL}, " +
-                        "Error: ${attachAsyncResult.exceptionOrNull()}",
+                        "Error: ${attachDocumentResult.exceptionOrNull()}",
                 )
                 return
             }
@@ -123,7 +122,7 @@ class SchedulerViewModel(
             Timber.i(
                 "${this@SchedulerViewModel::class.java.name}#init: %s",
                 "Connected to Yorkie server ${BuildConfig.YORKIE_SERVER_URL} " +
-                    "with document ${document.key}",
+                    "with document ${document.getKey()}",
             )
 
             _state.value = _state.value.copy(
@@ -267,7 +266,7 @@ class SchedulerViewModel(
 
     override fun onCleared() {
         TerminationScope.launch {
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
         super.onCleared()

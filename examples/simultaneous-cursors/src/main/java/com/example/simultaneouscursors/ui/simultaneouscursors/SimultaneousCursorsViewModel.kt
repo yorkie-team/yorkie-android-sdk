@@ -67,7 +67,7 @@ class SimultaneousCursorsViewModel(
         host = BuildConfig.YORKIE_SERVER_URL,
     )
 
-    private val document = Document(Document.Key(documentKey))
+    private val document = Document(documentKey)
 
     init {
         setupYorkieConnection()
@@ -133,7 +133,7 @@ class SimultaneousCursorsViewModel(
                 return
             }
 
-            val attachAsyncResult = client.attachAsync(
+            val attachDocumentResult = client.attachDocument(
                 document = document,
                 initialPresence = mapOf(
                     "name" to "\"${generateDisplayName()}\"",
@@ -148,16 +148,16 @@ class SimultaneousCursorsViewModel(
                     "pointerDown" to "false",
                 ),
             ).await()
-            if (!attachAsyncResult.isSuccess) {
+            if (!attachDocumentResult.isSuccess) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = "Failed to attach document to Yorkie server",
                 )
                 Timber.e(
                     "${this@SimultaneousCursorsViewModel::class.java.name}#init: %s",
-                    "Failed to attach document ${document.key} " +
+                    "Failed to attach document ${document.getKey()} " +
                         "to Yorkie server ${BuildConfig.YORKIE_SERVER_URL}, " +
-                        "Error: ${attachAsyncResult.exceptionOrNull()}",
+                        "Error: ${attachDocumentResult.exceptionOrNull()}",
                 )
                 return
             }
@@ -165,7 +165,7 @@ class SimultaneousCursorsViewModel(
             Timber.i(
                 "${this@SimultaneousCursorsViewModel::class.java.name}#init: %s",
                 "Connected to Yorkie server ${BuildConfig.YORKIE_SERVER_URL} " +
-                    "with document ${document.key}",
+                    "with document ${document.getKey()}",
             )
 
             _uiState.value = _uiState.value.copy(
@@ -368,7 +368,7 @@ class SimultaneousCursorsViewModel(
 
     override fun onCleared() {
         TerminationScope.launch {
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
         super.onCleared()

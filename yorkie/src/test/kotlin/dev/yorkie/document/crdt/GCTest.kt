@@ -132,7 +132,7 @@ class GCTest {
             ),
         )
         tests.forEach { test ->
-            val doc = Document(Document.Key(""))
+            val doc = Document("")
             doc.updateAsync { root, _ ->
                 root.setNewTree("t", element("r") { element("p") })
             }.await()
@@ -197,7 +197,7 @@ class GCTest {
         )
 
         tests.forEach { test ->
-            val doc = Document(Document.Key(""))
+            val doc = Document("")
             doc.updateAsync { root, _ ->
                 root.setNewText("t").edit(0, 0, "AB")
             }.await()

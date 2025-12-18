@@ -1,5 +1,6 @@
 package dev.yorkie.core
 
+import dev.yorkie.document.Document
 import kotlinx.coroutines.Job
 
 /**
@@ -20,11 +21,6 @@ internal class Attachment<R : Attachable>(
      * Only applicable to Document resources with syncMode defined.
      */
     private fun needRealTimeSync(): Boolean {
-        // If syncMode is not defined (e.g., for Presence), no sync is needed
-        if (syncMode == null) {
-            return false
-        }
-
         if (syncMode == Client.SyncMode.RealtimeSyncOff) {
             return false
         }
@@ -45,8 +41,13 @@ internal class Attachment<R : Attachable>(
      */
     fun needSync(heartbeatInterval: Long): Boolean {
         // For Document: check if realtime sync is needed
-        if (syncMode != null) {
+        if (resource is Document) {
             return needRealTimeSync()
+        }
+
+        // For Presence in Manual mode: never auto-sync
+        if (syncMode == Client.SyncMode.Manual) {
+            return false
         }
 
         // For Presence: check if heartbeat is needed

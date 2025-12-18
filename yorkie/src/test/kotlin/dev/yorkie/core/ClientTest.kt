@@ -444,16 +444,6 @@ class ClientTest {
     }
 
     companion object {
-        val initialAttachVersionVector = VersionVector().apply {
-            set(TEST_ACTOR_ID.value, 1)
-        }
-        val initialSyncVersionVector = VersionVector().apply {
-            set(TEST_ACTOR_ID.value, 1)
-        }
-        val initialRemoveVersionVector = VersionVector().apply {
-            set(TEST_ACTOR_ID.value, 1)
-        }
-
         private fun createInitialChangePack(
             changesVersionVector: VersionVector = INITIAL_VERSION_VECTOR,
             changePackVersionVector: VersionVector = INITIAL_VERSION_VECTOR,

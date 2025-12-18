@@ -270,7 +270,7 @@ public class Client(
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
      */
-    public fun syncAsync(document: Document? = null): Deferred<OperationResult> {
+    public fun syncAsync(resource: Attachable? = null): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
                 isActive,
@@ -281,14 +281,12 @@ public class Client(
 
             var failure: Throwable? = null
 
-            if (document != null) {
-                val documentKey = document.getKey()
-                val attachment = attachments[documentKey]
-                (attachment?.resource as? Document)
-                    ?: throw YorkieException(
-                        ErrDocumentNotAttached,
-                        "document($documentKey) is not attached",
-                    )
+            if (resource != null) {
+                val key = resource.getKey()
+                val attachment = attachments[key] ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "$key is not attached",
+                )
                 val syncResult = syncInternal(attachment, SyncMode.Realtime)
                 if (syncResult.result.isFailure) {
                     val exception = syncResult.result.exceptionOrNull()
@@ -364,10 +362,11 @@ public class Client(
                             }
                             presenceKey = resource.getKey()
                         }
-                        service.refreshPresence(
+                        val response = service.refreshPresence(
                             request,
                             resource.getKey().attachmentBasedRequestHeader,
-                        )
+                        ).getOrThrow()
+                        resource.updateCount(response.count, 0L)
                         attachment.updateHeartbeatTime()
                     }
                 }
@@ -968,8 +967,16 @@ public class Client(
     /**
      * `attach` attaches the given presence counter to this client.
      * It tells the server that this client will track the presence count.
+     *
+     * @param presence The presence counter to attach.
+     * @param isRealtime If true (default), starts watching for presence changes in realtime.
+     *                   If false, uses manual sync mode where you must call [syncPresence] to
+     *                   refresh the presence count.
      */
-    public fun attachPresence(presence: Presence): Deferred<OperationResult> {
+    public fun attachPresence(
+        presence: Presence,
+        isRealtime: Boolean? = null,
+    ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
                 isActive,
@@ -1008,11 +1015,22 @@ public class Client(
                 presence.updateCount(response.count, 0L)
                 presence.applyStatus(ResourceStatus.Attached)
 
+                val syncMode = if (isRealtime != false) {
+                    SyncMode.Realtime
+                } else {
+                    SyncMode.Manual
+                }
+
                 attachments[presenceKey] = Attachment(
                     resource = presence,
                     resourceId = response.presenceId,
+                    syncMode = syncMode,
                 )
-                runWatchLoop(presenceKey)
+
+                // Only start watch loop for realtime mode
+                if (syncMode == SyncMode.Realtime) {
+                    runWatchLoop(presenceKey)
+                }
             }
             SUCCESS
         }

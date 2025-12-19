@@ -12,7 +12,7 @@ class JsonArrayTest {
     @Test
     fun should_handle_delete_operations() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -45,7 +45,7 @@ class JsonArrayTest {
     @Test
     fun can_push_array_element_after_delete_operation() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -92,7 +92,7 @@ class JsonArrayTest {
     @Test
     fun can_push_object_element_after_delete_operation() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -138,7 +138,7 @@ class JsonArrayTest {
     @Test
     fun can_push_array() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
 
             document.updateAsync { root, _ ->
                 root.setNewArray("arr").apply {
@@ -166,7 +166,7 @@ class JsonArrayTest {
     @Test
     fun can_push_element_then_delete_it_by_ID_in_array() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -210,7 +210,7 @@ class JsonArrayTest {
     @Test
     fun can_insert_an_element_after_the_given_element_in_array() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -270,7 +270,7 @@ class JsonArrayTest {
     @Test
     fun can_move_an_element_before_the_given_element_in_array() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -311,7 +311,7 @@ class JsonArrayTest {
     @Test
     fun can_move_an_element_after_the_given_element_in_array() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -352,7 +352,7 @@ class JsonArrayTest {
     @Test
     fun can_insert_an_element_at_the_first_of_array() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -401,7 +401,7 @@ class JsonArrayTest {
     @Test
     fun can_move_an_element_at_the_last_of_array() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
             assertEquals(
                 expected = "{}",
                 actual = document.toJson(),
@@ -1478,7 +1478,7 @@ class JsonArrayTest {
     @Test
     fun can_handle_array_set_operation_by_proxy() {
         runBlocking {
-            val document = Document(Document.Key("test-doc"))
+            val document = Document("test-doc")
 
             document.updateAsync { root, _ ->
                 root.setNewArray("list").apply {

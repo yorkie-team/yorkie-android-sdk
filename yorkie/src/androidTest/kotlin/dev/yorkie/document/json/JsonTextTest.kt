@@ -17,7 +17,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_edit_operations() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -32,7 +32,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_edit_operations2() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -47,7 +47,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_type_korean() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -66,7 +66,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_text_delete_operations() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("k1").apply {
@@ -83,7 +83,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_text_empty_operations() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("k1").apply {
@@ -322,7 +322,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_text_edit_operations_with_attributes() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -754,7 +754,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_deletion_of_nested_nodes() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("text")
@@ -779,7 +779,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_deletion_of_last_nodes() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("text")
@@ -818,7 +818,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_deletion_with_boundary_nodes_already_removed() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("text")

@@ -39,14 +39,13 @@ fun createClient(options: Client.Options = Client.Options()): Client {
     )
 }
 
-fun String.toDocKey(): Document.Key {
-    return Document.Key(
-        lowercase().replace("[^a-z\\d-]".toRegex(), "-").substring(0, length.coerceAtMost(120)),
-    )
+fun String.toDocKey(): String {
+    return lowercase().replace("[^a-z\\d-]".toRegex(), "-")
+        .substring(0, length.coerceAtMost(120))
 }
 
 fun createTwoClientsAndDocuments(
-    callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
+    callback: suspend CoroutineScope.(Client, Client, Document, Document, String) -> Unit,
 ) {
     runBlocking {
         val client1 = createClient()
@@ -67,7 +66,7 @@ fun createThreeClientsAndDocuments(
         Document,
         Document,
         Document,
-        Document.Key,
+        String,
     ) -> Unit,
 ) {
     runBlocking {
@@ -97,19 +96,19 @@ fun withTwoClientsAndDocuments(
     detachDocuments: Boolean = true,
     syncMode: Client.SyncMode = Client.SyncMode.Realtime,
     presences: Pair<Map<String, String>, Map<String, String>> = Pair(emptyMap(), emptyMap()),
-    callback: suspend CoroutineScope.(Client, Client, Document, Document, Document.Key) -> Unit,
+    callback: suspend CoroutineScope.(Client, Client, Document, Document, String) -> Unit,
 ) {
     createTwoClientsAndDocuments { client1, client2, document1, document2, key ->
         client1.activateAsync().await()
         client2.activateAsync().await()
 
         if (attachDocuments) {
-            client1.attachAsync(
+            client1.attachDocument(
                 document1,
                 syncMode = syncMode,
                 initialPresence = presences.first,
             ).await()
-            client2.attachAsync(
+            client2.attachDocument(
                 document2,
                 syncMode = syncMode,
                 initialPresence = presences.second,
@@ -119,8 +118,8 @@ fun withTwoClientsAndDocuments(
         callback.invoke(this, client1, client2, document1, document2, key)
 
         if (detachDocuments) {
-            client1.detachAsync(document1).await()
-            client2.detachAsync(document2).await()
+            client1.detachDocument(document1).await()
+            client2.detachDocument(document2).await()
         }
         client1.deactivateAsync().await()
         client2.deactivateAsync().await()
@@ -141,7 +140,7 @@ fun withThreeClientsAndDocuments(
         Document,
         Document,
         Document,
-        Document.Key,
+        String,
     ) -> Unit,
 ) {
     createThreeClientsAndDocuments {
@@ -157,15 +156,15 @@ fun withThreeClientsAndDocuments(
         client2.activateAsync().await()
         client3.activateAsync().await()
 
-        client1.attachAsync(
+        client1.attachDocument(
             document = document1,
             syncMode = syncMode,
         ).await()
-        client2.attachAsync(
+        client2.attachDocument(
             document = document2,
             syncMode = syncMode,
         ).await()
-        client3.attachAsync(
+        client3.attachDocument(
             document = document3,
             syncMode = syncMode,
         ).await()
@@ -181,9 +180,9 @@ fun withThreeClientsAndDocuments(
             key,
         )
 
-        client1.detachAsync(document1).await()
-        client2.detachAsync(document2).await()
-        client3.detachAsync(document3).await()
+        client1.detachDocument(document1).await()
+        client2.detachDocument(document2).await()
+        client3.detachDocument(document3).await()
 
         client1.deactivateAsync().await()
         client2.deactivateAsync().await()

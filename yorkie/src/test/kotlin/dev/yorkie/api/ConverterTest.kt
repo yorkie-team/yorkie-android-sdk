@@ -445,7 +445,7 @@ class ConverterTest {
 
     @Test
     fun `should encode and decode tree properly`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
 
         fun JsonObject.tree() = getAs<JsonTree>("t")
 

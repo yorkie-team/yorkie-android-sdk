@@ -192,8 +192,8 @@ internal suspend fun runTest(
     val d1 = Document(docKey)
     val d2 = Document(docKey)
 
-    c1.attachAsync(d1, syncMode = Client.SyncMode.Manual).await()
-    c2.attachAsync(d2, syncMode = Client.SyncMode.Manual).await()
+    c1.attachDocument(d1, syncMode = Client.SyncMode.Manual).await()
+    c2.attachDocument(d2, syncMode = Client.SyncMode.Manual).await()
 
     updateAndSync(
         Updater(c1, d1) { root, _ ->
@@ -220,8 +220,8 @@ internal suspend fun runTest(
     val after1 = d1.getRoot().rootTree().toXml()
     val after2 = d2.getRoot().rootTree().toXml()
 
-    c1.detachAsync(d1).await()
-    c2.detachAsync(d2).await()
+    c1.detachDocument(d1).await()
+    c2.detachDocument(d2).await()
     d1.close()
     d2.close()
 

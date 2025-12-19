@@ -33,7 +33,7 @@ class DocumentTest {
 
     @Before
     fun setUp() {
-        target = Document(Document.Key(""))
+        target = Document("")
     }
 
     @After
@@ -137,7 +137,7 @@ class DocumentTest {
             target.events.collect(events::add)
         }
 
-        assertFalse(target.hasLocalChanges)
+        assertFalse(target.hasLocalChanges())
 
         target.updateAsync { root, _ ->
             root["k1"] = 1
@@ -175,7 +175,7 @@ class DocumentTest {
         val secondRemove = operations.last() as RemoveOpInfo
         assertEquals(firstSet.executedAt, secondRemove.executedAt)
 
-        assertTrue(target.hasLocalChanges)
+        assertTrue(target.hasLocalChanges())
 
         collectJob.cancel()
     }

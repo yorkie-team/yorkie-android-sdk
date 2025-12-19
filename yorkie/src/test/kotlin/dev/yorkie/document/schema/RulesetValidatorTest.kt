@@ -1,4 +1,4 @@
-package dev.yorkie.schema
+package dev.yorkie.document.schema
 
 import dev.yorkie.document.Document
 import dev.yorkie.document.json.JsonObject

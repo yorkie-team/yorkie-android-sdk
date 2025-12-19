@@ -20,7 +20,7 @@ class GCTest {
 
     @Before
     fun setUp() {
-        target = Document(Document.Key(""))
+        target = Document("")
     }
 
     @After
@@ -55,7 +55,7 @@ class GCTest {
     @Test
     fun `should not collect garbage if disabled`() = runTest {
         target.close()
-        target = Document(Document.Key(""), Document.Options(disableGC = true))
+        target = Document("", Document.Options(disableGC = true))
 
         target.updateAsync { root, _ ->
             root["1"] = 1

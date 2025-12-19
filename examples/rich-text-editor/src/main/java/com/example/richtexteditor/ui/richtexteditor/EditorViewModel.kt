@@ -72,9 +72,7 @@ class EditorViewModel(
         host = BuildConfig.YORKIE_SERVER_URL,
     )
 
-    private val document = Document(
-        Document.Key(documentKey),
-    )
+    private val document = Document(documentKey)
 
     private val _uiState = MutableStateFlow(EditorUiState())
     val uiState = _uiState.asStateFlow()
@@ -199,23 +197,23 @@ class EditorViewModel(
                 return
             }
 
-            val attachAsyncResult = client.attachAsync(
+            val attachDocumentResult = client.attachDocument(
                 document,
                 initialPresence = mapOf(
                     "username" to "\"${generateDisplayName()}\"",
                     "color" to "\"${randomColorString()}\"",
                 ),
             ).await()
-            if (!attachAsyncResult.isSuccess) {
+            if (!attachDocumentResult.isSuccess) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = "Failed to attach document to Yorkie server",
                 )
                 Timber.e(
                     "${this@EditorViewModel::class.java.name}#init: %s",
-                    "Failed to attach document ${document.key} " +
+                    "Failed to attach document ${document.getKey()} " +
                         "to Yorkie server ${BuildConfig.YORKIE_SERVER_URL}, " +
-                        "Error: ${attachAsyncResult.exceptionOrNull()}",
+                        "Error: ${attachDocumentResult.exceptionOrNull()}",
                 )
                 return
             }
@@ -223,7 +221,7 @@ class EditorViewModel(
             Timber.i(
                 "${this@EditorViewModel::class.java.name}#init: %s",
                 "Connected to Yorkie server ${BuildConfig.YORKIE_SERVER_URL} " +
-                    "with document ${document.key}",
+                    "with document ${document.getKey()}",
             )
 
             if (document.getRoot().getAsOrNull<JsonText>(CONTENT) == null) {
@@ -595,7 +593,7 @@ class EditorViewModel(
 
     override fun onCleared() {
         TerminationScope.launch {
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
         super.onCleared()

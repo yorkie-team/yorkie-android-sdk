@@ -424,7 +424,7 @@ class GCTest {
             detachDocuments = false,
             syncMode = Manual,
         ) { c1, c2, d1, d2, _ ->
-            c1.attachAsync(d1, syncMode = Manual).await()
+            c1.attachDocument(d1, syncMode = Manual).await()
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -433,7 +433,7 @@ class GCTest {
                 ),
             )
 
-            c2.attachAsync(d2, syncMode = Manual).await()
+            c2.attachDocument(d2, syncMode = Manual).await()
             assertEquals(
                 true,
                 versionVectorHelper(
@@ -527,7 +527,7 @@ class GCTest {
             assertEquals(6, d1.garbageLength)
             assertEquals(0, d2.garbageLength)
 
-            c2.detachAsync(d2).await()
+            c2.detachDocument(d2).await()
 
             // (2, 1) -> (2, 2): syncedseqs:(1, x)
             c2.syncAsync().await()
@@ -549,7 +549,7 @@ class GCTest {
             assertEquals(0, d1.garbageLength)
             assertEquals(6, d2.garbageLength)
 
-            c1.detachAsync(d1).await()
+            c1.detachDocument(d1).await()
         }
     }
 
@@ -586,7 +586,7 @@ class GCTest {
         val document = Document(documentKey)
 
         client.activateAsync().await()
-        client.attachAsync(document, syncMode = Manual).await()
+        client.attachDocument(document, syncMode = Manual).await()
 
         document.updateAsync { root, _ ->
             root["point"] = gson.toJson(Point(0, 0))
@@ -623,7 +623,7 @@ class GCTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            c1.attachAsync(d1, syncMode = Manual).await()
+            c1.attachDocument(d1, syncMode = Manual).await()
             d1.updateAsync { root, _ ->
                 root.setNewObject("point").apply {
                     set("x", 0)
@@ -634,7 +634,7 @@ class GCTest {
             assertEquals(1, d1.garbageLength)
             c1.syncAsync().await()
 
-            c2.attachAsync(d2, syncMode = Manual).await()
+            c2.attachDocument(d2, syncMode = Manual).await()
             assertEquals(1, d2.garbageLength)
             d2.updateAsync { root, _ ->
                 root.getAs<JsonObject>("point")["x"] = 2
@@ -688,14 +688,14 @@ class GCTest {
             c2.activateAsync().await()
 
             // 1. initial state
-            c1.attachAsync(d1, syncMode = Manual).await()
+            c1.attachDocument(d1, syncMode = Manual).await()
             d1.updateAsync { root, _ ->
                 val point = root.setNewObject("point")
                 point["x"] = 0
                 point["y"] = 0
             }.await()
             c1.syncAsync().await()
-            c2.attachAsync(d2, syncMode = Manual).await()
+            c2.attachDocument(d2, syncMode = Manual).await()
 
             // 2. client1 updates doc
             d1.updateAsync { root, _ ->

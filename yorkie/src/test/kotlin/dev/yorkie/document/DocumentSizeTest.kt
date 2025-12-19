@@ -24,7 +24,7 @@ class DocumentSizeTest {
 
     @Before
     fun setup() {
-        document = Document(Document.Key(""))
+        document = Document("")
     }
 
     @Test

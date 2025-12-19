@@ -17,3 +17,6 @@ ij_kotlin_allow_trailing_comma_on_call_site = true
 ij_kotlin_imports_layout = *, ^
 ktlint_function_signature_rule_force_multiline_when_parameter_count_greater_or_equal_than = 3
 ktlint_function_naming_ignore_when_annotated_with = Composable
+
+[*.proto]
+indent_size = 2

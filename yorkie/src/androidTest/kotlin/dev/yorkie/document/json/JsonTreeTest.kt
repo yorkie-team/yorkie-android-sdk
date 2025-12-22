@@ -1326,8 +1326,8 @@ class JsonTreeTest {
                 assertTreesXmlEquals("<doc><p>a0123789456123b</p></doc>", d1)
             }
 
-            val size = d1.getRoot().rootTree().indexTree.root.size
-            assertEquals(size, d2.getRoot().rootTree().indexTree.root.size)
+            val size = d1.getRoot().rootTree().indexTree.root.visibleSize
+            assertEquals(size, d2.getRoot().rootTree().indexTree.root.visibleSize)
         }
     }
 
@@ -2379,14 +2379,14 @@ class JsonTreeTest {
             val sNodes = mutableListOf<Triple<String, Int, Boolean>>()
 
             d1.getRoot().rootTree().indexTree.traverseAll { node, _ ->
-                d1Nodes.add(Triple(node.toXml(), node.size, node.isRemoved))
+                d1Nodes.add(Triple(node.toXml(), node.visibleSize, node.isRemoved))
             }
             d2.getRoot().rootTree().indexTree.traverseAll { node, _ ->
-                d2Nodes.add(Triple(node.toXml(), node.size, node.isRemoved))
+                d2Nodes.add(Triple(node.toXml(), node.visibleSize, node.isRemoved))
             }
             val sRoot = d1.getRoot().target["t"].toByteString().toCrdtTree()
             sRoot.indexTree.traverseAll { node, _ ->
-                sNodes.add(Triple(node.toXml(), node.size, node.isRemoved))
+                sNodes.add(Triple(node.toXml(), node.visibleSize, node.isRemoved))
             }
 
             assertEquals(d1Nodes, d2Nodes)
@@ -2799,5 +2799,315 @@ class JsonTreeTest {
             val to: Int,
             val nodes: TreeNode? = null,
         )
+    }
+
+    // ===== Tree LWW Tests (from PR #1097) =====
+
+    @Test
+    fun test_lww_causal_deletion_preserves_original_timestamps() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Initial tree: <root><p><b>ab</b><i>cd</i><a>ef</a></p></root>
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("root") {
+                        element("p") {
+                            element("b") { text { "ab" } }
+                            element("i") { text { "cd" } }
+                            element("a") { text { "ef" } }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(
+                "<root><p><b>ab</b><i>cd</i><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                d2.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // First deletion by c1: delete <i>cd</i>
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(5, 9)
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            assertEquals(
+                "<root><p><b>ab</b><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // Second deletion by c2 (causal): delete <b>ab</b><a>ef</a>
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(1, 9)
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            assertEquals(
+                "<root><p></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                d2.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+        }
+    }
+
+    @Test
+    fun test_lww_same_level_complete_inclusion_larger_range_later() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Initial tree: <root><p><b>ab</b><i>cd</i><a>ef</a></p></root>
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("root") {
+                        element("p") {
+                            element("b") { text { "ab" } }
+                            element("i") { text { "cd" } }
+                            element("a") { text { "ef" } }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(
+                "<root><p><b>ab</b><i>cd</i><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // c1 deletes <i>cd</i> (smaller range first)
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(5, 9)
+            }.await()
+
+            // c2 deletes all nodes (larger range later)
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(1, 13)
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            // LWW: larger range (c2) wins, tree should be empty
+            assertEquals(
+                "<root><p></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                d2.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+        }
+    }
+
+    @Test
+    fun test_lww_same_level_complete_inclusion_smaller_range_later() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Initial tree: <root><p><b>ab</b><i>cd</i><a>ef</a></p></root>
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("root") {
+                        element("p") {
+                            element("b") { text { "ab" } }
+                            element("i") { text { "cd" } }
+                            element("a") { text { "ef" } }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(
+                "<root><p><b>ab</b><i>cd</i><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // c1 deletes all nodes (larger range first)
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(1, 13)
+            }.await()
+
+            // c2 deletes <i>cd</i> (smaller range later)
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(5, 9)
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            // All nodes should be deleted
+            assertEquals(
+                "<root><p></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                d2.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+        }
+    }
+
+    @Test
+    fun test_lww_same_level_partial_overlap() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Initial tree: <root><p><b>ab</b><i>cd</i><a>ef</a></p></root>
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("root") {
+                        element("p") {
+                            element("b") { text { "ab" } }
+                            element("i") { text { "cd" } }
+                            element("a") { text { "ef" } }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(
+                "<root><p><b>ab</b><i>cd</i><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // c1 deletes <b>ab</b><i>cd</i>
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(1, 9)
+            }.await()
+
+            // c2 deletes <i>cd</i><a>ef</a> (partial overlap)
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(5, 13)
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            // All nodes should be deleted due to LWW
+            assertEquals(
+                "<root><p></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                d2.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+        }
+    }
+
+    @Test
+    fun test_lww_ancestor_descendant_ancestor_later() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Initial tree: <root><p><p><b>ab</b></p><i>cd</i><a>ef</a></p></root>
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("root") {
+                        element("p") {
+                            element("p") {
+                                element("b") { text { "ab" } }
+                            }
+                            element("i") { text { "cd" } }
+                            element("a") { text { "ef" } }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(
+                "<root><p><p><b>ab</b></p><i>cd</i><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // c1 deletes inner <b>ab</b> (descendant first)
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(2, 6)
+            }.await()
+
+            // c2 deletes outer <p><b>ab</b></p><i>cd</i> (ancestor later)
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(1, 11)
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            // Ancestor deletion (c2) wins
+            assertEquals(
+                "<root><p><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                d2.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+        }
+    }
+
+    @Test
+    fun test_lww_ancestor_descendant_descendant_later() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Initial tree: <root><p><p><b>ab</b></p><i>cd</i><a>ef</a></p></root>
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("root") {
+                        element("p") {
+                            element("p") {
+                                element("b") { text { "ab" } }
+                            }
+                            element("i") { text { "cd" } }
+                            element("a") { text { "ef" } }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(
+                "<root><p><p><b>ab</b></p><i>cd</i><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // c1 deletes <p><b>ab</b></p><i>cd</i> (ancestor first)
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(1, 11)
+            }.await()
+
+            // c2 deletes inner <b>ab</b> (descendant later)
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").edit(2, 6)
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            // Both deletions apply
+            assertEquals(
+                "<root><p><a>ef</a></p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                d2.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+        }
     }
 }

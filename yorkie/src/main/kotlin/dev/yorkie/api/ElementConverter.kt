@@ -238,6 +238,8 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
         depthTable[this[i].depth] = nodes[i]
     }
     root.updateDescendantSize()
+    // NOTE: Also update totalSize to include tombstone nodes
+    root.updateDescendantSize(includeRemoved = true)
     return CrdtTree(root, InitialTimeTicket).root
 }
 

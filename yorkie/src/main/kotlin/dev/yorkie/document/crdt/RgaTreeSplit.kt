@@ -217,7 +217,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             return Pair(mutableListOf(), emptyMap())
         }
 
-        val isLocal = vector == null
+        // Treat missing or empty VersionVector as local operation.
+        val isLocal = vector == null || vector.size() == 0
 
         // 01. Collect nodes to remove and keep.
         val nodesToRemove = ArrayList<RgaTreeSplitNode<T>>()
@@ -225,8 +226,28 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val (leftEdge, rightEdge) = findEdgesOfCandidates(candidates)
         nodesToKeep.add(leftEdge)
         for (node in candidates) {
-            val creationKnown = isLocal || vector?.afterOrEqual(node.createdAt) == true
-            if (node.canRemove(creationKnown)) {
+            // Compute per-node creationKnown and tombstoneKnown
+            val creationKnown: Boolean
+
+            if (isLocal) {
+                creationKnown = true
+            } else {
+                val createdAtVV = vector?.get(node.createdAt.actorID.value)
+                creationKnown = createdAtVV != null && createdAtVV >= node.createdAt.lamport
+            }
+
+            var tombstoneKnown = false
+            val nodeRemovedAt = node.removedAt
+            if (nodeRemovedAt != null) {
+                val removedAtVV = vector?.get(nodeRemovedAt.actorID.value)
+                if (isLocal) {
+                    tombstoneKnown = true
+                } else if (removedAtVV != null && removedAtVV >= nodeRemovedAt.lamport) {
+                    tombstoneKnown = true
+                }
+            }
+
+            if (node.canRemove(editedAt, creationKnown, tombstoneKnown)) {
                 nodesToRemove.add(node)
             } else {
                 nodesToKeep.add(node)
@@ -241,11 +262,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
         for (node in nodesToRemove) {
             removedNodes[node.id] = node
-            val creationKnown = isLocal || vector?.afterOrEqual(node.createdAt) == true
-            node.remove(
-                removedAt = editedAt,
-                tombstoneKnown = node.isRemoved && creationKnown,
-            )
+            node.remove(removedAt = editedAt)
         }
 
         // 04. Clear the index tree of the given deletion boundaries.
@@ -531,14 +548,29 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
 
     /**
      * Checks if this [RgaTreeSplitNode] can be deleted or not.
+     *
+     * @param editedAt The time when the edit operation was executed
+     * @param creationKnown Whether the node's creation was visible at the operation's frontier
+     * @param tombstoneKnown Whether the prior tombstone was visible at the operation's frontier
+     *
+     * LWW: Allow overwrite only when tombstoneKnown is false and editedAt is newer.
      */
-    fun canRemove(creationKnown: Boolean): Boolean {
+    fun canRemove(
+        editedAt: TimeTicket,
+        creationKnown: Boolean,
+        tombstoneKnown: Boolean,
+    ): Boolean {
         // Skip if the node's creation was not visible to this operation.
         if (!creationKnown) {
             return false
         }
 
         if (_removedAt == null) {
+            return true
+        }
+
+        // Allow overwrite only when tombstoneKnown is false and editedAt is newer.
+        if (!tombstoneKnown && editedAt > _removedAt) {
             return true
         }
 
@@ -562,17 +594,13 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     }
 
     /**
-     * Removes the node of the given edited time.
+     * Removes the node with the given removedAt timestamp.
+     *
+     * Precondition: `canRemove` was checked before calling this method.
+     * This sets or overwrites removedAt if the new timestamp is newer.
      */
-    fun remove(removedAt: TimeTicket, tombstoneKnown: Boolean) {
-        if (_removedAt == null) {
-            _removedAt = removedAt
-            return
-        }
-
-        // Overwrite only if prior tombstone was not known
-        // (concurrent or unseen) and newer.
-        if (!tombstoneKnown && removedAt > _removedAt) {
+    fun remove(removedAt: TimeTicket) {
+        if (_removedAt == null || removedAt > _removedAt) {
             _removedAt = removedAt
         }
     }

@@ -69,27 +69,30 @@ public class JsonObject internal constructor(
         } else {
             CrdtPrimitive(value, executedAt)
         }
-        setAndRegister(key, primitive)
+        setAndRegister(key, primitive, executedAt)
     }
 
     /**
      * TODO(skhugh): we need to find a better way to handle this
      */
     public fun setNewObject(key: String): JsonObject {
-        val crdtObject = CrdtObject(context.issueTimeTicket(), rht = ElementRht())
-        setAndRegister(key, crdtObject)
+        val createdAt = context.issueTimeTicket()
+        val crdtObject = CrdtObject(createdAt = createdAt, memberNodes = ElementRht())
+        setAndRegister(key, crdtObject, createdAt)
         return crdtObject.toJsonElement(context)
     }
 
     public fun setNewArray(key: String): JsonArray {
-        val crdtArray = CrdtArray(context.issueTimeTicket())
-        setAndRegister(key, crdtArray)
+        val createdAt = context.issueTimeTicket()
+        val crdtArray = CrdtArray(createdAt)
+        setAndRegister(key, crdtArray, createdAt)
         return crdtArray.toJsonElement(context)
     }
 
     public fun setNewText(key: String): JsonText {
-        val crdtText = CrdtText(RgaTreeSplit(), context.issueTimeTicket())
-        setAndRegister(key, crdtText)
+        val createdAt = context.issueTimeTicket()
+        val crdtText = CrdtText(RgaTreeSplit(), createdAt)
+        setAndRegister(key, crdtText, createdAt)
         return crdtText.toJsonElement(context)
     }
 
@@ -102,23 +105,28 @@ public class JsonObject internal constructor(
     }
 
     private fun setNewCounterInternal(key: String, value: CounterValue): JsonCounter {
+        val createdAt = context.issueTimeTicket()
         val counter = if (value is Int) {
-            CrdtCounter(value, context.issueTimeTicket())
+            CrdtCounter(value, createdAt)
         } else {
-            CrdtCounter(value.toLong(), context.issueTimeTicket())
+            CrdtCounter(value.toLong(), createdAt)
         }
-        setAndRegister(key, counter)
+        setAndRegister(key, counter, createdAt)
         return counter.toJsonElement(context)
     }
 
     public fun setNewTree(key: String, initialRoot: JsonTree.ElementNode? = null): JsonTree {
         val ticket = context.issueTimeTicket()
         val tree = CrdtTree(JsonTree.buildRoot(initialRoot, context), ticket)
-        setAndRegister(key, tree)
+        setAndRegister(key, tree, ticket)
         return tree.toJsonElement(context)
     }
 
-    private fun setAndRegister(key: String, element: CrdtElement) {
+    private fun setAndRegister(
+        key: String,
+        element: CrdtElement,
+        createdAt: TimeTicket,
+    ) {
         checkYorkieError(
             !key.contains("."),
             YorkieException(
@@ -126,7 +134,7 @@ public class JsonObject internal constructor(
                 """key must not contain the ".".""",
             ),
         )
-        val removed = target.set(key, element)
+        val removed = target.set(key, element, createdAt)
         context.registerElement(element, target)
         removed?.let(context::registerRemovedElement)
         context.push(
@@ -134,7 +142,7 @@ public class JsonObject internal constructor(
                 key = key,
                 value = element.deepCopy(),
                 parentCreatedAt = target.createdAt,
-                executedAt = element.createdAt,
+                executedAt = createdAt,
             ),
         )
     }

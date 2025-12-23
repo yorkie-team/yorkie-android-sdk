@@ -187,6 +187,16 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     }
 
     /**
+     * Returns an iterator of the GC element pairs.
+     * This is used to ensure all GC elements are properly serialized.
+     */
+    fun getGCElementPairs(): Sequence<CrdtElementPair> {
+        return gcElementSetByCreatedAt.asSequence().mapNotNull { createdAt ->
+            elementPairMapByCreatedAt[createdAt]
+        }
+    }
+
+    /**
      * Copies itself deeply.
      */
     fun deepCopy(): CrdtRoot {

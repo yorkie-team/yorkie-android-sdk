@@ -97,7 +97,7 @@ public class JsonArray internal constructor(
     }
 
     public fun putNewObject(prevCreatedAt: TimeTicket? = null): JsonObject {
-        val obj = CrdtObject(context.issueTimeTicket(), rht = ElementRht())
+        val obj = CrdtObject(context.issueTimeTicket(), memberNodes = ElementRht())
         putCrdtElement(obj, prevCreatedAt)
         return obj.toJsonElement(context)
     }
@@ -147,7 +147,7 @@ public class JsonArray internal constructor(
     public fun setNewObject(index: Int): JsonObject {
         val createdAt = context.issueTimeTicket()
         val prevElement = getCrdtElement(index)
-        val obj = CrdtObject(createdAt, rht = ElementRht())
+        val obj = CrdtObject(createdAt, memberNodes = ElementRht())
         setValueInternal(prevElement, obj, createdAt)
         return obj.toJsonElement(context)
     }
@@ -252,7 +252,7 @@ public class JsonArray internal constructor(
 
         val ticket = context.issueTimeTicket()
         val element = CrdtPrimitive(
-            value = value,
+            _value = value,
             createdAt = ticket,
         )
         target.insertAfter(prev.createdAt, element)

@@ -21,7 +21,7 @@ class JsonTextTest {
 
     @Before
     fun setUp() {
-        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
         val text = CrdtText(RgaTreeSplit(), TimeTicket.InitialTimeTicket)
         target = JsonText(
             ChangeContext(ChangeID.InitialChangeID, CrdtRoot(obj)),

@@ -36,7 +36,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 8,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().live,
         )
@@ -47,7 +47,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 12,
-                meta = 72,
+                meta = 120,
             ),
             actual = document.getDocSize().live,
         )
@@ -58,7 +58,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 16,
-                meta = 96,
+                meta = 168,
             ),
             actual = document.getDocSize().live,
         )
@@ -69,7 +69,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 24,
-                meta = 120,
+                meta = 216,
             ),
             actual = document.getDocSize().live,
         )
@@ -80,7 +80,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 32,
-                meta = 144,
+                meta = 264,
             ),
             actual = document.getDocSize().live,
         )
@@ -91,7 +91,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 36,
-                meta = 168,
+                meta = 312,
             ),
             actual = document.getDocSize().live,
         )
@@ -102,7 +102,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 38,
-                meta = 192,
+                meta = 360,
             ),
             actual = document.getDocSize().live,
         )
@@ -113,7 +113,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 46,
-                meta = 216,
+                meta = 408,
             ),
             actual = document.getDocSize().live,
         )
@@ -124,14 +124,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 38,
-                meta = 192,
+                meta = 360,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 8,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().gc,
         )
@@ -142,14 +142,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 34,
-                meta = 168,
+                meta = 312,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 12,
-                meta = 96,
+                meta = 144,
             ),
             actual = document.getDocSize().gc,
         )
@@ -160,14 +160,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 30,
-                meta = 144,
+                meta = 264,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 16,
-                meta = 144,
+                meta = 216,
             ),
             actual = document.getDocSize().gc,
         )
@@ -178,14 +178,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 22,
-                meta = 120,
+                meta = 216,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 24,
-                meta = 192,
+                meta = 288,
             ),
             actual = document.getDocSize().gc,
         )
@@ -196,14 +196,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 14,
-                meta = 96,
+                meta = 168,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 32,
-                meta = 240,
+                meta = 360,
             ),
             actual = document.getDocSize().gc,
         )
@@ -214,14 +214,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 10,
-                meta = 72,
+                meta = 120,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 36,
-                meta = 288,
+                meta = 432,
             ),
             actual = document.getDocSize().gc,
         )
@@ -232,14 +232,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 8,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 38,
-                meta = 336,
+                meta = 504,
             ),
             actual = document.getDocSize().gc,
         )
@@ -257,7 +257,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 46,
-                meta = 384,
+                meta = 576,
             ),
             actual = document.getDocSize().gc,
         )
@@ -273,7 +273,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 2,
-                meta = 72,
+                meta = 96,
             ),
             actual = document.getDocSize().live,
         )
@@ -286,7 +286,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 0,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().live,
         )
@@ -308,7 +308,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 4,
-                meta = 72,
+                meta = 120,
             ),
             actual = document.getDocSize().live,
         )
@@ -320,14 +320,14 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 0,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().live,
         )
         assertEquals(
             expected = DataSize(
                 data = 4,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().gc,
         )
@@ -341,7 +341,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 4,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().live,
         )
@@ -359,7 +359,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 4,
-                meta = 48,
+                meta = 72,
             ),
             actual = document.getDocSize().gc,
         )
@@ -375,7 +375,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 20,
-                meta = 72,
+                meta = 96,
             ),
             actual = document.getDocSize().live,
         )
@@ -387,7 +387,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 22,
-                meta = 120,
+                meta = 144,
             ),
             actual = document.getDocSize().live,
         )
@@ -399,7 +399,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 12,
-                meta = 96,
+                meta = 120,
             ),
             actual = document.getDocSize().live,
         )
@@ -418,7 +418,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 28,
-                meta = 120,
+                meta = 144,
             ),
             actual = document.getDocSize().live,
         )
@@ -441,7 +441,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 44,
-                meta = 168,
+                meta = 192,
             ),
             actual = document.getDocSize().live,
         )
@@ -471,7 +471,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 0,
-                meta = 96,
+                meta = 120,
             ),
             actual = document.getDocSize().live,
         )
@@ -493,7 +493,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 20,
-                meta = 120,
+                meta = 144,
             ),
             actual = document.getDocSize().live,
         )
@@ -515,7 +515,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 10,
-                meta = 144,
+                meta = 168,
             ),
             actual = document.getDocSize().live,
         )
@@ -546,7 +546,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 18,
-                meta = 192,
+                meta = 216,
             ),
             actual = document.getDocSize().live,
         )
@@ -562,7 +562,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 10,
-                meta = 144,
+                meta = 168,
             ),
             actual = document.getDocSize().live,
         )
@@ -585,7 +585,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 26,
-                meta = 168,
+                meta = 192,
             ),
             actual = document.getDocSize().live,
         )
@@ -601,7 +601,7 @@ class DocumentSizeTest {
         assertEquals(
             expected = DataSize(
                 data = 10,
-                meta = 144,
+                meta = 168,
             ),
             actual = document.getDocSize().live,
         )

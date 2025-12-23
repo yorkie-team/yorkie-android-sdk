@@ -95,7 +95,8 @@ public class Document(
     public val events = eventStream.asSharedFlow()
 
     @Volatile
-    private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = ElementRht()))
+    private var root: CrdtRoot =
+        CrdtRoot(CrdtObject(createdAt = InitialTimeTicket, memberNodes = ElementRht()))
 
     @get:VisibleForTesting
     @Volatile

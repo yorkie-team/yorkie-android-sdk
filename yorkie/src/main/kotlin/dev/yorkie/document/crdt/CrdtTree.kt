@@ -34,8 +34,8 @@ internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
 internal data class CrdtTree(
     val root: CrdtTreeNode,
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket? = null,
-    override var _removedAt: TimeTicket? = null,
+    override var movedAt: TimeTicket? = null,
+    override var removedAt: TimeTicket? = null,
 ) : CrdtElement(), GCParent<CrdtTreeNode>, GCCrdtElement {
 
     override val gcPairs: List<GCPair<*>>
@@ -647,7 +647,9 @@ internal data class CrdtTree(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {
-        return copy(root = root.deepCopy())
+        return copy(
+            root = root.deepCopy(),
+        )
     }
 
     override fun getDataSize(): DataSize {

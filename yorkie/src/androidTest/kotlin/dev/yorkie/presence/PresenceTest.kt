@@ -242,4 +242,108 @@ class PresenceTest {
             c1.close()
         }
     }
+
+    @Test
+    fun test_presence_manual_sync_mode() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            // Create presences for the same room
+            val presenceKey = "presence-manual-${UUID.randomUUID()}".toDocKey()
+            val p1 = Presence(presenceKey)
+            val p2 = Presence(presenceKey)
+
+            // Attach client1 with manual sync mode (no watch stream)
+            c1.attachPresence(p1, isRealtime = false).await()
+            assertEquals(1L, p1.getCount())
+
+            // Attach client2 with manual sync mode
+            c2.attachPresence(p2, isRealtime = false).await()
+            assertEquals(2L, p2.getCount())
+
+            // In manual mode, p1's count doesn't update automatically
+            // even though p2 was attached
+            delay(500)
+            assertEquals(1L, p1.getCount())
+
+            // Must call syncPresence() explicitly to refresh TTL and fetch latest count
+            c1.syncAsync(p1).await()
+            assertEquals(2L, p1.getCount())
+
+            // Detach p2 and verify p1 doesn't auto-update
+            c2.detachPresence(p2).await()
+            delay(500)
+            assertEquals(2L, p1.getCount())
+
+            // Sync to refresh TTL and fetch latest count after c2 detached
+            c1.syncAsync(p1).await()
+            assertEquals(1L, p1.getCount())
+
+            // Cleanup
+            c1.detachPresence(p1).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c1.close()
+            c2.close()
+        }
+    }
+
+    @Test
+    fun test_presence_realtime_vs_manual_mode_comparison() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val c3 = createClient()
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+            c3.activateAsync().await()
+
+            val presenceKey = "presence-mode-compare-${UUID.randomUUID()}".toDocKey()
+            val realtimePresence = Presence(presenceKey)
+            val manualPresence = Presence(presenceKey)
+            val thirdPresence = Presence(presenceKey)
+
+            // c1: Attach with realtime mode (default)
+            c1.attachPresence(realtimePresence).await()
+            assertEquals(1L, realtimePresence.getCount())
+
+            // c2: Attach with manual mode
+            c2.attachPresence(manualPresence, isRealtime = false).await()
+            assertEquals(2L, manualPresence.getCount())
+
+            // c1's realtime presence should automatically receive the update
+            delay(500)
+            assertEquals(2L, realtimePresence.getCount())
+
+            // c2's manual presence doesn't receive updates
+            assertEquals(2L, manualPresence.getCount())
+
+            // c3: Attach another client
+            c3.attachPresence(thirdPresence, isRealtime = false).await()
+            assertEquals(3L, thirdPresence.getCount())
+
+            // c1's realtime presence receives the update automatically
+            delay(500)
+            assertEquals(3L, realtimePresence.getCount())
+
+            // c2's manual presence still doesn't update
+            assertEquals(2L, manualPresence.getCount())
+
+            // Cleanup
+            c1.detachPresence(realtimePresence).await()
+            c2.detachPresence(manualPresence).await()
+            c3.detachPresence(thirdPresence).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c3.deactivateAsync().await()
+            c1.close()
+            c2.close()
+            c3.close()
+        }
+    }
 }

@@ -133,7 +133,7 @@ class IndexTreeTest {
                 ),
             ),
         )
-        for (i in 0 until tree.root.size) {
+        for (i in 0 until tree.root.visibleSize) {
             val pos = tree.findTreePos(i, true)
             assertEquals(i, tree.indexOf(pos))
         }
@@ -380,9 +380,13 @@ class IndexTreeTest {
     }
 
     private fun IndexTree<CrdtTreeNode>.tokensBetween(from: Int, to: Int) = buildList {
-        tokensBetween(from, to) { (node, tokenType), _ ->
-            add("${node.toDiagnostic()}:$tokenType")
-        }
+        tokensBetween(
+            from = from,
+            to = to,
+            action = { (node, tokenType), _ ->
+                add("${node.toDiagnostic()}:$tokenType")
+            },
+        )
     }
 
     companion object {

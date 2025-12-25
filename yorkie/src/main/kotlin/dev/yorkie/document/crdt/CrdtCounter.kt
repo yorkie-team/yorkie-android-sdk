@@ -12,19 +12,13 @@ internal typealias CounterValue = Number
  * that can be incremented or decremented.
  */
 @Suppress("DataClassPrivateConstructor")
-internal data class CrdtCounter private constructor(
-    private var _value: CounterValue,
+internal data class CrdtCounter(
+    var value: CounterValue,
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket? = null,
-    override var _removedAt: TimeTicket? = null,
+    override var movedAt: TimeTicket? = null,
+    override var removedAt: TimeTicket? = null,
 ) : CrdtElement() {
-    var value: CounterValue
-        get() = _value
-        private set(value) {
-            _value = value
-        }
-
-    val type = _value.counterType()
+    val type = value.counterType()
 
     fun toBytes(): ByteArray {
         return when (type) {
@@ -70,21 +64,6 @@ internal data class CrdtCounter private constructor(
     )
 
     companion object {
-
-        operator fun invoke(
-            value: Int,
-            createdAt: TimeTicket,
-            _movedAt: TimeTicket? = null,
-            _removedAt: TimeTicket? = null,
-        ) = CrdtCounter(value, createdAt, _movedAt, _removedAt)
-
-        operator fun invoke(
-            value: Long,
-            createdAt: TimeTicket,
-            _movedAt: TimeTicket? = null,
-            _removedAt: TimeTicket? = null,
-        ) = CrdtCounter(value, createdAt, _movedAt, _removedAt)
-
         private fun CounterValue.counterType() = when (this) {
             is Int -> CounterType.Int
             else -> CounterType.Long

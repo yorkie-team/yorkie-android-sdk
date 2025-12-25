@@ -8,8 +8,8 @@ import dev.yorkie.util.DataSize
  */
 internal data class CrdtArray(
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket? = null,
-    override var _removedAt: TimeTicket? = null,
+    override var movedAt: TimeTicket? = null,
+    override var removedAt: TimeTicket? = null,
     val elements: RgaTreeList = RgaTreeList(),
 ) : CrdtContainer(), Iterable<CrdtElement> {
     val head
@@ -124,12 +124,13 @@ internal data class CrdtArray(
     }
 
     override fun deepCopy(): CrdtElement {
-        val elementsClone = RgaTreeList().apply {
-            elements.forEach { node ->
-                insertAfter(lastCreatedAt, node.value.deepCopy())
-            }
-        }
-        return copy(elements = elementsClone)
+        return copy(
+            elements = RgaTreeList().apply {
+                elements.forEach { node ->
+                    insertAfter(lastCreatedAt, node.value.deepCopy())
+                }
+            },
+        )
     }
 
     override fun iterator(): Iterator<CrdtElement> {

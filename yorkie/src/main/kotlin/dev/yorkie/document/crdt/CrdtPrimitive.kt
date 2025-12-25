@@ -14,11 +14,11 @@ import java.util.Date
  * included in [CrdtPrimitive] can be set to the document.
  */
 @Suppress("DataClassPrivateConstructor")
-internal data class CrdtPrimitive private constructor(
+internal data class CrdtPrimitive(
     private val _value: Any?,
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket? = null,
-    override var _removedAt: TimeTicket? = null,
+    override var movedAt: TimeTicket? = null,
+    override var removedAt: TimeTicket? = null,
 ) : CrdtElement() {
     val value: Any? = _value.sanitized()
 
@@ -41,14 +41,20 @@ internal data class CrdtPrimitive private constructor(
     override fun deepCopy(): CrdtElement {
         return when (value) {
             is ByteString -> {
-                copy(_value = value.toByteArray().toByteString())
+                copy(
+                    _value = value.toByteArray().toByteString(),
+                )
             }
 
             is Date -> {
-                copy(_value = value.clone())
+                copy(
+                    _value = value.clone(),
+                )
             }
 
-            else -> copy()
+            else -> {
+                copy()
+            }
         }
     }
 
@@ -127,13 +133,6 @@ internal data class CrdtPrimitive private constructor(
             Type.Long,
             Type.Double,
         )
-
-        operator fun invoke(
-            value: Any?,
-            createdAt: TimeTicket,
-            _movedAt: TimeTicket? = null,
-            _removedAt: TimeTicket? = null,
-        ) = CrdtPrimitive(value.sanitized(), createdAt, _movedAt, _removedAt)
 
         private fun Any?.sanitized(): Any? = when (this) {
             is Boolean -> this

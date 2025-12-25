@@ -15,17 +15,22 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
      * Sets the [value] using the given [key].
      * If the object exists in [nodeMapByKey] by same [key] then return [CrdtElement], otherwise null.
      */
-    operator fun set(key: String, value: T): T? {
+    fun set(
+        key: String,
+        value: T,
+        executedAt: TimeTicket,
+    ): T? {
         var removed: T? = null
         val node = nodeMapByKey[key]
-        if (node != null && !node.isRemoved && node.remove(value.createdAt)) {
+        if (node != null && !node.isRemoved && node.remove(executedAt)) {
             removed = node.value
         }
 
         val newNode = Node(key, value)
         nodeMapByCreatedAt[value.createdAt] = newNode
-        if (node == null || node.value.createdAt < value.createdAt) {
+        if (node == null || node.value.getPositionedAt() < executedAt) {
             nodeMapByKey[key] = newNode
+            value.movedAt = executedAt
         }
         return removed
     }
@@ -113,8 +118,30 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
         return nodeMapByKey.values.asSequence()
     }
 
+    /**
+     * Returns an iterator over [nodeMapByCreatedAt]'s values.
+     * This ensures all nodes including tombstones are properly iterated.
+     */
     override fun iterator(): Iterator<Node<T>> {
-        return nodeMapByKey.values.iterator()
+        return nodeMapByCreatedAt.values.iterator()
+    }
+
+    /**
+     * Copies itself deeply.
+     */
+    fun deepCopy(): ElementRht<T> {
+        return ElementRht<T>().apply {
+            for ((_, node) in this@ElementRht.nodeMapByCreatedAt) {
+                val newNode = Node(node.strKey, node.value.deepCopy())
+                nodeMapByCreatedAt[node.value.createdAt] = newNode as Node<T>
+            }
+
+            for ((key, node) in this@ElementRht.nodeMapByKey) {
+                nodeMapByCreatedAt[node.value.createdAt]?.let {
+                    nodeMapByKey[key] = it
+                }
+            }
+        }
     }
 
     override fun equals(other: Any?): Boolean {

@@ -20,7 +20,7 @@ class JsonObjectTest {
 
     @Before
     fun setUp() {
-        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
         target = JsonObject(
             ChangeContext(ChangeID.InitialChangeID, CrdtRoot(obj)),
             obj,

@@ -14,14 +14,18 @@ class CrdtRootTest {
     @Suppress("ktlint:standard:property-naming")
     @Test
     fun `basic test`() {
-        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht()))
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
         val cc = ChangeContext(ChangeID.InitialChangeID, root)
         assertNull(root.findByCreatedAt(TimeTicket.MaxTimeTicket))
         assertEquals("", root.createPath(TimeTicket.MaxTimeTicket))
 
         // set '$.k1'
         val k1 = CrdtPrimitive("k1", cc.issueTimeTicket())
-        root.rootObject["k1"] = k1
+        root.rootObject.set(
+            key = "k1",
+            value = k1,
+            executedAt = cc.issueTimeTicket(),
+        )
         root.registerElement(k1, root.rootObject)
         assertEquals(2, root.elementMapSize)
         assertEquals(k1, root.findByCreatedAt(k1.createdAt))
@@ -35,8 +39,12 @@ class CrdtRootTest {
         assertNull(root.findByCreatedAt(k1.createdAt))
 
         // set '$.k2'
-        val k2 = CrdtObject(cc.issueTimeTicket(), rht = ElementRht())
-        root.rootObject["k2"] = k2
+        val k2 = CrdtObject(cc.issueTimeTicket(), memberNodes = ElementRht())
+        root.rootObject.set(
+            key = "k2",
+            value = k2,
+            executedAt = cc.issueTimeTicket(),
+        )
         root.registerElement(k2, root.rootObject)
         assertEquals(2, root.elementMapSize)
         assertEquals(k2, root.findByCreatedAt(k2.createdAt))
@@ -45,7 +53,11 @@ class CrdtRootTest {
 
         // set '$.k2.1'
         val k2_1 = CrdtArray(cc.issueTimeTicket())
-        k2["1"] = k2_1
+        k2.set(
+            key = "1",
+            value = k2_1,
+            executedAt = cc.issueTimeTicket(),
+        )
         root.registerElement(k2_1, k2)
         assertEquals(3, root.elementMapSize)
         assertEquals(k2_1, root.findByCreatedAt(k2_1.createdAt))
@@ -70,9 +82,17 @@ class CrdtRootTest {
 
     @Test
     fun `test gc`() {
-        val obj = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
-        obj["k1"] = CrdtPrimitive("v1", TimeTicket.InitialTimeTicket.copy(lamport = 1))
-        obj["k2"] = CrdtPrimitive("v2", TimeTicket.InitialTimeTicket.copy(lamport = 2))
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
+        obj.set(
+            key = "k1",
+            value = CrdtPrimitive("v1", TimeTicket.InitialTimeTicket.copy(lamport = 1)),
+            executedAt = TimeTicket.InitialTimeTicket.copy(lamport = 1),
+        )
+        obj.set(
+            key = "k2",
+            value = CrdtPrimitive("v2", TimeTicket.InitialTimeTicket.copy(lamport = 2)),
+            executedAt = TimeTicket.InitialTimeTicket.copy(lamport = 2),
+        )
         val root = CrdtRoot(obj)
         obj["k1"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 3))
         obj["k2"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))

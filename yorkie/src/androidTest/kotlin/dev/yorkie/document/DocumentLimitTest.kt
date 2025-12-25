@@ -134,7 +134,7 @@ class DocumentLimitTest {
             )
             val project = createProjectResponse["project"] as Map<String, Any>
             val projectId = project["id"] as String
-            val sizeLimit = 76
+            val sizeLimit = 100
 
             client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
@@ -167,7 +167,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 0,
-                    meta = 48,
+                    meta = 72,
                 ),
                 actual = document.getDocSize().live,
             )
@@ -188,7 +188,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = YorkieException(
                     code = YorkieException.Code.ErrDocumentSizeExceedsLimit,
-                    errorMessage = "document size exceeded: 92 > 76",
+                    errorMessage = "document size exceeded: 116 > 100",
                 ),
                 actual = exception,
             )
@@ -214,7 +214,7 @@ class DocumentLimitTest {
             )
             val project = createProjectResponse["project"] as Map<String, Any>
             val projectId = project["id"] as String
-            val sizeLimit = 76
+            val sizeLimit = 100
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
 
@@ -259,7 +259,7 @@ class DocumentLimitTest {
             client1.syncAsync().await()
             client2.syncAsync().await()
             assertEquals(
-                expected = 48,
+                expected = 72,
                 actual = totalDocSize(document1.getDocSize()),
             )
 
@@ -270,7 +270,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 4,
-                    meta = 72,
+                    meta = 96,
                 ),
                 actual = document1.getDocSize().live,
             )
@@ -283,7 +283,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 2,
-                    meta = 72,
+                    meta = 96,
                 ),
                 actual = document2.getDocSize().live,
             )
@@ -292,7 +292,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 6,
-                    meta = 96,
+                    meta = 120,
                 ),
                 actual = document2.getDocSize().live,
             )
@@ -302,7 +302,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 6,
-                    meta = 96,
+                    meta = 120,
                 ),
                 actual = document1.getDocSize().live,
             )
@@ -319,7 +319,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = YorkieException(
                     code = YorkieException.Code.ErrDocumentSizeExceedsLimit,
-                    errorMessage = "document size exceeded: 128 > 76",
+                    errorMessage = "document size exceeded: 152 > 100",
                 ),
                 actual = exception,
             )

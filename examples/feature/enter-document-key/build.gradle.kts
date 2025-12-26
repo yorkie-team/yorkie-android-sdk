@@ -1,10 +1,10 @@
 plugins {
-    alias(libs.plugins.yorkie.android.feature)
-    alias(libs.plugins.yorkie.android.library.compose)
+    alias(libs.plugins.yorkie.examples.android.feature)
+    alias(libs.plugins.yorkie.examples.android.library.compose)
 }
 
 android {
-    namespace = "com.example.feature.enterdocumentkey"
+    namespace = "dev.yorkie.example.feature.enterdocumentkey"
 }
 
 dependencies {

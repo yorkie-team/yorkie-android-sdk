@@ -18,8 +18,8 @@ import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.bundling.Zip
 import org.gradle.kotlin.dsl.configure
-import org.gradle.kotlin.dsl.create
 import org.gradle.kotlin.dsl.getByType
+import org.gradle.kotlin.dsl.named
 import org.gradle.kotlin.dsl.register
 import org.gradle.plugins.signing.SigningExtension
 
@@ -31,19 +31,21 @@ internal fun Project.configureMavenPublish() {
         layout.buildDirectory.dir("maven/artifacts").get().toString()
     val mavenSnapshotPublishUrl = "https://central.sonatype.com/repository/maven-snapshots/"
 
-    // Define Sonatype credentials
-    val sonatypeUsername = System.getenv("MAVEN_USERNAME").orEmpty()
-    val sonatypePassword = System.getenv("MAVEN_PASSWORD").orEmpty()
+    // Define Sonatype credentials - use providers for configuration cache compatibility
+    val sonatypeUsername = providers.environmentVariable("MAVEN_USERNAME").orElse("")
+    val sonatypePassword = providers.environmentVariable("MAVEN_PASSWORD").orElse("")
 
-    afterEvaluate {
+    // Use pluginManager.withPlugin instead of afterEvaluate for configuration cache compatibility
+    // This ensures publishing is configured after the android library plugin is applied
+    pluginManager.withPlugin("com.android.library") {
         configurePublishing(
             projectVersion = projectVersion,
             mavenReleasePublishUrl = mavenReleasePublishUrl,
             mavenSnapshotPublishUrl = mavenSnapshotPublishUrl,
-            sonatypeUsername = sonatypeUsername,
-            sonatypePassword = sonatypePassword,
+            sonatypeUsername = sonatypeUsername.get(),
+            sonatypePassword = sonatypePassword.get(),
             publishingExtension =
-            extensions.findByType(PublishingExtension::class.java) as PublishingExtension,
+                extensions.findByType(PublishingExtension::class.java) as PublishingExtension,
         )
     }
 
@@ -52,8 +54,8 @@ internal fun Project.configureMavenPublish() {
     registerUploadToCentralPortalTask(
         projectVersion = projectVersion,
         mavenReleasePublishUrl = mavenReleasePublishUrl,
-        sonatypeUsername = sonatypeUsername,
-        sonatypePassword = sonatypePassword,
+        sonatypeUsername = sonatypeUsername.get(),
+        sonatypePassword = sonatypePassword.get(),
     )
 }
 
@@ -81,8 +83,8 @@ private fun Project.configurePublishing(
             }
         }
 
-        publications.create<MavenPublication>("release") {
-            from(components.getByName("release"))
+        // Use register instead of create for lazy configuration (configuration cache friendly)
+        publications.register<MavenPublication>("release") {
             groupId = project.findProperty("GROUP")?.toString() ?: ""
             artifactId =
                 project.findProperty("POM_ARTIFACT_ID")?.toString() ?: project.name
@@ -136,23 +138,45 @@ private fun Project.configurePublishing(
                 }
             }
         }
+
+        // Bind the Android release component to the publication lazily
+        // This is configuration cache compatible as it uses configureEach
+        components.matching { it.name == "release" }.configureEach {
+            publications.named<MavenPublication>("release") {
+                from(this@configureEach)
+            }
+        }
     }
 }
 
 private fun Project.configureSigning() {
-    // Configure signing only for publish tasks (not for publishToMavenLocal)
-    val isPublishTask = gradle.startParameter.taskNames.any {
-        it.contains("publish") && !it.contains("MavenLocal")
-    }
-    if (isPublishTask) {
-        extensions.configure<SigningExtension> {
+    // Use providers for environment variables (configuration cache compatible)
+    val pgpKeyId = providers.environmentVariable("PGP_KEY_ID")
+    val pgpSecretKey = providers.environmentVariable("PGP_SECRET_KEY")
+    val pgpPassword = providers.environmentVariable("PGP_PASSWORD")
+
+    extensions.configure<SigningExtension> {
+        // Only configure signing if credentials are available
+        if (pgpSecretKey.isPresent) {
             useInMemoryPgpKeys(
-                System.getenv("PGP_KEY_ID"),
-                System.getenv("PGP_SECRET_KEY"),
-                System.getenv("PGP_PASSWORD"),
+                pgpKeyId.orNull,
+                pgpSecretKey.get(),
+                pgpPassword.orNull,
             )
             sign(extensions.getByType<PublishingExtension>().publications)
         }
+
+        // Make signing required only for remote publishing (not MavenLocal)
+        // The Callable is evaluated lazily at execution time, making it configuration cache compatible
+        setRequired(
+            {
+                gradle.taskGraph.allTasks.any { task ->
+                    task.name.contains("publish") &&
+                        task.name.contains("CentralPortal") &&
+                        !task.name.contains("MavenLocal")
+                }
+            },
+        )
     }
 }
 

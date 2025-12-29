@@ -14,18 +14,6 @@ class ExamplesAndroidLibraryConventionPlugin : Plugin<Project> {
 
             extensions.configure<LibraryExtension> {
                 configureKotlinAndroid(this)
-
-                // Configure Android library publishing
-                publishing {
-                    singleVariant("release") {
-                        withSourcesJar()
-                        withJavadocJar()
-                    }
-                }
-
-                defaultConfig {
-                    consumerProguardFiles("proguard-rules.pro")
-                }
             }
         }
     }

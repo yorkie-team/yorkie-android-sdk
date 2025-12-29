@@ -16,12 +16,12 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        mavenLocal()
     }
 }
-rootProject.name = "Yorkie Android SDK"
+rootProject.name = "yorkie-android-sdk"
 
-include(":examples:kanban")
+enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+
 include(":examples:todomvc")
 include(":examples:simultaneous-cursors")
 include(":examples:scheduler")

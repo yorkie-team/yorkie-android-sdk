@@ -1,13 +1,15 @@
+import dev.yorkie.dsl.implementation
+
 plugins {
-    alias(libs.plugins.yorkie.android.application)
-    alias(libs.plugins.yorkie.android.application.compose)
+    alias(libs.plugins.yorkie.examples.android.application)
+    alias(libs.plugins.yorkie.examples.android.application.compose)
 }
 
 android {
-    namespace = "com.example.todomvc"
+    namespace = "dev.yorkie.example.todomvc"
 
     defaultConfig {
-        applicationId = "com.example.todomvc"
+        applicationId = "dev.yorkie.example.todomvc"
         versionCode = 1
         versionName = "1.0.0"
     }
@@ -25,8 +27,8 @@ android {
 }
 
 dependencies {
-    implementation(project(":yorkie"))
-    implementation(project(":examples:feature:enter-document-key"))
+    implementation(projects.yorkie)
+    implementation(projects.examples.feature.enterDocumentKey)
 
     implementation(libs.androidx.core)
     implementation(libs.androidx.appcompat)
@@ -39,6 +41,5 @@ dependencies {
 
     implementation(libs.androidx.compose.material)
     implementation(libs.androidx.compose.material.icons.extended)
-    implementation(libs.androidx.navigation.compose)
     implementation(libs.timber)
 }

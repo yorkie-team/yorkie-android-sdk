@@ -18,4 +18,3 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
         }
     }
 }
-

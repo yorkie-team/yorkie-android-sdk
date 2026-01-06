@@ -22,6 +22,11 @@ fun DependencyHandler.implementation(
     dependencyConfiguration: (ExternalModuleDependency.() -> Unit)? = null,
 ): Dependency? = dependAs("implementation", notation, dependencyConfiguration)
 
+fun DependencyHandler.api(
+    notation: Any,
+    dependencyConfiguration: (ExternalModuleDependency.() -> Unit)? = null,
+): Dependency? = dependAs("api", notation, dependencyConfiguration)
+
 fun DependencyHandler.debugImplementation(
     notation: Any,
     dependencyConfiguration: (ExternalModuleDependency.() -> Unit)? = null,

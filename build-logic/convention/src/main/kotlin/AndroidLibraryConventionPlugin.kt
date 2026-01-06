@@ -14,6 +14,15 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
 
             extensions.configure<LibraryExtension> {
                 configureKotlinAndroid(this)
+
+                // Configure Android library publishing for maven-publish compatibility
+                // This makes the "release" component available without afterEvaluate
+                publishing {
+                    singleVariant("release") {
+                        withSourcesJar()
+                        withJavadocJar()
+                    }
+                }
             }
         }
     }

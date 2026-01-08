@@ -9,8 +9,12 @@ import dev.yorkie.document.operation.OperationInfo
  * This adapter bridges the gap between the editor's internal data model and
  * Yorkie's Tree data structure, enabling bidirectional synchronization.
  *
- * For Milestone 1, this provides the basic structure for event subscription.
- * Future milestones will add operation conversion methods.
+ * ## Milestone 1 Features:
+ * - Basic structure for event subscription
+ *
+ * ## Milestone 2 Features:
+ * - Editor content access for conversion
+ * - Local operation handling
  */
 public interface EditorAdapter {
 
@@ -54,24 +58,50 @@ public interface EditorAdapter {
      * Unsubscribe from editor change events.
      */
     public fun unsubscribeFromChanges()
+
+    // ========== Milestone 2: Content Access Methods ==========
+
+    /**
+     * Get the current editor content as plain text.
+     *
+     * This method is used by the plugin to:
+     * - Initialize the Yorkie tree with editor content
+     * - Verify consistency between editor and Yorkie tree
+     *
+     * @return The current content of the editor
+     */
+    public fun getContent(): EditorContent
+
+    /**
+     * Set the editor content from the given EditorContent.
+     *
+     * This is called when the tree needs to be synchronized to the editor,
+     * such as on initialization or snapshot.
+     *
+     * @param content The content to set in the editor
+     */
+    public fun setContent(content: EditorContent)
 }
 
 /**
  * Listener interface for editor change events.
  *
  * Editors implement this to notify the plugin about local changes.
+ *
+ * ## Milestone 2 Features:
+ * - Typed operation handling with EditorOperation
  */
 public interface EditorChangeListener {
 
     /**
      * Called when the user makes a local edit to the document.
      *
-     * For Milestone 1, this is a placeholder. Milestone 2 will implement
-     * the actual operation conversion from editor operations to Yorkie operations.
+     * For Milestone 2, this handles typed EditorOperation for conversion
+     * to Yorkie tree operations.
      *
-     * @param changeInfo Information about the change (editor-specific format)
+     * @param operation The operation representing the local change
      */
-    public fun onLocalChange(changeInfo: Any)
+    public suspend fun onLocalChange(operation: EditorOperation)
 
     /**
      * Called when the user's selection or cursor position changes.

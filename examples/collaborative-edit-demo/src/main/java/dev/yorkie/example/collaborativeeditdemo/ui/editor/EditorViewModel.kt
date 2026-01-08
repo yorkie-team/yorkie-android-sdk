@@ -23,6 +23,8 @@ import dev.yorkie.collaborative.editing.CollaborativeEditEvent
 import dev.yorkie.collaborative.editing.CollaborativeEditPlugin
 import dev.yorkie.collaborative.editing.EditorAdapter
 import dev.yorkie.collaborative.editing.EditorChangeListener
+import dev.yorkie.collaborative.editing.EditorContent
+import dev.yorkie.collaborative.editing.EditorOperation
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.operation.OperationInfo
@@ -78,6 +80,10 @@ class EditorViewModel(
 
     /**
      * Editor adapter that bridges the plugin with this ViewModel.
+     *
+     * Note: This demo uses JsonText for text editing, not JsonTree.
+     * The tree-related methods from Milestone 2 are implemented but delegate
+     * to the existing text-based synchronization logic.
      */
     private val editorAdapter = object : EditorAdapter {
         private var listener: EditorChangeListener? = null
@@ -111,8 +117,23 @@ class EditorViewModel(
             this.listener = null
         }
 
-        fun notifyLocalChange(info: Any) {
-            listener?.onLocalChange(info)
+        // ========== Milestone 2: Content Access Methods ==========
+
+        override fun getContent(): EditorContent {
+            return EditorContent(text = textFieldState.text.toString())
+        }
+
+        override fun setContent(content: EditorContent) {
+            textFieldState.edit {
+                replace(0, length, content.text)
+                placeCursorAtEnd()
+            }
+        }
+
+        // ========== Helper methods for notifying changes ==========
+
+        suspend fun notifyLocalChange(operation: EditorOperation) {
+            listener?.onLocalChange(operation)
         }
 
         fun notifySelectionChange(from: Int, to: Int) {
@@ -328,6 +349,9 @@ class EditorViewModel(
      */
     fun editContent(changes: TextFieldBuffer.ChangeList, newContent: CharSequence) {
         viewModelScope.launch {
+            // Collect all edit operations
+            val operations = mutableListOf<EditorOperation.Edit>()
+
             plugin.updateDocument { root ->
                 val text = root.getAs<JsonText>(CONTENT)
                 changes.forEachChange { range, originalRange ->
@@ -341,9 +365,25 @@ class EditorViewModel(
                         toIndex = originalRange.end,
                         content = content,
                     )
+                    // Track the operation for notification
+                    operations.add(
+                        EditorOperation.Edit(
+                            from = originalRange.start,
+                            to = originalRange.end,
+                            content = content,
+                        ),
+                    )
                 }
             }
-            editorAdapter.notifyLocalChange("text edit")
+
+            // Notify the plugin about local changes
+            if (operations.size == 1) {
+                editorAdapter.notifyLocalChange(operations.first())
+            } else if (operations.isNotEmpty()) {
+                editorAdapter.notifyLocalChange(
+                    EditorOperation.Batch(operations, "text edit"),
+                )
+            }
         }
     }
 

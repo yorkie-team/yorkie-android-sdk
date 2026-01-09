@@ -65,24 +65,24 @@
   <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.document</a><span class="delimiter">/</span><span class="current">Document</span></div>
   <div class="cover ">
     <h1 class="cover"><span><span>Document</span></span></h1>
-    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">Document</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>key<span class="token operator">: </span><a href="-key/index.html">Document.Key</a><span class="token punctuation">, </span></span><span class="parameter ">options<span class="token operator">: </span><a href="-options/index.html">Document.Options</a><span class="token operator"> = </span>Options()</span></span><span class="token punctuation">)</span> : <a href="https://developer.android.com/reference/kotlin/java/io/Closeable.html">Closeable</a></div><p class="paragraph">A CRDT-based data type. We can represent the model of the application and edit it even while offline.</p><p class="paragraph">A single-threaded, <span data-unresolved-link="dev.yorkie.document/Document/dispatcher/#/PointingToDeclaration/">Closeable</span> is used as default. Therefore you need to <a href="close.html">close</a> the document, when the document is no longer needed. If you provide your own <span data-unresolved-link="dev.yorkie.document/Document/dispatcher/#/PointingToDeclaration/">dispatcher</span>, it is up to you to decide <a href="close.html">close</a> is needed or not. snapshotDispatcher can be set differently from <span data-unresolved-link="dev.yorkie.document/Document/dispatcher/#/PointingToDeclaration/">dispatcher</span>, as snapshot operation can be much heavier than other operations.</p></div></div>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">Document</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">key<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">options<span class="token operator">: </span><a href="-options/index.html">Document.Options</a><span class="token operator"> = </span>Options()</span></span><span class="token punctuation">)</span> : <a href="https://developer.android.com/reference/kotlin/java/io/Closeable.html">Closeable</a>, <a href="../../dev.yorkie.core/-attachable/index.html">Attachable</a></div><p class="paragraph">A CRDT-based data type. We can represent the model of the application and edit it even while offline.</p><p class="paragraph">A single-threaded, <span data-unresolved-link="dev.yorkie.document/Document/dispatcher/#/PointingToDeclaration/">Closeable</span> is used as default. Therefore you need to <a href="close.html">close</a> the document, when the document is no longer needed. If you provide your own <span data-unresolved-link="dev.yorkie.document/Document/dispatcher/#/PointingToDeclaration/">dispatcher</span>, it is up to you to decide <a href="close.html">close</a> is needed or not. snapshotDispatcher can be set differently from <span data-unresolved-link="dev.yorkie.document/Document/dispatcher/#/PointingToDeclaration/">dispatcher</span>, as snapshot operation can be much heavier than other operations.</p></div></div>
   </div>
   <div class="tabbedcontent">
     <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
     <div class="tabs-section-body">
       <div data-togglable="CONSTRUCTOR">
         <h2 class="">Constructors</h2>
-        <div class="table"><a data-name="151468168%2FConstructors%2F-1590045667" anchor-label="Document" id="151468168%2FConstructors%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+        <div class="table"><a data-name="-1494750145%2FConstructors%2F-1590045667" anchor-label="Document" id="-1494750145%2FConstructors%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-togglable="CONSTRUCTOR" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
                   <div><a href="-document.html"><span><span>Document</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="151468168%2FConstructors%2F-1590045667"></span>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1494750145%2FConstructors%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">constructor</span><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">key<span class="token operator">: </span><a href="-key/index.html">Document.Key</a><span class="token punctuation">, </span></span><span class="parameter ">options<span class="token operator">: </span><a href="-options/index.html">Document.Options</a><span class="token operator"> = </span>Options()</span></span><span class="token punctuation">)</span></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">constructor</span><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">key<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">options<span class="token operator">: </span><a href="-options/index.html">Document.Options</a><span class="token operator"> = </span>Options()</span></span><span class="token punctuation">)</span></div></div></div>
                 </div>
               </div>
             </div>
@@ -106,21 +106,6 @@
               </div>
             </div>
           </div>
-<a data-name="-453375120%2FClasslikes%2F-1590045667" anchor-label="DocStatus" id="-453375120%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="-doc-status/index.html"><span>Doc</span><wbr></wbr><span><span>Status</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-453375120%2FClasslikes%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">enum </span><a href="-doc-status/index.html">DocStatus</a> : <a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-enum/index.html">Enum</a><span class="token operator">&lt;</span><a href="-doc-status/index.html">Document.DocStatus</a><span class="token operator">&gt; </span></div><div class="brief "><p class="paragraph">Represents the status of the <a href="index.html">Document</a>.</p></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
 <a data-name="1891071648%2FClasslikes%2F-1590045667" anchor-label="Event" id="1891071648%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
@@ -131,22 +116,7 @@
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">sealed </span><span class="token keyword">interface </span><a href="-event/index.html">Event</a></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-<a data-name="-1759805253%2FClasslikes%2F-1590045667" anchor-label="Key" id="-1759805253%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="-key/index.html"><span><span>Key</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1759805253%2FClasslikes%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.jvm/-jvm-inline/index.html"><span class="token annotation builtin">JvmInline</span></a></div></div><span class="token keyword">value </span><span class="token keyword">class </span><a href="-key/index.html">Key</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>value<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Represents a unique key to identify <a href="index.html">Document</a>.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">sealed </span><span class="token keyword">interface </span><a href="-event/index.html">Event</a> : <a href="../../dev.yorkie.core/-resource-event/index.html">ResourceEvent</a></div></div></div>
                 </div>
               </div>
             </div>
@@ -215,21 +185,6 @@
               </div>
             </div>
           </div>
-<a data-name="175742632%2FProperties%2F-1590045667" anchor-label="key" id="175742632%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="key.html"><span><span>key</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="175742632%2FProperties%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">val </span><a href="key.html">key</a><span class="token operator">: </span><a href="-key/index.html">Document.Key</a></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
 <a data-name="2123264812%2FProperties%2F-1590045667" anchor-label="myPresence" id="2123264812%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
@@ -260,26 +215,26 @@
               </div>
             </div>
           </div>
-<a data-name="1391556449%2FProperties%2F-1590045667" anchor-label="status" id="1391556449%2FProperties%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
-          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
-            <div class="main-subrow keyValue ">
-              <div class=""><span class="inline-flex">
-                  <div><a href="status.html"><span><span>status</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1391556449%2FProperties%2F-1590045667"></span>
-                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
-                  </span></span></div>
-              <div>
-                <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.jvm/-volatile/index.html"><span class="token annotation builtin">Volatile</span></a></div></div><span class="token keyword">var </span><a href="status.html">status</a><span class="token operator">: </span><a href="-doc-status/index.html">Document.DocStatus</a></div></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
       <div data-togglable="FUNCTION">
         <h2 class="">Functions</h2>
-        <div class="table"><a data-name="-1750173009%2FFunctions%2F-1590045667" anchor-label="close" id="-1750173009%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+        <div class="table"><a data-name="-1820385054%2FFunctions%2F-1590045667" anchor-label="applyStatus" id="-1820385054%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="apply-status.html"><span>apply</span><wbr></wbr><span><span>Status</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1820385054%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="apply-status.html"><span class="token function">applyStatus</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">status<span class="token operator">: </span><a href="../../dev.yorkie.core/-resource-status/index.html">ResourceStatus</a></span></span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1750173009%2FFunctions%2F-1590045667" anchor-label="close" id="-1750173009%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
@@ -339,6 +294,21 @@
               </div>
             </div>
           </div>
+<a data-name="1130673162%2FFunctions%2F-1590045667" anchor-label="getKey" id="1130673162%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="get-key.html"><span>get</span><wbr></wbr><span><span>Key</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1130673162%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="get-key.html"><span class="token function">getKey</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">getKey</code> returns the key of this document.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
 <a data-name="-1916472514%2FFunctions%2F-1590045667" anchor-label="getMaxSizePerDocument" id="-1916472514%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
@@ -379,7 +349,22 @@
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="get-schema-rules.html"><span class="token function">getSchemaRules</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../dev.yorkie.schema/-rule/index.html">Rule</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">getSchemaRules</code> gets the schema rules of this document.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="get-schema-rules.html"><span class="token function">getSchemaRules</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../dev.yorkie.document.schema/-rule/index.html">Rule</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">getSchemaRules</code> gets the schema rules of this document.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-136393025%2FFunctions%2F-1590045667" anchor-label="getStatus" id="-136393025%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="get-status.html"><span>get</span><wbr></wbr><span><span>Status</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-136393025%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="get-status.html"><span class="token function">getStatus</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../dev.yorkie.core/-resource-status/index.html">ResourceStatus</a></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">getStatus</code> returns the status of this document.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -414,6 +399,36 @@
               </div>
             </div>
           </div>
+<a data-name="1410363605%2FFunctions%2F-1590045667" anchor-label="hasLocalChanges" id="1410363605%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="has-local-changes.html"><span>has</span><wbr></wbr><span>Local</span><wbr></wbr><span><span>Changes</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1410363605%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="has-local-changes.html"><span class="token function">hasLocalChanges</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">hasLocalChanges</code> returns whether this document has local changes or not.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-222018397%2FFunctions%2F-1590045667" anchor-label="publish" id="-222018397%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="publish.html"><span><span>publish</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-222018397%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="publish.html"><span class="token function">publish</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">event<span class="token operator">: </span><a href="../../dev.yorkie.core/-resource-event/index.html">ResourceEvent</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">publish</code> publishes an event to notify observers about changes in this resource.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
 <a data-name="-776864776%2FFunctions%2F-1590045667" anchor-label="publishEvent" id="-776864776%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
@@ -425,6 +440,21 @@
               <div>
                 <div class="title">
                   <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="publish-event.html"><span class="token function">publishEvent</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">event<span class="token operator">: </span><a href="-event/index.html">Document.Event</a></span></span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1335836424%2FFunctions%2F-1590045667" anchor-label="setActor" id="1335836424%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="set-actor.html"><span>set</span><wbr></wbr><span><span>Actor</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1335836424%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="set-actor.html"><span class="token function">setActor</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">actorID<span class="token operator">: </span><a href="../../dev.yorkie.document.time/-actor-i-d/index.html">ActorID</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Sets <a href="set-actor.html">actorID</a> into this document. This is also applied in the <span data-unresolved-link="dev.yorkie.document/Document/localChanges/#/PointingToDeclaration/">localChanges</span> the document has.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -444,17 +474,17 @@
               </div>
             </div>
           </div>
-<a data-name="-1850620356%2FFunctions%2F-1590045667" anchor-label="setSchemaRules" id="-1850620356%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+<a data-name="-1160854517%2FFunctions%2F-1590045667" anchor-label="setSchemaRules" id="-1160854517%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
                   <div><a href="set-schema-rules.html"><span>set</span><wbr></wbr><span>Schema</span><wbr></wbr><span><span>Rules</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1850620356%2FFunctions%2F-1590045667"></span>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1160854517%2FFunctions%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="set-schema-rules.html"><span class="token function">setSchemaRules</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">rules<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../dev.yorkie.schema/-rule/index.html">Rule</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">setSchemaRules</code> sets the schema rules of this document.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="set-schema-rules.html"><span class="token function">setSchemaRules</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">rules<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../dev.yorkie.document.schema/-rule/index.html">Rule</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">setSchemaRules</code> sets the schema rules of this document.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -474,17 +504,17 @@
               </div>
             </div>
           </div>
-<a data-name="-1153655260%2FFunctions%2F-1590045667" anchor-label="updateAsync" id="-1153655260%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+<a data-name="-2086546980%2FFunctions%2F-1590045667" anchor-label="updateAsync" id="-2086546980%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
                   <div><a href="update-async.html"><span>update</span><wbr></wbr><span><span>Async</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1153655260%2FFunctions%2F-1590045667"></span>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-2086546980%2FFunctions%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="update-async.html"><span class="token function">updateAsync</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">message<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">updater<span class="token operator">: </span><span class="token keyword">suspend </span><span class="token punctuation">(</span>root<span class="token operator">: </span><a href="../../dev.yorkie.document.json/-json-object/index.html">JsonObject</a><span class="token punctuation">, </span>presence<span class="token operator">: </span><a href="../../dev.yorkie.document.presence/-presence/index.html">Presence</a><span class="token punctuation">)</span><span class="token operator"> -&gt; </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-unit/index.html">Unit</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><a href="../../dev.yorkie.util/-operation-result/index.html">OperationResult</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Executes the given <a href="update-async.html">updater</a> to update this document.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="update-async.html"><span class="token function">updateAsync</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">message<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">updater<span class="token operator">: </span><span class="token keyword">suspend </span><span class="token punctuation">(</span>root<span class="token operator">: </span><a href="../../dev.yorkie.document.json/-json-object/index.html">JsonObject</a><span class="token punctuation">, </span>presence<span class="token operator">: </span><a href="../../dev.yorkie.document.presence/-doc-presence/index.html">DocPresence</a><span class="token punctuation">)</span><span class="token operator"> -&gt; </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-unit/index.html">Unit</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><a href="../../dev.yorkie.util/-operation-result/index.html">OperationResult</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Executes the given <a href="update-async.html">updater</a> to update this document.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -495,7 +525,7 @@
   </div>
 </div>
       <div class="footer">
-        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2025 Copyright</span><span
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
                 class="pull-right"><span>Generated by </span><a
                 href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
       </div>

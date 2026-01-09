@@ -106,14 +106,14 @@ class DocumentLimitTest {
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
-            client.attachAsync(document).await()
+            client.attachDocument(document).await()
 
             assertEquals(
                 expected = sizeLimit,
                 actual = document.getMaxSizePerDocument(),
             )
 
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
     }
@@ -134,7 +134,7 @@ class DocumentLimitTest {
             )
             val project = createProjectResponse["project"] as Map<String, Any>
             val projectId = project["id"] as String
-            val sizeLimit = 76
+            val sizeLimit = 100
 
             client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateProject",
@@ -158,7 +158,7 @@ class DocumentLimitTest {
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
-            client.attachAsync(document).await()
+            client.attachDocument(document).await()
 
             document.updateAsync { root, _ ->
                 root.setNewText("text")
@@ -167,7 +167,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 0,
-                    meta = 48,
+                    meta = 72,
                 ),
                 actual = document.getDocSize().live,
             )
@@ -188,12 +188,12 @@ class DocumentLimitTest {
             assertEquals(
                 expected = YorkieException(
                     code = YorkieException.Code.ErrDocumentSizeExceedsLimit,
-                    errorMessage = "document size exceeded: 92 > 76",
+                    errorMessage = "document size exceeded: 116 > 100",
                 ),
                 actual = exception,
             )
 
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
     }
@@ -214,7 +214,7 @@ class DocumentLimitTest {
             )
             val project = createProjectResponse["project"] as Map<String, Any>
             val projectId = project["id"] as String
-            val sizeLimit = 76
+            val sizeLimit = 100
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
 
@@ -240,7 +240,7 @@ class DocumentLimitTest {
             client1.activateAsync().await()
 
             val document1 = Document(documentKey)
-            client1.attachAsync(document1).await()
+            client1.attachDocument(document1).await()
 
             val client2 = createClient(
                 options = Client.Options(
@@ -250,7 +250,7 @@ class DocumentLimitTest {
             client2.activateAsync().await()
 
             val document2 = Document(documentKey)
-            client2.attachAsync(document2).await()
+            client2.attachDocument(document2).await()
 
             document1.updateAsync { root, _ ->
                 root.setNewText("text")
@@ -259,7 +259,7 @@ class DocumentLimitTest {
             client1.syncAsync().await()
             client2.syncAsync().await()
             assertEquals(
-                expected = 48,
+                expected = 72,
                 actual = totalDocSize(document1.getDocSize()),
             )
 
@@ -270,7 +270,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 4,
-                    meta = 72,
+                    meta = 96,
                 ),
                 actual = document1.getDocSize().live,
             )
@@ -283,7 +283,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 2,
-                    meta = 72,
+                    meta = 96,
                 ),
                 actual = document2.getDocSize().live,
             )
@@ -292,7 +292,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 6,
-                    meta = 96,
+                    meta = 120,
                 ),
                 actual = document2.getDocSize().live,
             )
@@ -302,7 +302,7 @@ class DocumentLimitTest {
             assertEquals(
                 expected = DataSize(
                     data = 6,
-                    meta = 96,
+                    meta = 120,
                 ),
                 actual = document1.getDocSize().live,
             )
@@ -319,14 +319,14 @@ class DocumentLimitTest {
             assertEquals(
                 expected = YorkieException(
                     code = YorkieException.Code.ErrDocumentSizeExceedsLimit,
-                    errorMessage = "document size exceeded: 128 > 76",
+                    errorMessage = "document size exceeded: 152 > 100",
                 ),
                 actual = exception,
             )
 
-            client1.detachAsync(document1).await()
+            client1.detachDocument(document1).await()
             client1.deactivateAsync().await()
-            client2.detachAsync(document2).await()
+            client2.detachDocument(document2).await()
             client2.deactivateAsync().await()
         }
     }

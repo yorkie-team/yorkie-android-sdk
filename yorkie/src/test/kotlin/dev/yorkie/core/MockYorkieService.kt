@@ -13,37 +13,51 @@ import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.ActivateClientResponse
 import dev.yorkie.api.v1.AttachDocumentRequest
 import dev.yorkie.api.v1.AttachDocumentResponse
+import dev.yorkie.api.v1.AttachPresenceRequest
+import dev.yorkie.api.v1.AttachPresenceResponse
 import dev.yorkie.api.v1.BroadcastRequest
 import dev.yorkie.api.v1.BroadcastResponse
 import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DeactivateClientResponse
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.DetachDocumentResponse
+import dev.yorkie.api.v1.DetachPresenceRequest
+import dev.yorkie.api.v1.DetachPresenceResponse
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.PushPullChangesResponse
+import dev.yorkie.api.v1.RefreshPresenceRequest
+import dev.yorkie.api.v1.RefreshPresenceResponse
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.RemoveDocumentResponse
 import dev.yorkie.api.v1.ValueType
 import dev.yorkie.api.v1.WatchDocumentRequest
 import dev.yorkie.api.v1.WatchDocumentResponse
 import dev.yorkie.api.v1.WatchDocumentResponseKt.initialization
+import dev.yorkie.api.v1.WatchPresenceRequest
+import dev.yorkie.api.v1.WatchPresenceResponse
 import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.activateClientResponse
 import dev.yorkie.api.v1.attachDocumentResponse
+import dev.yorkie.api.v1.attachPresenceResponse
 import dev.yorkie.api.v1.broadcastResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachDocumentResponse
+import dev.yorkie.api.v1.detachPresenceResponse
 import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
+import dev.yorkie.api.v1.presenceEvent
 import dev.yorkie.api.v1.pushPullChangesResponse
+import dev.yorkie.api.v1.refreshPresenceResponse
 import dev.yorkie.api.v1.removeDocumentResponse
 import dev.yorkie.api.v1.watchDocumentResponse
+import dev.yorkie.api.v1.watchPresenceInitialized
+import dev.yorkie.api.v1.watchPresenceResponse
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtPrimitive
@@ -288,6 +302,106 @@ class MockYorkieService(
                                     type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED
                                     publisher = clientId
                                 }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun attachPresence(
+        request: AttachPresenceRequest,
+        headers: Headers,
+    ): ResponseMessage<AttachPresenceResponse> {
+        return ResponseMessage.Success(
+            message = attachPresenceResponse {},
+            headers = emptyMap(),
+            trailers = emptyMap(),
+        )
+    }
+
+    override suspend fun detachPresence(
+        request: DetachPresenceRequest,
+        headers: Headers,
+    ): ResponseMessage<DetachPresenceResponse> {
+        return ResponseMessage.Success(
+            message = detachPresenceResponse {},
+            headers = emptyMap(),
+            trailers = emptyMap(),
+        )
+    }
+
+    override suspend fun refreshPresence(
+        request: RefreshPresenceRequest,
+        headers: Headers,
+    ): ResponseMessage<RefreshPresenceResponse> {
+        return ResponseMessage.Success(
+            message = refreshPresenceResponse {},
+            headers = emptyMap(),
+            trailers = emptyMap(),
+        )
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    override suspend fun watchPresence(
+        headers: Headers,
+    ): ServerOnlyStreamInterface<WatchPresenceRequest, WatchPresenceResponse> {
+        return object : ServerOnlyStreamInterface<WatchPresenceRequest, WatchPresenceResponse> {
+            private var responseChannel = Channel<WatchPresenceResponse>()
+
+            override fun isClosed(): Boolean {
+                return responseChannel.isClosedForSend
+            }
+
+            override fun isReceiveClosed(): Boolean {
+                return responseChannel.isClosedForReceive
+            }
+
+            override suspend fun receiveClose() {
+                responseChannel.close()
+            }
+
+            override fun responseChannel(): ReceiveChannel<WatchPresenceResponse> {
+                return responseChannel.takeUnless { it.isClosedForReceive || it.isClosedForSend }
+                    ?: Channel<WatchPresenceResponse>().also { responseChannel = it }
+            }
+
+            override fun responseHeaders(): Deferred<Headers> {
+                return CompletableDeferred(emptyMap())
+            }
+
+            override fun responseTrailers(): Deferred<Headers> {
+                return CompletableDeferred(emptyMap())
+            }
+
+            override suspend fun sendAndClose(input: WatchPresenceRequest): Result<Unit> {
+                return runCatching {
+                    CoroutineScope(Dispatchers.Default).launch {
+                        if (responseChannel.isClosedForSend) {
+                            return@launch
+                        }
+                        responseChannel.trySend(
+                            watchPresenceResponse {
+                                initialized = watchPresenceInitialized {}
+                            },
+                        )
+                        delay(50)
+                        responseChannel.trySend(
+                            watchPresenceResponse {
+                                event = presenceEvent {}
+                            },
+                        )
+                        delay(1_000)
+                        responseChannel.trySend(
+                            watchPresenceResponse {
+                                event = presenceEvent {}
+                            },
+                        )
+                        delay(2_000)
+                        responseChannel.trySend(
+                            watchPresenceResponse {
+                                event = presenceEvent {}
                             },
                         )
                     }

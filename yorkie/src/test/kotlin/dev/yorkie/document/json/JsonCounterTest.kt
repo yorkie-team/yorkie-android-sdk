@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class JsonCounterTest {
-    private val document = Document(Document.Key(""))
+    private val document = Document("")
 
     @Test
     fun `verify increase with Int type`() = runTest {

@@ -5,6 +5,11 @@ import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.Document
+import dev.yorkie.document.crdt.RgaTreeSplitNode
+import dev.yorkie.document.time.TimeTicket
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -15,7 +20,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_edit_operations() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -30,7 +35,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_edit_operations2() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -45,7 +50,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_type_korean() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -64,7 +69,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_text_delete_operations() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("k1").apply {
@@ -81,7 +86,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_text_empty_operations() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("k1").apply {
@@ -320,7 +325,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_text_edit_operations_with_attributes() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
         assertEquals("{}", doc.toJson())
 
         doc.updateAsync { root, _ ->
@@ -752,7 +757,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_deletion_of_nested_nodes() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("text")
@@ -777,7 +782,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_deletion_of_last_nodes() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("text")
@@ -816,7 +821,7 @@ class JsonTextTest {
 
     @Test
     fun test_handle_deletion_with_boundary_nodes_already_removed() = runBlocking {
-        val doc = Document(Document.Key("test-doc"))
+        val doc = Document("test-doc")
 
         doc.updateAsync { root, _ ->
             root.setNewText("text")
@@ -913,6 +918,312 @@ class JsonTextTest {
             assertJsonContentEquals("""{"k1":[]}""", d1.toJson())
             assertJsonContentEquals("""{"k1":[]}""", d2.toJson())
             assertJsonContentEquals(d1.toJson(), d2.toJson())
+
+            for (n in d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                assertEquals(
+                    expected = true,
+                    actual = n.removedAt != null,
+                )
+            }
+
+            for (n in d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                assertEquals(
+                    expected = true,
+                    actual = n.removedAt != null,
+                )
+            }
+
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            val timeStamp = HashSet<TimeTicket>()
+            for (n in d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                if (n.removedAt != null) {
+                    timeStamp.add(n.removedAt!!)
+                }
+            }
+
+            for (n in d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit) {
+                if (n.removedAt != null) {
+                    timeStamp.add(n.removedAt!!)
+                }
+            }
+
+            assertEquals(
+                expected = 1,
+                actual = timeStamp.size,
+            )
+        }
+    }
+
+    @Test
+    fun test_lww_causal_deletion_preserves_original_timestamps() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Insert initial text on c1
+            d1.updateAsync { root, _ ->
+                root.setNewText("k1").apply {
+                    edit(0, 0, "abcd")
+                }
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertJsonContentEquals("""{"k1":[{"val":"abcd"}]}""", d1.toJson())
+            assertJsonContentEquals(d1.toJson(), d2.toJson())
+
+            // First deletion (bc) by c1
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(1, 3, "")
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            // Second deletion (ad) by c2
+            // NOTE: At this point d1 has not yet seen deletion of a/d
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(0, 2, "")
+            }.await()
+
+            // Helper to find nodes by value
+            fun findNodeByValue(nodes: List<*>, value: String): RgaTreeSplitNode<*>? {
+                return nodes.find {
+                    (it as? RgaTreeSplitNode<*>)?.value.toString() == value
+                } as? RgaTreeSplitNode<*>
+            }
+
+            // Identify nodes by value from d2 (where second deletion happened)
+            val d2Nodes =
+                d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            val aNode = findNodeByValue(d2Nodes, "a")
+            val bcNode = findNodeByValue(d2Nodes, "bc")
+            val dNode = findNodeByValue(d2Nodes, "d")
+
+            // a and d should be removed after bc (their timestamps are later)
+            assertNotNull(aNode?.removedAt)
+            assertNotNull(bcNode?.removedAt)
+            assertNotNull(dNode?.removedAt)
+            assertTrue(aNode!!.removedAt!! > bcNode!!.removedAt!!)
+            assertTrue(dNode!!.removedAt!! > bcNode.removedAt!!)
+
+            // Final sync and ensure convergence
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+            assertJsonContentEquals(d1.toJson(), d2.toJson())
+
+            // Spot check: bc, a, and d nodes should all have removedAt
+            val d1Nodes =
+                d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            for (n in d1Nodes + d2Nodes) {
+                val node = n as RgaTreeSplitNode<*>
+                val v = node.value.toString()
+                if (v == "bc" || v == "a" || v == "d") {
+                    assertNotNull(node.removedAt, "$v should have removedAt")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun test_lww_complete_inclusion_larger_range_later() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Insert initial text on c1
+            d1.updateAsync { root, _ ->
+                root.setNewText("k1").apply {
+                    edit(0, 0, "abcd")
+                }
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertJsonContentEquals("""{"k1":[{"val":"abcd"}]}""", d1.toJson())
+            assertJsonContentEquals(d1.toJson(), d2.toJson())
+
+            // Concurrent deletions: c1 deletes bc, c2 deletes abcd (larger range)
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(1, 3, "")
+            }.await()
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(0, 4, "")
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            fun findNodeByValue(nodes: List<*>, value: String): RgaTreeSplitNode<*>? {
+                return nodes.find {
+                    (it as? RgaTreeSplitNode<*>)?.value.toString() == value
+                } as? RgaTreeSplitNode<*>
+            }
+
+            val d1Nodes =
+                d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            val aNode1 = findNodeByValue(d1Nodes, "a")
+            val bcNode1 = findNodeByValue(d1Nodes, "bc")
+            val dNode1 = findNodeByValue(d1Nodes, "d")
+
+            val d2Nodes =
+                d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            val aNode2 = findNodeByValue(d2Nodes, "a")
+            val bcNode2 = findNodeByValue(d2Nodes, "bc")
+            val dNode2 = findNodeByValue(d2Nodes, "d")
+
+            // All nodes should have removedAt
+            assertNotNull(aNode1?.removedAt)
+            assertNotNull(bcNode1?.removedAt)
+            assertNotNull(dNode1?.removedAt)
+            assertNotNull(aNode2?.removedAt)
+            assertNotNull(bcNode2?.removedAt)
+            assertNotNull(dNode2?.removedAt)
+
+            // All nodes should have the same removedAt (LWW: larger range wins)
+            val removedAt = aNode1!!.removedAt!!
+            assertEquals(0, removedAt.compareTo(bcNode1!!.removedAt!!))
+            assertEquals(0, removedAt.compareTo(dNode1!!.removedAt!!))
+            assertEquals(0, removedAt.compareTo(aNode2!!.removedAt!!))
+            assertEquals(0, removedAt.compareTo(bcNode2!!.removedAt!!))
+            assertEquals(0, removedAt.compareTo(dNode2!!.removedAt!!))
+
+            assertJsonContentEquals("""{"k1":[]}""", d1.toJson())
+            assertJsonContentEquals("""{"k1":[]}""", d2.toJson())
+        }
+    }
+
+    @Test
+    fun test_lww_complete_inclusion_smaller_range_later() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Insert initial text on c1
+            d1.updateAsync { root, _ ->
+                root.setNewText("k1").apply {
+                    edit(0, 0, "abcd")
+                }
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertJsonContentEquals("""{"k1":[{"val":"abcd"}]}""", d1.toJson())
+            assertJsonContentEquals(d1.toJson(), d2.toJson())
+
+            // Concurrent deletions: c1 deletes abcd (larger), c2 deletes bc (smaller)
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(0, 4, "")
+            }.await()
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(1, 3, "")
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            fun findNodeByValue(nodes: List<*>, value: String): RgaTreeSplitNode<*>? {
+                return nodes.find {
+                    (it as? RgaTreeSplitNode<*>)?.value.toString() == value
+                } as? RgaTreeSplitNode<*>
+            }
+
+            val d1Nodes =
+                d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            val aNode1 = findNodeByValue(d1Nodes, "a")
+            val bcNode1 = findNodeByValue(d1Nodes, "bc")
+            val dNode1 = findNodeByValue(d1Nodes, "d")
+
+            val d2Nodes =
+                d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            val aNode2 = findNodeByValue(d2Nodes, "a")
+            val bcNode2 = findNodeByValue(d2Nodes, "bc")
+            val dNode2 = findNodeByValue(d2Nodes, "d")
+
+            // All nodes should have removedAt
+            assertNotNull(aNode1?.removedAt)
+            assertNotNull(bcNode1?.removedAt)
+            assertNotNull(dNode1?.removedAt)
+            assertNotNull(aNode2?.removedAt)
+            assertNotNull(bcNode2?.removedAt)
+            assertNotNull(dNode2?.removedAt)
+
+            // bc has later timestamp (smaller range came later via LWW)
+            val earlierRemovedAt = aNode1!!.removedAt!!
+            val laterRemovedAt = bcNode1!!.removedAt!!
+            assertEquals(true, laterRemovedAt > earlierRemovedAt)
+
+            // a and d should have earlier timestamp
+            assertEquals(0, earlierRemovedAt.compareTo(dNode1!!.removedAt!!))
+            assertEquals(0, earlierRemovedAt.compareTo(aNode2!!.removedAt!!))
+            assertEquals(0, earlierRemovedAt.compareTo(dNode2!!.removedAt!!))
+
+            // bc nodes should have later timestamp
+            assertEquals(0, laterRemovedAt.compareTo(bcNode2!!.removedAt!!))
+
+            assertJsonContentEquals("""{"k1":[]}""", d1.toJson())
+            assertJsonContentEquals("""{"k1":[]}""", d2.toJson())
+        }
+    }
+
+    @Test
+    fun test_lww_partial_overlap() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            // Insert initial text on c1
+            d1.updateAsync { root, _ ->
+                root.setNewText("k1").apply {
+                    edit(0, 0, "abcd")
+                }
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertJsonContentEquals("""{"k1":[{"val":"abcd"}]}""", d1.toJson())
+            assertJsonContentEquals(d1.toJson(), d2.toJson())
+
+            // Concurrent deletions with partial overlap: c1 deletes abc, c2 deletes bcd
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(0, 3, "")
+            }.await()
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("k1").edit(1, 4, "")
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            fun findNodeByValue(nodes: List<*>, value: String): RgaTreeSplitNode<*>? {
+                return nodes.find {
+                    (it as? RgaTreeSplitNode<*>)?.value.toString() == value
+                } as? RgaTreeSplitNode<*>
+            }
+
+            val d1Nodes =
+                d1.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            val aNode1 = findNodeByValue(d1Nodes, "a")
+            val bcNode1 = findNodeByValue(d1Nodes, "bc")
+            val dNode1 = findNodeByValue(d1Nodes, "d")
+
+            val d2Nodes =
+                d2.getRoot().getAs<JsonText>("k1").target.rgaTreeSplit.toList()
+            val aNode2 = findNodeByValue(d2Nodes, "a")
+            val bcNode2 = findNodeByValue(d2Nodes, "bc")
+            val dNode2 = findNodeByValue(d2Nodes, "d")
+
+            // All nodes should have removedAt
+            assertNotNull(aNode1?.removedAt)
+            assertNotNull(bcNode1?.removedAt)
+            assertNotNull(dNode1?.removedAt)
+            assertNotNull(aNode2?.removedAt)
+            assertNotNull(bcNode2?.removedAt)
+            assertNotNull(dNode2?.removedAt)
+
+            // bc and d have later timestamp (from c2's delete which came later)
+            val earlierRemovedAt = aNode1!!.removedAt!!
+            val laterRemovedAt = bcNode1!!.removedAt!!
+            assertEquals(true, laterRemovedAt > earlierRemovedAt)
+
+            // a should have earlier timestamp
+            assertEquals(0, earlierRemovedAt.compareTo(aNode2!!.removedAt!!))
+
+            // bc and d should have later timestamp
+            assertEquals(0, laterRemovedAt.compareTo(bcNode2!!.removedAt!!))
+            assertEquals(0, laterRemovedAt.compareTo(dNode1!!.removedAt!!))
+            assertEquals(0, laterRemovedAt.compareTo(dNode2!!.removedAt!!))
+
+            assertJsonContentEquals("""{"k1":[]}""", d1.toJson())
+            assertJsonContentEquals("""{"k1":[]}""", d2.toJson())
         }
     }
 }

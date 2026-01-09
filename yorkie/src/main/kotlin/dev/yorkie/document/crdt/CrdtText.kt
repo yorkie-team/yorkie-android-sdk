@@ -15,8 +15,8 @@ import java.util.TreeMap
 internal data class CrdtText(
     val rgaTreeSplit: RgaTreeSplit<TextValue>,
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket? = null,
-    override var _removedAt: TimeTicket? = null,
+    override var movedAt: TimeTicket? = null,
+    override var removedAt: TimeTicket? = null,
 ) : CrdtElement(), GCCrdtElement {
 
     override val gcPairs: List<GCPair<*>>
@@ -171,7 +171,9 @@ internal data class CrdtText(
     }
 
     override fun deepCopy(): CrdtElement {
-        return copy(rgaTreeSplit = rgaTreeSplit.deepCopy())
+        return copy(
+            rgaTreeSplit = rgaTreeSplit.deepCopy(),
+        )
     }
 
     override fun getDataSize(): DataSize {

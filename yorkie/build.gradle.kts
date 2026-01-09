@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.yorkie.android.library)
     alias(libs.plugins.yorkie.android.library.jacoco)
     alias(libs.plugins.yorkie.maven.publish)
-    alias(libs.plugins.yorkie.buf.generate)
+    alias(libs.plugins.yorkie.protocol.buffer.generation)
 }
 
 tasks.register<Zip>("stuffZip") {
@@ -25,10 +25,6 @@ android {
 
     defaultConfig {
         buildConfigField("String", "VERSION_NAME", """"$version"""")
-
-        // CRITICAL: Export ProGuard rules to consumer apps
-        // Without this, the rules in proguard-rules.pro won't apply to apps using this library
-        consumerProguardFiles("proguard-rules.pro")
 
         // Pass local.properties values as instrumentation arguments for androidTest
         testInstrumentationRunnerArguments["YORKIE_SERVER_URL"] =

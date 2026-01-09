@@ -3,6 +3,9 @@ package dev.yorkie.document
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.toSnapshot
+import dev.yorkie.core.Attachable
+import dev.yorkie.core.ResourceEvent
+import dev.yorkie.core.ResourceStatus
 import dev.yorkie.document.Document.Event.DocumentStatusChanged
 import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
@@ -19,18 +22,18 @@ import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
-import dev.yorkie.document.presence.Presence
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.presence.Presences
 import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
+import dev.yorkie.document.schema.Rule
+import dev.yorkie.document.schema.validateYorkieRuleset
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
-import dev.yorkie.schema.Rule
-import dev.yorkie.schema.validateYorkieRuleset
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.OperationResult
@@ -73,9 +76,9 @@ import kotlinx.coroutines.withContext
  * as snapshot operation can be much heavier than other operations.
  */
 public class Document(
-    public val key: Key,
+    private val key: String,
     private val options: Options = Options(),
-) : Closeable {
+) : Closeable, Attachable {
     private val dispatcher: CoroutineDispatcher =
         createSingleThreadDispatcher("Document($key)")
 
@@ -92,7 +95,8 @@ public class Document(
     public val events = eventStream.asSharedFlow()
 
     @Volatile
-    private var root: CrdtRoot = CrdtRoot(CrdtObject(InitialTimeTicket, rht = ElementRht()))
+    private var root: CrdtRoot =
+        CrdtRoot(CrdtObject(createdAt = InitialTimeTicket, memberNodes = ElementRht()))
 
     @get:VisibleForTesting
     @Volatile
@@ -106,12 +110,8 @@ public class Document(
     internal var checkPoint = CheckPoint.InitialCheckPoint
         private set
 
-    internal val hasLocalChanges: Boolean
-        get() = localChanges.isNotEmpty()
-
     @Volatile
-    public var status = DocStatus.Detached
-        internal set
+    private var status = ResourceStatus.Detached
 
     @VisibleForTesting
     public val garbageLength: Int
@@ -141,7 +141,7 @@ public class Document(
 
     public val myPresence: P
         get() = allPresences.value[changeID.actor]
-            .takeIf { status == DocStatus.Attached }
+            .takeIf { status == ResourceStatus.Attached }
             .orEmpty()
 
     /**
@@ -149,11 +149,11 @@ public class Document(
      */
     public fun updateAsync(
         message: String? = null,
-        updater: suspend (root: JsonObject, presence: Presence) -> Unit,
+        updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
-                status != DocStatus.Removed,
+                status != ResourceStatus.Removed,
                 YorkieException(ErrDocumentRemoved, "document($key) is removed"),
             )
 
@@ -168,7 +168,7 @@ public class Document(
                 val proxy = JsonObject(context, clone.root.rootObject)
                 updater.invoke(
                     proxy,
-                    Presence(context, clone.presences[changeID.actor].orEmpty()),
+                    DocPresence(context, clone.presences[changeID.actor].orEmpty()),
                 )
             }.onFailure {
                 this@Document.clone = null
@@ -340,7 +340,7 @@ public class Document(
         }
 
         if (pack.isRemoved) {
-            applyDocumentStatus(DocStatus.Removed)
+            applyStatus(ResourceStatus.Removed)
         }
     }
 
@@ -417,20 +417,6 @@ public class Document(
         }
     }
 
-    internal suspend fun applyDocumentStatus(status: DocStatus) {
-        if (this.status == status) {
-            return
-        }
-
-        this.status = status
-        publishEvent(
-            DocumentStatusChanged(
-                status,
-                changeID.actor.takeIf { status == DocStatus.Attached },
-            ),
-        )
-    }
-
     private suspend fun ensureClone(): RootClone = withContext(dispatcher) {
         clone ?: RootClone(root.deepCopy(), _presences.value.asPresences()).also { clone = it }
     }
@@ -497,26 +483,71 @@ public class Document(
         val localChanges = localChanges.toList()
         val checkPoint = checkPoint.increaseClientSeq(localChanges.size)
         ChangePack(
-            key.value,
+            key,
             checkPoint,
             localChanges,
             null,
-            forceRemove || status == DocStatus.Removed,
+            forceRemove || status == ResourceStatus.Removed,
             changeID.versionVector,
         )
+    }
+
+    /**
+     * `getKey` returns the key of this document.
+     */
+    override fun getKey(): String {
+        return key
+    }
+
+    /**
+     * `getStatus` returns the status of this document.
+     */
+    override fun getStatus(): ResourceStatus {
+        return status
+    }
+
+    override fun applyStatus(status: ResourceStatus) {
+        if (this.status == status) {
+            return
+        }
+
+        this.status = status
+        scope.launch {
+            publishEvent(
+                DocumentStatusChanged(
+                    status,
+                    changeID.actor.takeIf { status == ResourceStatus.Attached },
+                ),
+            )
+        }
     }
 
     /**
      * Sets [actorID] into this document.
      * This is also applied in the [localChanges] the document has.
      */
-    internal suspend fun setActor(actorID: ActorID) = withContext(dispatcher) {
+    override fun setActor(actorID: ActorID) {
         localChanges.forEach {
             it.setActor(actorID)
         }
         changeID = changeID.setActor(actorID)
 
         // TODO: also apply to root
+    }
+
+    /**
+     * `hasLocalChanges` returns whether this document has local changes or not.
+     */
+    override fun hasLocalChanges(): Boolean {
+        return localChanges.isNotEmpty()
+    }
+
+    override fun publish(event: ResourceEvent) {
+        scope.launch {
+            (event as? Event)?.let {
+                eventStream.emit(it)
+            }
+        }
     }
 
     /**
@@ -624,7 +655,7 @@ public class Document(
         (dispatcher as? Closeable)?.close()
     }
 
-    public sealed interface Event {
+    public sealed interface Event : ResourceEvent {
 
         /**
          * An event that occurs when a snapshot is received from the server.
@@ -703,10 +734,10 @@ public class Document(
 
         /**
          * An event that occurs when the document's status has been changed.
-         * @see DocStatus
+         * @see ResourceStatus
          */
         public data class DocumentStatusChanged(
-            val docStatus: DocStatus,
+            val docStatus: ResourceStatus,
             val actorID: ActorID?,
         ) : Event
 
@@ -728,7 +759,7 @@ public class Document(
         ) : Event {
             enum class AuthErrorMethod(val value: String) {
                 PushPull("PushPull"),
-                WatchDocuments("WatchDocuments"),
+                WatchDocument("WatchDocument"),
                 Broadcast("Broadcast"),
             }
         }
@@ -743,35 +774,6 @@ public class Document(
             public val clientSeq: UInt,
             public val serverSeq: Long,
         )
-    }
-
-    /**
-     * Represents a unique key to identify [Document].
-     */
-    @JvmInline
-    public value class Key(public val value: String)
-
-    /**
-     * Represents the status of the [Document].
-     */
-    public enum class DocStatus {
-        /**
-         * Means that this [Document] is attached to the client.
-         * The actor of the ticket is created with being assigned by the client.
-         */
-        Attached,
-
-        /**
-         * Means that this [Document] is not attached to the client.
-         * The actor of the ticket is created without being assigned.
-         */
-        Detached,
-
-        /**
-         * Means that this [Document] is removed.
-         * If the [Document] is removed, it cannot be edited.
-         */
-        Removed,
     }
 
     public data class Options(

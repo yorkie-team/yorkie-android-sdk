@@ -1,27 +1,71 @@
 package dev.yorkie.core
 
 import dev.yorkie.document.Document
+import kotlinx.coroutines.Job
 
-internal data class Attachment(
-    val document: Document,
-    val documentID: String,
-    val syncMode: Client.SyncMode = Client.SyncMode.Realtime,
-    val remoteChangeEventReceived: Boolean = false,
-    val cancelled: Boolean = false,
+/**
+ * `Attachment` is a class that manages the state of an attachable resource (Document or Presence).
+ */
+internal class Attachment<R : Attachable>(
+    val resource: R,
+    val resourceId: String,
+    var syncMode: Client.SyncMode? = null,
 ) {
+    var changeEventReceived: Boolean? = syncMode?.let { false }
+    var cancelled: Boolean = false
+    private var lastHeartbeatTime: Long = System.currentTimeMillis()
+    var watchJobHolder: WatchJobHolder? = null
 
-    fun needRealTimeSync(): Boolean {
+    /**
+     * `needRealtimeSync` returns whether the resource needs to be synced in real time.
+     * Only applicable to Document resources with syncMode defined.
+     */
+    private fun needRealTimeSync(): Boolean {
         if (syncMode == Client.SyncMode.RealtimeSyncOff) {
             return false
         }
 
         if (syncMode == Client.SyncMode.RealtimePushOnly) {
-            return document.hasLocalChanges
+            return resource.hasLocalChanges()
         }
 
         return (
             syncMode != Client.SyncMode.Manual &&
-                (document.hasLocalChanges || remoteChangeEventReceived)
+                (resource.hasLocalChanges() || (changeEventReceived ?: false))
             )
     }
+
+    /**
+     * `needSync` determines if the attachment needs sync.
+     * This includes both document sync and presence heartbeat.
+     */
+    fun needSync(heartbeatInterval: Long): Boolean {
+        // For Document: check if realtime sync is needed
+        if (resource is Document) {
+            return needRealTimeSync()
+        }
+
+        // For Presence in Manual mode: never auto-sync
+        if (syncMode == Client.SyncMode.Manual) {
+            return false
+        }
+
+        // For Presence: check if heartbeat is needed
+        return System.currentTimeMillis() - lastHeartbeatTime >= heartbeatInterval
+    }
+
+    /**
+     * `updateHeartbeatTime` updates the last heartbeat time.
+     */
+    fun updateHeartbeatTime() {
+        lastHeartbeatTime = System.currentTimeMillis()
+    }
+
+    fun cancelWatchJob() {
+        cancelled = true
+        watchJobHolder?.job?.cancel()
+        watchJobHolder = null
+    }
 }
+
+data class WatchJobHolder(val key: String, val job: Job)

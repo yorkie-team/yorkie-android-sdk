@@ -275,7 +275,7 @@ class JsonTreeTest {
 
     @Test
     fun `should emit Tree edit operations accordingly when edited with index`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -331,7 +331,7 @@ class JsonTreeTest {
 
     @Test
     fun `should emit Tree edit operations accordingly when edited with path`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -398,7 +398,7 @@ class JsonTreeTest {
 
     @Test
     fun `should find pos range from index range and vice versa`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -430,7 +430,7 @@ class JsonTreeTest {
 
     @Test
     fun `should find pos range from path and vice versa`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -462,7 +462,7 @@ class JsonTreeTest {
 
     @Test
     fun `should insert multiple text nodes`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -485,7 +485,7 @@ class JsonTreeTest {
 
     @Test
     fun `should insert multiple element nodes`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -514,7 +514,7 @@ class JsonTreeTest {
     @Suppress("ktlint:standard:max-line-length")
     @Test
     fun `should edit content with path when multi tree nodes passed`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -590,7 +590,7 @@ class JsonTreeTest {
 
     @Test
     fun `should delete the first text with tombstone in front of target text`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -629,7 +629,7 @@ class JsonTreeTest {
 
     @Test
     fun `should delete node with a text node in front whose size is bigger than 1`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -671,7 +671,7 @@ class JsonTreeTest {
 
     @Test
     fun `should delete nodes correctly in a multi-level range`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -709,7 +709,7 @@ class JsonTreeTest {
 
     @Test
     fun `should handle remove style`() = runTest {
-        val doc = Document(Document.Key(""))
+        val doc = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         doc.updateAsync { root, _ ->
@@ -738,7 +738,7 @@ class JsonTreeTest {
 
     @Test
     fun `should handle removal of attributes that do not exist`() = runTest {
-        val doc = Document(Document.Key(""))
+        val doc = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         doc.updateAsync { root, _ ->
@@ -782,7 +782,7 @@ class JsonTreeTest {
 
     @Test
     fun `should handle split by path`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->
@@ -861,7 +861,7 @@ class JsonTreeTest {
 
     @Test
     fun `should handle merge by path`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
         document.updateAsync { root, _ ->

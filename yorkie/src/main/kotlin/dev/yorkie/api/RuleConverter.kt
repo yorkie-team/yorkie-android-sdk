@@ -1,6 +1,6 @@
 package dev.yorkie.api
 
-import dev.yorkie.schema.Rule
+import dev.yorkie.document.schema.Rule
 
 internal typealias PBRule = dev.yorkie.api.v1.Rule
 

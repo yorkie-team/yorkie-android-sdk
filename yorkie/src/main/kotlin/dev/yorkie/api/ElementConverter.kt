@@ -122,13 +122,18 @@ internal fun PBJsonElement.toCrdtElement(): CrdtElement {
 internal fun PBJsonObject.toCrdtObject(): CrdtObject {
     val rht = ElementRht<CrdtElement>()
     nodesList.forEach { node ->
-        rht[node.key] = node.element.toCrdtElement()
+        val value = node.element.toCrdtElement()
+        rht.set(
+            key = node.key,
+            value = value,
+            executedAt = value.getPositionedAt(),
+        )
     }
     return CrdtObject(
         createdAt = createdAt.toTimeTicket(),
-        _movedAt = movedAtOrNull?.toTimeTicket(),
-        _removedAt = removedAtOrNull?.toTimeTicket(),
-        rht = rht,
+        movedAt = movedAtOrNull?.toTimeTicket(),
+        removedAt = removedAtOrNull?.toTimeTicket(),
+        memberNodes = rht,
     )
 }
 
@@ -139,8 +144,8 @@ internal fun PBJsonArray.toCrdtArray(): CrdtArray {
     }
     return CrdtArray(
         createdAt = createdAt.toTimeTicket(),
-        _movedAt = movedAtOrNull?.toTimeTicket(),
-        _removedAt = removedAtOrNull?.toTimeTicket(),
+        movedAt = movedAtOrNull?.toTimeTicket(),
+        removedAt = removedAtOrNull?.toTimeTicket(),
         elements = rgaTreeList,
     )
 }
@@ -159,17 +164,17 @@ internal fun PBText.toCrdtText(): CrdtText {
     return CrdtText(
         rgaTreeSplit = rgaTreeSplit,
         createdAt = createdAt.toTimeTicket(),
-        _removedAt = removedAtOrNull?.toTimeTicket(),
-        _movedAt = movedAtOrNull?.toTimeTicket(),
+        removedAt = removedAtOrNull?.toTimeTicket(),
+        movedAt = movedAtOrNull?.toTimeTicket(),
     )
 }
 
 internal fun PBPrimitive.toCrdtPrimitive(): CrdtPrimitive {
     return CrdtPrimitive(
-        value = CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
+        _value = CrdtPrimitive.fromBytes(type.toPrimitiveType(), value),
         createdAt = createdAt.toTimeTicket(),
-        _movedAt = movedAtOrNull?.toTimeTicket(),
-        _removedAt = removedAtOrNull?.toTimeTicket(),
+        movedAt = movedAtOrNull?.toTimeTicket(),
+        removedAt = removedAtOrNull?.toTimeTicket(),
     )
 }
 
@@ -193,15 +198,15 @@ internal fun PBCounter.toCrdtCounter(): CrdtCounter {
         CrdtCounter(
             value = value.toByteArray().asCounterValue(type).toInt(),
             createdAt = createdAt.toTimeTicket(),
-            _movedAt = movedAtOrNull?.toTimeTicket(),
-            _removedAt = removedAtOrNull?.toTimeTicket(),
+            movedAt = movedAtOrNull?.toTimeTicket(),
+            removedAt = removedAtOrNull?.toTimeTicket(),
         )
     } else {
         CrdtCounter(
             value = value.toByteArray().asCounterValue(type).toLong(),
             createdAt = createdAt.toTimeTicket(),
-            _movedAt = movedAtOrNull?.toTimeTicket(),
-            _removedAt = removedAtOrNull?.toTimeTicket(),
+            movedAt = movedAtOrNull?.toTimeTicket(),
+            removedAt = removedAtOrNull?.toTimeTicket(),
         )
     }
 }
@@ -238,6 +243,8 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
         depthTable[this[i].depth] = nodes[i]
     }
     root.updateDescendantSize()
+    // NOTE: Also update totalSize to include tombstone nodes
+    root.updateDescendantSize(includeRemoved = true)
     return CrdtTree(root, InitialTimeTicket).root
 }
 
@@ -528,7 +535,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             if (value.isEmpty) {
                 CrdtObject(
                     createdAt = createdAt.toTimeTicket(),
-                    rht = ElementRht(),
+                    memberNodes = ElementRht(),
                 )
             } else {
                 value.toCrdtObject()
@@ -542,6 +549,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
                 value.toCrdtArray()
             }
         }
+
         PBValueType.VALUE_TYPE_TEXT -> CrdtText(RgaTreeSplit(), createdAt.toTimeTicket())
         PBValueType.VALUE_TYPE_NULL,
         PBValueType.VALUE_TYPE_BOOLEAN,

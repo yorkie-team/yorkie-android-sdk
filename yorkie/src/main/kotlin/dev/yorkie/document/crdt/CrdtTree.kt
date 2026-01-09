@@ -34,8 +34,8 @@ internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
 internal data class CrdtTree(
     val root: CrdtTreeNode,
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket? = null,
-    override var _removedAt: TimeTicket? = null,
+    override var movedAt: TimeTicket? = null,
+    override var removedAt: TimeTicket? = null,
 ) : CrdtElement(), GCParent<CrdtTreeNode>, GCCrdtElement {
 
     override val gcPairs: List<GCPair<*>>
@@ -208,6 +208,9 @@ internal data class CrdtTree(
         val tokensToBeRemoved = mutableListOf<CrdtTreeToken>()
         val toBeMovedToFromParents = mutableListOf<CrdtTreeNode>()
 
+        // Treat missing or empty VersionVector as local operation.
+        val isLocal = versionVector == null || versionVector.size() == 0
+
         traverseInPosRange(
             fromParent = fromParent,
             fromLeft = fromLeft,
@@ -220,12 +223,31 @@ internal data class CrdtTree(
                 toBeMovedToFromParents.addAll(node.children)
             }
 
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
+            // Compute per-node creationKnown and tombstoneKnown for LWW semantics
+            val creationKnown: Boolean = if (isLocal) {
+                true
+            } else {
+                val createdAtVV = versionVector?.get(node.createdAt.actorID.value)
+                createdAtVV != null && createdAtVV >= node.createdAt.lamport
+            }
+
+            var tombstoneKnown = false
+            val nodeRemovedAt = node.removedAt
+            if (nodeRemovedAt != null) {
+                if (isLocal) {
+                    tombstoneKnown = true
+                } else {
+                    val removedAtVV = versionVector?.get(nodeRemovedAt.actorID.value)
+                    if (removedAtVV != null && removedAtVV >= nodeRemovedAt.lamport) {
+                        tombstoneKnown = true
+                    }
+                }
+            }
 
             if (node.canDelete(
                     executedAt,
-                    clientLamportAtChange,
+                    creationKnown,
+                    tombstoneKnown,
                 ) || node.parent in nodesToBeRemoved
             ) {
                 if (tokenType == TokenType.Text || tokenType == TokenType.Start) {
@@ -625,7 +647,9 @@ internal data class CrdtTree(
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtElement {
-        return copy(root = root.deepCopy())
+        return copy(
+            root = root.deepCopy(),
+        )
     }
 
     override fun getDataSize(): DataSize {
@@ -847,7 +871,7 @@ internal data class CrdtTreeNode(
             var meta = TIME_TICKET_SIZE
 
             if (isText) {
-                data += size * 2
+                data += visibleSize * 2
             }
 
             if (isRemoved) {
@@ -888,7 +912,8 @@ internal data class CrdtTreeNode(
                 "cannot set value of element node: $type"
             }
             field = value
-            size = value.length
+            visibleSize = value.length
+            totalSize = value.length
         }
 
     var insPrevID: CrdtTreeNodeID? = null
@@ -970,7 +995,7 @@ internal data class CrdtTreeNode(
             removedAt = executedAt
         }
         if (alived) {
-            updateAncestorSize()
+            updateAncestorSize(-paddedSize())
         }
     }
 
@@ -990,7 +1015,8 @@ internal data class CrdtTreeNode(
             it.allChildren.forEach { child ->
                 child.parent = it
             }
-            it.size = size
+            it.visibleSize = visibleSize
+            it.totalSize = totalSize
             it.removedAt = removedAt
             it.insPrevID = insPrevID
             it.insNextID = insNextID
@@ -1002,10 +1028,33 @@ internal data class CrdtTreeNode(
 
     /**
      * Checks if node is able to delete.
+     *
+     * @param editedAt The time when the edit operation was executed
+     * @param creationKnown Whether the node's creation was visible at the operation's frontier
+     * @param tombstoneKnown Whether the prior tombstone was visible at the operation's frontier
+     *
+     * LWW: Allow overwrite only when tombstoneKnown is false and editedAt is newer.
      */
-    fun canDelete(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
-        val nodeExisted = createdAt.lamport <= clientLamportAtChange
-        return nodeExisted && (removedAt == null || executedAt > removedAt)
+    fun canDelete(
+        editedAt: TimeTicket,
+        creationKnown: Boolean,
+        tombstoneKnown: Boolean,
+    ): Boolean {
+        // Skip if the node's creation was not visible to this operation.
+        if (!creationKnown) {
+            return false
+        }
+
+        if (removedAt == null) {
+            return true
+        }
+
+        // LWW: Allow overwrite only when tombstoneKnown is false and editedAt is newer.
+        if (!tombstoneKnown && editedAt > removedAt) {
+            return true
+        }
+
+        return false
     }
 
     fun canStyle(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {

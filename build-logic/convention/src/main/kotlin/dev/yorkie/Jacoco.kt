@@ -1,6 +1,7 @@
 package dev.yorkie
 
 import com.android.build.api.variant.AndroidComponentsExtension
+import dev.yorkie.extensions.libs
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.register
@@ -21,7 +22,7 @@ internal fun Project.configureJacoco(
     androidComponentsExtension: AndroidComponentsExtension<*, *, *>,
 ) {
     configure<JacocoPluginExtension> {
-        toolVersion = libs.findVersion("jacoco").get().toString()
+        toolVersion = libs.versions.jacoco.get().toString()
     }
 
     tasks.register<JacocoReport>("jacocoDebugTestReport") {

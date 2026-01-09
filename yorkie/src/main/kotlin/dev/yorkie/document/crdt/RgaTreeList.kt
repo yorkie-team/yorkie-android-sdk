@@ -12,9 +12,9 @@ import dev.yorkie.util.YorkieException
 internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     private val dummyHead = Node(
         CrdtPrimitive(
-            value = 1,
+            _value = 1,
             createdAt = InitialTimeTicket,
-            _removedAt = InitialTimeTicket,
+            removedAt = InitialTimeTicket,
         ),
     )
     var last: Node = dummyHead

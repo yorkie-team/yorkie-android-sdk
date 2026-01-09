@@ -55,17 +55,17 @@ class ClientTest {
             val d1 = Document(key)
             c1.activateAsync().await()
 
-            c1.attachAsync(d1).await()
+            c1.attachDocument(d1).await()
             // attach again after attached
             val exception = assertFailsWith(YorkieException::class) {
-                c1.attachAsync(d1).await()
+                c1.attachDocument(d1).await()
             }
             assertEquals(ErrDocumentNotDetached, exception.code)
 
-            c1.detachAsync(d1).await()
+            c1.detachDocument(d1).await()
             // detach again after detached
             val exception2 = assertFailsWith(YorkieException::class) {
-                c1.detachAsync(d1).await()
+                c1.detachDocument(d1).await()
             }
             assertEquals(ErrDocumentNotAttached, exception2.code)
 
@@ -110,8 +110,8 @@ class ClientTest {
             assertIs<Client.Status.Activated>(c1.status.value)
             assertIs<Client.Status.Activated>(c2.status.value)
 
-            c1.attachAsync(d1).await()
-            c2.attachAsync(d2).await()
+            c1.attachDocument(d1).await()
+            c2.attachDocument(d2).await()
 
             d1.updateAsync { root, _ ->
                 root["k1"] = "v1"
@@ -188,8 +188,8 @@ class ClientTest {
             assertEquals(1, d1.clone?.root?.garbageLength)
             assertEquals(1, d2.clone?.root?.garbageLength)
 
-            c1.detachAsync(d1).await()
-            c2.detachAsync(d2).await()
+            c1.detachDocument(d1).await()
+            c2.detachDocument(d2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             d1.close()
@@ -215,8 +215,8 @@ class ClientTest {
 
             // 01. c1 and c2 attach the doc with manual sync mode.
             //     c1 updates the doc, but c2 doesn't get until call sync manually.
-            c1.attachAsync(d1, syncMode = Manual).await()
-            c2.attachAsync(d2, syncMode = Manual).await()
+            c1.attachDocument(d1, syncMode = Manual).await()
+            c2.attachDocument(d2, syncMode = Manual).await()
 
             d1.updateAsync { root, _ ->
                 root["version"] = "v1"
@@ -268,8 +268,8 @@ class ClientTest {
             c2.syncAsync().await()
             assertEquals(d1.toJson(), d2.toJson())
 
-            c1.detachAsync(d1).await()
-            c2.detachAsync(d2).await()
+            c1.detachDocument(d1).await()
+            c2.detachDocument(d2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             d1.close()
@@ -306,8 +306,8 @@ class ClientTest {
         }
 
         // 01. c2 attach the doc with realtime sync mode at first.
-        client1.attachAsync(document1, syncMode = Manual).await()
-        client2.attachAsync(document2).await()
+        client1.attachDocument(document1, syncMode = Manual).await()
+        client2.attachDocument(document2).await()
         document1.updateAsync { root, _ ->
             root["version"] = "v1"
         }.await()
@@ -356,7 +356,7 @@ class ClientTest {
 
             // 01. c1, c2, c3 attach to the same document in realtime sync.
             val d3 = Document(key)
-            c3.attachAsync(d3).await()
+            c3.attachDocument(d3).await()
 
             val d1Events = mutableListOf<Document.Event>()
             val d2Events = mutableListOf<Document.Event>()
@@ -451,7 +451,7 @@ class ClientTest {
             assertJsonContentEquals("""{"c1":2,"c2":2,"c3":2}""", d2.toJson())
             assertJsonContentEquals("""{"c1":2,"c2":2,"c3":2}""", d3.toJson())
 
-            c3.detachAsync(d3).await()
+            c3.detachDocument(d3).await()
             c3.deactivateAsync().await()
             c3.close()
             d3.close()
@@ -680,7 +680,7 @@ class ClientTest {
             // 01. cli attach to the document having counter.
             val docKey = UUID.randomUUID().toString().toDocKey()
             val d1 = Document(docKey)
-            c1.attachAsync(d1, syncMode = Manual).await()
+            c1.attachDocument(d1, syncMode = Manual).await()
 
             // 02. cli update the document with creating a counter
             //     and sync with push-pull mode: CP(1, 1) -> CP(2, 2)
@@ -737,7 +737,7 @@ class ClientTest {
             assertEquals(2, d1.getRoot().getAs<JsonCounter>("counter").value)
 
             collectJob.cancel()
-            c1.detachAsync(d1).await()
+            c1.detachDocument(d1).await()
             c1.deactivateAsync().await()
             c1.close()
             d1.close()
@@ -915,7 +915,7 @@ class ClientTest {
                 c1.syncAsync(),
                 c1.syncAsync(),
                 c1.syncAsync(),
-                c1.detachAsync(d1),
+                c1.detachDocument(d1),
             )
 
             withTimeout(GENERAL_TIMEOUT) {
@@ -930,7 +930,7 @@ class ClientTest {
 
             assertEquals(1, d2Events.size)
 
-            c2.detachAsync(d2).await()
+            c2.detachDocument(d2).await()
 
             collectJobs.forEach(Job::cancel)
         }
@@ -945,25 +945,25 @@ class ClientTest {
 
             // Test that attaching an already attached document throws an error
             val activatedException = assertFailsWith<YorkieException> {
-                c1.attachAsync(d1).await()
+                c1.attachDocument(d1).await()
             }
             assertEquals(ErrClientNotActivated, activatedException.code)
 
             c1.activateAsync().await()
 
-            c1.attachAsync(d1).await()
+            c1.attachDocument(d1).await()
 
             // Test that attaching an already attached document throws an error
             val attachException = assertFailsWith<YorkieException> {
-                c1.attachAsync(d1).await()
+                c1.attachDocument(d1).await()
             }
             assertEquals(ErrDocumentNotDetached, attachException.code)
 
-            c1.detachAsync(d1).await()
+            c1.detachDocument(d1).await()
 
             // Test that detaching an already detached document throws an error
             val detachException = assertFailsWith<YorkieException> {
-                c1.detachAsync(d1).await()
+                c1.detachDocument(d1).await()
             }
             assertEquals(ErrDocumentNotAttached, detachException.code)
 

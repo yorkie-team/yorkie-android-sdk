@@ -59,17 +59,19 @@ import dev.yorkie.document.time.TimeTicket
 internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
 
     val size: Int
-        get() = root.size
+        get() = root.visibleSize
 
     /**
      * Returns the nodes between the given range.
+     * If [includeRemoved] is true, it includes removed nodes in the calculation.
      */
     fun tokensBetween(
         from: Int,
         to: Int,
         action: (TreeToken<T>, Boolean) -> Unit,
+        includeRemoved: Boolean = false,
     ) {
-        tokensBetweenInternal(root, from, to, action)
+        tokensBetweenInternal(root, from, to, action, includeRemoved)
     }
 
     /**
@@ -80,36 +82,41 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
      *  If the given range is collapsed, the callback is not called.
      *  It traverses the tree based on the concept of token.
      * NOTE(sejongk): Nodes should not be removed in callback, because it leads to wrong behaviors.
+     * If [includeRemoved] is true, it includes removed nodes in the calculation.
      */
     private fun tokensBetweenInternal(
         root: T,
         from: Int,
         to: Int,
         action: ((TreeToken<T>, Boolean) -> Unit),
+        includeRemoved: Boolean = false,
     ) {
         if (from > to) {
             throw IllegalArgumentException("from is greater than to: $from > $to")
         }
-        if (from > root.size) {
-            throw IllegalArgumentException("from is out of range: $from > ${root.size}")
+        val rootSize = if (includeRemoved) root.totalSize else root.visibleSize
+        if (from > rootSize) {
+            throw IllegalArgumentException("from is out of range: $from > $rootSize")
         }
-        if (to > root.size) {
-            throw IllegalArgumentException("to is out of range: $to > ${root.size}")
+        if (to > rootSize) {
+            throw IllegalArgumentException("to is out of range: $to > $rootSize")
         }
         if (from == to) return
 
         var pos = 0
-        root.children.forEach { child ->
+        val childList = if (includeRemoved) root.allChildren else root.children
+        childList.forEach { child ->
             // If the child is an element node, the size of the child.
-            if (from - child.paddedSize < pos && pos < to) {
+            if (from - child.paddedSize(includeRemoved) < pos && pos < to) {
                 // If the child is an element node, the range of the child
                 // is from - 1 to to - 1. Because the range of the element node is from
                 // the opening tag to the closing tag.
                 val fromChild = if (child.isText) from - pos else from - pos - 1
                 val toChild = if (child.isText) to - pos else to - pos - 1
 
+                val childSize = if (includeRemoved) child.totalSize else child.visibleSize
                 val startContained = !child.isText && fromChild < 0
-                val endContained = !child.isText && toChild > child.size
+                val endContained = !child.isText && toChild > childSize
                 if (child.isText || startContained) {
                     action(
                         TreeToken(child, if (child.isText) TokenType.Text else TokenType.Start),
@@ -119,15 +126,16 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
                 tokensBetweenInternal(
                     child,
                     fromChild.coerceAtLeast(0),
-                    toChild.coerceAtMost(child.size),
+                    toChild.coerceAtMost(childSize),
                     action,
+                    includeRemoved,
                 )
 
                 if (endContained) {
                     action(TreeToken(child, TokenType.End), true)
                 }
             }
-            pos += child.paddedSize
+            pos += child.paddedSize(includeRemoved)
         }
     }
 
@@ -160,8 +168,8 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         index: Int,
         preferText: Boolean = true,
     ): TreePos<T> {
-        if (index > node.size) {
-            throw IllegalArgumentException("index is out of range $index > ${node.size}")
+        if (index > node.visibleSize) {
+            throw IllegalArgumentException("index is out of range $index > ${node.visibleSize}")
         }
         if (node.isText) {
             return TreePos(node, index)
@@ -174,7 +182,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         node.children.forEach { child ->
             // The pos is in both sides of the text node, we should traverse
             // inside of the text node if preferText is true.
-            if (preferText && child.isText && child.size >= index - pos) {
+            if (preferText && child.isText && child.visibleSize >= index - pos) {
                 return findTreePosInternal(child, index - pos, true)
             }
 
@@ -244,10 +252,29 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         return path.reversed()
     }
 
-    private fun addSizeOfLeftSiblings(parent: T, offset: Int): Int {
-        return parent.children.subList(0, offset).fold(0) { acc, leftSibling ->
-            acc + if (leftSibling.isRemoved) 0 else leftSibling.paddedSize
+    /**
+     * Returns the size of left siblings of the given [offset].
+     * If [includeRemoved] is true, it includes removed nodes in the calculation.
+     */
+    private fun addSizeOfLeftSiblings(
+        parent: T,
+        offset: Int,
+        includeRemoved: Boolean = false,
+    ): Int {
+        val siblings = if (includeRemoved) parent.allChildren else parent.children
+        var acc = 0
+
+        for (i in 0 until offset) {
+            val leftSibling = siblings.getOrNull(i) ?: continue
+
+            if (!includeRemoved && leftSibling.isRemoved) {
+                continue
+            }
+
+            acc += leftSibling.paddedSize(includeRemoved)
         }
+
+        return acc
     }
 
     /**
@@ -281,7 +308,7 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
     }
 
     private fun findTextPos(node: T, pathElement: Int): TreePos<T> {
-        if (node.size < pathElement) {
+        if (node.visibleSize < pathElement) {
             throw IllegalArgumentException("unacceptable path")
         }
 
@@ -290,8 +317,8 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
         for (index in node.children.indices) {
             val child = node.children[index]
 
-            if (child.size < updatedPathElement) {
-                updatedPathElement -= child.size
+            if (child.visibleSize < updatedPathElement) {
+                updatedPathElement -= child.visibleSize
             } else {
                 updatedNode = child
                 break
@@ -303,8 +330,9 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
 
     /**
      * Returns the index of the given tree [pos].
+     * If [includeRemoved] is true, it includes removed nodes in the calculation.
      */
-    fun indexOf(pos: TreePos<T>): Int {
+    fun indexOf(pos: TreePos<T>, includeRemoved: Boolean = false): Int {
         var node = pos.node
         val offset = pos.offset
 
@@ -314,25 +342,25 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
             size += offset
 
             val parent = requireNotNull(node.parent)
-            val offsetOfNode = parent.findOffset(node)
+            val offsetOfNode = parent.findOffset(node, includeRemoved)
             if (offsetOfNode == -1) {
                 throw IllegalArgumentException("invalid pos: $pos")
             }
 
-            size += addSizeOfLeftSiblings(parent, offsetOfNode)
+            size += addSizeOfLeftSiblings(parent, offsetOfNode, includeRemoved)
             node = parent
         } else {
-            size += addSizeOfLeftSiblings(node, offset)
+            size += addSizeOfLeftSiblings(node, offset, includeRemoved)
         }
 
         while (node.parent != null) {
             val parent = node.parent ?: break
-            val offsetOfNode = parent.findOffset(node)
+            val offsetOfNode = parent.findOffset(node, includeRemoved)
             if (offsetOfNode == -1) {
                 throw IllegalArgumentException("invalid pos: $pos")
             }
 
-            size += addSizeOfLeftSiblings(parent, offsetOfNode)
+            size += addSizeOfLeftSiblings(parent, offsetOfNode, includeRemoved)
             depth++
             node = parent
         }
@@ -395,11 +423,26 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
     var parent: T? = null
         protected set
 
-    var size = 0
+    var visibleSize = 0
         protected set
 
+    var totalSize = 0
+        protected set
+
+    /**
+     * Returns the length of the node including padding.
+     * If [includeRemoved] is true, it includes removed nodes in the calculation.
+     */
+    fun paddedSize(includeRemoved: Boolean = false): Int {
+        val nodeSize = if (includeRemoved) totalSize else visibleSize
+        return nodeSize + if (isText) 0 else ELEMENT_PADDING_SIZE
+    }
+
+    /**
+     * @deprecated Use [paddedSize] function instead.
+     */
     val paddedSize: Int
-        get() = size + if (isText) 0 else ELEMENT_PADDING_SIZE
+        get() = paddedSize(false)
 
     val nextSibling: T?
         get() {
@@ -458,15 +501,21 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
     /**
      * Updates the size of the ancestors. It is used when
      * the size of the node is changed.
+     * If [includeRemoved] is true, it updates ancestors totalSize including removed nodes.
      */
-    fun updateAncestorSize() {
+    fun updateAncestorSize(delta: Int, includeRemoved: Boolean = false) {
         var parent = parent
-        val sign = if (isRemoved) -1 else 1
-
         while (parent != null) {
-            parent.size += paddedSize * sign
-            if (parent.isRemoved) {
-                break
+            if (includeRemoved) {
+                parent.totalSize += delta
+            } else {
+                parent.visibleSize += delta
+                // NOTE(hackerwins): If a parent node is removed (tombstone),
+                // it is not visible to the user, and its children are also not visible.
+                // Therefore, there is no need to update the visibleSize above the removed parent.
+                if (parent.isRemoved) {
+                    break
+                }
             }
             parent = parent.parent
         }
@@ -475,18 +524,40 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
     /**
      * Updates the size of the descendants. It is used when
      * the tree is newly created and the size of the descendants is not calculated.
+     * If [includeRemoved] is true, it includes removed nodes in the calculation.
      */
-    fun updateDescendantSize(): Int {
-        size += children.sumOf { node ->
-            node.updateDescendantSize().takeUnless { node.isRemoved } ?: 0
+    fun updateDescendantSize(includeRemoved: Boolean = false): Int {
+        var calcSize = 0
+        for (child in childNodes) {
+            val childSize = child.updateDescendantSize(includeRemoved)
+            if (!includeRemoved && child.isRemoved) {
+                continue
+            }
+            calcSize += childSize
         }
-        return paddedSize
+
+        if (includeRemoved) {
+            totalSize += calcSize
+        } else {
+            visibleSize += calcSize
+        }
+
+        return paddedSize(includeRemoved)
     }
 
-    fun findOffset(node: T): Int {
+    /**
+     * Returns the offset of the given [node] in the children.
+     * If [includeRemoved] is true, it includes removed nodes in the calculation.
+     */
+    fun findOffset(node: T, includeRemoved: Boolean = false): Int {
         check(!isText) {
             "Text node cannot have children"
         }
+
+        if (includeRemoved) {
+            return childNodes.indexOf(node)
+        }
+
         if (node.isRemoved) {
             val index = childNodes.indexOf(node)
 
@@ -508,9 +579,13 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         childNodes.add(node)
         node.parent = this as T
 
-        if (!node.isRemoved) {
-            node.updateAncestorSize()
-        }
+        node.updateAncestorSize(
+            delta = node.paddedSize(),
+        )
+        node.updateAncestorSize(
+            delta = node.paddedSize(true),
+            includeRemoved = true,
+        )
     }
 
     /**
@@ -537,7 +612,13 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             ?: throw NoSuchElementException("child not found")
 
         insertAtInternal(offset, newNode)
-        newNode.updateAncestorSize()
+        newNode.updateAncestorSize(
+            delta = newNode.paddedSize(),
+        )
+        newNode.updateAncestorSize(
+            delta = newNode.paddedSize(true),
+            includeRemoved = true,
+        )
     }
 
     /**
@@ -552,7 +633,13 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             ?: throw NoSuchElementException("child not found")
 
         insertAtInternal(offset + 1, newNode)
-        newNode.updateAncestorSize()
+        newNode.updateAncestorSize(
+            delta = newNode.paddedSize(),
+        )
+        newNode.updateAncestorSize(
+            delta = newNode.paddedSize(true),
+            includeRemoved = true,
+        )
     }
 
     /**
@@ -564,7 +651,13 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         }
 
         insertAtInternal(offset, newNode)
-        newNode.updateAncestorSize()
+        newNode.updateAncestorSize(
+            delta = newNode.paddedSize(),
+        )
+        newNode.updateAncestorSize(
+            delta = newNode.paddedSize(true),
+            includeRemoved = true,
+        )
     }
 
     private fun insertAtInternal(offset: Int, newNode: T) {
@@ -577,7 +670,7 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
     }
 
     /**
-     * Removes the given [child].
+     * Removes the given [child] (physically purges it from the tree).
      */
     fun removeChild(child: T) {
         check(!isText) {
@@ -588,6 +681,11 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             ?: throw NoSuchElementException("child not found")
 
         childNodes.removeAt(offset)
+
+        // NOTE(hackerwins): Decrease totalSize including removed nodes
+        // since this node is being purged (physically removed from tree).
+        child.updateAncestorSize(-child.paddedSize(true), true)
+
         child.parent = null
     }
 
@@ -597,7 +695,7 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             meta = 0,
         )
 
-        if (offset == 0 || offset == size) {
+        if (offset == 0 || offset == visibleSize) {
             return Pair(
                 first = null,
                 second = diff,
@@ -642,7 +740,8 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
         val clone = cloneElement(issueTimeTicket)
         parent?.insertAfterInternal(this as T, clone)
-        clone.updateAncestorSize()
+        clone.updateAncestorSize(clone.paddedSize())
+        clone.updateAncestorSize(clone.paddedSize(true), true)
 
         clone.childNodes.clear()
         repeat(childNodes.size - offset) {
@@ -650,11 +749,17 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             clone.childNodes.add(rightChild)
             rightChild.parent = clone
         }
-        size = childNodes.fold(0) { acc, child ->
-            acc + child.paddedSize
+        visibleSize = childNodes.fold(0) { acc, child ->
+            acc + child.paddedSize(false)
         }
-        clone.size = clone.childNodes.fold(0) { acc, child ->
-            acc + child.paddedSize
+        totalSize = childNodes.fold(0) { acc, child ->
+            acc + child.paddedSize(true)
+        }
+        clone.visibleSize = clone.childNodes.fold(0) { acc, child ->
+            acc + child.paddedSize(false)
+        }
+        clone.totalSize = clone.childNodes.fold(0) { acc, child ->
+            acc + child.paddedSize(true)
         }
 
         // NOTE(hackerwins): Calculate data size after node splitting:

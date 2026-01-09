@@ -420,7 +420,7 @@ class ConverterTest {
 
     @Test
     fun `should convert ElementSimple`() {
-        val crdtObject = CrdtObject(InitialTimeTicket, rht = ElementRht())
+        val crdtObject = CrdtObject(InitialTimeTicket, memberNodes = ElementRht())
         val crdtArray = CrdtArray(InitialTimeTicket)
         val primitive = CrdtPrimitive("str", InitialTimeTicket)
         val crdtCounter = CrdtCounter(1, InitialTimeTicket)
@@ -444,8 +444,43 @@ class ConverterTest {
     }
 
     @Test
+    fun `should preserve GC elements during object to bytes conversion`() {
+        // Create an object with some elements
+        val rht = ElementRht<CrdtElement>().apply {
+            set("a", CrdtPrimitive("value_a", InitialTimeTicket), InitialTimeTicket)
+            set(
+                "b",
+                CrdtPrimitive("value_b", InitialTimeTicket.copy(lamport = 1L)),
+                InitialTimeTicket.copy(lamport = 1L),
+            )
+        }
+        val crdtObject = CrdtObject(InitialTimeTicket, memberNodes = rht)
+
+        // Remove one element to create a tombstone
+        crdtObject.removeByKey("a", InitialTimeTicket.copy(lamport = 2L))
+
+        // Create a CrdtRoot with the object
+        val root = CrdtRoot(crdtObject)
+
+        // Verify GC element pairs exist before conversion
+        val gcPairsBefore = root.getGCElementPairs().toList()
+        assertEquals(1, gcPairsBefore.size)
+
+        // Convert to bytes and back
+        val bytes = crdtObject.toPBJsonObject().toByteString()
+        val converted = bytes.toCrdtObject()
+
+        // Create a new root with the converted object
+        val newRoot = CrdtRoot(converted)
+
+        // Verify GC element pairs are preserved after conversion
+        val gcPairsAfter = newRoot.getGCElementPairs().toList()
+        assertEquals(1, gcPairsAfter.size)
+    }
+
+    @Test
     fun `should encode and decode tree properly`() = runTest {
-        val document = Document(Document.Key(""))
+        val document = Document("")
 
         fun JsonObject.tree() = getAs<JsonTree>("t")
 
@@ -486,8 +521,8 @@ class ConverterTest {
 
     private class TestCrdtElement(
         override val createdAt: TimeTicket,
-        override var _movedAt: TimeTicket? = null,
-        override var _removedAt: TimeTicket? = null,
+        override var movedAt: TimeTicket? = null,
+        override var removedAt: TimeTicket? = null,
     ) : CrdtElement() {
         override fun deepCopy() = this
 

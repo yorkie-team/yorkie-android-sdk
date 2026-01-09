@@ -100,10 +100,11 @@ androidx-benchmark = { id = "androidx.benchmark", version.ref = "androidxBenchma
 
 # Plugins defined by this project
 yorkie-android-library = { id = "yorkie.android.library" }
-yorkie-android-library-compose = { id = "yorkie.android.library.compose" }
 yorkie-android-library-jacoco = { id = "yorkie.android.library.jacoco" }
 yorkie-maven-publish = { id = "yorkie.maven.publish" }
-yorkie-buf-generate = { id = "yorkie.buf.generate" }
-yorkie-android-application = { id = "yorkie.android.application" }
-yorkie-android-application-compose = { id = "yorkie.android.application.compose" }
-yorkie-android-feature = { id = "yorkie.android.feature" }
+yorkie-protocol-buffer-generation = { id = "yorkie.protocol.buffer.generation" }
+yorkie-examples-android-application = { id = "yorkie.examples.android.application" }
+yorkie-examples-android-application-compose = { id = "yorkie.examples.android.application.compose" }
+yorkie-examples-android-library = { id = "yorkie.examples.android.library" }
+yorkie-examples-android-library-compose = { id = "yorkie.examples.android.library.compose" }
+yorkie-examples-android-feature = { id = "yorkie.examples.android.feature" }

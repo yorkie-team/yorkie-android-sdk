@@ -1,6 +1,6 @@
 services:
   yorkie:
-    image: 'yorkieteam/yorkie:0.6.28'
+    image: 'yorkieteam/yorkie:0.6.35'
     container_name: 'yorkie'
     command: ['server', '--mongo-connection-uri', 'mongodb://mongo:27017']
     restart: always

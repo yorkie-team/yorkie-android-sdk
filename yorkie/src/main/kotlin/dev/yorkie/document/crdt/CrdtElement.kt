@@ -12,23 +12,11 @@ import dev.yorkie.util.DataSize
 @Suppress("PropertyName")
 abstract class CrdtElement {
     abstract val createdAt: TimeTicket
-    protected abstract var _movedAt: TimeTicket?
-    protected abstract var _removedAt: TimeTicket?
+    abstract var movedAt: TimeTicket?
+    abstract var removedAt: TimeTicket?
 
     val id: TimeTicket
         get() = createdAt
-
-    var movedAt: TimeTicket?
-        get() = _movedAt
-        set(value) {
-            _movedAt = value
-        }
-
-    var removedAt: TimeTicket?
-        get() = _removedAt
-        private set(value) {
-            _removedAt = value
-        }
 
     val isRemoved: Boolean
         get() = removedAt != null
@@ -49,6 +37,11 @@ abstract class CrdtElement {
         return false
     }
 
+    fun getPositionedAt(): TimeTicket {
+        val movedAt = this.movedAt ?: return createdAt
+        return movedAt
+    }
+
     public fun toJson(): String {
         return toJsonString()
     }
@@ -59,11 +52,11 @@ abstract class CrdtElement {
     fun getMetaUsage(): Int {
         var meta = TIME_TICKET_SIZE
 
-        if (_movedAt != null) {
+        if (movedAt != null) {
             meta += TIME_TICKET_SIZE
         }
 
-        if (_removedAt != null) {
+        if (removedAt != null) {
             meta += TIME_TICKET_SIZE
         }
 

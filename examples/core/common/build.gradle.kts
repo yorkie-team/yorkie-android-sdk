@@ -1,13 +1,15 @@
+import dev.yorkie.dsl.implementation
+
 plugins {
-    alias(libs.plugins.yorkie.android.library)
+    alias(libs.plugins.yorkie.examples.android.library)
 }
 
 android {
-    namespace = "com.example.core.common"
+    namespace = "dev.yorkie.example.core.common"
 }
 
 dependencies {
-    implementation(project(":yorkie"))
+    implementation(projects.yorkie)
 
     implementation(libs.androidx.core)
     implementation(libs.timber)

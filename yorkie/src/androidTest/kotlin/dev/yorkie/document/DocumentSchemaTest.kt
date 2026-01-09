@@ -114,7 +114,7 @@ class DocumentSchemaTest {
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
-            val result = client.attachAsync(
+            val result = client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
                 schema = "noexist@1",
@@ -135,7 +135,7 @@ class DocumentSchemaTest {
             client.activateAsync().await()
 
             val document = Document(UUID.randomUUID().toString().toDocKey())
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
                 schema = "schema1-$time@1",
@@ -168,7 +168,7 @@ class DocumentSchemaTest {
                 actual = document.toJson(),
             )
 
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
             client.deactivateAsync().await()
         }
     }
@@ -183,7 +183,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document1 = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document1,
                 syncMode = Client.SyncMode.Manual,
                 schema = "schema1-$time@1",
@@ -198,7 +198,7 @@ class DocumentSchemaTest {
             )
 
             client.syncAsync(document1).await()
-            client.detachAsync(document1).await()
+            client.detachDocument(document1).await()
 
             this@DocumentSchemaTest.client.postApi<Any>(
                 url = "$yorkieServerUrl/yorkie.v1.AdminService/UpdateDocument",
@@ -206,7 +206,7 @@ class DocumentSchemaTest {
                     "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "documentKey" to documentKey.value,
+                    "documentKey" to documentKey,
                     "root" to "{\"title\": Int(123)}",
                     "schemaKey" to "schema2-$time@1",
                 ),
@@ -214,7 +214,7 @@ class DocumentSchemaTest {
             )
 
             val document2 = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document2,
                 syncMode = Client.SyncMode.Manual,
             ).await()
@@ -237,7 +237,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
                 schema = "schema1-$time@1",
@@ -250,7 +250,7 @@ class DocumentSchemaTest {
                         "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "documentKey" to documentKey.value,
+                        "documentKey" to documentKey,
                         "root" to "{\"title\": Int(123)}",
                         "schemaKey" to "schema2-$time@1",
                     ),
@@ -279,7 +279,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
                 schema = "schema1-$time@1",
@@ -293,7 +293,7 @@ class DocumentSchemaTest {
                 actual = document.toJson(),
             )
             client.syncAsync(document).await()
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
 
             val exception = assertThrows(IllegalStateException::class.java) {
                 this@DocumentSchemaTest.client.postApi<Any>(
@@ -302,7 +302,7 @@ class DocumentSchemaTest {
                         "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "documentKey" to documentKey.value,
+                        "documentKey" to documentKey,
                         "root" to "{\"title\": Long(123)}",
                         "schemaKey" to "schema2-$time@1",
                     ),
@@ -331,7 +331,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
                 schema = "schema1-$time@1",
@@ -354,7 +354,7 @@ class DocumentSchemaTest {
                         "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "documentKey" to documentKey.value,
+                        "documentKey" to documentKey,
                         "root" to "",
                         "schemaKey" to "",
                     ),
@@ -369,7 +369,7 @@ class DocumentSchemaTest {
                 )["message"],
             )
 
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
 
             // Should succeed after detach
             this@DocumentSchemaTest.client.postApi<Any>(
@@ -378,7 +378,7 @@ class DocumentSchemaTest {
                     "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "documentKey" to documentKey.value,
+                    "documentKey" to documentKey,
                     "root" to "",
                     "schemaKey" to "",
                 ),
@@ -386,7 +386,7 @@ class DocumentSchemaTest {
             )
 
             val document2 = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document2,
                 syncMode = Client.SyncMode.Manual,
             ).await()
@@ -418,7 +418,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
             ).await()
@@ -440,7 +440,7 @@ class DocumentSchemaTest {
                         "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "documentKey" to documentKey.value,
+                        "documentKey" to documentKey,
                         "root" to "",
                         "schemaKey" to "schema2-$time@1",
                     ),
@@ -454,7 +454,7 @@ class DocumentSchemaTest {
                     gson = gson,
                 )["message"],
             )
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
 
             // Should fail with incompatible schema
             // Should fail when document is attached
@@ -465,7 +465,7 @@ class DocumentSchemaTest {
                         "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "documentKey" to documentKey.value,
+                        "documentKey" to documentKey,
                         "root" to "",
                         "schemaKey" to "schema2-$time@1",
                     ),
@@ -487,7 +487,7 @@ class DocumentSchemaTest {
                     "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "documentKey" to documentKey.value,
+                    "documentKey" to documentKey,
                     "root" to "",
                     "schemaKey" to "schema1-$time@1",
                 ),
@@ -495,7 +495,7 @@ class DocumentSchemaTest {
             )
 
             val document2 = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document2,
                 syncMode = Client.SyncMode.Manual,
             ).await()
@@ -534,7 +534,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
                 schema = "schema1-$time@1",
@@ -548,7 +548,7 @@ class DocumentSchemaTest {
                 actual = document.toJson(),
             )
             client.syncAsync(document).await()
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
 
             // TODO(chacha912): We can verify schema-only updates work correctly
             // after features like conditional types are implemented in schema-ruleset.
@@ -559,7 +559,7 @@ class DocumentSchemaTest {
                         "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "documentKey" to documentKey.value,
+                        "documentKey" to documentKey,
                         "root" to "",
                         "schemaKey" to "schema2-$time@1",
                     ),
@@ -587,7 +587,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
             ).await()
@@ -607,16 +607,16 @@ class DocumentSchemaTest {
                     "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "documentKey" to documentKey.value,
+                    "documentKey" to documentKey,
                     "root" to "{\"title\": Int(123)}",
                     "schemaKey" to "",
                 ),
                 gson = gson,
             )
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
 
             val document2 = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document2,
                 syncMode = Client.SyncMode.Manual,
             ).await()
@@ -639,7 +639,7 @@ class DocumentSchemaTest {
 
             val documentKey = UUID.randomUUID().toString().toDocKey()
             val document = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document,
                 syncMode = Client.SyncMode.Manual,
                 schema = "schema1-$time@1",
@@ -653,7 +653,7 @@ class DocumentSchemaTest {
                 actual = document.toJson(),
             )
             client.syncAsync(document).await()
-            client.detachAsync(document).await()
+            client.detachDocument(document).await()
 
             // Should fail with incompatible root update
             val exception1 = assertThrows(IllegalStateException::class.java) {
@@ -663,7 +663,7 @@ class DocumentSchemaTest {
                         "Authorization" to "API-Key $projectSecretKey",
                     ),
                     requestMap = mapOf(
-                        "documentKey" to documentKey.value,
+                        "documentKey" to documentKey,
                         "root" to "{\"title\": Int(123)}",
                         "schemaKey" to "",
                     ),
@@ -685,7 +685,7 @@ class DocumentSchemaTest {
                     "Authorization" to "API-Key $projectSecretKey",
                 ),
                 requestMap = mapOf(
-                    "documentKey" to documentKey.value,
+                    "documentKey" to documentKey,
                     "root" to "{\"title\": \"world\"}",
                     "schemaKey" to "",
                 ),
@@ -693,7 +693,7 @@ class DocumentSchemaTest {
             )
 
             val document2 = Document(documentKey)
-            client.attachAsync(
+            client.attachDocument(
                 document = document2,
                 syncMode = Client.SyncMode.Manual,
             ).await()

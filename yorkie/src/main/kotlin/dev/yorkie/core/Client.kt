@@ -18,29 +18,33 @@ import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchDocumentResponse
+import dev.yorkie.api.v1.WatchPresenceResponse
 import dev.yorkie.api.v1.YorkieServiceClient
 import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.attachDocumentRequest
+import dev.yorkie.api.v1.attachPresenceRequest
 import dev.yorkie.api.v1.broadcastRequest
 import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachDocumentRequest
+import dev.yorkie.api.v1.detachPresenceRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
+import dev.yorkie.api.v1.refreshPresenceRequest
 import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.watchDocumentRequest
+import dev.yorkie.api.v1.watchPresenceRequest
 import dev.yorkie.document.Document
-import dev.yorkie.document.Document.DocStatus
 import dev.yorkie.document.Document.Event.AuthError
 import dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod.PushPull
-import dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod.WatchDocuments
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
-import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.time.ActorID
+import dev.yorkie.presence.Presence
+import dev.yorkie.presence.PresenceEvent
 import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.OperationResult
@@ -58,9 +62,9 @@ import dev.yorkie.util.handleConnectException
 import java.io.Closeable
 import java.io.InterruptedIOException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import kotlin.collections.Map.Entry
 import kotlin.coroutines.coroutineContext
 import kotlin.math.pow
 import kotlin.time.Duration
@@ -90,10 +94,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.fold
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -126,7 +126,7 @@ public class Client(
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val activationJob = SupervisorJob()
 
-    private val attachments = MutableStateFlow<Map<Document.Key, Attachment>>(emptyMap())
+    private val attachments = ConcurrentHashMap<String, Attachment<out Attachable>>()
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()
@@ -138,15 +138,14 @@ public class Client(
         "x-shard-key" to listOf("${options.apiKey.orEmpty()}/${options.key}"),
     )
 
-    private val Document.Key.documentBasedRequestHeader
+    private val String.attachmentBasedRequestHeader
         get() = mapOf(
-            "x-shard-key" to listOf("${options.apiKey.orEmpty()}/$value"),
+            "x-shard-key" to listOf("${options.apiKey.orEmpty()}/$this"),
         )
 
-    private val mutexForDocuments = mutableMapOf<Document.Key, Mutex>()
-
-    private val Document.mutex
-        get() = mutexForDocuments.getOrPut(key) { Mutex() }
+    private val mutexForAttachments = mutableMapOf<String, Mutex>()
+    private val Attachable.mutex
+        get() = mutexForAttachments.getOrPut(getKey()) { Mutex() }
 
     private val streamTimeout = with(streamClient) {
         callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
@@ -219,7 +218,6 @@ public class Client(
             }
             _status.emit(Status.Activated(ActorID(activateResponse.clientId)))
             runSyncLoop()
-            runWatchLoop()
             SUCCESS
         }
     }
@@ -229,48 +227,38 @@ public class Client(
      * the server and pulls remote changes from the server.
      */
     private fun runSyncLoop() {
+        conditions[ClientCondition.SYNC_LOOP] = true
         scope.launch(activationJob) {
             while (true) {
                 if (!isActive) {
                     conditions[ClientCondition.SYNC_LOOP] = false
                     return@launch
                 }
-                this@Client.attachments.value.forEach { (documentKey, attachment) ->
-                    if (attachment.needRealTimeSync()) {
-                        attachments.update {
-                            it.toMutableMap().apply {
-                                put(
-                                    key = documentKey,
-                                    value = attachment.copy(
-                                        remoteChangeEventReceived = false,
-                                    ),
-                                )
-                            }
+                for ((_, attachment) in attachments) {
+                    val heartbeatInterval = options.presenceHeartbeatInterval.inWholeMilliseconds
+                    if (!attachment.needSync(heartbeatInterval)) {
+                        continue
+                    }
+
+                    // Reset changeEventReceived for Document resources
+                    if (attachment.changeEventReceived != null) {
+                        attachment.changeEventReceived = false
+                    }
+
+                    val (attachment, result) = syncInternal(attachment, attachment.syncMode)
+                    val isRetryAble = handleConnectException(
+                        result.exceptionOrNull() as? ConnectException,
+                    ) { connectException ->
+                        if (attachment.resource is Document) {
+                            handleDocumentAuthenticationError(
+                                exception = connectException,
+                                document = attachment.resource,
+                                method = PushPull,
+                            )
                         }
-                        val (document, result) = syncInternal(attachment, attachment.syncMode)
-                        document.publishEvent(
-                            if (result.isSuccess) {
-                                conditions[ClientCondition.SYNC_LOOP] = true
-                                SyncStatusChanged.Synced
-                            } else if (
-                                handleConnectException(
-                                    result.exceptionOrNull() as? ConnectException,
-                                ) { connectException ->
-                                    handleAuthenticationError(connectException, document, PushPull)
-                                }
-                            ) { // check if the exception is retryable
-                                conditions[ClientCondition.SYNC_LOOP] = true
-                                SyncStatusChanged.SyncFailed(
-                                    result.exceptionOrNull(),
-                                )
-                            } else {
-                                conditions[ClientCondition.SYNC_LOOP] = false
-                                SyncStatusChanged.SyncFailed(
-                                    result.exceptionOrNull(),
-                                )
-                                return@forEach
-                            },
-                        )
+                    }
+                    if (result.isFailure && !isRetryAble) {
+                        conditions[ClientCondition.SYNC_LOOP] = false
                     }
                 }
                 delay(options.syncLoopDuration.inWholeMilliseconds)
@@ -282,7 +270,7 @@ public class Client(
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
      */
-    public fun syncAsync(document: Document? = null): Deferred<OperationResult> {
+    public fun syncAsync(resource: Attachable? = null): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
                 isActive,
@@ -293,82 +281,106 @@ public class Client(
 
             var failure: Throwable? = null
 
-            if (document != null) {
-                val attachment = attachments.value[document.key]
-                    ?: throw YorkieException(
-                        ErrDocumentNotAttached,
-                        "document(${document.key}) is not attached",
-                    )
-                val syncResult = syncInternal(attachment, SyncMode.Realtime)
-                syncResult.document.publishEvent(
-                    if (syncResult.result.isSuccess) {
-                        SyncStatusChanged.Synced
-                    } else {
-                        val exception = syncResult.result.exceptionOrNull()
-                        if (exception != null) {
-                            failure = exception
-                        }
-                        SyncStatusChanged.SyncFailed(exception)
-                    },
+            if (resource != null) {
+                val key = resource.getKey()
+                val attachment = attachments[key] ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "$key is not attached",
                 )
+                val syncResult = syncInternal(attachment, SyncMode.Realtime)
+                if (syncResult.result.isFailure) {
+                    val exception = syncResult.result.exceptionOrNull()
+                    if (exception != null) {
+                        failure = exception
+                    }
+                }
             } else {
-                attachments.value.forEach { (_, attachment) ->
-                    val syncResult = syncInternal(attachment, attachment.syncMode)
-                    syncResult.document.publishEvent(
-                        if (syncResult.result.isSuccess) {
-                            SyncStatusChanged.Synced
-                        } else {
+                attachments.forEach { (_, attachment) ->
+                    if (attachment.syncMode != null && attachment.resource is Document) {
+                        val syncResult = syncInternal(attachment, attachment.syncMode)
+                        if (syncResult.result.isFailure) {
                             val exception = syncResult.result.exceptionOrNull()
-                            if (failure == null && exception != null) {
+                            if (exception != null) {
                                 failure = exception
                             }
-                            SyncStatusChanged.SyncFailed(exception)
-                        },
-                    )
+                        }
+                    }
                 }
             }
             failure?.let { Result.failure(it) } ?: SUCCESS
         }
     }
 
-    private suspend fun syncInternal(attachment: Attachment, syncMode: SyncMode): SyncResult {
-        val (document, documentID) = attachment
+    private suspend fun syncInternal(
+        attachment: Attachment<out Attachable>,
+        syncMode: SyncMode?,
+    ): SyncResult {
+        val resource = attachment.resource
         return SyncResult(
-            document,
+            attachment,
             runCatching {
-                document.mutex.withLock {
-                    val request = pushPullChangesRequest {
-                        clientId = requireClientId().value
-                        changePack = document.createChangePack().toPBChangePack()
-                        documentId = documentID
-                        pushOnly = syncMode == SyncMode.RealtimePushOnly
-                    }
-                    val response = service.pushPullChanges(
-                        request,
-                        document.key.documentBasedRequestHeader,
-                    ).getOrThrow()
-                    val responsePack = response.changePack.toChangePack()
-                    // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
-                    // PushPull, ignore the response when the syncMode is PushOnly.
-                    val currentSyncMode = attachments.value[document.key]?.syncMode
-                    if (responsePack.hasChanges &&
-                        currentSyncMode == SyncMode.RealtimePushOnly ||
-                        currentSyncMode == SyncMode.RealtimeSyncOff
-                    ) {
-                        return@runCatching
-                    }
-                    document.applyChangePack(responsePack)
-                    // NOTE(chacha912): If a document has been removed, watchStream should
-                    // be disconnected to not receive an event for that document.
-                    if (document.status == DocStatus.Removed) {
-                        attachments.update {
-                            it - document.key
+                if (resource is Document) {
+                    resource.mutex.withLock {
+                        val documentKey = resource.getKey()
+                        val request = pushPullChangesRequest {
+                            clientId = requireClientId().value
+                            changePack = resource.createChangePack().toPBChangePack()
+                            documentId = attachment.resourceId
+                            pushOnly = syncMode == SyncMode.RealtimePushOnly
                         }
-                        mutexForDocuments.remove(document.key)
+                        val response = service.pushPullChanges(
+                            request,
+                            documentKey.attachmentBasedRequestHeader,
+                        ).getOrThrow()
+                        val responsePack = response.changePack.toChangePack()
+                        // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
+                        // PushPull, ignore the response when the syncMode is PushOnly.
+                        val currentSyncMode = attachments[documentKey]?.syncMode
+                        if (responsePack.hasChanges &&
+                            currentSyncMode == SyncMode.RealtimePushOnly ||
+                            currentSyncMode == SyncMode.RealtimeSyncOff
+                        ) {
+                            return@runCatching
+                        }
+                        resource.applyChangePack(responsePack)
+                        attachment.resource.publish(
+                            event = SyncStatusChanged.Synced,
+                        )
+
+                        // NOTE(chacha912): If a document has been removed, watchStream should
+                        // be disconnected to not receive an event for that document.
+                        if (resource.getStatus() == ResourceStatus.Removed) {
+                            detachInternal(documentKey)
+                        }
+                    }
+                } else if (resource is Presence) {
+                    resource.mutex.withLock {
+                        val request = refreshPresenceRequest {
+                            clientId = requireClientId().value
+                            resource.getPresenceId()?.let {
+                                presenceId = it
+                            }
+                            presenceKey = resource.getKey()
+                        }
+                        val response = service.refreshPresence(
+                            request,
+                            resource.getKey().attachmentBasedRequestHeader,
+                        ).getOrThrow()
+                        resource.updateCount(response.count, 0L)
+                        attachment.updateHeartbeatTime()
                     }
                 }
             }.onFailure {
                 coroutineContext.ensureActive()
+
+                if (resource is Document) {
+                    resource.publish(
+                        event = SyncStatusChanged.SyncFailed(
+                            cause = it,
+                        ),
+                    )
+                }
+
                 (it as? ConnectException)?.let { exception ->
                     handleConnectException(exception) { it ->
                         if (errorCodeOf(it) == ErrUnauthenticated.codeString) {
@@ -385,33 +397,39 @@ public class Client(
      * runWatchLoop() runs the watch loop for the given document. The watch loop
      * listens to the events of the given document from the server.
      */
-    private fun runWatchLoop() {
+    private fun runWatchLoop(key: String) {
         scope.launch(activationJob) {
+            val attachment = attachments[key]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "$key is not attached",
+                )
+
             conditions[ClientCondition.WATCH_LOOP] = true
 
-            attachments.map { attachment ->
-                attachment.filterValues { it.syncMode != SyncMode.Manual }
-            }.fold(emptyMap<Document.Key, WatchJobHolder>()) { accumulator, attachments ->
-                (accumulator.keys - attachments.keys).forEach {
-                    accumulator.getValue(it).job.cancel()
-                }
-                attachments.entries.associate { (key, attachment) ->
-                    val previous = accumulator[key]
-                    key to if (previous?.documentID == attachment.documentID &&
-                        previous.job.isActive
-                    ) {
-                        previous
-                    } else {
-                        previous?.job?.cancel()
-                        WatchJobHolder(attachment.documentID, createWatchJob(key, attachment))
+            attachment.watchJobHolder = WatchJobHolder(
+                attachment.resource.getKey(),
+                when (attachment.resource) {
+                    is Document -> {
+                        createDocumentWatchJob(attachment)
                     }
-                }
-            }
+
+                    is Presence -> {
+                        createPresenceWatchJob(attachment)
+                    }
+
+                    else -> {
+                        throw IllegalArgumentException("attachment resource type is not correct")
+                    }
+                },
+            )
         }
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private fun createWatchJob(documentKey: Document.Key, attachment: Attachment): Job {
+    private fun createDocumentWatchJob(attachment: Attachment<out Attachable>): Job {
+        val document = attachment.resource as Document
+        val documentKey = document.getKey()
         var latestStream: ServerOnlyStreamInterface<*, *>? = null
         return scope.launch(activationJob) {
             var shouldContinue = true
@@ -421,7 +439,215 @@ public class Client(
 
                 val stream = withTimeoutOrNull(streamTimeout) {
                     service.watchDocument(
-                        attachment.document.key.documentBasedRequestHeader,
+                        documentKey.attachmentBasedRequestHeader,
+                    ).also {
+                        latestStream = it
+                    }
+                } ?: continue
+
+                val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                    val channel = stream.responseChannel()
+                    while (!stream.isReceiveClosed() &&
+                        !channel.isClosedForReceive && shouldContinue
+                    ) {
+                        withTimeoutOrNull(streamTimeout) {
+                            val receiveResult = channel.receiveCatching()
+                            receiveResult.onSuccess {
+                                handleWatchDocumentResponse(
+                                    documentKey = documentKey,
+                                    response = it,
+                                )
+                                shouldContinue = true
+                            }.onFailure {
+                                if (receiveResult.isClosed) {
+                                    stream.safeClose()
+                                    return@onFailure
+                                }
+                                shouldContinue =
+                                    handleWatchDocumentStreamFailure(
+                                        document = document,
+                                        stream = stream,
+                                        cause = it,
+                                        cancelled = attachment.cancelled,
+                                    )
+                            }.onClosed {
+                                handleWatchDocumentStreamFailure(
+                                    document = document,
+                                    stream = stream,
+                                    cause = it
+                                        ?: ClosedReceiveChannelException("Channel was closed"),
+                                    cancelled = attachment.cancelled,
+                                )
+                            }
+                        } ?: run {
+                            handleWatchDocumentStreamFailure(
+                                document = document,
+                                stream = stream,
+                                cause = TimeoutException("channel timed out"),
+                                cancelled = attachment.cancelled,
+                            )
+                            shouldContinue = true
+                        }
+                    }
+                }
+                stream.sendAndClose(
+                    watchDocumentRequest {
+                        clientId = requireClientId().value
+                        documentId = attachment.resourceId
+                    },
+                )
+
+                document.publish(
+                    StreamConnectionChanged.Connected,
+                )
+
+                if (attachment.changeEventReceived != null) {
+                    attachment.changeEventReceived = true
+                }
+
+                streamJob.join()
+            }
+        }.also {
+            it.invokeOnCompletion {
+                scope.launch {
+                    onWatchDocumentStreamCanceled(document)
+                    latestStream.safeClose()
+                }
+            }
+        }
+    }
+
+    private suspend fun handleWatchDocumentResponse(
+        documentKey: String,
+        response: WatchDocumentResponse,
+    ) {
+        if (response.hasInitialization()) {
+            val document = attachments[documentKey]?.resource as? Document ?: return
+            val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
+            document.publishEvent(
+                Initialized(
+                    document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
+                ),
+            )
+            document.setOnlineClients(clientIDs.toSet())
+            return
+        }
+
+        val watchEvent = response.event
+        val eventType = checkNotNull(watchEvent.type)
+        // only single key will be received since 0.3.1 server.
+        val attachment = attachments[documentKey] ?: return
+        val document = attachment.resource as? Document ?: return
+        val publisher = ActorID(watchEvent.publisher)
+
+        when (eventType) {
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
+                if (document.getOnlineClients()
+                        .contains(publisher) && document.presences.value.contains(publisher)
+                ) {
+                    return
+                }
+                // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
+                // unless we also know their initial presence data at this point.
+                val presence = document.allPresences.value[publisher]
+                if (presence != null) {
+                    document.publishEvent(Others.Watched(PresenceInfo(publisher, presence)))
+                }
+                document.addOnlineClient(publisher)
+            }
+
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
+                // NOTE(chacha912): There is no presence,
+                // when PresenceChange(clear) is applied before unwatching. In that case,
+                // the 'unwatched' event is triggered while handling the PresenceChange.
+                val presence = document.presences.value[publisher] ?: return
+                document.publishEvent(Others.Unwatched(PresenceInfo(publisher, presence)))
+                document.removeOnlineClient(publisher)
+            }
+
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {
+                if (attachment.changeEventReceived != null) {
+                    attachment.changeEventReceived = true
+                }
+            }
+
+            DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST -> {
+                val topic = response.event.body.topic
+                val payload = response.event.body.payload.toStringUtf8()
+                document.publishEvent(
+                    Document.Event.Broadcast(
+                        actorID = publisher,
+                        topic = topic,
+                        payload = payload,
+                    ),
+                )
+            }
+
+            DocEventType.UNRECOGNIZED -> {
+                // nothing to do
+            }
+        }
+    }
+
+    /**
+     * handleWatchStreamFailure() handles the failure of the watch stream.
+     * return true if the stream should be reconnected, false otherwise.
+     */
+    private suspend fun handleWatchDocumentStreamFailure(
+        document: Document,
+        stream: ServerOnlyStreamInterface<*, *>,
+        cause: Throwable?,
+        cancelled: Boolean,
+    ): Boolean {
+        onWatchDocumentStreamCanceled(document)
+        stream.safeClose()
+
+        cause?.let {
+            sendWatchAttachmentResourceStreamException(
+                tag = "Client.WatchDocument",
+                t = it,
+            )
+        }
+
+        if (handleDocumentAuthenticationError(
+                exception = cause,
+                document = document,
+                method = AuthError.AuthErrorMethod.WatchDocument,
+            ) && !cancelled
+        ) {
+            coroutineContext.ensureActive()
+            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+            return true
+        } else {
+            conditions[ClientCondition.WATCH_LOOP] = false
+            return false
+        }
+    }
+
+    private suspend fun onWatchDocumentStreamCanceled(document: Document) {
+        if (document.getStatus() == ResourceStatus.Attached && status.value is Status.Activated) {
+            document.publishEvent(
+                Initialized(document.presences.value),
+            )
+            document.setOnlineClients(emptySet())
+            document.publishEvent(StreamConnectionChanged.Disconnected)
+        }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    private fun createPresenceWatchJob(attachment: Attachment<out Attachable>): Job {
+        val presence = attachment.resource as Presence
+        val presenceKey = presence.getKey()
+        var latestStream: ServerOnlyStreamInterface<*, *>? = null
+        return scope.launch(activationJob) {
+            var shouldContinue = true
+            while (shouldContinue) {
+                ensureActive()
+                latestStream.safeClose()
+
+                val stream = withTimeoutOrNull(streamTimeout) {
+                    service.watchPresence(
+                        presenceKey.attachmentBasedRequestHeader,
                     ).also {
                         latestStream = it
                     }
@@ -434,26 +660,9 @@ public class Client(
                         withTimeoutOrNull(streamTimeout) {
                             val receiveResult = channel.receiveCatching()
                             receiveResult.onSuccess {
-                                attachment.document.publishEvent(
-                                    StreamConnectionChanged.Connected,
-                                )
-
-                                attachments.update { attachments ->
-                                    attachments.toMutableMap().apply {
-                                        attachments[documentKey]?.let { attachment ->
-                                            put(
-                                                documentKey,
-                                                attachment.copy(
-                                                    remoteChangeEventReceived = true,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-
-                                handleWatchDocumentsResponse(
-                                    attachment.document.key,
-                                    it,
+                                handleWatchPresenceResponse(
+                                    presence = presence,
+                                    response = it,
                                 )
                                 shouldContinue = true
                             }.onFailure {
@@ -462,15 +671,13 @@ public class Client(
                                     return@onFailure
                                 }
                                 shouldContinue =
-                                    handleWatchStreamFailure(
-                                        document = attachment.document,
+                                    handleWatchPresenceStreamFailure(
                                         stream = stream,
                                         cause = it,
                                         cancelled = attachment.cancelled,
                                     )
                             }.onClosed {
-                                handleWatchStreamFailure(
-                                    document = attachment.document,
+                                handleWatchPresenceStreamFailure(
                                     stream = stream,
                                     cause = it
                                         ?: ClosedReceiveChannelException("Channel was closed"),
@@ -478,8 +685,7 @@ public class Client(
                                 )
                             }
                         } ?: run {
-                            handleWatchStreamFailure(
-                                document = attachment.document,
+                            handleWatchPresenceStreamFailure(
                                 stream = stream,
                                 cause = TimeoutException("channel timed out"),
                                 cancelled = attachment.cancelled,
@@ -489,9 +695,9 @@ public class Client(
                     }
                 }
                 stream.sendAndClose(
-                    watchDocumentRequest {
+                    watchPresenceRequest {
                         clientId = requireClientId().value
-                        documentId = attachment.documentID
+                        this.presenceKey = presenceKey
                     },
                 )
                 streamJob.join()
@@ -499,9 +705,28 @@ public class Client(
         }.also {
             it.invokeOnCompletion {
                 scope.launch {
-                    onWatchStreamCanceled(attachment.document)
                     latestStream.safeClose()
                 }
+            }
+        }
+    }
+
+    private fun handleWatchPresenceResponse(presence: Presence, response: WatchPresenceResponse) {
+        if (response.hasInitialized()) {
+            val count = response.initialized.count
+            val seq = response.initialized.seq
+            if (presence.updateCount(count, seq)) {
+                presence.publish(
+                    PresenceEvent.Initialized(count = count),
+                )
+            }
+        } else if (response.hasEvent()) {
+            val count = response.event.count
+            val seq = response.event.seq
+            if (presence.updateCount(count, seq)) {
+                presence.publish(
+                    PresenceEvent.Changed(count = count),
+                )
             }
         }
     }
@@ -510,18 +735,28 @@ public class Client(
      * handleWatchStreamFailure() handles the failure of the watch stream.
      * return true if the stream should be reconnected, false otherwise.
      */
-    private suspend fun handleWatchStreamFailure(
-        document: Document,
+    private suspend fun handleWatchPresenceStreamFailure(
         stream: ServerOnlyStreamInterface<*, *>,
         cause: Throwable?,
         cancelled: Boolean,
     ): Boolean {
-        onWatchStreamCanceled(document)
         stream.safeClose()
 
-        cause?.let(::sendWatchStreamException)
+        cause?.let {
+            sendWatchAttachmentResourceStreamException(
+                tag = "Client.WatchPresence",
+                t = it,
+            )
+        }
 
-        if (handleAuthenticationError(cause, document, WatchDocuments) && !cancelled) {
+        val handleAuthenticationError =
+            handleConnectException(cause as? ConnectException) { connectException ->
+                if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
+                    shouldRefreshToken = true
+                }
+            }
+
+        if (handleAuthenticationError && !cancelled) {
             coroutineContext.ensureActive()
             delay(options.reconnectStreamDelay.inWholeMilliseconds)
             return true
@@ -531,18 +766,7 @@ public class Client(
         }
     }
 
-    private suspend fun onWatchStreamCanceled(document: Document) {
-        if (document.status == DocStatus.Attached && status.value is Status.Activated) {
-            document.publishEvent(
-                Initialized(document.presences.value),
-            )
-            document.setOnlineClients(emptySet())
-            document.publishEvent(StreamConnectionChanged.Disconnected)
-        }
-    }
-
-    private fun sendWatchStreamException(t: Throwable) {
-        val tag = "Client.WatchStream"
+    private fun sendWatchAttachmentResourceStreamException(tag: String, t: Throwable) {
         when (t) {
             is CancellationException -> {
                 return
@@ -578,76 +802,13 @@ public class Client(
         }
     }
 
-    private suspend fun handleWatchDocumentsResponse(
-        documentKey: Document.Key,
-        response: WatchDocumentResponse,
-    ) {
-        if (response.hasInitialization()) {
-            val document = attachments.value[documentKey]?.document ?: return
-            val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
-            document.publishEvent(
-                Initialized(
-                    document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
-                ),
-            )
-            document.setOnlineClients(clientIDs.toSet())
-            return
-        }
-
-        val watchEvent = response.event
-        val eventType = checkNotNull(watchEvent.type)
-        // only single key will be received since 0.3.1 server.
-        val attachment = attachments.value[documentKey] ?: return
-        val document = attachment.document
-        val publisher = ActorID(watchEvent.publisher)
-
-        when (eventType) {
-            DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
-                if (document.getOnlineClients()
-                        .contains(publisher) && document.presences.value.contains(publisher)
-                ) {
-                    return
-                }
-                // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
-                // unless we also know their initial presence data at this point.
-                val presence = document.allPresences.value[publisher]
-                if (presence != null) {
-                    document.publishEvent(Others.Watched(PresenceInfo(publisher, presence)))
-                }
-                document.addOnlineClient(publisher)
-            }
-
-            DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
-                // NOTE(chacha912): There is no presence,
-                // when PresenceChange(clear) is applied before unwatching. In that case,
-                // the 'unwatched' event is triggered while handling the PresenceChange.
-                val presence = document.presences.value[publisher] ?: return
-                document.publishEvent(Others.Unwatched(PresenceInfo(publisher, presence)))
-                document.removeOnlineClient(publisher)
-            }
-
-            DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {
-                attachments.value += documentKey to attachment.copy(
-                    remoteChangeEventReceived = true,
-                )
-            }
-
-            DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST -> {
-                val topic = response.event.body.topic
-                val payload = response.event.body.payload.toStringUtf8()
-                document.publishEvent(
-                    Document.Event.Broadcast(
-                        actorID = publisher,
-                        topic = topic,
-                        payload = payload,
-                    ),
-                )
-            }
-
-            DocEventType.UNRECOGNIZED -> {
-                // nothing to do
-            }
-        }
+    /**
+     * `has` checks if the given resource is attached to this client.
+     * @param key - the key of the resource.
+     * @returns true if the resource is attached to this client.
+     */
+    public fun has(key: String): Boolean {
+        return attachments.containsKey(key)
     }
 
     /**
@@ -657,7 +818,7 @@ public class Client(
      * @param syncMode: defines the synchronization mode of the document.
      * @param schema: is the schema of the document. It is used to validate the document.
      */
-    public fun attachAsync(
+    public fun attachDocument(
         document: Document,
         initialPresence: P = emptyMap(),
         syncMode: SyncMode = SyncMode.Realtime,
@@ -669,9 +830,10 @@ public class Client(
                 YorkieException(ErrClientNotActivated, "client is not active"),
             )
 
+            val documentKey = document.getKey()
             checkYorkieError(
-                document.status == DocStatus.Detached,
-                YorkieException(ErrDocumentNotDetached, "document(${document.key} is not detached"),
+                document.getStatus() == ResourceStatus.Detached,
+                YorkieException(ErrDocumentNotDetached, "document($documentKey is not detached"),
             )
 
             document.mutex.withLock {
@@ -689,8 +851,8 @@ public class Client(
                     }
                 }
                 val response = service.attachDocument(
-                    request,
-                    document.key.documentBasedRequestHeader,
+                    request = request,
+                    headers = documentKey.attachmentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
                     handleConnectException(it) { exception ->
@@ -714,16 +876,18 @@ public class Client(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
 
-                if (document.status == DocStatus.Removed) {
+                if (document.getStatus() == ResourceStatus.Removed) {
                     return@async SUCCESS
                 }
-                document.applyDocumentStatus(DocStatus.Attached)
-                attachments.value += document.key to Attachment(
-                    document,
-                    response.documentId,
-                    syncMode,
+                document.applyStatus(ResourceStatus.Attached)
+                attachments[documentKey] = Attachment(
+                    resource = document,
+                    resourceId = response.documentId,
+                    syncMode = syncMode,
                 )
-                waitForInitialization(document.key)
+                if (syncMode != SyncMode.Manual) {
+                    runWatchLoop(documentKey)
+                }
             }
             SUCCESS
         }
@@ -738,7 +902,7 @@ public class Client(
      * if the [document] is no longer used by this [Client], it should be detached.
      */
     @OptIn(DelicateCoroutinesApi::class)
-    public fun detachAsync(
+    public fun detachDocument(
         document: Document,
         keepalive: Boolean = false,
     ): Deferred<OperationResult> {
@@ -747,10 +911,11 @@ public class Client(
             YorkieException(ErrClientNotActivated, "client is not active"),
         )
 
-        val attachment = attachments.value[document.key]
+        val documentKey = document.getKey()
+        val attachment = attachments[documentKey]
             ?: throw YorkieException(
                 ErrDocumentNotAttached,
-                "document(${document.key}) is not attached",
+                "document($documentKey) is not attached",
             )
 
         val task = suspend suspend@{
@@ -762,11 +927,11 @@ public class Client(
                 val request = detachDocumentRequest {
                     clientId = requireClientId().value
                     changePack = document.createChangePack().toPBChangePack()
-                    documentId = attachment.documentID
+                    documentId = attachment.resourceId
                 }
                 val response = service.detachDocument(
                     request,
-                    document.key.documentBasedRequestHeader,
+                    documentKey.attachmentBasedRequestHeader,
                 ).getOrElse {
                     handleConnectException(it) { exception ->
                         if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
@@ -778,9 +943,9 @@ public class Client(
                 }
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
-                if (document.status != DocStatus.Removed) {
-                    document.applyDocumentStatus(DocStatus.Detached)
-                    detachInternal(document)
+                if (document.getStatus() != ResourceStatus.Removed) {
+                    document.applyStatus(ResourceStatus.Detached)
+                    detachInternal(documentKey)
                 }
             }
             SUCCESS
@@ -799,10 +964,133 @@ public class Client(
         }
     }
 
-    private fun detachInternal(document: Document) {
-        attachments.value[document.key] ?: return
-        attachments.value -= document.key
-        mutexForDocuments.remove(document.key)
+    /**
+     * `attach` attaches the given presence counter to this client.
+     * It tells the server that this client will track the presence count.
+     *
+     * @param presence The presence counter to attach.
+     * @param isRealtime If true (default), starts watching for presence changes in realtime.
+     *                   If false, uses manual sync mode where you must call [syncPresence] to
+     *                   refresh the presence count.
+     */
+    public fun attachPresence(
+        presence: Presence,
+        isRealtime: Boolean? = null,
+    ): Deferred<OperationResult> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            checkYorkieError(
+                presence.getStatus() == ResourceStatus.Detached,
+                YorkieException(ErrDocumentNotDetached, "${presence.getKey()} is not detached"),
+            )
+
+            presence.setActor(requireClientId())
+
+            presence.mutex.withLock {
+                val presenceKey = presence.getKey()
+                val request = attachPresenceRequest {
+                    clientId = requireClientId().value
+                    this.presenceKey = presenceKey
+                }
+
+                val response = service.attachPresence(
+                    request,
+                    presenceKey.attachmentBasedRequestHeader,
+                ).getOrElse {
+                    ensureActive()
+                    handleConnectException(it) { exception ->
+                        if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                            shouldRefreshToken = true
+                        }
+                        deactivateInternal()
+                    }
+                    return@async Result.failure(it)
+                }
+
+                presence.setPresenceId(response.presenceId)
+                presence.updateCount(response.count, 0L)
+                presence.applyStatus(ResourceStatus.Attached)
+
+                val syncMode = if (isRealtime != false) {
+                    SyncMode.Realtime
+                } else {
+                    SyncMode.Manual
+                }
+
+                attachments[presenceKey] = Attachment(
+                    resource = presence,
+                    resourceId = response.presenceId,
+                    syncMode = syncMode,
+                )
+
+                // Only start watch loop for realtime mode
+                if (syncMode == SyncMode.Realtime) {
+                    runWatchLoop(presenceKey)
+                }
+            }
+            SUCCESS
+        }
+    }
+
+    /**
+     * `detachPresence` detaches the given presence counter from this client.
+     * It tells the server that this client will no longer track the presence count.
+     */
+    public fun detachPresence(presence: Presence): Deferred<OperationResult> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            attachments[presence.getKey()]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "${presence.getKey()} is not attached",
+                )
+
+            val presenceKey = presence.getKey()
+
+            val request = detachPresenceRequest {
+                clientId = requireClientId().value
+                presence.getPresenceId()?.let {
+                    presenceId = it
+                }
+                this.presenceKey = presenceKey
+            }
+
+            val response = service.detachPresence(
+                request,
+                presenceKey.attachmentBasedRequestHeader,
+            ).getOrElse {
+                ensureActive()
+                handleConnectException(it) { exception ->
+                    if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                        shouldRefreshToken = true
+                    }
+                    deactivateInternal()
+                }
+                return@async Result.failure(it)
+            }
+
+            presence.updateCount(response.count, 0L)
+            presence.applyStatus(ResourceStatus.Detached)
+
+            detachInternal(presenceKey)
+
+            SUCCESS
+        }
+    }
+
+    private fun detachInternal(key: String) {
+        val attachment = attachments[key] ?: return
+        attachment.cancelWatchJob()
+        attachments.remove(key)
+        mutexForAttachments.remove(key)
     }
 
     /**
@@ -856,9 +1144,9 @@ public class Client(
     }
 
     private suspend fun deactivateInternal() {
-        attachments.value.values.forEach {
-            detachInternal(it.document)
-            it.document.applyDocumentStatus(DocStatus.Detached)
+        attachments.values.forEach {
+            detachInternal(it.resource.getKey())
+            it.resource.applyStatus(ResourceStatus.Detached)
         }
 
         _status.emit(Status.Deactivated)
@@ -867,7 +1155,7 @@ public class Client(
     /**
      * Removes the given [document].
      */
-    public fun removeAsync(document: Document): Deferred<OperationResult> {
+    public fun removeDocument(document: Document): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
                 isActive,
@@ -875,35 +1163,35 @@ public class Client(
             )
 
             document.mutex.withLock {
-                val attachment = attachments.value[document.key]
+                val documentKey = document.getKey()
+                val attachment = attachments[documentKey]
                     ?: throw YorkieException(
                         ErrDocumentNotAttached,
-                        "document(${document.key}) is not attached",
+                        "document($documentKey) is not attached",
                     )
 
                 val request = removeDocumentRequest {
                     clientId = requireClientId().value
                     changePack = document.createChangePack(forceRemove = true).toPBChangePack()
-                    documentId = attachment.documentID
+                    documentId = attachment.resourceId
                 }
                 val response = service.removeDocument(
                     request,
-                    document.key.documentBasedRequestHeader,
+                    documentKey.attachmentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
                     return@async Result.failure(it)
                 }
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
-                attachments.value -= document.key
-                mutexForDocuments.remove(document.key)
+                detachInternal(documentKey)
             }
             SUCCESS
         }
     }
 
     public fun broadcast(
-        document: Document,
+        key: String,
         topic: String,
         payload: String,
         options: Document.BroadcastOptions = Document.BroadcastOptions(),
@@ -925,15 +1213,15 @@ public class Client(
                 YorkieException(ErrClientNotActivated, "client is not active"),
             )
 
-            val attachment = attachments.value[document.key] ?: throw YorkieException(
+            val attachment = attachments[key] ?: throw YorkieException(
                 ErrDocumentNotAttached,
-                "document(${document.key}) is not attached",
+                "$key is not attached",
             )
             val clientID = requireClientId()
 
             val request = broadcastRequest {
                 clientId = clientID.value
-                documentId = attachment.documentID
+                documentId = attachment.resourceId
                 this.topic = topic
                 this.payload = ByteString.copyFromUtf8(payload)
             }
@@ -942,7 +1230,7 @@ public class Client(
                 try {
                     service.broadcast(
                         request,
-                        document.key.documentBasedRequestHeader,
+                        key.attachmentBasedRequestHeader,
                     ).getOrElse {
                         throw it
                     }
@@ -952,8 +1240,8 @@ public class Client(
                         errorCodeOf(err) == ErrUnauthenticated.codeString
                     ) {
                         shouldRefreshToken = true
-                        attachment.document.publishEvent(
-                            AuthError(
+                        attachment.resource.publish(
+                            event = AuthError(
                                 errorMetadataOf(err)?.get("reason") ?: "AuthError",
                                 Document.Event.AuthError.AuthErrorMethod.Broadcast,
                             ),
@@ -985,14 +1273,6 @@ public class Client(
         }
     }
 
-    private suspend fun waitForInitialization(documentKey: Document.Key) {
-        val attachment = attachments.first { documentKey in it.keys }[documentKey] ?: return
-        attachment.document.presences.first { it != UninitializedPresences }
-        if (attachment.syncMode != SyncMode.Manual) {
-            attachment.document.events.first { it is Initialized }
-        }
-    }
-
     public fun requireClientId(): ActorID {
         if (status.value is Status.Deactivated) {
             throw YorkieException(ErrClientNotActivated, "client is not active")
@@ -1006,27 +1286,34 @@ public class Client(
     public fun changeSyncMode(document: Document, syncMode: SyncMode) {
         checkYorkieError(isActive, YorkieException(ErrClientNotActivated, "client is not active"))
 
-        val attachment = attachments.value[document.key]
+        val attachment = attachments[document.getKey()]
             ?: throw YorkieException(
                 ErrDocumentNotAttached,
-                "document(${document.key}) is not attached",
+                "document(${document.getKey()}) is not attached",
             )
-        val cancelled = syncMode == SyncMode.Manual
-        attachments.value += document.key to if (syncMode == SyncMode.Realtime) {
-            attachment.copy(
-                syncMode = syncMode,
-                remoteChangeEventReceived = true,
-                cancelled = cancelled,
-            )
-        } else {
-            attachment.copy(
-                syncMode = syncMode,
-                cancelled = cancelled,
-            )
+
+        val prevSyncMode = attachment.syncMode
+        if (prevSyncMode == syncMode) {
+            return
+        }
+
+        attachment.syncMode = syncMode
+
+        if (syncMode == SyncMode.Manual) {
+            attachment.cancelWatchJob()
+            return
+        }
+
+        if (syncMode == SyncMode.Realtime) {
+            attachment.changeEventReceived = true
+        }
+
+        if (prevSyncMode == SyncMode.Manual) {
+            runWatchLoop(document.getKey())
         }
     }
 
-    private suspend fun handleAuthenticationError(
+    private suspend fun handleDocumentAuthenticationError(
         exception: Throwable?,
         document: Document,
         method: AuthError.AuthErrorMethod,
@@ -1034,7 +1321,7 @@ public class Client(
         return handleConnectException(exception as? ConnectException) { connectException ->
             if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
                 shouldRefreshToken = true
-                document.publishEvent(
+                document.publish(
                     AuthError(
                         errorMetadataOf(connectException)?.get("reason") ?: "AuthError",
                         method,
@@ -1051,14 +1338,10 @@ public class Client(
         streamClient.dispatcher.executorService.shutdown()
     }
 
-    private class AttachmentEntry(
-        override val key: Document.Key,
-        override val value: Attachment,
-    ) : Entry<Document.Key, Attachment>
-
-    private data class SyncResult(val document: Document, val result: OperationResult)
-
-    private class WatchJobHolder(val documentID: String, val job: Job)
+    private data class SyncResult(
+        val attachment: Attachment<out Attachable>,
+        val result: OperationResult,
+    )
 
     /**
      * Represents the status of the client.
@@ -1123,6 +1406,12 @@ public class Client(
          * The default value is `1000`(ms).
          */
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
+        /**
+         * `presenceHeartbeatInterval` is the interval of the presence heartbeat.
+         * The client sends a heartbeat to the server to refresh the presence TTL.
+         * The default value is `30000`(ms).
+         */
+        public val presenceHeartbeatInterval: Duration = 30_000.milliseconds,
     )
 
     /**

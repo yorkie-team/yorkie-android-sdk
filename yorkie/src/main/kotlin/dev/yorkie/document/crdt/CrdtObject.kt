@@ -9,13 +9,10 @@ import dev.yorkie.util.DataSize
  */
 internal data class CrdtObject(
     override val createdAt: TimeTicket,
-    override var _movedAt: TimeTicket? = null,
-    override var _removedAt: TimeTicket? = null,
-    private val rht: ElementRht<CrdtElement> = ElementRht(),
+    override var movedAt: TimeTicket? = null,
+    override var removedAt: TimeTicket? = null,
+    val memberNodes: ElementRht<CrdtElement> = ElementRht(),
 ) : CrdtContainer(), Iterable<Pair<String, CrdtElement>> {
-    val memberNodes: Iterable<ElementRht.Node<CrdtElement>>
-        get() = rht
-
     /**
      * Returns the array of keys in this object.
      */
@@ -26,61 +23,60 @@ internal data class CrdtObject(
      * Returns the sub path of the given element.
      */
     override fun subPathOf(createdAt: TimeTicket): String {
-        return rht.subPathOf(createdAt)
+        return memberNodes.subPathOf(createdAt)
     }
 
     /**
      * Physically deletes the given [element].
      */
     override fun purge(element: CrdtElement) {
-        rht.purge(element)
+        memberNodes.purge(element)
     }
 
     /**
      * Sets the given element of the given key.
      */
-    operator fun set(key: String, value: CrdtElement): CrdtElement? {
-        return rht.set(key, value)
+    fun set(
+        key: String,
+        value: CrdtElement,
+        executedAt: TimeTicket,
+    ): CrdtElement? {
+        return memberNodes.set(key, value, executedAt)
     }
 
     /**
      * Removes the element of the given key.
      */
     override fun delete(createdAt: TimeTicket, executedAt: TimeTicket): CrdtElement {
-        return rht.delete(createdAt, executedAt)
+        return memberNodes.delete(createdAt, executedAt)
     }
 
     /**
      * Removes the element of the given key and execution time.
      */
     fun removeByKey(key: String, executedAt: TimeTicket): CrdtElement? {
-        return rht.removeByKey(key, executedAt)
+        return memberNodes.removeByKey(key, executedAt)
     }
 
     /**
      * Returns the value of the given key.
      */
     operator fun get(key: String): CrdtElement {
-        return rht[key]
+        return memberNodes[key]
     }
 
     /**
      * Returns whether the element exists of the given key or not.
      */
     fun has(key: String): Boolean {
-        return rht.has(key)
+        return memberNodes.has(key)
     }
 
     /**
      * Copies itself deeply.
      */
     override fun deepCopy(): CrdtObject {
-        val rhtClone = ElementRht<CrdtElement>().apply {
-            rht.forEach { (strKey, value) ->
-                set(strKey, value.deepCopy())
-            }
-        }
-        return copy(rht = rhtClone)
+        return copy(memberNodes = memberNodes.deepCopy())
     }
 
     override fun getDataSize(): DataSize = DataSize(
@@ -92,7 +88,7 @@ internal data class CrdtObject(
      * Returns the descendants of this object by traversing.
      */
     override fun getDescendants(callback: (CrdtElement, CrdtContainer) -> Boolean) {
-        rht.forEach {
+        memberNodes.forEach {
             val element = it.value
             if (callback(element, this)) return
 
@@ -103,27 +99,9 @@ internal data class CrdtObject(
     }
 
     override fun iterator(): Iterator<Pair<String, CrdtElement>> {
-        val keySet = mutableSetOf<String>()
-        val nodes = rht.map { it }
-        var index = 0
-
-        return object : Iterator<Pair<String, CrdtElement>> {
-            override fun hasNext(): Boolean {
-                while (index < nodes.size) {
-                    val node = nodes[index]
-                    if (!keySet.contains(node.strKey)) {
-                        keySet.add(node.strKey)
-                        if (!node.isRemoved) return true
-                    }
-                    index++
-                }
-                return false
-            }
-
-            override fun next(): Pair<String, CrdtElement> {
-                val node = nodes[index++]
-                return node.strKey to node.value
-            }
+        val filteredNodes = memberNodes.filter { node ->
+            !node.isRemoved
         }
+        return filteredNodes.map { it.strKey to it.value }.iterator()
     }
 }

@@ -1,13 +1,15 @@
+import dev.yorkie.dsl.implementation
+
 plugins {
-    alias(libs.plugins.yorkie.android.application)
-    alias(libs.plugins.yorkie.android.application.compose)
+    alias(libs.plugins.yorkie.examples.android.application)
+    alias(libs.plugins.yorkie.examples.android.application.compose)
 }
 
 android {
-    namespace = "com.example.simultaneouscursors"
+    namespace = "dev.yorkie.example.simultaneouscursors"
 
     defaultConfig {
-        applicationId = "com.example.simultaneouscursors"
+        applicationId = "dev.yorkie.example.simultaneouscursors"
         versionCode = 1
         versionName = "1.0"
     }
@@ -25,8 +27,8 @@ android {
 }
 
 dependencies {
-    implementation(project(":yorkie"))
-    implementation(project(":examples:feature:enter-document-key"))
+    implementation(projects.yorkie)
+    implementation(projects.examples.feature.enterDocumentKey)
 
     // Core Android dependencies
     implementation(libs.androidx.core)

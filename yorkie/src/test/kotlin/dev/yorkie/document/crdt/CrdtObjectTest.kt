@@ -24,22 +24,42 @@ class CrdtObjectTest {
 
     @Before
     fun setUp() {
-        target = CrdtObject(TimeTicket.InitialTimeTicket, rht = ElementRht())
+        target = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
     }
 
     @Test
     fun `should handle set operations`() {
         assertEquals(0, target.keys.size)
 
-        target["A"] = CrdtPrimitive(0, timeTickets[0])
+        target.set(
+            key = "A",
+            value = CrdtPrimitive(0, timeTickets[0]),
+            executedAt = timeTickets[0],
+        )
         assertEquals("A0", getTestString())
-        target["B"] = CrdtPrimitive(1, timeTickets[1])
+        target.set(
+            key = "B",
+            value = CrdtPrimitive(1, timeTickets[1]),
+            executedAt = timeTickets[1],
+        )
         assertEquals("A0B1", getTestString())
-        target["C"] = CrdtPrimitive(2, timeTickets[2])
+        target.set(
+            key = "C",
+            value = CrdtPrimitive(2, timeTickets[2]),
+            executedAt = timeTickets[2],
+        )
         assertEquals("A0B1C2", getTestString())
-        target["D"] = CrdtPrimitive(3, timeTickets[3])
+        target.set(
+            key = "D",
+            value = CrdtPrimitive(3, timeTickets[3]),
+            executedAt = timeTickets[3],
+        )
         assertEquals("A0B1C2D3", getTestString())
-        target["E"] = CrdtPrimitive(4, timeTickets[4])
+        target.set(
+            key = "E",
+            value = CrdtPrimitive(4, timeTickets[4]),
+            executedAt = timeTickets[4],
+        )
         assertEquals("A0B1C2D3E4", getTestString())
     }
 
@@ -121,7 +141,11 @@ class CrdtObjectTest {
 
     private fun setTargetSampleValues() {
         actorIDs.forEachIndexed { index, key ->
-            target[key] = crdtElements[index]
+            target.set(
+                key = key,
+                value = crdtElements[index],
+                executedAt = TimeTicket.InitialTimeTicket,
+            )
         }
     }
 

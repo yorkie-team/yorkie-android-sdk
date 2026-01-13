@@ -29,6 +29,11 @@ import timber.log.Timber
  * - Yorkie.Client initialization
  * - Editor and Yorkie event subscriptions
  *
+ * ## Milestone 2 Features:
+ * - Convert editor operations to Yorkie.Tree operations
+ * - Verify editor and tree data consistency after local updates
+ * - Support for plain text collaborative editing
+ *
  * ## Usage:
  * ```kotlin
  * val plugin = CollaborativeEditPlugin(
@@ -64,10 +69,13 @@ import timber.log.Timber
  *
  * @param config The configuration for connecting to Yorkie server
  * @param editorAdapter The adapter that bridges the editor with this plugin
+ * @param treeConverter The converter for transforming editor data to Yorkie tree format
+ * @param coroutineScope The scope for launching coroutines (default: GlobalScope)
  */
 public class CollaborativeEditPlugin(
     private val config: CollaborativeEditConfig,
     private val editorAdapter: EditorAdapter,
+    private val treeConverter: TreeConverter = TreeConverter(),
 ) : Closeable, EditorChangeListener {
     private val client = Client(
         host = config.serverUrl,
@@ -76,6 +84,13 @@ public class CollaborativeEditPlugin(
         ),
     )
     private var document = Document(config.documentKey)
+
+    /**
+     * Flag to temporarily ignore local changes during remote updates.
+     * This prevents infinite loops when applying remote changes to the editor.
+     */
+    @Volatile
+    private var isApplyingRemoteChanges = false
 
     private val _events = MutableSharedFlow<CollaborativeEditEvent>(replay = 1)
 
@@ -153,7 +168,22 @@ public class CollaborativeEditPlugin(
             editorAdapter.subscribeToChanges(this@CollaborativeEditPlugin)
 
             // Get initial tree and notify editor
-            val tree = getTree()
+            var tree = getTree()
+
+            // If tree doesn't exist, initialize it from editor content
+            if (tree == null) {
+                val editorContent = editorAdapter.getContent()
+                if (editorContent.text.isNotEmpty()) {
+                    tree = initializeTreeFromEditorContent(editorContent)
+                    Timber.i("CollaborativeEditPlugin: Initialized tree from editor content")
+                }
+            } else {
+                // Tree exists, sync editor with tree content
+                val treeContent = treeConverter.treeToEditorContent(tree)
+                editorAdapter.setContent(treeContent)
+                Timber.i("CollaborativeEditPlugin: Synced editor with existing tree content")
+            }
+
             editorAdapter.onInitialized(tree)
 
             _isReady = true
@@ -179,6 +209,14 @@ public class CollaborativeEditPlugin(
             is Document.Event.Snapshot -> {
                 Timber.d("CollaborativeEditPlugin: Snapshot received")
                 val tree = getTree()
+                // Convert tree to editor content and update editor
+                isApplyingRemoteChanges = true
+                try {
+                    val treeContent = treeConverter.treeToEditorContent(tree)
+                    editorAdapter.setContent(treeContent)
+                } finally {
+                    isApplyingRemoteChanges = false
+                }
                 editorAdapter.onSnapshot(tree)
                 CollaborativeEditEvent.DocumentChanged.Snapshot(tree)
             }
@@ -383,16 +421,122 @@ public class CollaborativeEditPlugin(
         }
     }
 
-    // EditorChangeListener implementation
+    // ========== Milestone 2: Tree Initialization ==========
+
+    /**
+     * Initialize the Yorkie tree from editor content.
+     *
+     * This creates a new tree in the document root with the editor's
+     * current content.
+     *
+     * @param content The editor content to initialize with
+     * @return The created JsonTree
+     */
+    private suspend fun initializeTreeFromEditorContent(content: EditorContent): JsonTree? {
+        val initialRoot = treeConverter.editorContentToTree(content)
+
+        document.updateAsync("Initialize tree from editor") { root, _ ->
+            root.setNewTree(TREE_KEY, initialRoot)
+        }.await()
+
+        return getTree()
+    }
+
+    // ========== EditorChangeListener Implementation ==========
 
     /**
      * Called when the editor has local changes.
-     * For Milestone 1, this logs the change. Milestone 2 will implement
-     * the actual conversion to Yorkie operations.
+     *
+     * Milestone 2 implementation: Converts editor operations to Yorkie.Tree
+     * operations and applies them to the document.
      */
-    override fun onLocalChange(changeInfo: Any) {
-        Timber.d("CollaborativeEditPlugin: Local change from editor: $changeInfo")
-        // TODO: Milestone 2 - Convert editor operations to Yorkie.Tree operations
+    override suspend fun onLocalChange(operation: EditorOperation) {
+        // Ignore changes while applying remote updates to prevent loops
+        if (isApplyingRemoteChanges) {
+            Timber.v("CollaborativeEditPlugin: Ignoring local change during remote update")
+            return
+        }
+
+        Timber.d("CollaborativeEditPlugin: Local change from editor: $operation")
+
+        try {
+            applyLocalOperation(operation)
+        } catch (e: Exception) {
+            Timber.e(e, "CollaborativeEditPlugin: Error applying local operation")
+            emitError("Failed to apply local operation", e)
+        }
+    }
+
+    /**
+     * Apply a local operation to the Yorkie document.
+     *
+     * This method:
+     * 1. Gets the current tree
+     * 2. Converts the editor operation to tree operations
+     * 3. Applies the operations to the tree
+     * 4. Verifies consistency between editor and tree
+     */
+    private suspend fun applyLocalOperation(operation: EditorOperation) {
+        val message = when (operation) {
+            is EditorOperation.Edit -> {
+                if (operation.isInsertion) {
+                    "Insert text"
+                } else if (operation.isDeletion) {
+                    "Delete text"
+                } else {
+                    "Replace text"
+                }
+            }
+
+            is EditorOperation.EditByPath -> "Edit by path"
+            is EditorOperation.Batch -> operation.message ?: "Batch operation"
+        }
+
+        document.updateAsync(message) { root, _ ->
+            val tree = root.getAsOrNull<JsonTree>(TREE_KEY)
+
+            if (tree == null) {
+                // Tree doesn't exist, create it first
+                Timber.w("CollaborativeEditPlugin: Tree not found, creating new tree")
+                val editorContent = editorAdapter.getContent()
+                val initialRoot = treeConverter.editorContentToTree(editorContent)
+                root.setNewTree(TREE_KEY, initialRoot)
+                return@updateAsync
+            }
+
+            // Apply the operation to the tree
+            treeConverter.applyOperationToTree(operation, tree)
+
+            Timber.d("CollaborativeEditPlugin: Applied operation to tree, xml=${tree.toXml()}")
+        }.await()
+
+        // Verify consistency after update
+        verifyConsistencyAfterUpdate()
+    }
+
+    /**
+     * Verify that the editor content matches the Yorkie tree after an update.
+     *
+     * This helps catch synchronization issues early during development.
+     */
+    private suspend fun verifyConsistencyAfterUpdate() {
+        val tree = getTree()
+        val editorContent = editorAdapter.getContent()
+
+        val result = treeConverter.verifyConsistency(editorContent, tree)
+
+        when (result) {
+            is VerificationResult.Match -> {
+                Timber.v("CollaborativeEditPlugin: Editor and tree are in sync")
+            }
+
+            is VerificationResult.Mismatch -> {
+                Timber.w(
+                    "CollaborativeEditPlugin: Editor/tree mismatch - ${result.message}\n" +
+                        "Editor: '${result.expected}'\nTree: '${result.actual}'",
+                )
+            }
+        }
     }
 
     /**

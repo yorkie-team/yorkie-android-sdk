@@ -879,12 +879,12 @@ public class Client(
                 if (document.getStatus() == ResourceStatus.Removed) {
                     return@async SUCCESS
                 }
-                document.applyStatus(ResourceStatus.Attached)
                 attachments[documentKey] = Attachment(
                     resource = document,
                     resourceId = response.documentId,
                     syncMode = syncMode,
                 )
+                document.applyStatus(ResourceStatus.Attached)
                 if (syncMode != SyncMode.Manual) {
                     runWatchLoop(documentKey)
                 }

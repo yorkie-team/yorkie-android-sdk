@@ -6,7 +6,6 @@ import dev.yorkie.document.CrdtTreeNodeIDStruct
 import dev.yorkie.document.CrdtTreePosStruct
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.json.TreePosStructRange
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
@@ -227,7 +226,7 @@ internal data class CrdtTree(
             val creationKnown: Boolean = if (isLocal) {
                 true
             } else {
-                val createdAtVV = versionVector?.get(node.createdAt.actorID.value)
+                val createdAtVV = versionVector?.get(node.createdAt.actorID)
                 createdAtVV != null && createdAtVV >= node.createdAt.lamport
             }
 
@@ -237,7 +236,7 @@ internal data class CrdtTree(
                 if (isLocal) {
                     tombstoneKnown = true
                 } else {
-                    val removedAtVV = versionVector?.get(nodeRemovedAt.actorID.value)
+                    val removedAtVV = versionVector?.get(nodeRemovedAt.actorID)
                     if (removedAtVV != null && removedAtVV >= nodeRemovedAt.lamport) {
                         tombstoneKnown = true
                     }
@@ -823,9 +822,9 @@ internal data class CrdtTree(
     /**
      * Returns the client info for the change.
      */
-    private fun getClientInfoForChange(actorID: ActorID, versionVector: VersionVector?): Long {
+    private fun getClientInfoForChange(actorID: String, versionVector: VersionVector?): Long {
         return versionVector?.let {
-            versionVector.get(actorID.value) ?: 0L
+            versionVector.get(actorID) ?: 0L
         } ?: MAX_LAMPORT
     }
 }

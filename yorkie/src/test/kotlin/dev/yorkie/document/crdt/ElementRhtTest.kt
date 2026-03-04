@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
@@ -264,7 +263,7 @@ class ElementRhtTest {
         delimiter: Int,
         actorID: String,
     ): TimeTicket {
-        return TimeTicket(lamport, delimiter.toUInt(), ActorID(actorID))
+        return TimeTicket(lamport, delimiter.toUInt(), actorID)
     }
 
     private fun ElementRht<CrdtPrimitive>.toTestString() = buildString {

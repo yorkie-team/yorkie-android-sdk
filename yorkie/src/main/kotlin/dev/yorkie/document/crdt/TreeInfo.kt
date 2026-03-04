@@ -1,7 +1,6 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.JsonTree
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 
@@ -60,7 +59,7 @@ internal value class TreeTextNode(override val value: String = "") : TreeNode, J
 }
 
 data class TreeChange(
-    val actorID: ActorID,
+    val actorID: String,
     val type: TreeChangeType,
     val from: Int,
     val to: Int,

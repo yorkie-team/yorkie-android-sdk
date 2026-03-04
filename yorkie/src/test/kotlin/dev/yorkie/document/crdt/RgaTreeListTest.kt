@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
@@ -14,9 +13,9 @@ class RgaTreeListTest {
     private val actorIDs = listOf("A", "B", "C", "D", "E", "F", "G")
     private val timeTickets = actorIDs.map {
         TimeTicket(
-            actorIDs.indexOf(it).toLong(),
-            TimeTicket.INITIAL_DELIMITER,
-            ActorID(it),
+            lamport = actorIDs.indexOf(it).toLong(),
+            delimiter = TimeTicket.INITIAL_DELIMITER,
+            actorID = it,
         )
     }
     private val crdtElements = timeTickets.map { CrdtPrimitive(1, it) }
@@ -174,12 +173,12 @@ class RgaTreeListTest {
     }
 
     private fun createTimeTicket(): TimeTicket {
-        return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, ActorID("H"))
+        return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, "H")
     }
 
     private fun RgaTreeList.toTestString() = buildString {
         this@toTestString.forEach {
-            append("${it.createdAt.actorID.value}${if (it.isRemoved) 0 else 1}")
+            append("${it.createdAt.actorID}${if (it.isRemoved) 0 else 1}")
         }
     }
 }

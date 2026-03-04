@@ -5,7 +5,6 @@ import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.presence.Presences
-import dev.yorkie.document.time.ActorID
 
 /**
  * Represents a unit of modification in the document.
@@ -23,7 +22,7 @@ public data class Change internal constructor(
     internal val hasOperations: Boolean
         get() = operations.isNotEmpty()
 
-    internal fun setActor(actorID: ActorID) {
+    internal fun setActor(actorID: String) {
         operations.forEach {
             it.setActor(actorID)
         }

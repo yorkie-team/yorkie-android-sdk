@@ -1,7 +1,5 @@
 package dev.yorkie.core
 
-import dev.yorkie.document.time.ActorID
-
 /**
  * `ResourceStatus` represents the common status interface for attachable resources.
  */
@@ -32,7 +30,7 @@ interface Attachable {
     /**
      * `setActor` sets the actor ID into this resource.
      */
-    fun setActor(actorID: ActorID)
+    fun setActor(actorID: String)
 
     /**
      * `hasLocalChanges` returns whether this resource has local changes to be synchronized.

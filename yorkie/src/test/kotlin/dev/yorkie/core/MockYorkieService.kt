@@ -62,7 +62,6 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.SetOperation
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
@@ -90,7 +89,7 @@ class MockYorkieService(
     ): ResponseMessage<ActivateClientResponse> {
         return ResponseMessage.Success(
             activateClientResponse {
-                clientId = TEST_ACTOR_ID.value
+                clientId = TEST_ACTOR_ID
             },
             emptyMap(),
             emptyMap(),
@@ -267,7 +266,7 @@ class MockYorkieService(
                         responseChannel.trySend(
                             watchDocumentResponse {
                                 initialization = initialization {
-                                    clientIds.add(TEST_ACTOR_ID.value)
+                                    clientIds.add(TEST_ACTOR_ID)
                                 }
                             },
                         )
@@ -453,7 +452,7 @@ class MockYorkieService(
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal const val AUTH_ERROR_DOCUMENT_KEY = "AUTH_ERROR_DOCUMENT_KEY"
-        internal val TEST_ACTOR_ID = ActorID("0000000000ffff0000000000")
+        internal val TEST_ACTOR_ID = "0000000000ffff0000000000"
         internal const val TEST_USER_ID = "TEST_USER_ID"
 
         internal val defaultError: MutableMap<String, Code> = mutableMapOf(

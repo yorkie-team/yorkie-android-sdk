@@ -4,7 +4,6 @@ import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.presenceChange
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 
@@ -44,8 +43,8 @@ internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     }
 }
 
-internal fun Map<String, PBPresence>.toPresences(): Map<ActorID, P> {
+internal fun Map<String, PBPresence>.toPresences(): Map<String, P> {
     return entries.associate { (actorID, pbPresence) ->
-        ActorID(actorID) to pbPresence.toPresence()
+        actorID to pbPresence.toPresence()
     }
 }

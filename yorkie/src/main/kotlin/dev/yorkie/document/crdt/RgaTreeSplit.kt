@@ -3,7 +3,6 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.RgaTreeSplitNodeIDStruct
 import dev.yorkie.document.RgaTreeSplitPosStruct
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
@@ -232,14 +231,14 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             if (isLocal) {
                 creationKnown = true
             } else {
-                val createdAtVV = vector?.get(node.createdAt.actorID.value)
+                val createdAtVV = vector?.get(node.createdAt.actorID)
                 creationKnown = createdAtVV != null && createdAtVV >= node.createdAt.lamport
             }
 
             var tombstoneKnown = false
             val nodeRemovedAt = node.removedAt
             if (nodeRemovedAt != null) {
-                val removedAtVV = vector?.get(nodeRemovedAt.actorID.value)
+                val removedAtVV = vector?.get(nodeRemovedAt.actorID)
                 if (isLocal) {
                     tombstoneKnown = true
                 } else if (removedAtVV != null && removedAtVV >= nodeRemovedAt.lamport) {
@@ -426,7 +425,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     }
 
     data class ContentChange(
-        val actorID: ActorID,
+        val actorID: String,
         val from: Int,
         val to: Int,
         val content: String? = null,

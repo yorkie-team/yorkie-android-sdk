@@ -11,12 +11,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.google.gson.GsonBuilder
-import com.google.gson.JsonDeserializationContext
-import com.google.gson.JsonDeserializer
-import com.google.gson.JsonElement
-import com.google.gson.JsonPrimitive
-import com.google.gson.JsonSerializationContext
-import com.google.gson.JsonSerializer
 import com.google.gson.reflect.TypeToken
 import dev.yorkie.core.Client
 import dev.yorkie.core.Client.SyncMode.Realtime
@@ -25,9 +19,7 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChanged
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.example.richtexteditor.BuildConfig
-import java.lang.reflect.Type
 import java.net.URLDecoder
 import kotlin.random.Random
 import kotlin.text.Charsets.UTF_8
@@ -46,7 +38,7 @@ data class EditorUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val peers: List<String> = emptyList(),
-    val selectionPeers: Map<ActorID, Selection?> = emptyMap(),
+    val selectionPeers: Map<String, Selection?> = emptyMap(),
     val styleOperations: List<OperationInfo.StyleOpInfo> = emptyList(),
     val isBold: Boolean = false,
     val isItalic: Boolean = false,
@@ -79,10 +71,9 @@ class EditorViewModel(
 
     val textFieldState = TextFieldState()
 
-    private var myClientId = ActorID("")
+    private var myClientId = ""
 
     private val gson = GsonBuilder()
-        .registerTypeAdapter(ActorID::class.java, ActorIDAdapter())
         .create()
 
     init {
@@ -327,7 +318,7 @@ class EditorViewModel(
         }
     }
 
-    private suspend fun Map<String, String>.mapToSelection(actorID: ActorID): Selection? {
+    private suspend fun Map<String, String>.mapToSelection(actorID: String): Selection? {
         if (actorID == myClientId) return null
 
         // Deserialize to DTO first (ProGuard-safe with @SerializedName)
@@ -538,7 +529,7 @@ class EditorViewModel(
     /**
      * Removes selection color info when a peer disconnects
      */
-    private fun removeUnwatchedPeerSelectionInfo(actorID: ActorID) {
+    private fun removeUnwatchedPeerSelectionInfo(actorID: String) {
         _uiState.update { currentState ->
             val updatedSelections = currentState.selectionPeers.toMutableMap()
             updatedSelections.remove(actorID)
@@ -621,23 +612,5 @@ class EditorViewModel(
         ITALIC("italic"),
         UNDERLINE("underline"),
         STRIKETHROUGH("strike"),
-    }
-}
-
-private class ActorIDAdapter : JsonDeserializer<ActorID>, JsonSerializer<ActorID> {
-    override fun deserialize(
-        json: JsonElement,
-        typeOfT: Type,
-        context: JsonDeserializationContext,
-    ): ActorID {
-        return ActorID(json.asString) // map raw string into ActorID
-    }
-
-    override fun serialize(
-        src: ActorID,
-        typeOfSrc: Type,
-        context: JsonSerializationContext,
-    ): JsonElement {
-        return JsonPrimitive(src.value) // write back as string
     }
 }

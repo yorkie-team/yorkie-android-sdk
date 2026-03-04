@@ -31,7 +31,6 @@ import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.schema.Rule
 import dev.yorkie.document.schema.validateYorkieRuleset
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DocSize
@@ -72,8 +71,6 @@ import kotlinx.coroutines.withContext
  * A single-threaded, [Closeable] [dispatcher] is used as default.
  * Therefore you need to [close] the document, when the document is no longer needed.
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
- * [snapshotDispatcher] can be set differently from [dispatcher],
- * as snapshot operation can be much heavier than other operations.
  */
 public class Document(
     private val key: String,
@@ -121,7 +118,7 @@ public class Document(
     internal val presenceEventQueue = mutableListOf<PresenceChanged>()
     private val pendingPresenceEvents = mutableListOf<PresenceChanged>()
 
-    private val onlineClients = MutableStateFlow(setOf<ActorID>())
+    private val onlineClients = MutableStateFlow(setOf<String>())
 
     private val _presences = MutableStateFlow(UninitializedPresences)
     public val presences: StateFlow<Presences> =
@@ -235,7 +232,7 @@ public class Document(
         }
     }
 
-    private fun createPresenceChangedEvent(actorID: ActorID, presence: P): PresenceChanged {
+    private fun createPresenceChangedEvent(actorID: String, presence: P): PresenceChanged {
         return if (actorID == changeID.actor) {
             MyPresence.PresenceChanged(PresenceInfo(actorID, presence))
         } else {
@@ -526,7 +523,7 @@ public class Document(
      * Sets [actorID] into this document.
      * This is also applied in the [localChanges] the document has.
      */
-    override fun setActor(actorID: ActorID) {
+    override fun setActor(actorID: String) {
         localChanges.forEach {
             it.setActor(actorID)
         }
@@ -575,15 +572,15 @@ public class Document(
 
     internal fun getOnlineClients() = onlineClients.value
 
-    internal fun setOnlineClients(actorIDs: Set<ActorID>) {
+    internal fun setOnlineClients(actorIDs: Set<String>) {
         onlineClients.value = actorIDs
     }
 
-    internal fun addOnlineClient(actorID: ActorID) {
+    internal fun addOnlineClient(actorID: String) {
         onlineClients.value += actorID
     }
 
-    internal fun removeOnlineClient(actorID: ActorID) {
+    internal fun removeOnlineClient(actorID: String) {
         onlineClients.value -= actorID
     }
 
@@ -738,14 +735,14 @@ public class Document(
          */
         public data class DocumentStatusChanged(
             val docStatus: ResourceStatus,
-            val actorID: ActorID?,
+            val actorID: String?,
         ) : Event
 
         /**
          * `Broadcast` means that the broadcast event is received from the remote client.
          */
         public data class Broadcast(
-            val actorID: ActorID?,
+            val actorID: String?,
             val topic: String,
             val payload: String,
         ) : Event
@@ -770,7 +767,7 @@ public class Document(
         public data class ChangeInfo(
             public val message: String,
             public val operations: List<OperationInfo>,
-            public val actorID: ActorID,
+            public val actorID: String,
             public val clientSeq: UInt,
             public val serverSeq: Long,
         )

@@ -42,7 +42,6 @@ import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.presence.Presences.Companion.asPresences
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.presence.Presence
 import dev.yorkie.presence.PresenceEvent
 import dev.yorkie.util.Logger.Companion.log
@@ -216,7 +215,7 @@ public class Client(
                 }
                 return@async Result.failure(it)
             }
-            _status.emit(Status.Activated(ActorID(activateResponse.clientId)))
+            _status.emit(Status.Activated(activateResponse.clientId))
             runSyncLoop()
             SUCCESS
         }
@@ -323,7 +322,7 @@ public class Client(
                     resource.mutex.withLock {
                         val documentKey = resource.getKey()
                         val request = pushPullChangesRequest {
-                            clientId = requireClientId().value
+                            clientId = requireClientId()
                             changePack = resource.createChangePack().toPBChangePack()
                             documentId = attachment.resourceId
                             pushOnly = syncMode == SyncMode.RealtimePushOnly
@@ -356,7 +355,7 @@ public class Client(
                 } else if (resource is Presence) {
                     resource.mutex.withLock {
                         val request = refreshPresenceRequest {
-                            clientId = requireClientId().value
+                            clientId = requireClientId()
                             resource.getPresenceId()?.let {
                                 presenceId = it
                             }
@@ -492,7 +491,7 @@ public class Client(
                 }
                 stream.sendAndClose(
                     watchDocumentRequest {
-                        clientId = requireClientId().value
+                        clientId = requireClientId()
                         documentId = attachment.resourceId
                     },
                 )
@@ -523,7 +522,7 @@ public class Client(
     ) {
         if (response.hasInitialization()) {
             val document = attachments[documentKey]?.resource as? Document ?: return
-            val clientIDs = response.initialization.clientIdsList.map { ActorID(it) }
+            val clientIDs = response.initialization.clientIdsList
             document.publishEvent(
                 Initialized(
                     document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
@@ -538,7 +537,7 @@ public class Client(
         // only single key will be received since 0.3.1 server.
         val attachment = attachments[documentKey] ?: return
         val document = attachment.resource as? Document ?: return
-        val publisher = ActorID(watchEvent.publisher)
+        val publisher = watchEvent.publisher
 
         when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
@@ -696,7 +695,7 @@ public class Client(
                 }
                 stream.sendAndClose(
                     watchPresenceRequest {
-                        clientId = requireClientId().value
+                        clientId = requireClientId()
                         this.presenceKey = presenceKey
                     },
                 )
@@ -844,7 +843,7 @@ public class Client(
                 }.await()
 
                 val request = attachDocumentRequest {
-                    clientId = clientID.value
+                    clientId = clientID
                     changePack = document.createChangePack().toPBChangePack()
                     schema?.let {
                         schemaKey = it
@@ -879,12 +878,12 @@ public class Client(
                 if (document.getStatus() == ResourceStatus.Removed) {
                     return@async SUCCESS
                 }
+                document.applyStatus(ResourceStatus.Attached)
                 attachments[documentKey] = Attachment(
                     resource = document,
                     resourceId = response.documentId,
                     syncMode = syncMode,
                 )
-                document.applyStatus(ResourceStatus.Attached)
                 if (syncMode != SyncMode.Manual) {
                     runWatchLoop(documentKey)
                 }
@@ -925,7 +924,7 @@ public class Client(
                 }.await()
 
                 val request = detachDocumentRequest {
-                    clientId = requireClientId().value
+                    clientId = requireClientId()
                     changePack = document.createChangePack().toPBChangePack()
                     documentId = attachment.resourceId
                 }
@@ -993,7 +992,7 @@ public class Client(
             presence.mutex.withLock {
                 val presenceKey = presence.getKey()
                 val request = attachPresenceRequest {
-                    clientId = requireClientId().value
+                    clientId = requireClientId()
                     this.presenceKey = presenceKey
                 }
 
@@ -1056,7 +1055,7 @@ public class Client(
             val presenceKey = presence.getKey()
 
             val request = detachPresenceRequest {
-                clientId = requireClientId().value
+                clientId = requireClientId()
                 presence.getPresenceId()?.let {
                     presenceId = it
                 }
@@ -1111,7 +1110,7 @@ public class Client(
             try {
                 service.deactivateClient(
                     request = deactivateClientRequest {
-                        clientId = requireClientId().value
+                        clientId = requireClientId()
                         deactivateOptions.synchronous?.let {
                             synchronous = it
                         }
@@ -1171,7 +1170,7 @@ public class Client(
                     )
 
                 val request = removeDocumentRequest {
-                    clientId = requireClientId().value
+                    clientId = requireClientId()
                     changePack = document.createChangePack(forceRemove = true).toPBChangePack()
                     documentId = attachment.resourceId
                 }
@@ -1220,7 +1219,7 @@ public class Client(
             val clientID = requireClientId()
 
             val request = broadcastRequest {
-                clientId = clientID.value
+                clientId = clientID
                 documentId = attachment.resourceId
                 this.topic = topic
                 this.payload = ByteString.copyFromUtf8(payload)
@@ -1273,7 +1272,7 @@ public class Client(
         }
     }
 
-    public fun requireClientId(): ActorID {
+    public fun requireClientId(): String {
         if (status.value is Status.Deactivated) {
             throw YorkieException(ErrClientNotActivated, "client is not active")
         }
@@ -1351,7 +1350,7 @@ public class Client(
          * Means that the client is activated. If the client is activated,
          * all [Document]s of the client are ready to be used.
          */
-        public class Activated internal constructor(public val clientId: ActorID) : Status
+        public class Activated internal constructor(public val clientId: String) : Status
 
         /**
          * Means that the client is not activated. It is the initial status of the client.

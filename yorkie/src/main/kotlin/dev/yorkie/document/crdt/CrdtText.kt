@@ -114,7 +114,7 @@ internal data class CrdtText(
         val toBeStyleds = nodes.mapNotNull { node ->
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = versionVector?.let {
-                versionVector.get(actorID.value) ?: 0L
+                versionVector.get(actorID) ?: 0L
             } ?: MAX_LAMPORT
 
             node.takeIf {

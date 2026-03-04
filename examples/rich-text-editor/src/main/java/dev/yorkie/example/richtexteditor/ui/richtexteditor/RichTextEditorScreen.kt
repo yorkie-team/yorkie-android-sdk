@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.yorkie.document.operation.OperationInfo
-import dev.yorkie.document.time.ActorID
 
 @Composable
 fun RichTextEditorScreen(modifier: Modifier = Modifier, viewModel: EditorViewModel) {
@@ -63,7 +62,7 @@ fun RichTextEditorScreen(
     isStrikethrough: Boolean,
     styleOperations: List<OperationInfo.StyleOpInfo>,
     peers: List<String>,
-    selectionPeers: Map<ActorID, Selection?>,
+    selectionPeers: Map<String, Selection?>,
     onContentChanged: (TextFieldBuffer.ChangeList, CharSequence) -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,

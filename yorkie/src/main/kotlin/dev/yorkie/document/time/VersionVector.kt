@@ -65,10 +65,10 @@ class VersionVector(vectorMap: Map<String, Long> = emptyMap()) {
     }
 
     /**
-     * Returns true if `vector[other.actorID.value]` is greater than or equal to the given ticket's Lamport.
+     * Returns true if `vector[other.actorID]` is greater than or equal to the given ticket's Lamport.
      */
     fun afterOrEqual(other: TimeTicket): Boolean {
-        val lamport = vectorMap[other.actorID.value]
+        val lamport = vectorMap[other.actorID]
         return lamport != null && lamport >= other.lamport
     }
 

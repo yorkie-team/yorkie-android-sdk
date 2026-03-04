@@ -10,7 +10,7 @@ import dev.yorkie.document.time.VersionVector
 fun maxVectorOf(actors: List<String>): VersionVector {
     val vectorMap = if (actors.isEmpty()) {
         mapOf(
-            ActorID.INITIAL_ACTOR_ID.value to TimeTicket.MAX_LAMPORT,
+            ActorID.INITIAL_ACTOR_ID to TimeTicket.MAX_LAMPORT,
         )
     } else {
         actors.associateWith { TimeTicket.MAX_LAMPORT }

@@ -1,13 +1,12 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.escapeString
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.DataSize
 
 internal data class TextChange(
     val type: TextChangeType,
-    val actor: ActorID,
+    val actor: String,
     val from: Int,
     val to: Int,
     val content: String? = null,

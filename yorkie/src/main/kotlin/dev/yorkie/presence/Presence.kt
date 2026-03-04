@@ -3,7 +3,6 @@ package dev.yorkie.presence
 import dev.yorkie.core.Attachable
 import dev.yorkie.core.ResourceEvent
 import dev.yorkie.core.ResourceStatus
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.createSingleThreadDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +36,7 @@ class Presence(
 
     @Volatile
     private var status = ResourceStatus.Detached
-    private var actorID: ActorID? = null
+    private var actorID: String? = null
     private var presenceId: String? = null
 
     @Volatile
@@ -66,7 +65,7 @@ class Presence(
     /**
      * `getActorID` returns the actor ID of this presence counter.
      */
-    fun getActorID(): ActorID? {
+    fun getActorID(): String? {
         return actorID
     }
 
@@ -123,7 +122,7 @@ class Presence(
     /**
      * `setActor` sets the actor ID into this presence counter.
      */
-    override fun setActor(actorID: ActorID) {
+    override fun setActor(actorID: String) {
         this.actorID = actorID
     }
 

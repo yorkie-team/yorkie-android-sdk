@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
@@ -15,9 +14,9 @@ class CrdtObjectTest {
     private val actorIDs = listOf("A", "B", "C", "D", "E")
     private val timeTickets = actorIDs.map {
         TimeTicket(
-            actorIDs.indexOf(it).toLong(),
-            TimeTicket.INITIAL_DELIMITER,
-            ActorID(it),
+            lamport = actorIDs.indexOf(it).toLong(),
+            delimiter = TimeTicket.INITIAL_DELIMITER,
+            actorID = it,
         )
     }
     private val crdtElements = (0..4).map { CrdtPrimitive(it, timeTickets[it]) }
@@ -67,11 +66,11 @@ class CrdtObjectTest {
     fun `should handle get operations`() {
         setTargetSampleValues()
 
-        assertEquals("A", target["A"].createdAt.actorID.value)
-        assertEquals("B", target["B"].createdAt.actorID.value)
-        assertEquals("C", target["C"].createdAt.actorID.value)
-        assertEquals("D", target["D"].createdAt.actorID.value)
-        assertEquals("E", target["E"].createdAt.actorID.value)
+        assertEquals("A", target["A"].createdAt.actorID)
+        assertEquals("B", target["B"].createdAt.actorID)
+        assertEquals("C", target["C"].createdAt.actorID)
+        assertEquals("D", target["D"].createdAt.actorID)
+        assertEquals("E", target["E"].createdAt.actorID)
     }
 
     @Test

@@ -47,7 +47,6 @@ import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.RhtNode
 import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.presence.P
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.YorkieException
@@ -74,7 +73,7 @@ internal typealias PBTreeNodeID = dev.yorkie.api.v1.TreeNodeID
 internal typealias PBTreeNodes = dev.yorkie.api.v1.TreeNodes
 internal typealias PBSnapshot = dev.yorkie.api.v1.Snapshot
 
-internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<ActorID, P>> {
+internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<String, P>> {
     return if (this == null) {
         CrdtObject(InitialTimeTicket) to emptyMap()
     } else {

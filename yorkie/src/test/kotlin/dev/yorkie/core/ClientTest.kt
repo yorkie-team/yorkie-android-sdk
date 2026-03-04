@@ -32,7 +32,6 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.presence.PresenceChange
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.util.YorkieException
@@ -436,7 +435,7 @@ class ClientTest {
     }
 
     private fun assertIsTestActorID(clientId: String) {
-        assertEquals(TEST_ACTOR_ID, ActorID(clientId))
+        assertEquals(TEST_ACTOR_ID, clientId)
     }
 
     private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {

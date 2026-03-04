@@ -3,14 +3,13 @@ package dev.yorkie.api
 import android.util.Base64
 import com.google.protobuf.ByteString
 import com.google.protobuf.kotlin.toByteString
-import dev.yorkie.document.time.ActorID
 
-internal fun ByteString.toActorID(): ActorID {
-    return ActorID(bytesToHex(toByteArray()))
+internal fun ByteString.toActorID(): String {
+    return bytesToHex(toByteArray())
 }
 
-internal fun ActorID.toByteString(): ByteString {
-    return hexToBytes(value.lowercase()).toByteString()
+internal fun String.toByteString(): ByteString {
+    return hexToBytes(lowercase()).toByteString()
 }
 
 /**

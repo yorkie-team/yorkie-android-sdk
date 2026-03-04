@@ -41,7 +41,6 @@ import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
-import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
@@ -60,7 +59,7 @@ class ConverterTest {
 
     @Test
     fun `should convert ByteString`() {
-        val actorID = INITIAL_ACTOR_ID
+        val actorID = ActorID.INITIAL_ACTOR_ID
         val converted = actorID.toByteString().toActorID()
         val maxActorID = ActorID.MAX_ACTOR_ID
         val maxConverted = maxActorID.toByteString().toActorID()

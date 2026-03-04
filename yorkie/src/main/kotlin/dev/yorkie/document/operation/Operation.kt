@@ -1,7 +1,6 @@
 package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.CrdtRoot
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 
@@ -26,9 +25,9 @@ internal abstract class Operation {
     abstract fun execute(root: CrdtRoot, versionVector: VersionVector? = null): List<OperationInfo>
 
     /**
-     * Sets the given [ActorID] to this [Operation].
+     * Sets the given actorId to this [Operation].
      */
-    fun setActor(actorID: ActorID) {
+    fun setActor(actorID: String) {
         executedAt = executedAt.setActor(actorID)
     }
 }

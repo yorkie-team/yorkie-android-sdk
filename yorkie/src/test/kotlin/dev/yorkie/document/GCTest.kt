@@ -336,7 +336,7 @@ class GCTest {
         assertEquals(1, target.garbageLength)
 
         // Perform garbage collection
-        val collected = target.garbageCollect(maxVectorOf(listOf(target.changeID.actor.value)))
+        val collected = target.garbageCollect(maxVectorOf(listOf(target.changeID.actor)))
         assertEquals(1, collected)
 
         // Verify gc size is properly reset after collection
@@ -367,7 +367,7 @@ class GCTest {
         assertEquals(2, garbageLen) // B and C should be garbage
 
         // Perform garbage collection
-        val collected = target.garbageCollect(maxVectorOf(listOf(target.changeID.actor.value)))
+        val collected = target.garbageCollect(maxVectorOf(listOf(target.changeID.actor)))
         assertEquals(garbageLen, collected)
 
         // Verify all gc size is cleared

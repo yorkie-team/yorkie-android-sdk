@@ -52,12 +52,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import dev.yorkie.document.operation.OperationInfo
-import dev.yorkie.document.time.ActorID
 import kotlin.math.roundToInt
 
 class CustomOutputTransformation : OutputTransformation {
     var styleOperations: List<OperationInfo.StyleOpInfo> by mutableStateOf(emptyList())
-    var selectionPeers: Map<ActorID, Selection?> by mutableStateOf(emptyMap())
+    var selectionPeers: Map<String, Selection?> by mutableStateOf(emptyMap())
 
     override fun TextFieldBuffer.transformOutput() {
         if (styleOperations.isNotEmpty()) {
@@ -139,7 +138,7 @@ fun RichTextEditor(
     isUnderline: Boolean,
     isStrikethrough: Boolean,
     styleOperations: List<OperationInfo.StyleOpInfo>,
-    selectionPeers: Map<ActorID, Selection?>,
+    selectionPeers: Map<String, Selection?>,
     onContentChanged: (TextFieldBuffer.ChangeList, CharSequence) -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
@@ -333,7 +332,7 @@ private fun String.toColor(): Color {
 @Composable
 private fun RemoteCursorOverlay(
     text: String,
-    selectionPeers: Map<ActorID, Selection?>,
+    selectionPeers: Map<String, Selection?>,
     textLayoutResult: TextLayoutResult,
     scrollOffsetY: Float,
     modifier: Modifier = Modifier,

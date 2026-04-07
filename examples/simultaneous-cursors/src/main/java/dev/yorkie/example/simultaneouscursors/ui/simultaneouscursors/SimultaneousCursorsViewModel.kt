@@ -85,7 +85,7 @@ class SimultaneousCursorsViewModel(
                         is PresenceChanged.MyPresence.Initialized -> {
                             event.initialized.forEach { (key, value) ->
                                 updateClientPresence(
-                                    key.value,
+                                    key,
                                     value,
                                 )
                             }
@@ -93,19 +93,19 @@ class SimultaneousCursorsViewModel(
 
                         is PresenceChanged.Others.PresenceChanged -> {
                             updateClientPresence(
-                                event.changed.actorID.value,
+                                event.changed.actorID,
                                 event.changed.presence,
                             )
                         }
 
                         is PresenceChanged.Others.Unwatched -> {
-                            removeClientPresence(event.changed.actorID.value)
+                            removeClientPresence(event.changed.actorID)
                         }
 
                         is PresenceChanged.MyPresence.PresenceChanged -> {
-                            myClientId = event.changed.actorID.value
+                            myClientId = event.changed.actorID
                             updateClientPresence(
-                                event.changed.actorID.value,
+                                event.changed.actorID,
                                 event.changed.presence,
                             )
                         }

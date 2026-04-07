@@ -22,3 +22,4 @@ proguard/
 captures/
 *.iws
 *.ipr
+.claude/settings.local.json

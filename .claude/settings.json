@@ -1,0 +1,28 @@
+{
+  "SessionStart": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/check-jira-token.sh"
+        },
+        {
+          "type": "command",
+          "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/check-docker-yorkie.sh"
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "command=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r '.command // empty') && if echo \"$command\" | grep -q 'jira.navercorp.com'; then if [ -z \"$JIRA_PERSONAL_TOKEN\" ]; then echo 'BLOCK: JIRA_PERSONAL_TOKEN is not set. Set it with: export JIRA_PERSONAL_TOKEN=<your-token>' >&2; exit 2; fi; fi"
+        }
+      ]
+    }
+  ]
+}

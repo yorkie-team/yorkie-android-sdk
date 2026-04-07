@@ -35,7 +35,16 @@ argument-hint: "[issue-number] [--from baseBranch] [--exec-model opus|sonnet|hai
 
 2. Check assignee (`GET /rest/api/2/myself`). Stop if assigned to someone else.
 
-3. Transition to "In Progress" if not already (fetch transitions, POST transition).
+3. Check current status from issue `fields.status.name`:
+   - `"In Progress"` → skip, no transition needed
+   - `"To Do"` → transition to "In Progress" (id: `21`):
+     ```bash
+     curl -s -X POST -H "Authorization: Bearer $JIRA_PERSONAL_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"transition": {"id": "21"}}' \
+       "https://jira.navercorp.com/rest/api/2/issue/RTCOLLABPLATFORM-{N}/transitions"
+     ```
+   - Any other status → ask user before transitioning.
 
 4. Branch naming: Bug → `fix/RTCOLLABPLATFORM-{N}`, all others → `feat/RTCOLLABPLATFORM-{N}`
 

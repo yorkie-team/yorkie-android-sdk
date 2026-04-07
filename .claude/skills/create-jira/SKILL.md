@@ -61,11 +61,13 @@ curl -s -X POST -H "Authorization: Bearer $JIRA_PERSONAL_TOKEN" \
 
 ## Phase 4a: Create new issue (`--update` not specified)
 
+Always prepend `[Android] ` to the summary title before submitting.
+
 Build the fields object:
 ```json
 {
   "project": {"key": "RTCOLLABPLATFORM"},
-  "summary": "{title}",
+  "summary": "[Android] {title}",
   "issuetype": {"name": "{Task|Bug|Epic|Sub-task}"},
   "assignee": {"name": "{myself.name}"},
   "description": "{description}"

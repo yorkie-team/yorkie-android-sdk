@@ -21,38 +21,38 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
-class PresenceTest {
+class ChannelTest {
 
     @Test
-    fun test_single_client_presence_counter() {
+    fun test_single_client_channel_counter() {
         runBlocking {
             val c1 = createClient()
             c1.activateAsync().await()
 
-            // Create presence counter
-            val presenceKey = "presence-${UUID.randomUUID()}".toDocKey()
-            val presence = Presence(presenceKey)
+            // Create channel counter
+            val channelKey = "channel-${UUID.randomUUID()}".toDocKey()
+            val channel = Channel(channelKey)
 
             // Test initial state
-            assertEquals(presenceKey, presence.getKey())
-            assertEquals(ResourceStatus.Detached, presence.getStatus())
-            assertFalse(presence.isAttached())
-            assertEquals(0L, presence.getCount())
+            assertEquals(channelKey, channel.getKey())
+            assertEquals(ResourceStatus.Detached, channel.getStatus())
+            assertFalse(channel.isAttached())
+            assertEquals(0L, channel.getCount())
 
-            // Attach presence counter
-            c1.attachPresence(presence).await()
+            // Attach channel counter
+            c1.attachChannel(channel).await()
 
             // Verify attached state
-            assertEquals(ResourceStatus.Attached, presence.getStatus())
-            assertTrue(presence.isAttached())
-            assertEquals(1L, presence.getCount())
+            assertEquals(ResourceStatus.Attached, channel.getStatus())
+            assertTrue(channel.isAttached())
+            assertEquals(1L, channel.getCount())
 
-            // Detach presence counter
-            c1.detachPresence(presence).await()
+            // Detach channel counter
+            c1.detachChannel(channel).await()
 
             // Verify detached state
-            assertEquals(ResourceStatus.Detached, presence.getStatus())
-            assertFalse(presence.isAttached())
+            assertEquals(ResourceStatus.Detached, channel.getStatus())
+            assertFalse(channel.isAttached())
 
             c1.deactivateAsync().await()
             c1.close()
@@ -60,7 +60,7 @@ class PresenceTest {
     }
 
     @Test
-    fun test_multiple_clients_presence_counter() {
+    fun test_multiple_clients_channel_counter() {
         runBlocking {
             val c1 = createClient()
             val c2 = createClient()
@@ -70,49 +70,49 @@ class PresenceTest {
             c2.activateAsync().await()
             c3.activateAsync().await()
 
-            // Create presence counters for the same room
-            val presenceKey = "presence-room-${UUID.randomUUID()}".toDocKey()
-            val presence1 = Presence(presenceKey)
-            val presence2 = Presence(presenceKey)
-            val presence3 = Presence(presenceKey)
+            // Create channel counters for the same room
+            val channelKey = "channel-room-${UUID.randomUUID()}".toDocKey()
+            val channel1 = Channel(channelKey)
+            val channel2 = Channel(channelKey)
+            val channel3 = Channel(channelKey)
 
             // First client attaches
-            c1.attachPresence(presence1).await()
+            c1.attachChannel(channel1).await()
             delay(100)
-            assertEquals(1L, presence1.getCount())
+            assertEquals(1L, channel1.getCount())
 
             // Second client attaches
-            c2.attachPresence(presence2).await()
+            c2.attachChannel(channel2).await()
             delay(100)
-            assertEquals(2L, presence2.getCount())
+            assertEquals(2L, channel2.getCount())
 
             // First client should receive the update
             delay(100)
-            assertEquals(2L, presence1.getCount())
+            assertEquals(2L, channel1.getCount())
 
             // Third client attaches
-            c3.attachPresence(presence3).await()
+            c3.attachChannel(channel3).await()
             delay(100)
-            assertEquals(3L, presence3.getCount())
+            assertEquals(3L, channel3.getCount())
 
             // Wait for all clients to sync
             delay(100)
-            assertEquals(3L, presence1.getCount())
-            assertEquals(3L, presence2.getCount())
+            assertEquals(3L, channel1.getCount())
+            assertEquals(3L, channel2.getCount())
 
             // One client detaches
-            c2.detachPresence(presence2).await()
+            c2.detachChannel(channel2).await()
             delay(100)
-            assertEquals(2L, presence2.getCount())
+            assertEquals(2L, channel2.getCount())
 
             // Other clients should see the count decrease
             delay(100)
-            assertEquals(2L, presence1.getCount())
-            assertEquals(2L, presence3.getCount())
+            assertEquals(2L, channel1.getCount())
+            assertEquals(2L, channel3.getCount())
 
             // Cleanup
-            c1.detachPresence(presence1).await()
-            c3.detachPresence(presence3).await()
+            c1.detachChannel(channel1).await()
+            c3.detachChannel(channel3).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c3.deactivateAsync().await()
@@ -123,7 +123,7 @@ class PresenceTest {
     }
 
     @Test
-    fun test_presence_counter_event_subscription() {
+    fun test_channel_counter_event_subscription() {
         runBlocking {
             val c1 = createClient()
             val c2 = createClient()
@@ -131,40 +131,40 @@ class PresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            val presenceKey = "presence-events-${UUID.randomUUID()}".toDocKey()
-            val presence1 = Presence(presenceKey)
-            val presence2 = Presence(presenceKey)
+            val channelKey = "channel-events-${UUID.randomUUID()}".toDocKey()
+            val channel1 = Channel(channelKey)
+            val channel2 = Channel(channelKey)
 
-            // Track events on presence1
-            val events = mutableListOf<PresenceEvent>()
+            // Track events on channel1
+            val events = mutableListOf<ChannelEvent>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                presence1.eventStream.collect { event ->
+                channel1.eventStream.collect { event ->
                     events.add(event)
                 }
             }
 
             // First client attaches
-            c1.attachPresence(presence1).await()
+            c1.attachChannel(channel1).await()
             delay(100)
 
             // Should receive initialized event
             assertTrue(events.isNotEmpty())
-            assertIs<PresenceEvent.Initialized>(events[0])
+            assertIs<ChannelEvent.Initialized>(events[0])
             assertEquals(1L, events[0].count)
 
             // Second client attaches
-            c2.attachPresence(presence2).await()
+            c2.attachChannel(channel2).await()
             delay(200)
 
             // Should receive count-changed event
             assertTrue(events.size >= 2)
-            assertIs<PresenceEvent.Changed>(events.last())
+            assertIs<ChannelEvent.Changed>(events.last())
             assertEquals(2L, events.last().count)
 
             // Cleanup
             collectJob.cancel()
-            c1.detachPresence(presence1).await()
-            c2.detachPresence(presence2).await()
+            c1.detachChannel(channel1).await()
+            c2.detachChannel(channel2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c1.close()
@@ -173,7 +173,7 @@ class PresenceTest {
     }
 
     @Test
-    fun test_presence_counter_detach_reduces_count() {
+    fun test_channel_counter_detach_reduces_count() {
         runBlocking {
             val c1 = createClient()
             val c2 = createClient()
@@ -181,31 +181,31 @@ class PresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            val presenceKey = "presence-detach-${UUID.randomUUID()}".toDocKey()
-            val presence1 = Presence(presenceKey)
-            val presence2 = Presence(presenceKey)
+            val channelKey = "channel-detach-${UUID.randomUUID()}".toDocKey()
+            val channel1 = Channel(channelKey)
+            val channel2 = Channel(channelKey)
 
             // Both attach
-            c1.attachPresence(presence1).await()
-            c2.attachPresence(presence2).await()
+            c1.attachChannel(channel1).await()
+            c2.attachChannel(channel2).await()
             delay(300)
 
-            assertEquals(2L, presence1.getCount())
-            assertEquals(2L, presence2.getCount())
+            assertEquals(2L, channel1.getCount())
+            assertEquals(2L, channel2.getCount())
 
             // One detaches
-            c1.detachPresence(presence1).await()
+            c1.detachChannel(channel1).await()
             delay(300)
 
-            // Detached presence should show updated count
-            assertEquals(1L, presence1.getCount())
+            // Detached channel should show updated count
+            assertEquals(1L, channel1.getCount())
 
-            // Other presence should also see the decrease
+            // Other channel should also see the decrease
             delay(300)
-            assertEquals(1L, presence2.getCount())
+            assertEquals(1L, channel2.getCount())
 
             // Cleanup
-            c2.detachPresence(presence2).await()
+            c2.detachChannel(channel2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c1.close()
@@ -214,40 +214,40 @@ class PresenceTest {
     }
 
     @Test
-    fun test_presence_heartbeat_keeps_session_alive() {
+    fun test_channel_heartbeat_keeps_session_alive() {
         runBlocking {
             // 1 second heartbeat interval for faster testing
             val c1 = createClient(
                 options = dev.yorkie.core.Client.Options(
-                    presenceHeartbeatInterval = 1000.milliseconds,
+                    channelHeartbeatInterval = 1000.milliseconds,
                 ),
             )
             c1.activateAsync().await()
 
-            val presenceKey = "presence-heartbeat-${UUID.randomUUID()}".toDocKey()
-            val presence = Presence(presenceKey)
+            val channelKey = "channel-heartbeat-${UUID.randomUUID()}".toDocKey()
+            val channel = Channel(channelKey)
 
-            // Attach presence counter
-            c1.attachPresence(presence).await()
-            assertEquals(1L, presence.getCount())
+            // Attach channel counter
+            c1.attachChannel(channel).await()
+            assertEquals(1L, channel.getCount())
 
             // Wait for 3 heartbeat cycles (3 seconds)
-            // The presence should still be active because heartbeat refreshes TTL
+            // The channel should still be active because heartbeat refreshes TTL
             delay(3500)
 
-            // Verify presence is still active
-            assertTrue(presence.isAttached())
-            assertEquals(1L, presence.getCount())
+            // Verify channel is still active
+            assertTrue(channel.isAttached())
+            assertEquals(1L, channel.getCount())
 
             // Cleanup
-            c1.detachPresence(presence).await()
+            c1.detachChannel(channel).await()
             c1.deactivateAsync().await()
             c1.close()
         }
     }
 
     @Test
-    fun test_presence_manual_sync_mode() {
+    fun test_channel_manual_sync_mode() {
         runBlocking {
             val c1 = createClient()
             val c2 = createClient()
@@ -255,17 +255,17 @@ class PresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            // Create presences for the same room
-            val presenceKey = "presence-manual-${UUID.randomUUID()}".toDocKey()
-            val p1 = Presence(presenceKey)
-            val p2 = Presence(presenceKey)
+            // Create channels for the same room
+            val channelKey = "channel-manual-${UUID.randomUUID()}".toDocKey()
+            val p1 = Channel(channelKey)
+            val p2 = Channel(channelKey)
 
             // Attach client1 with manual sync mode (no watch stream)
-            c1.attachPresence(p1, isRealtime = false).await()
+            c1.attachChannel(p1, isRealtime = false).await()
             assertEquals(1L, p1.getCount())
 
             // Attach client2 with manual sync mode
-            c2.attachPresence(p2, isRealtime = false).await()
+            c2.attachChannel(p2, isRealtime = false).await()
             assertEquals(2L, p2.getCount())
 
             // In manual mode, p1's count doesn't update automatically
@@ -273,12 +273,12 @@ class PresenceTest {
             delay(500)
             assertEquals(1L, p1.getCount())
 
-            // Must call syncPresence() explicitly to refresh TTL and fetch latest count
+            // Must call syncAsync() explicitly to refresh TTL and fetch latest count
             c1.syncAsync(p1).await()
             assertEquals(2L, p1.getCount())
 
             // Detach p2 and verify p1 doesn't auto-update
-            c2.detachPresence(p2).await()
+            c2.detachChannel(p2).await()
             delay(500)
             assertEquals(2L, p1.getCount())
 
@@ -287,7 +287,7 @@ class PresenceTest {
             assertEquals(1L, p1.getCount())
 
             // Cleanup
-            c1.detachPresence(p1).await()
+            c1.detachChannel(p1).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c1.close()
@@ -296,7 +296,7 @@ class PresenceTest {
     }
 
     @Test
-    fun test_presence_realtime_vs_manual_mode_comparison() {
+    fun test_channel_realtime_vs_manual_mode_comparison() {
         runBlocking {
             val c1 = createClient()
             val c2 = createClient()
@@ -306,41 +306,41 @@ class PresenceTest {
             c2.activateAsync().await()
             c3.activateAsync().await()
 
-            val presenceKey = "presence-mode-compare-${UUID.randomUUID()}".toDocKey()
-            val realtimePresence = Presence(presenceKey)
-            val manualPresence = Presence(presenceKey)
-            val thirdPresence = Presence(presenceKey)
+            val channelKey = "channel-mode-compare-${UUID.randomUUID()}".toDocKey()
+            val realtimeChannel = Channel(channelKey)
+            val manualChannel = Channel(channelKey)
+            val thirdChannel = Channel(channelKey)
 
             // c1: Attach with realtime mode (default)
-            c1.attachPresence(realtimePresence).await()
-            assertEquals(1L, realtimePresence.getCount())
+            c1.attachChannel(realtimeChannel).await()
+            assertEquals(1L, realtimeChannel.getCount())
 
             // c2: Attach with manual mode
-            c2.attachPresence(manualPresence, isRealtime = false).await()
-            assertEquals(2L, manualPresence.getCount())
+            c2.attachChannel(manualChannel, isRealtime = false).await()
+            assertEquals(2L, manualChannel.getCount())
 
-            // c1's realtime presence should automatically receive the update
+            // c1's realtime channel should automatically receive the update
             delay(500)
-            assertEquals(2L, realtimePresence.getCount())
+            assertEquals(2L, realtimeChannel.getCount())
 
-            // c2's manual presence doesn't receive updates
-            assertEquals(2L, manualPresence.getCount())
+            // c2's manual channel doesn't receive updates
+            assertEquals(2L, manualChannel.getCount())
 
             // c3: Attach another client
-            c3.attachPresence(thirdPresence, isRealtime = false).await()
-            assertEquals(3L, thirdPresence.getCount())
+            c3.attachChannel(thirdChannel, isRealtime = false).await()
+            assertEquals(3L, thirdChannel.getCount())
 
-            // c1's realtime presence receives the update automatically
+            // c1's realtime channel receives the update automatically
             delay(500)
-            assertEquals(3L, realtimePresence.getCount())
+            assertEquals(3L, realtimeChannel.getCount())
 
-            // c2's manual presence still doesn't update
-            assertEquals(2L, manualPresence.getCount())
+            // c2's manual channel still doesn't update
+            assertEquals(2L, manualChannel.getCount())
 
             // Cleanup
-            c1.detachPresence(realtimePresence).await()
-            c2.detachPresence(manualPresence).await()
-            c3.detachPresence(thirdPresence).await()
+            c1.detachChannel(realtimeChannel).await()
+            c2.detachChannel(manualChannel).await()
+            c3.detachChannel(thirdChannel).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c3.deactivateAsync().await()
@@ -351,7 +351,7 @@ class PresenceTest {
     }
 
     @Test
-    fun test_presence_broadcast_received_by_subscriber() {
+    fun test_channel_broadcast_received_by_subscriber() {
         runBlocking {
             val c1 = createClient()
             val c2 = createClient()
@@ -359,24 +359,24 @@ class PresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            val presenceKey = "presence-broadcast-${UUID.randomUUID()}".toDocKey()
-            val p1 = Presence(presenceKey)
-            val p2 = Presence(presenceKey)
+            val channelKey = "channel-broadcast-${UUID.randomUUID()}".toDocKey()
+            val ch1 = Channel(channelKey)
+            val ch2 = Channel(channelKey)
 
-            c1.attachPresence(p1).await()
-            c2.attachPresence(p2).await()
+            c1.attachChannel(ch1).await()
+            c2.attachChannel(ch2).await()
             delay(200)
 
-            // Collect broadcast events on p1
-            val broadcastEvents = mutableListOf<PresenceEvent.Broadcast>()
+            // Collect broadcast events on ch1
+            val broadcastEvents = mutableListOf<ChannelEvent.Broadcast>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                p1.eventStream
-                    .filterIsInstance<PresenceEvent.Broadcast>()
+                ch1.eventStream
+                    .filterIsInstance<ChannelEvent.Broadcast>()
                     .collect { broadcastEvents.add(it) }
             }
 
-            // c2 broadcasts on the presence key
-            c2.broadcast(presenceKey, "hello", "world").await()
+            // c2 broadcasts on the channel key
+            c2.broadcast(channelKey, "hello", "world").await()
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (broadcastEvents.isEmpty()) {
@@ -389,8 +389,8 @@ class PresenceTest {
             assertEquals("world", broadcastEvents[0].payload)
 
             collectJob.cancel()
-            c1.detachPresence(p1).await()
-            c2.detachPresence(p2).await()
+            c1.detachChannel(ch1).await()
+            c2.detachChannel(ch2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()
             c1.close()
@@ -399,7 +399,7 @@ class PresenceTest {
     }
 
     @Test
-    fun test_presence_broadcast_does_not_arrive_on_document_event_stream() {
+    fun test_channel_broadcast_does_not_arrive_on_document_event_stream() {
         runBlocking {
             val c1 = createClient()
             val c2 = createClient()
@@ -407,12 +407,12 @@ class PresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            val presenceKey = "presence-broadcast-isolation-${UUID.randomUUID()}".toDocKey()
+            val channelKey = "channel-broadcast-isolation-${UUID.randomUUID()}".toDocKey()
             val docKey = "doc-broadcast-isolation-${UUID.randomUUID()}".toDocKey()
-            val p1 = Presence(presenceKey)
+            val ch1 = Channel(channelKey)
             val d2 = dev.yorkie.document.Document(docKey)
 
-            c1.attachPresence(p1).await()
+            c1.attachChannel(ch1).await()
             c2.attachDocument(d2).await()
             delay(200)
 
@@ -424,17 +424,17 @@ class PresenceTest {
                     .collect { docBroadcastEvents.add(it) }
             }
 
-            // c1 broadcasts on presence key — must NOT reach d2
-            c1.broadcast(presenceKey, "test-topic", "test-payload").await()
+            // c1 broadcasts on channel key — must NOT reach d2
+            c1.broadcast(channelKey, "test-topic", "test-payload").await()
             delay(500)
 
             assertTrue(
                 docBroadcastEvents.isEmpty(),
-                "Document event stream must not receive a presence-scoped broadcast",
+                "Document event stream must not receive a channel-scoped broadcast",
             )
 
             collectJob.cancel()
-            c1.detachPresence(p1).await()
+            c1.detachChannel(ch1).await()
             c2.detachDocument(d2).await()
             c1.deactivateAsync().await()
             c2.deactivateAsync().await()

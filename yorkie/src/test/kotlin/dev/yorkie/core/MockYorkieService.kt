@@ -12,54 +12,54 @@ import dev.yorkie.api.toPBChange
 import dev.yorkie.api.toPBTimeTicket
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.ActivateClientResponse
+import dev.yorkie.api.v1.AttachChannelRequest
+import dev.yorkie.api.v1.AttachChannelResponse
 import dev.yorkie.api.v1.AttachDocumentRequest
 import dev.yorkie.api.v1.AttachDocumentResponse
-import dev.yorkie.api.v1.AttachPresenceRequest
-import dev.yorkie.api.v1.AttachPresenceResponse
 import dev.yorkie.api.v1.BroadcastRequest
 import dev.yorkie.api.v1.BroadcastResponse
 import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DeactivateClientResponse
+import dev.yorkie.api.v1.DetachChannelRequest
+import dev.yorkie.api.v1.DetachChannelResponse
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.DetachDocumentResponse
-import dev.yorkie.api.v1.DetachPresenceRequest
-import dev.yorkie.api.v1.DetachPresenceResponse
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.PushPullChangesResponse
-import dev.yorkie.api.v1.RefreshPresenceRequest
-import dev.yorkie.api.v1.RefreshPresenceResponse
+import dev.yorkie.api.v1.RefreshChannelRequest
+import dev.yorkie.api.v1.RefreshChannelResponse
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.RemoveDocumentResponse
 import dev.yorkie.api.v1.ValueType
+import dev.yorkie.api.v1.WatchChannelRequest
+import dev.yorkie.api.v1.WatchChannelResponse
 import dev.yorkie.api.v1.WatchDocumentRequest
 import dev.yorkie.api.v1.WatchDocumentResponse
 import dev.yorkie.api.v1.WatchDocumentResponseKt.initialization
-import dev.yorkie.api.v1.WatchPresenceRequest
-import dev.yorkie.api.v1.WatchPresenceResponse
 import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.activateClientResponse
+import dev.yorkie.api.v1.attachChannelResponse
 import dev.yorkie.api.v1.attachDocumentResponse
-import dev.yorkie.api.v1.attachPresenceResponse
 import dev.yorkie.api.v1.broadcastResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.deactivateClientResponse
+import dev.yorkie.api.v1.detachChannelResponse
 import dev.yorkie.api.v1.detachDocumentResponse
-import dev.yorkie.api.v1.detachPresenceResponse
 import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.docEventBody
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.presenceEvent
 import dev.yorkie.api.v1.pushPullChangesResponse
-import dev.yorkie.api.v1.refreshPresenceResponse
+import dev.yorkie.api.v1.refreshChannelResponse
 import dev.yorkie.api.v1.removeDocumentResponse
+import dev.yorkie.api.v1.watchChannelInitialized
+import dev.yorkie.api.v1.watchChannelResponse
 import dev.yorkie.api.v1.watchDocumentResponse
-import dev.yorkie.api.v1.watchPresenceInitialized
-import dev.yorkie.api.v1.watchPresenceResponse
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtPrimitive
@@ -311,45 +311,45 @@ class MockYorkieService(
         }
     }
 
-    override suspend fun attachPresence(
-        request: AttachPresenceRequest,
+    override suspend fun attachChannel(
+        request: AttachChannelRequest,
         headers: Headers,
-    ): ResponseMessage<AttachPresenceResponse> {
+    ): ResponseMessage<AttachChannelResponse> {
         return ResponseMessage.Success(
-            message = attachPresenceResponse {},
+            message = attachChannelResponse {},
             headers = emptyMap(),
             trailers = emptyMap(),
         )
     }
 
-    override suspend fun detachPresence(
-        request: DetachPresenceRequest,
+    override suspend fun detachChannel(
+        request: DetachChannelRequest,
         headers: Headers,
-    ): ResponseMessage<DetachPresenceResponse> {
+    ): ResponseMessage<DetachChannelResponse> {
         return ResponseMessage.Success(
-            message = detachPresenceResponse {},
+            message = detachChannelResponse {},
             headers = emptyMap(),
             trailers = emptyMap(),
         )
     }
 
-    override suspend fun refreshPresence(
-        request: RefreshPresenceRequest,
+    override suspend fun refreshChannel(
+        request: RefreshChannelRequest,
         headers: Headers,
-    ): ResponseMessage<RefreshPresenceResponse> {
+    ): ResponseMessage<RefreshChannelResponse> {
         return ResponseMessage.Success(
-            message = refreshPresenceResponse {},
+            message = refreshChannelResponse {},
             headers = emptyMap(),
             trailers = emptyMap(),
         )
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    override suspend fun watchPresence(
+    override suspend fun watchChannel(
         headers: Headers,
-    ): ServerOnlyStreamInterface<WatchPresenceRequest, WatchPresenceResponse> {
-        return object : ServerOnlyStreamInterface<WatchPresenceRequest, WatchPresenceResponse> {
-            private var responseChannel = Channel<WatchPresenceResponse>()
+    ): ServerOnlyStreamInterface<WatchChannelRequest, WatchChannelResponse> {
+        return object : ServerOnlyStreamInterface<WatchChannelRequest, WatchChannelResponse> {
+            private var responseChannel = kotlinx.coroutines.channels.Channel<WatchChannelResponse>()
 
             override fun isClosed(): Boolean {
                 return responseChannel.isClosedForSend
@@ -363,9 +363,10 @@ class MockYorkieService(
                 responseChannel.close()
             }
 
-            override fun responseChannel(): ReceiveChannel<WatchPresenceResponse> {
+            override fun responseChannel(): ReceiveChannel<WatchChannelResponse> {
                 return responseChannel.takeUnless { it.isClosedForReceive || it.isClosedForSend }
-                    ?: Channel<WatchPresenceResponse>().also { responseChannel = it }
+                    ?: kotlinx.coroutines.channels.Channel<WatchChannelResponse>()
+                        .also { responseChannel = it }
             }
 
             override fun responseHeaders(): Deferred<Headers> {
@@ -376,32 +377,32 @@ class MockYorkieService(
                 return CompletableDeferred(emptyMap())
             }
 
-            override suspend fun sendAndClose(input: WatchPresenceRequest): Result<Unit> {
+            override suspend fun sendAndClose(input: WatchChannelRequest): Result<Unit> {
                 return runCatching {
                     CoroutineScope(Dispatchers.Default).launch {
                         if (responseChannel.isClosedForSend) {
                             return@launch
                         }
                         responseChannel.trySend(
-                            watchPresenceResponse {
-                                initialized = watchPresenceInitialized {}
+                            watchChannelResponse {
+                                initialized = watchChannelInitialized {}
                             },
                         )
                         delay(50)
                         responseChannel.trySend(
-                            watchPresenceResponse {
+                            watchChannelResponse {
                                 event = presenceEvent {}
                             },
                         )
                         delay(1_000)
                         responseChannel.trySend(
-                            watchPresenceResponse {
+                            watchChannelResponse {
                                 event = presenceEvent {}
                             },
                         )
                         delay(2_000)
                         responseChannel.trySend(
-                            watchPresenceResponse {
+                            watchChannelResponse {
                                 event = presenceEvent {}
                             },
                         )

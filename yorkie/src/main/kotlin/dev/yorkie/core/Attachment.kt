@@ -45,12 +45,12 @@ internal class Attachment<R : Attachable>(
             return needRealTimeSync()
         }
 
-        // For Presence in Manual mode: never auto-sync
+        // For Channel in Manual mode: never auto-sync
         if (syncMode == Client.SyncMode.Manual) {
             return false
         }
 
-        // For Presence: check if heartbeat is needed
+        // For Channel: check if heartbeat is needed
         return System.currentTimeMillis() - lastHeartbeatTime >= heartbeatInterval
     }
 

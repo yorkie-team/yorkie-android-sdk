@@ -7,11 +7,12 @@ import dev.yorkie.util.createSingleThreadDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
-sealed interface PresenceEvent : ResourceEvent {
+sealed interface ChannelEvent : ResourceEvent {
     /**
      * Current count value. Zero for non-count events.
      */
@@ -19,36 +20,36 @@ sealed interface PresenceEvent : ResourceEvent {
 
     data class Changed(
         override val count: Long,
-    ) : PresenceEvent
+    ) : ChannelEvent
 
     data class Initialized(
         override val count: Long,
-    ) : PresenceEvent
+    ) : ChannelEvent
 
     /**
-     * Broadcast event received from a remote client on this presence key.
+     * Broadcast event received from a remote client on this channel key.
      */
     data class Broadcast(
         val actorID: String?,
         val topic: String,
         val payload: String,
-    ) : PresenceEvent {
+    ) : ChannelEvent {
         override val count: Long = 0L
     }
 }
 
-class Presence(
+class Channel(
     private val key: String,
 ) : Attachable {
     private val dispatcher: CoroutineDispatcher =
-        createSingleThreadDispatcher("Presence($key)")
+        createSingleThreadDispatcher("Channel($key)")
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
     @Volatile
     private var status = ResourceStatus.Detached
     private var actorID: String? = null
-    private var presenceId: String? = null
+    private var channelId: String? = null
 
     @Volatile
     private var count = 0L
@@ -56,42 +57,42 @@ class Presence(
     @Volatile
     private var seq = 0L
 
-    private val _eventStream = MutableSharedFlow<PresenceEvent>()
+    private val _eventStream = MutableSharedFlow<ChannelEvent>()
     val eventStream = _eventStream.asSharedFlow()
 
     /**
-     * `applyStatus` applies the presence status into this presence counter.
+     * `applyStatus` applies the channel status into this channel counter.
      */
     override fun applyStatus(status: ResourceStatus) {
         this.status = status
     }
 
     /**
-     * `isAttached` returns whether this presence counter is attached or not.
+     * `isAttached` returns whether this channel counter is attached or not.
      */
     fun isAttached(): Boolean {
         return status == ResourceStatus.Attached
     }
 
     /**
-     * `getActorID` returns the actor ID of this presence counter.
+     * `getActorID` returns the actor ID of this channel counter.
      */
     fun getActorID(): String? {
         return actorID
     }
 
     /**
-     * `getPresenceID` returns the presence ID from the server.
+     * `getChannelId` returns the channel ID from the server.
      */
-    fun getPresenceId(): String? {
-        return presenceId
+    fun getChannelId(): String? {
+        return channelId
     }
 
     /**
-     * `setPresenceID` sets the presence ID from the server.
+     * `setChannelId` sets the channel ID from the server.
      */
-    fun setPresenceId(presenceId: String) {
-        this.presenceId = presenceId
+    fun setChannelId(channelId: String) {
+        this.channelId = channelId
     }
 
     /**
@@ -117,29 +118,29 @@ class Presence(
     }
 
     /**
-     * `getKey` returns the key of this presence counter.
+     * `getKey` returns the key of this channel counter.
      */
     override fun getKey(): String {
         return key
     }
 
     /**
-     * `getStatus` returns the status of this presence counter.
+     * `getStatus` returns the status of this channel counter.
      */
     override fun getStatus(): ResourceStatus {
         return status
     }
 
     /**
-     * `setActor` sets the actor ID into this presence counter.
+     * `setActor` sets the actor ID into this channel counter.
      */
     override fun setActor(actorID: String) {
         this.actorID = actorID
     }
 
     /**
-     * `hasLocalChanges` returns whether this presence has local changes or not.
-     * Presence is server-managed, so it always returns false.
+     * `hasLocalChanges` returns whether this channel has local changes or not.
+     * Channel is server-managed, so it always returns false.
      */
     override fun hasLocalChanges(): Boolean {
         return false
@@ -150,9 +151,28 @@ class Presence(
      */
     override fun publish(event: ResourceEvent) {
         scope.launch {
-            (event as? PresenceEvent)?.let {
+            (event as? ChannelEvent)?.let {
                 _eventStream.emit(it)
             }
         }
     }
+
+    /**
+     * `close` cancels the internal coroutine scope.
+     */
+    fun close() {
+        scope.cancel()
+    }
 }
+
+@Deprecated(
+    "Renamed to Channel",
+    replaceWith = ReplaceWith("Channel", "dev.yorkie.presence.Channel"),
+)
+typealias Presence = Channel
+
+@Deprecated(
+    "Renamed to ChannelEvent",
+    replaceWith = ReplaceWith("ChannelEvent", "dev.yorkie.presence.ChannelEvent"),
+)
+typealias PresenceEvent = ChannelEvent

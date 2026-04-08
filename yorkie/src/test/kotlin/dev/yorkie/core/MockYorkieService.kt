@@ -349,7 +349,8 @@ class MockYorkieService(
         headers: Headers,
     ): ServerOnlyStreamInterface<WatchChannelRequest, WatchChannelResponse> {
         return object : ServerOnlyStreamInterface<WatchChannelRequest, WatchChannelResponse> {
-            private var responseChannel = kotlinx.coroutines.channels.Channel<WatchChannelResponse>()
+            private var responseChannel =
+                kotlinx.coroutines.channels.Channel<WatchChannelResponse>()
 
             override fun isClosed(): Boolean {
                 return responseChannel.isClosedForSend

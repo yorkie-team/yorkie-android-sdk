@@ -28,7 +28,7 @@ curl -s -H "Authorization: Bearer $JIRA_PERSONAL_TOKEN" \
 
 ## Step 3: Write PR title and body
 
-Title: `[RTCOLLABPLATFORM-N] {Jira issue title}` (max 70 chars) or `{type}: {description}` if no ticket.
+Title: `{Jira issue title}` (max 70 chars) or `{type}: {description}` if no ticket. Do NOT prefix the ticket number.
 
 Body:
 ```markdown

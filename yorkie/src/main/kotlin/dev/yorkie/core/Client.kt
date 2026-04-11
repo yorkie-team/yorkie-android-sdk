@@ -727,6 +727,15 @@ public class Client(
                     PresenceEvent.Changed(count = count),
                 )
             }
+        } else if (response.hasBroadcast()) {
+            val broadcastEvent = response.broadcast
+            presence.publish(
+                PresenceEvent.Broadcast(
+                    actorID = broadcastEvent.publisher.takeIf { it.isNotEmpty() },
+                    topic = broadcastEvent.body.topic,
+                    payload = broadcastEvent.body.payload.toStringUtf8(),
+                ),
+            )
         }
     }
 
@@ -1220,7 +1229,11 @@ public class Client(
 
             val request = broadcastRequest {
                 clientId = clientID
-                documentId = attachment.resourceId
+                if (attachment.resource is Presence) {
+                    presenceKey = key
+                } else {
+                    documentId = attachment.resourceId
+                }
                 this.topic = topic
                 this.payload = ByteString.copyFromUtf8(payload)
             }
@@ -1239,12 +1252,14 @@ public class Client(
                         errorCodeOf(err) == ErrUnauthenticated.codeString
                     ) {
                         shouldRefreshToken = true
-                        attachment.resource.publish(
-                            event = AuthError(
-                                errorMetadataOf(err)?.get("reason") ?: "AuthError",
-                                Document.Event.AuthError.AuthErrorMethod.Broadcast,
-                            ),
-                        )
+                        if (attachment.resource is Document) {
+                            attachment.resource.publish(
+                                event = AuthError(
+                                    errorMetadataOf(err)?.get("reason") ?: "AuthError",
+                                    Document.Event.AuthError.AuthErrorMethod.Broadcast,
+                                ),
+                            )
+                        }
                     }
                     retryCount++
                     if (retryCount > maxRetries) {

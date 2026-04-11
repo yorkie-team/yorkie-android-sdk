@@ -1,6 +1,7 @@
 package dev.yorkie.presence
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.yorkie.core.GENERAL_TIMEOUT
 import dev.yorkie.core.ResourceStatus
 import dev.yorkie.core.createClient
 import dev.yorkie.core.toDocKey
@@ -12,8 +13,10 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -344,6 +347,99 @@ class PresenceTest {
             c1.close()
             c2.close()
             c3.close()
+        }
+    }
+
+    @Test
+    fun test_presence_broadcast_received_by_subscriber() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            val presenceKey = "presence-broadcast-${UUID.randomUUID()}".toDocKey()
+            val p1 = Presence(presenceKey)
+            val p2 = Presence(presenceKey)
+
+            c1.attachPresence(p1).await()
+            c2.attachPresence(p2).await()
+            delay(200)
+
+            // Collect broadcast events on p1
+            val broadcastEvents = mutableListOf<PresenceEvent.Broadcast>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                p1.eventStream
+                    .filterIsInstance<PresenceEvent.Broadcast>()
+                    .collect { broadcastEvents.add(it) }
+            }
+
+            // c2 broadcasts on the presence key
+            c2.broadcast(presenceKey, "hello", "world").await()
+
+            withTimeout(GENERAL_TIMEOUT) {
+                while (broadcastEvents.isEmpty()) {
+                    delay(50)
+                }
+            }
+
+            assertEquals(1, broadcastEvents.size)
+            assertEquals("hello", broadcastEvents[0].topic)
+            assertEquals("world", broadcastEvents[0].payload)
+
+            collectJob.cancel()
+            c1.detachPresence(p1).await()
+            c2.detachPresence(p2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c1.close()
+            c2.close()
+        }
+    }
+
+    @Test
+    fun test_presence_broadcast_does_not_arrive_on_document_event_stream() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            val presenceKey = "presence-broadcast-isolation-${UUID.randomUUID()}".toDocKey()
+            val docKey = "doc-broadcast-isolation-${UUID.randomUUID()}".toDocKey()
+            val p1 = Presence(presenceKey)
+            val d2 = dev.yorkie.document.Document(docKey)
+
+            c1.attachPresence(p1).await()
+            c2.attachDocument(d2).await()
+            delay(200)
+
+            val docBroadcastEvents =
+                mutableListOf<dev.yorkie.document.Document.Event.Broadcast>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                d2.events
+                    .filterIsInstance<dev.yorkie.document.Document.Event.Broadcast>()
+                    .collect { docBroadcastEvents.add(it) }
+            }
+
+            // c1 broadcasts on presence key — must NOT reach d2
+            c1.broadcast(presenceKey, "test-topic", "test-payload").await()
+            delay(500)
+
+            assertTrue(
+                docBroadcastEvents.isEmpty(),
+                "Document event stream must not receive a presence-scoped broadcast",
+            )
+
+            collectJob.cancel()
+            c1.detachPresence(p1).await()
+            c2.detachDocument(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c1.close()
+            c2.close()
         }
     }
 }

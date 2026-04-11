@@ -100,6 +100,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
+import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
 
 /**
  * Client that can communicate with the server.
@@ -357,10 +358,10 @@ public class Client(
                     resource.mutex.withLock {
                         val request = refreshChannelRequest {
                             clientId = requireClientId()
-                            resource.getChannelId()?.let {
-                                channelId = it
-                            }
                             channelKey = resource.getKey()
+                            resource.getSessionId()?.let {
+                                sessionId = it
+                            }
                         }
                         val response = service.refreshChannel(
                             request,
@@ -721,22 +722,32 @@ public class Client(
                 )
             }
         } else if (response.hasEvent()) {
-            val count = response.event.count
-            val seq = response.event.seq
-            if (channel.updateCount(count, seq)) {
-                channel.publish(
-                    ChannelEvent.Changed(count = count),
-                )
+            val event = response.event
+            when (event.type) {
+                PbChannelEventType.TYPE_PRESENCE -> {
+                    val count = event.count
+                    val seq = event.seq
+                    if (channel.updateCount(count, seq)) {
+                        channel.publish(
+                            ChannelEvent.Changed(count = count),
+                        )
+                    }
+                }
+
+                PbChannelEventType.TYPE_BROADCAST -> {
+                    channel.publish(
+                        ChannelEvent.Broadcast(
+                            actorID = event.publisher.takeIf { it.isNotEmpty() },
+                            topic = event.topic,
+                            payload = event.payload.toStringUtf8(),
+                        ),
+                    )
+                }
+
+                else -> {
+                    // nothing to do
+                }
             }
-        } else if (response.hasBroadcast()) {
-            val broadcastEvent = response.broadcast
-            presence.publish(
-                PresenceEvent.Broadcast(
-                    actorID = broadcastEvent.publisher.takeIf { it.isNotEmpty() },
-                    topic = broadcastEvent.body.topic,
-                    payload = broadcastEvent.body.payload.toStringUtf8(),
-                ),
-            )
         }
     }
 
@@ -1020,7 +1031,7 @@ public class Client(
                     return@async Result.failure(it)
                 }
 
-                channel.setChannelId(response.channelId)
+                channel.setSessionId(response.sessionId)
                 channel.updateCount(response.count, 0L)
                 channel.applyStatus(ResourceStatus.Attached)
 
@@ -1032,7 +1043,7 @@ public class Client(
 
                 attachments[channelKey] = Attachment(
                     resource = channel,
-                    resourceId = response.channelId,
+                    resourceId = response.sessionId,
                     syncMode = syncMode,
                 )
 
@@ -1066,10 +1077,10 @@ public class Client(
 
             val request = detachChannelRequest {
                 clientId = requireClientId()
-                channel.getChannelId()?.let {
-                    channelId = it
-                }
                 this.channelKey = channelKey
+                channel.getSessionId()?.let {
+                    sessionId = it
+                }
             }
 
             val response = service.detachChannel(
@@ -1244,11 +1255,7 @@ public class Client(
 
             val request = broadcastRequest {
                 clientId = clientID
-                if (attachment.resource is Presence) {
-                    presenceKey = key
-                } else {
-                    documentId = attachment.resourceId
-                }
+                channelKey = key
                 this.topic = topic
                 this.payload = ByteString.copyFromUtf8(payload)
             }

@@ -49,7 +49,7 @@ class Channel(
     @Volatile
     private var status = ResourceStatus.Detached
     private var actorID: String? = null
-    private var channelId: String? = null
+    private var sessionId: String? = null
 
     @Volatile
     private var count = 0L
@@ -82,17 +82,17 @@ class Channel(
     }
 
     /**
-     * `getChannelId` returns the channel ID from the server.
+     * `getSessionId` returns the session ID from the server.
      */
-    fun getChannelId(): String? {
-        return channelId
+    fun getSessionId(): String? {
+        return sessionId
     }
 
     /**
-     * `setChannelId` sets the channel ID from the server.
+     * `setSessionId` sets the session ID from the server.
      */
-    fun setChannelId(channelId: String) {
-        this.channelId = channelId
+    fun setSessionId(sessionId: String) {
+        this.sessionId = sessionId
     }
 
     /**

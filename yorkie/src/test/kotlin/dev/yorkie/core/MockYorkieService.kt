@@ -46,14 +46,13 @@ import dev.yorkie.api.v1.attachDocumentResponse
 import dev.yorkie.api.v1.broadcastResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
+import dev.yorkie.api.v1.channelEvent
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachChannelResponse
 import dev.yorkie.api.v1.detachDocumentResponse
 import dev.yorkie.api.v1.docEvent
-import dev.yorkie.api.v1.docEventBody
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
-import dev.yorkie.api.v1.presenceEvent
 import dev.yorkie.api.v1.pushPullChangesResponse
 import dev.yorkie.api.v1.refreshChannelResponse
 import dev.yorkie.api.v1.removeDocumentResponse
@@ -80,6 +79,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
 
 class MockYorkieService(
     val customError: MutableMap<String, Code> = defaultError,
@@ -392,32 +392,36 @@ class MockYorkieService(
                         delay(50)
                         responseChannel.trySend(
                             watchChannelResponse {
-                                event = presenceEvent {}
+                                event = channelEvent {
+                                    type = PbChannelEventType.TYPE_PRESENCE
+                                }
                             },
                         )
                         delay(1_000)
                         responseChannel.trySend(
                             watchChannelResponse {
-                                event = presenceEvent {}
+                                event = channelEvent {
+                                    type = PbChannelEventType.TYPE_PRESENCE
+                                }
                             },
                         )
                         delay(2_000)
                         responseChannel.trySend(
                             watchChannelResponse {
-                                event = presenceEvent {}
+                                event = channelEvent {
+                                    type = PbChannelEventType.TYPE_PRESENCE
+                                }
                             },
                         )
                         delay(500)
                         responseChannel.trySend(
-                            watchPresenceResponse {
-                                broadcast = docEvent {
-                                    type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST
+                            watchChannelResponse {
+                                event = channelEvent {
+                                    type = PbChannelEventType.TYPE_BROADCAST
                                     publisher = input.clientId
-                                    body = docEventBody {
-                                        topic = "test-topic"
-                                        payload =
-                                            ByteString.copyFromUtf8("test-payload")
-                                    }
+                                    topic = "test-topic"
+                                    payload =
+                                        ByteString.copyFromUtf8("test-payload")
                                 }
                             },
                         )

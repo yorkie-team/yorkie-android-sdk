@@ -128,14 +128,14 @@ message AttachChannelRequest {
 }
 
 message AttachChannelResponse {
-  string channel_id = 1;
+  string session_id = 1;
   int64 count = 2;
 }
 
 message DetachChannelRequest {
   string client_id = 1;
-  string channel_id = 2;
-  string channel_key = 3;
+  string channel_key = 2;
+  string session_id = 3;
 }
 
 message DetachChannelResponse {
@@ -144,8 +144,8 @@ message DetachChannelResponse {
 
 message RefreshChannelRequest {
   string client_id = 1;
-  string channel_id = 2;
-  string channel_key = 3;
+  string channel_key = 2;
+  string session_id = 3;
 }
 
 message RefreshChannelResponse {
@@ -160,8 +160,7 @@ message WatchChannelRequest {
 message WatchChannelResponse {
   oneof body {
     WatchChannelInitialized initialized = 1;
-    PresenceEvent event = 2;
-    DocEvent broadcast = 3;
+    ChannelEvent event = 2;
   }
 }
 
@@ -172,10 +171,9 @@ message WatchChannelInitialized {
 
 message BroadcastRequest {
   string client_id = 1;
-  string document_id = 2;
+  string channel_key = 2;
   string topic = 3;
   bytes payload = 4;
-  string presence_key = 5;
 }
 
 message BroadcastResponse {

@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 
 sealed interface PresenceEvent : ResourceEvent {
     /**
-     * `count` is the current count value.
+     * Current count value. Zero for non-count events.
      */
     val count: Long
 
@@ -24,6 +24,17 @@ sealed interface PresenceEvent : ResourceEvent {
     data class Initialized(
         override val count: Long,
     ) : PresenceEvent
+
+    /**
+     * Broadcast event received from a remote client on this presence key.
+     */
+    data class Broadcast(
+        val actorID: String?,
+        val topic: String,
+        val payload: String,
+    ) : PresenceEvent {
+        override val count: Long = 0L
+    }
 }
 
 class Presence(

@@ -5,6 +5,7 @@ import com.connectrpc.ConnectException
 import com.connectrpc.Headers
 import com.connectrpc.ResponseMessage
 import com.connectrpc.ServerOnlyStreamInterface
+import com.google.protobuf.ByteString
 import com.google.protobuf.kotlin.toByteString
 import com.google.rpc.ErrorInfo
 import dev.yorkie.api.toPBChange
@@ -49,6 +50,7 @@ import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachDocumentResponse
 import dev.yorkie.api.v1.detachPresenceResponse
 import dev.yorkie.api.v1.docEvent
+import dev.yorkie.api.v1.docEventBody
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.presenceEvent
@@ -401,6 +403,20 @@ class MockYorkieService(
                         responseChannel.trySend(
                             watchPresenceResponse {
                                 event = presenceEvent {}
+                            },
+                        )
+                        delay(500)
+                        responseChannel.trySend(
+                            watchPresenceResponse {
+                                broadcast = docEvent {
+                                    type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST
+                                    publisher = input.clientId
+                                    body = docEventBody {
+                                        topic = "test-topic"
+                                        payload =
+                                            ByteString.copyFromUtf8("test-payload")
+                                    }
+                                }
                             },
                         )
                     }

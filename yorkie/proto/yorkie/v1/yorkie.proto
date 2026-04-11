@@ -161,6 +161,7 @@ message WatchPresenceResponse {
   oneof body {
     WatchPresenceInitialized initialized = 1;
     PresenceEvent event = 2;
+    DocEvent broadcast = 3;
   }
 }
 
@@ -174,6 +175,7 @@ message BroadcastRequest {
   string document_id = 2;
   string topic = 3;
   bytes payload = 4;
+  string presence_key = 5;
 }
 
 message BroadcastResponse {

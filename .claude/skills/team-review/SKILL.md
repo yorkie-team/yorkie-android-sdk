@@ -2,7 +2,8 @@
 name: team-review
 description: |
   Multi-agent review for yorkie-android-sdk. Runs critic-reviewer and test-writer in parallel;
-  adds api-compat-checker when Client, Document, JsonObject/Array/Text/Tree, or .proto files are in the diff.
+  adds api-compat-checker when Client, Document, JsonObject/Array/Text/Tree, or .proto files are in the diff;
+  adds protobuf-converter-checker when .proto files are in the diff.
   Triggered by "team review", "review changes", "review this", "review PR", "code review".
 argument-hint: "[--target plan|changes|branch] [--method subagent|team] [--base main]"
 ---
@@ -36,10 +37,14 @@ For plan mode, pass the plan content and referenced source file paths.
 
 Always run: `critic-reviewer`, `test-writer`
 
+Also run `yorkie-js-researcher` if the JIRA issue or PR description references a JS SDK PR (`yorkie-js-sdk#N`), or if the diff touches CRDT/operation logic under `document/crdt/` or `document/operation/`. Prompt it to compare the Android implementation against the JS SDK reference and flag any divergences.
+
 Also run `api-compat-checker` if any of these appear in the changed file list:
 - `Client.kt`, `Document.kt`
 - `JsonObject.kt`, `JsonArray.kt`, `JsonText.kt`, `JsonTree.kt`
 - Any file matching `*.proto`
+
+Also run `protobuf-converter-checker` if any file matching `*.proto` appears in the changed file list.
 
 ## Step 5: Project context (include in every agent prompt)
 
@@ -74,6 +79,7 @@ Dispatch all selected agents as Task agents simultaneously. Wait for all. If one
 - **critic-reviewer**: summary
 - **test-writer**: summary
 - **api-compat-checker** (if run): summary
+- **protobuf-converter-checker** (if run): summary
 
 ### Recommended Actions
 1. Must fix before merge

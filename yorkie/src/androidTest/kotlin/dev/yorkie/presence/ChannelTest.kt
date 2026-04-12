@@ -377,26 +377,40 @@ class ChannelTest {
             val ch1 = Channel(channelKey)
             val ch2 = Channel(channelKey)
 
-            c1.attachChannel(ch1).await()
-            c2.attachChannel(ch2).await()
-            delay(200)
-
-            // Collect broadcast events on ch1
-            val broadcastEvents = mutableListOf<ChannelEvent.Broadcast>()
+            // Collect all events on ch1 (including initialized) to confirm stream is ready
+            val allEvents = mutableListOf<ChannelEvent>()
             val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                ch1.eventStream
-                    .filterIsInstance<ChannelEvent.Broadcast>()
-                    .collect { broadcastEvents.add(it) }
+                ch1.eventStream.collect { allEvents.add(it) }
+            }
+
+            c1.attachChannel(ch1).await()
+
+            // Wait for ch1's watch stream to be established (initialized event)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (allEvents.none { it is ChannelEvent.Initialized }) {
+                    delay(50)
+                }
+            }
+
+            c2.attachChannel(ch2).await()
+
+            // Wait for ch1 to receive the count change from ch2 joining
+            withTimeout(GENERAL_TIMEOUT) {
+                while (allEvents.none { it is ChannelEvent.Changed }) {
+                    delay(50)
+                }
             }
 
             // c2 broadcasts on the channel key
             c2.broadcast(channelKey, "hello", "world").await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (broadcastEvents.isEmpty()) {
+                while (allEvents.none { it is ChannelEvent.Broadcast }) {
                     delay(50)
                 }
             }
+
+            val broadcastEvents = allEvents.filterIsInstance<ChannelEvent.Broadcast>()
 
             assertEquals(1, broadcastEvents.size)
             assertEquals("hello", broadcastEvents[0].topic)

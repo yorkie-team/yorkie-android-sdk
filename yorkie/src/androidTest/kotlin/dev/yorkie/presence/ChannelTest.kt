@@ -320,7 +320,11 @@ class ChannelTest {
             assertEquals(2L, manualChannel.getCount())
 
             // c1's realtime channel should automatically receive the update
-            delay(500)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (realtimeChannel.getCount() != 2L) {
+                    delay(50)
+                }
+            }
             assertEquals(2L, realtimeChannel.getCount())
 
             // c2's manual channel doesn't receive updates
@@ -331,7 +335,11 @@ class ChannelTest {
             assertEquals(3L, thirdChannel.getCount())
 
             // c1's realtime channel receives the update automatically
-            delay(500)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (realtimeChannel.getCount() != 3L) {
+                    delay(50)
+                }
+            }
             assertEquals(3L, realtimeChannel.getCount())
 
             // c2's manual channel still doesn't update

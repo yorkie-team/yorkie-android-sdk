@@ -17,21 +17,21 @@ import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.DocEventType
+import dev.yorkie.api.v1.WatchChannelResponse
 import dev.yorkie.api.v1.WatchDocumentResponse
-import dev.yorkie.api.v1.WatchPresenceResponse
 import dev.yorkie.api.v1.YorkieServiceClient
 import dev.yorkie.api.v1.YorkieServiceClientInterface
+import dev.yorkie.api.v1.attachChannelRequest
 import dev.yorkie.api.v1.attachDocumentRequest
-import dev.yorkie.api.v1.attachPresenceRequest
 import dev.yorkie.api.v1.broadcastRequest
 import dev.yorkie.api.v1.deactivateClientRequest
+import dev.yorkie.api.v1.detachChannelRequest
 import dev.yorkie.api.v1.detachDocumentRequest
-import dev.yorkie.api.v1.detachPresenceRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
-import dev.yorkie.api.v1.refreshPresenceRequest
+import dev.yorkie.api.v1.refreshChannelRequest
 import dev.yorkie.api.v1.removeDocumentRequest
+import dev.yorkie.api.v1.watchChannelRequest
 import dev.yorkie.api.v1.watchDocumentRequest
-import dev.yorkie.api.v1.watchPresenceRequest
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.AuthError
 import dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod.PushPull
@@ -42,8 +42,9 @@ import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.presence.Presences.Companion.asPresences
+import dev.yorkie.presence.Channel
+import dev.yorkie.presence.ChannelEvent
 import dev.yorkie.presence.Presence
-import dev.yorkie.presence.PresenceEvent
 import dev.yorkie.util.Logger.Companion.log
 import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.OperationResult
@@ -99,6 +100,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
+import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
 
 /**
  * Client that can communicate with the server.
@@ -234,7 +236,7 @@ public class Client(
                     return@launch
                 }
                 for ((_, attachment) in attachments) {
-                    val heartbeatInterval = options.presenceHeartbeatInterval.inWholeMilliseconds
+                    val heartbeatInterval = options.channelHeartbeatInterval.inWholeMilliseconds
                     if (!attachment.needSync(heartbeatInterval)) {
                         continue
                     }
@@ -352,16 +354,16 @@ public class Client(
                             detachInternal(documentKey)
                         }
                     }
-                } else if (resource is Presence) {
+                } else if (resource is Channel) {
                     resource.mutex.withLock {
-                        val request = refreshPresenceRequest {
+                        val request = refreshChannelRequest {
                             clientId = requireClientId()
-                            resource.getPresenceId()?.let {
-                                presenceId = it
+                            channelKey = resource.getKey()
+                            resource.getSessionId()?.let {
+                                sessionId = it
                             }
-                            presenceKey = resource.getKey()
                         }
-                        val response = service.refreshPresence(
+                        val response = service.refreshChannel(
                             request,
                             resource.getKey().attachmentBasedRequestHeader,
                         ).getOrThrow()
@@ -413,8 +415,8 @@ public class Client(
                         createDocumentWatchJob(attachment)
                     }
 
-                    is Presence -> {
-                        createPresenceWatchJob(attachment)
+                    is Channel -> {
+                        createChannelWatchJob(attachment)
                     }
 
                     else -> {
@@ -634,9 +636,9 @@ public class Client(
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private fun createPresenceWatchJob(attachment: Attachment<out Attachable>): Job {
-        val presence = attachment.resource as Presence
-        val presenceKey = presence.getKey()
+    private fun createChannelWatchJob(attachment: Attachment<out Attachable>): Job {
+        val channel = attachment.resource as Channel
+        val channelKey = channel.getKey()
         var latestStream: ServerOnlyStreamInterface<*, *>? = null
         return scope.launch(activationJob) {
             var shouldContinue = true
@@ -645,22 +647,22 @@ public class Client(
                 latestStream.safeClose()
 
                 val stream = withTimeoutOrNull(streamTimeout) {
-                    service.watchPresence(
-                        presenceKey.attachmentBasedRequestHeader,
+                    service.watchChannel(
+                        channelKey.attachmentBasedRequestHeader,
                     ).also {
                         latestStream = it
                     }
                 } ?: continue
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                    val channel = stream.responseChannel()
+                    val responseChannel = stream.responseChannel()
                     while (!stream.isReceiveClosed() &&
-                        !channel.isClosedForReceive && shouldContinue
+                        !responseChannel.isClosedForReceive && shouldContinue
                     ) {
                         withTimeoutOrNull(streamTimeout) {
-                            val receiveResult = channel.receiveCatching()
+                            val receiveResult = responseChannel.receiveCatching()
                             receiveResult.onSuccess {
-                                handleWatchPresenceResponse(
-                                    presence = presence,
+                                handleWatchChannelResponse(
+                                    channel = channel,
                                     response = it,
                                 )
                                 shouldContinue = true
@@ -670,13 +672,13 @@ public class Client(
                                     return@onFailure
                                 }
                                 shouldContinue =
-                                    handleWatchPresenceStreamFailure(
+                                    handleWatchChannelStreamFailure(
                                         stream = stream,
                                         cause = it,
                                         cancelled = attachment.cancelled,
                                     )
                             }.onClosed {
-                                handleWatchPresenceStreamFailure(
+                                handleWatchChannelStreamFailure(
                                     stream = stream,
                                     cause = it
                                         ?: ClosedReceiveChannelException("Channel was closed"),
@@ -684,7 +686,7 @@ public class Client(
                                 )
                             }
                         } ?: run {
-                            handleWatchPresenceStreamFailure(
+                            handleWatchChannelStreamFailure(
                                 stream = stream,
                                 cause = TimeoutException("channel timed out"),
                                 cancelled = attachment.cancelled,
@@ -694,9 +696,9 @@ public class Client(
                     }
                 }
                 stream.sendAndClose(
-                    watchPresenceRequest {
+                    watchChannelRequest {
                         clientId = requireClientId()
-                        this.presenceKey = presenceKey
+                        this.channelKey = channelKey
                     },
                 )
                 streamJob.join()
@@ -710,40 +712,50 @@ public class Client(
         }
     }
 
-    private fun handleWatchPresenceResponse(presence: Presence, response: WatchPresenceResponse) {
+    private fun handleWatchChannelResponse(channel: Channel, response: WatchChannelResponse) {
         if (response.hasInitialized()) {
             val count = response.initialized.count
             val seq = response.initialized.seq
-            if (presence.updateCount(count, seq)) {
-                presence.publish(
-                    PresenceEvent.Initialized(count = count),
+            if (channel.updateCount(count, seq)) {
+                channel.publish(
+                    ChannelEvent.Initialized(count = count),
                 )
             }
         } else if (response.hasEvent()) {
-            val count = response.event.count
-            val seq = response.event.seq
-            if (presence.updateCount(count, seq)) {
-                presence.publish(
-                    PresenceEvent.Changed(count = count),
-                )
+            val event = response.event
+            when (event.type) {
+                PbChannelEventType.TYPE_PRESENCE -> {
+                    val count = event.count
+                    val seq = event.seq
+                    if (channel.updateCount(count, seq)) {
+                        channel.publish(
+                            ChannelEvent.Changed(count = count),
+                        )
+                    }
+                }
+
+                PbChannelEventType.TYPE_BROADCAST -> {
+                    channel.publish(
+                        ChannelEvent.Broadcast(
+                            actorID = event.publisher.takeIf { it.isNotEmpty() },
+                            topic = event.topic,
+                            payload = event.payload.toStringUtf8(),
+                        ),
+                    )
+                }
+
+                else -> {
+                    // nothing to do
+                }
             }
-        } else if (response.hasBroadcast()) {
-            val broadcastEvent = response.broadcast
-            presence.publish(
-                PresenceEvent.Broadcast(
-                    actorID = broadcastEvent.publisher.takeIf { it.isNotEmpty() },
-                    topic = broadcastEvent.body.topic,
-                    payload = broadcastEvent.body.payload.toStringUtf8(),
-                ),
-            )
         }
     }
 
     /**
-     * handleWatchStreamFailure() handles the failure of the watch stream.
-     * return true if the stream should be reconnected, false otherwise.
+     * handleWatchChannelStreamFailure() handles the failure of the channel watch stream.
+     * Returns true if the stream should be reconnected, false otherwise.
      */
-    private suspend fun handleWatchPresenceStreamFailure(
+    private suspend fun handleWatchChannelStreamFailure(
         stream: ServerOnlyStreamInterface<*, *>,
         cause: Throwable?,
         cancelled: Boolean,
@@ -752,7 +764,7 @@ public class Client(
 
         cause?.let {
             sendWatchAttachmentResourceStreamException(
-                tag = "Client.WatchPresence",
+                tag = "Client.WatchChannel",
                 t = it,
             )
         }
@@ -973,16 +985,16 @@ public class Client(
     }
 
     /**
-     * `attach` attaches the given presence counter to this client.
-     * It tells the server that this client will track the presence count.
+     * `attachChannel` attaches the given channel counter to this client.
+     * It tells the server that this client will track the channel count.
      *
-     * @param presence The presence counter to attach.
-     * @param isRealtime If true (default), starts watching for presence changes in realtime.
-     *                   If false, uses manual sync mode where you must call [syncPresence] to
-     *                   refresh the presence count.
+     * @param channel The channel counter to attach.
+     * @param isRealtime If true (default), starts watching for channel changes in realtime.
+     *                   If false, uses manual sync mode where you must call [syncAsync] to
+     *                   refresh the channel count.
      */
-    public fun attachPresence(
-        presence: Presence,
+    public fun attachChannel(
+        channel: Channel,
         isRealtime: Boolean? = null,
     ): Deferred<OperationResult> {
         return scope.async {
@@ -992,22 +1004,22 @@ public class Client(
             )
 
             checkYorkieError(
-                presence.getStatus() == ResourceStatus.Detached,
-                YorkieException(ErrDocumentNotDetached, "${presence.getKey()} is not detached"),
+                channel.getStatus() == ResourceStatus.Detached,
+                YorkieException(ErrDocumentNotDetached, "${channel.getKey()} is not detached"),
             )
 
-            presence.setActor(requireClientId())
+            channel.setActor(requireClientId())
 
-            presence.mutex.withLock {
-                val presenceKey = presence.getKey()
-                val request = attachPresenceRequest {
+            channel.mutex.withLock {
+                val channelKey = channel.getKey()
+                val request = attachChannelRequest {
                     clientId = requireClientId()
-                    this.presenceKey = presenceKey
+                    this.channelKey = channelKey
                 }
 
-                val response = service.attachPresence(
+                val response = service.attachChannel(
                     request,
-                    presenceKey.attachmentBasedRequestHeader,
+                    channelKey.attachmentBasedRequestHeader,
                 ).getOrElse {
                     ensureActive()
                     handleConnectException(it) { exception ->
@@ -1019,9 +1031,9 @@ public class Client(
                     return@async Result.failure(it)
                 }
 
-                presence.setPresenceId(response.presenceId)
-                presence.updateCount(response.count, 0L)
-                presence.applyStatus(ResourceStatus.Attached)
+                channel.setSessionId(response.sessionId)
+                channel.updateCount(response.count, 0L)
+                channel.applyStatus(ResourceStatus.Attached)
 
                 val syncMode = if (isRealtime != false) {
                     SyncMode.Realtime
@@ -1029,15 +1041,15 @@ public class Client(
                     SyncMode.Manual
                 }
 
-                attachments[presenceKey] = Attachment(
-                    resource = presence,
-                    resourceId = response.presenceId,
+                attachments[channelKey] = Attachment(
+                    resource = channel,
+                    resourceId = response.sessionId,
                     syncMode = syncMode,
                 )
 
                 // Only start watch loop for realtime mode
                 if (syncMode == SyncMode.Realtime) {
-                    runWatchLoop(presenceKey)
+                    runWatchLoop(channelKey)
                 }
             }
             SUCCESS
@@ -1045,35 +1057,35 @@ public class Client(
     }
 
     /**
-     * `detachPresence` detaches the given presence counter from this client.
-     * It tells the server that this client will no longer track the presence count.
+     * `detachChannel` detaches the given channel counter from this client.
+     * It tells the server that this client will no longer track the channel count.
      */
-    public fun detachPresence(presence: Presence): Deferred<OperationResult> {
+    public fun detachChannel(channel: Channel): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
                 isActive,
                 YorkieException(ErrClientNotActivated, "client is not active"),
             )
 
-            attachments[presence.getKey()]
+            attachments[channel.getKey()]
                 ?: throw YorkieException(
                     ErrDocumentNotAttached,
-                    "${presence.getKey()} is not attached",
+                    "${channel.getKey()} is not attached",
                 )
 
-            val presenceKey = presence.getKey()
+            val channelKey = channel.getKey()
 
-            val request = detachPresenceRequest {
+            val request = detachChannelRequest {
                 clientId = requireClientId()
-                presence.getPresenceId()?.let {
-                    presenceId = it
+                this.channelKey = channelKey
+                channel.getSessionId()?.let {
+                    sessionId = it
                 }
-                this.presenceKey = presenceKey
             }
 
-            val response = service.detachPresence(
+            val response = service.detachChannel(
                 request,
-                presenceKey.attachmentBasedRequestHeader,
+                channelKey.attachmentBasedRequestHeader,
             ).getOrElse {
                 ensureActive()
                 handleConnectException(it) { exception ->
@@ -1085,14 +1097,28 @@ public class Client(
                 return@async Result.failure(it)
             }
 
-            presence.updateCount(response.count, 0L)
-            presence.applyStatus(ResourceStatus.Detached)
+            channel.updateCount(response.count, 0L)
+            channel.applyStatus(ResourceStatus.Detached)
+            channel.close()
 
-            detachInternal(presenceKey)
+            detachInternal(channelKey)
 
             SUCCESS
         }
     }
+
+    @Deprecated(
+        "Renamed to attachChannel",
+        replaceWith = ReplaceWith("attachChannel(channel, isRealtime)"),
+    )
+    public fun attachPresence(presence: Presence, isRealtime: Boolean? = null) =
+        attachChannel(presence, isRealtime)
+
+    @Deprecated(
+        "Renamed to detachChannel",
+        replaceWith = ReplaceWith("detachChannel(channel)"),
+    )
+    public fun detachPresence(presence: Presence) = detachChannel(presence)
 
     private fun detachInternal(key: String) {
         val attachment = attachments[key] ?: return
@@ -1229,11 +1255,7 @@ public class Client(
 
             val request = broadcastRequest {
                 clientId = clientID
-                if (attachment.resource is Presence) {
-                    presenceKey = key
-                } else {
-                    documentId = attachment.resourceId
-                }
+                channelKey = key
                 this.topic = topic
                 this.payload = ByteString.copyFromUtf8(payload)
             }
@@ -1421,12 +1443,18 @@ public class Client(
          */
         public val reconnectStreamDelay: Duration = 1_000.milliseconds,
         /**
-         * `presenceHeartbeatInterval` is the interval of the presence heartbeat.
-         * The client sends a heartbeat to the server to refresh the presence TTL.
+         * `channelHeartbeatInterval` is the interval of the channel heartbeat.
+         * The client sends a heartbeat to the server to refresh the channel TTL.
          * The default value is `30000`(ms).
          */
-        public val presenceHeartbeatInterval: Duration = 30_000.milliseconds,
-    )
+        public val channelHeartbeatInterval: Duration = 30_000.milliseconds,
+    ) {
+        @Deprecated(
+            "Renamed to channelHeartbeatInterval",
+            replaceWith = ReplaceWith("channelHeartbeatInterval"),
+        )
+        public val presenceHeartbeatInterval: Duration get() = channelHeartbeatInterval
+    }
 
     /**
      * `DeactivateOptions` are user-settable options used when deactivating clients.

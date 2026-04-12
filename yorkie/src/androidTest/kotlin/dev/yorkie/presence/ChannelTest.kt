@@ -145,19 +145,25 @@ class ChannelTest {
 
             // First client attaches
             c1.attachChannel(channel1).await()
-            delay(100)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (events.isEmpty()) {
+                    delay(50)
+                }
+            }
 
             // Should receive initialized event
-            assertTrue(events.isNotEmpty())
             assertIs<ChannelEvent.Initialized>(events[0])
             assertEquals(1L, events[0].count)
 
             // Second client attaches
             c2.attachChannel(channel2).await()
-            delay(200)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (events.size < 2) {
+                    delay(50)
+                }
+            }
 
             // Should receive count-changed event
-            assertTrue(events.size >= 2)
             assertIs<ChannelEvent.Changed>(events.last())
             assertEquals(2L, events.last().count)
 

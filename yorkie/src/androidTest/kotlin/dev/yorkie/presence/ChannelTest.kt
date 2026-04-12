@@ -78,35 +78,43 @@ class ChannelTest {
 
             // First client attaches
             c1.attachChannel(channel1).await()
-            delay(100)
             assertEquals(1L, channel1.getCount())
 
             // Second client attaches
             c2.attachChannel(channel2).await()
-            delay(100)
             assertEquals(2L, channel2.getCount())
 
             // First client should receive the update
-            delay(100)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (channel1.getCount() != 2L) {
+                    delay(50)
+                }
+            }
             assertEquals(2L, channel1.getCount())
 
             // Third client attaches
             c3.attachChannel(channel3).await()
-            delay(100)
             assertEquals(3L, channel3.getCount())
 
             // Wait for all clients to sync
-            delay(100)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (channel1.getCount() != 3L || channel2.getCount() != 3L) {
+                    delay(50)
+                }
+            }
             assertEquals(3L, channel1.getCount())
             assertEquals(3L, channel2.getCount())
 
             // One client detaches
             c2.detachChannel(channel2).await()
-            delay(100)
             assertEquals(2L, channel2.getCount())
 
             // Other clients should see the count decrease
-            delay(100)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (channel1.getCount() != 2L || channel3.getCount() != 2L) {
+                    delay(50)
+                }
+            }
             assertEquals(2L, channel1.getCount())
             assertEquals(2L, channel3.getCount())
 
@@ -194,20 +202,25 @@ class ChannelTest {
             // Both attach
             c1.attachChannel(channel1).await()
             c2.attachChannel(channel2).await()
-            delay(300)
 
+            withTimeout(GENERAL_TIMEOUT) {
+                while (channel1.getCount() != 2L || channel2.getCount() != 2L) {
+                    delay(50)
+                }
+            }
             assertEquals(2L, channel1.getCount())
             assertEquals(2L, channel2.getCount())
 
             // One detaches
             c1.detachChannel(channel1).await()
-            delay(300)
-
-            // Detached channel should show updated count
             assertEquals(1L, channel1.getCount())
 
             // Other channel should also see the decrease
-            delay(300)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (channel2.getCount() != 1L) {
+                    delay(50)
+                }
+            }
             assertEquals(1L, channel2.getCount())
 
             // Cleanup

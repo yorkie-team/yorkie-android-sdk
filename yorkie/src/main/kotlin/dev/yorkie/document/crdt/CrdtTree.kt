@@ -32,7 +32,7 @@ internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
 @SuppressLint("VisibleForTests")
 internal data class CrdtTree(
     val root: CrdtTreeNode,
-    override val createdAt: TimeTicket,
+    override var createdAt: TimeTicket,
     override var movedAt: TimeTicket? = null,
     override var removedAt: TimeTicket? = null,
 ) : CrdtElement(), GCParent<CrdtTreeNode>, GCCrdtElement {

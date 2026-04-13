@@ -16,7 +16,7 @@ import java.util.Date
 @Suppress("DataClassPrivateConstructor")
 internal data class CrdtPrimitive(
     private val _value: Any?,
-    override val createdAt: TimeTicket,
+    override var createdAt: TimeTicket,
     override var movedAt: TimeTicket? = null,
     override var removedAt: TimeTicket? = null,
 ) : CrdtElement() {

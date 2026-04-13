@@ -18,9 +18,14 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.history.History
+import dev.yorkie.document.history.HistoryOperation
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.ArraySetOperation
+import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
@@ -81,6 +86,10 @@ public class Document(
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
+    private val internalHistory = History()
+
+    @Volatile
+    private var isUpdating = false
 
     @Volatile
     private var maxSizeLimit = 0
@@ -140,6 +149,31 @@ public class Document(
         get() = allPresences.value[changeID.actor]
             .takeIf { status == ResourceStatus.Attached }
             .orEmpty()
+
+    /**
+     * Provides undo/redo operations for this document.
+     */
+    public val history = object {
+        /**
+         * Returns true if there are operations that can be undone.
+         */
+        fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating
+
+        /**
+         * Returns true if there are operations that can be redone.
+         */
+        fun canRedo(): Boolean = internalHistory.hasRedo() && !isUpdating
+
+        /**
+         * Undoes the last local operation.
+         */
+        fun undoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = true)
+
+        /**
+         * Redoes the last undone operation.
+         */
+        fun redoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = false)
+    }
 
     /**
      * Executes the given [updater] to update this document.
@@ -213,10 +247,20 @@ public class Document(
                 return@async result
             }
             val change = context.toChange()
-            val (operationInfos, newPresences, _) = change.execute(root, _presences.value)
+            val (operationInfos, newPresences, reverseOps) =
+                change.execute(root, _presences.value)
 
             localChanges += change
             changeID = context.getNextId()
+
+            // Push reverse ops for undo
+            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+            if (reverseHistoryOps.isNotEmpty()) {
+                internalHistory.pushUndo(reverseHistoryOps)
+            }
+            if (operationInfos.isNotEmpty()) {
+                internalHistory.clearRedo()
+            }
 
             if (change.hasOperations) {
                 eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
@@ -229,6 +273,89 @@ public class Document(
                 }
             }
             result
+        }
+    }
+
+    private fun executeUndoRedo(isUndo: Boolean): Deferred<OperationResult> {
+        return scope.async {
+            check(!isUpdating) {
+                "${if (isUndo) "Undo" else "Redo"} is not allowed during an update"
+            }
+
+            val ops = if (isUndo) {
+                internalHistory.popUndo()
+            } else {
+                internalHistory.popRedo()
+            } ?: error("There is no operation to be ${if (isUndo) "undone" else "redone"}")
+
+            val clone = ensureClone()
+            val context = ChangeContext(
+                prevId = changeID,
+                root = clone.root,
+            )
+
+            for (historyOp in ops) {
+                when (historyOp) {
+                    is HistoryOperation.Op -> {
+                        val op = historyOp.operation
+                        val ticket = context.issueTimeTicket()
+                        op.executedAt = ticket
+
+                        // Reconcile createdAt for ArraySet and Add operations
+                        if (op is ArraySetOperation) {
+                            val prev = op.createdAt
+                            op.value.createdAt = ticket
+                            internalHistory.reconcileCreatedAt(prev, ticket)
+                        } else if (op is AddOperation) {
+                            val prev = op.value.createdAt
+                            op.value.createdAt = ticket
+                            internalHistory.reconcileCreatedAt(prev, ticket)
+                        }
+
+                        context.push(op)
+                    }
+
+                    is HistoryOperation.Presence -> {
+                        // Presence undo — not implemented in v0.6.36 scope
+                    }
+                }
+            }
+
+            if (!context.hasChange) {
+                return@async Result.success(Unit)
+            }
+
+            val change = context.toChange()
+            // Execute on clone (validation)
+            change.execute(clone.root, clone.presences, OpSource.UndoRedo)
+            // Execute on root (real application)
+            val (opInfos, _, reverseOps) = change.execute(
+                root,
+                _presences.value,
+                OpSource.UndoRedo,
+            )
+
+            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+            if (reverseHistoryOps.isNotEmpty()) {
+                if (isUndo) {
+                    internalHistory.pushRedo(reverseHistoryOps)
+                } else {
+                    internalHistory.pushUndo(reverseHistoryOps)
+                }
+            }
+
+            if (opInfos.isEmpty()) {
+                return@async Result.success(Unit)
+            }
+
+            localChanges += change
+            changeID = context.getNextId()
+
+            if (opInfos.isNotEmpty()) {
+                eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
+            }
+
+            Result.success(Unit)
         }
     }
 

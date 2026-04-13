@@ -187,9 +187,15 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * `splitByPath` splits the tree by the given [path].
+     * Splits the tree at the given [path].
+     *
+     * The node at [path] is split into two sibling nodes. Content after the
+     * split point moves into a new node inserted immediately after. Internally
+     * decomposes into one or two [edit] calls (delete tail + insert new node).
+     *
+     * @throws YorkieException if [path] is empty.
      */
-    fun splitByPath(path: List<Int>) {
+    public fun splitByPath(path: List<Int>) {
         if (path.isEmpty()) {
             throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
@@ -218,9 +224,17 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * `mergeByPath` merges the tree by the given [path].
+     * Merges the element node at the given [path] into its left sibling.
+     *
+     * The children of the node at [path] are moved into the preceding sibling,
+     * then the now-empty node is deleted. Only element nodes can be merged;
+     * merging a text node throws [YorkieException]. The node must have a left
+     * sibling (i.e., it cannot be the first child).
+     *
+     * @throws YorkieException if [path] is empty, resolves to a text node, or
+     *   resolves to the first child (no left sibling).
      */
-    fun mergeByPath(path: List<Int>) {
+    public fun mergeByPath(path: List<Int>) {
         if (path.isEmpty()) {
             throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
@@ -233,6 +247,13 @@ public class JsonTree internal constructor(
             throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "text node cannot be merged",
+            )
+        }
+
+        if (treePos.offset == 0) {
+            throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "the first child cannot be merged (no left sibling)",
             )
         }
 

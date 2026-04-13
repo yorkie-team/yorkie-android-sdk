@@ -14,7 +14,7 @@ import java.util.TreeMap
  */
 internal data class CrdtText(
     val rgaTreeSplit: RgaTreeSplit<TextValue>,
-    override val createdAt: TimeTicket,
+    override var createdAt: TimeTicket,
     override var movedAt: TimeTicket? = null,
     override var removedAt: TimeTicket? = null,
 ) : CrdtElement(), GCCrdtElement {

@@ -11,7 +11,7 @@ import dev.yorkie.util.DataSize
  */
 @Suppress("PropertyName")
 abstract class CrdtElement {
-    abstract val createdAt: TimeTicket
+    abstract var createdAt: TimeTicket
     abstract var movedAt: TimeTicket?
     abstract var removedAt: TimeTicket?
 

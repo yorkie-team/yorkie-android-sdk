@@ -7,7 +7,7 @@ import dev.yorkie.util.DataSize
  * [CrdtArray] represents an array data type containing [CrdtElement]s.
  */
 internal data class CrdtArray(
-    override val createdAt: TimeTicket,
+    override var createdAt: TimeTicket,
     override var movedAt: TimeTicket? = null,
     override var removedAt: TimeTicket? = null,
     val elements: RgaTreeList = RgaTreeList(),

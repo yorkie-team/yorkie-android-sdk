@@ -14,7 +14,7 @@ internal typealias CounterValue = Number
 @Suppress("DataClassPrivateConstructor")
 internal data class CrdtCounter(
     var value: CounterValue,
-    override val createdAt: TimeTicket,
+    override var createdAt: TimeTicket,
     override var movedAt: TimeTicket? = null,
     override var removedAt: TimeTicket? = null,
 ) : CrdtElement() {

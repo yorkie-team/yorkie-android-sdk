@@ -153,26 +153,39 @@ public class Document(
     /**
      * Provides undo/redo operations for this document.
      */
-    public val history = object {
+    public val history: DocumentHistory = object : DocumentHistory {
+        override fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating
+
+        override fun canRedo(): Boolean = internalHistory.hasRedo() && !isUpdating
+
+        override fun undoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = true)
+
+        override fun redoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = false)
+    }
+
+    /**
+     * Interface for undo/redo operations on a document.
+     */
+    public interface DocumentHistory {
         /**
          * Returns true if there are operations that can be undone.
          */
-        fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating
+        fun canUndo(): Boolean
 
         /**
          * Returns true if there are operations that can be redone.
          */
-        fun canRedo(): Boolean = internalHistory.hasRedo() && !isUpdating
+        fun canRedo(): Boolean
 
         /**
          * Undoes the last local operation.
          */
-        fun undoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = true)
+        fun undoAsync(): Deferred<OperationResult>
 
         /**
          * Redoes the last undone operation.
          */
-        fun redoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = false)
+        fun redoAsync(): Deferred<OperationResult>
     }
 
     /**
@@ -278,15 +291,26 @@ public class Document(
 
     private fun executeUndoRedo(isUndo: Boolean): Deferred<OperationResult> {
         return scope.async {
-            check(!isUpdating) {
-                "${if (isUndo) "Undo" else "Redo"} is not allowed during an update"
+            if (isUpdating) {
+                return@async Result.failure(
+                    IllegalStateException(
+                        "${if (isUndo) "Undo" else "Redo"} is not allowed during an update",
+                    ),
+                )
             }
 
             val ops = if (isUndo) {
                 internalHistory.popUndo()
             } else {
                 internalHistory.popRedo()
-            } ?: error("There is no operation to be ${if (isUndo) "undone" else "redone"}")
+            }
+            if (ops == null) {
+                return@async Result.failure(
+                    IllegalStateException(
+                        "There is no operation to be ${if (isUndo) "undone" else "redone"}",
+                    ),
+                )
+            }
 
             val clone = ensureClone()
             val context = ChangeContext(

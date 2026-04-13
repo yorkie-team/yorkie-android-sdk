@@ -5,6 +5,14 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 
 /**
+ * Result of executing an [Operation].
+ */
+internal data class ExecutionResult(
+    val opInfos: List<OperationInfo>,
+    val reverseOp: Operation? = null,
+)
+
+/**
  * Represents an operation to be executed on a document.
  * [parentCreatedAt] is the creation time of the target element to execute the operation.
  * [executedAt] is the execution time of this operation.
@@ -22,7 +30,11 @@ internal abstract class Operation {
     /**
      * Executes this [Operation] on the given [root].
      */
-    abstract fun execute(root: CrdtRoot, versionVector: VersionVector? = null): List<OperationInfo>
+    abstract fun execute(
+        root: CrdtRoot,
+        source: OpSource = OpSource.Local,
+        versionVector: VersionVector? = null,
+    ): ExecutionResult
 
     /**
      * Sets the given actorId to this [Operation].

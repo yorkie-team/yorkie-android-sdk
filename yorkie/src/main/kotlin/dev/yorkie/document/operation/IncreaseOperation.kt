@@ -28,7 +28,11 @@ internal data class IncreaseOperation(
     /**
      * Executes this [IncreaseOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtCounter) {
             val copiedValue = value.deepCopy() as CrdtPrimitive
@@ -38,11 +42,31 @@ internal data class IncreaseOperation(
             } else {
                 copiedValue.value as Long
             }
-            listOf(OperationInfo.IncreaseOpInfo(increasedValue, root.createPath(parentCreatedAt)))
+
+            val negatedValue = if (copiedValue.type == Type.Integer) {
+                CrdtPrimitive(-(copiedValue.value as Int), copiedValue.createdAt)
+            } else {
+                CrdtPrimitive(-(copiedValue.value as Long), copiedValue.createdAt)
+            }
+            val reverseOp = IncreaseOperation(
+                value = negatedValue,
+                parentCreatedAt = parentCreatedAt,
+                executedAt = executedAt,
+            )
+
+            ExecutionResult(
+                opInfos = listOf(
+                    OperationInfo.IncreaseOpInfo(
+                        increasedValue,
+                        root.createPath(parentCreatedAt),
+                    ),
+                ),
+                reverseOp = reverseOp,
+            )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only Counter can execute increase")
-            emptyList()
+            ExecutionResult(opInfos = emptyList())
         }
     }
 

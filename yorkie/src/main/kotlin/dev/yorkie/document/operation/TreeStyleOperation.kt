@@ -21,15 +21,19 @@ internal data class TreeStyleOperation(
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
 
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
             logError(TAG, "fail to find $parentCreatedAt")
-            return emptyList()
+            return ExecutionResult(opInfos = emptyList())
         }
         if (tree !is CrdtTree) {
             logError(TAG, "fail to execute, only Tree can execute edit")
-            return emptyList()
+            return ExecutionResult(opInfos = emptyList())
         }
 
         return when {
@@ -44,16 +48,18 @@ internal data class TreeStyleOperation(
                 root.acc(diff)
 
                 gcPairs.forEach(root::registerGCPair)
-                changes.map {
-                    TreeStyleOpInfo(
-                        it.from,
-                        it.to,
-                        it.fromPath,
-                        it.toPath,
-                        it.attributes.orEmpty(),
-                        path = root.createPath(parentCreatedAt),
-                    )
-                }
+                ExecutionResult(
+                    opInfos = changes.map {
+                        TreeStyleOpInfo(
+                            it.from,
+                            it.to,
+                            it.fromPath,
+                            it.toPath,
+                            it.attributes.orEmpty(),
+                            path = root.createPath(parentCreatedAt),
+                        )
+                    },
+                )
             }
 
             attributesToRemove?.isNotEmpty() == true -> {
@@ -64,19 +70,21 @@ internal data class TreeStyleOperation(
                     versionVector,
                 )
                 gcPairs.forEach(root::registerGCPair)
-                changes.map {
-                    TreeStyleOpInfo(
-                        it.from,
-                        it.to,
-                        it.fromPath,
-                        it.toPath,
-                        attributesToRemove = it.attributesToRemove.orEmpty(),
-                        path = root.createPath(parentCreatedAt),
-                    )
-                }
+                ExecutionResult(
+                    opInfos = changes.map {
+                        TreeStyleOpInfo(
+                            it.from,
+                            it.to,
+                            it.fromPath,
+                            it.toPath,
+                            attributesToRemove = it.attributesToRemove.orEmpty(),
+                            path = root.createPath(parentCreatedAt),
+                        )
+                    },
+                )
             }
 
-            else -> emptyList()
+            else -> ExecutionResult(opInfos = emptyList())
         }
     }
 

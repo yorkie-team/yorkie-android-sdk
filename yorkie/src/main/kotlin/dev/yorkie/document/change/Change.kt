@@ -1,6 +1,7 @@
 package dev.yorkie.document.change
 
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.presence.PresenceChange
@@ -32,13 +33,23 @@ public data class Change internal constructor(
     internal fun execute(
         root: CrdtRoot,
         presences: Presences,
-    ): Pair<List<OperationInfo>, Presences?> {
+        source: OpSource = OpSource.Local,
+    ): Triple<List<OperationInfo>, Presences?, List<Operation>> {
         val newPresences = presenceChange?.let {
             when (presenceChange) {
                 is PresenceChange.Put -> presences + (id.actor to presenceChange.presence)
                 is PresenceChange.Clear -> presences - id.actor
             }
         }
-        return operations.flatMap { it.execute(root, id.versionVector) } to newPresences
+        val allOpInfos = mutableListOf<OperationInfo>()
+        val reverseOps = mutableListOf<Operation>()
+
+        for (op in operations) {
+            val result = op.execute(root, source, id.versionVector)
+            allOpInfos.addAll(result.opInfos)
+            result.reverseOp?.let { reverseOps.add(0, it) }
+        }
+
+        return Triple(allOpInfos, newPresences, reverseOps)
     }
 }

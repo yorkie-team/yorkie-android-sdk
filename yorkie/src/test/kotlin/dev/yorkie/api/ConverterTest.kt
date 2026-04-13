@@ -30,10 +30,11 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.EditOperation
+import dev.yorkie.document.operation.ExecutionResult
 import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
+import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.Operation
-import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
@@ -514,8 +515,11 @@ class ConverterTest {
         override var executedAt: TimeTicket,
         override val effectedCreatedAt: TimeTicket,
     ) : Operation() {
-        override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> =
-            emptyList()
+        override fun execute(
+            root: CrdtRoot,
+            source: OpSource,
+            versionVector: VersionVector?,
+        ): ExecutionResult = ExecutionResult(opInfos = emptyList())
     }
 
     private class TestCrdtElement(

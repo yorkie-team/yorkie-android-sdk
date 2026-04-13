@@ -22,19 +22,23 @@ internal data class TreeEditOperation(
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
 
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
             logError(TAG, "fail to find $parentCreatedAt")
-            return emptyList()
+            return ExecutionResult(opInfos = emptyList())
         }
         if (tree !is CrdtTree) {
             logError(TAG, "fail to execute, only Tree can execute edit")
-            return emptyList()
+            return ExecutionResult(opInfos = emptyList())
         }
         if (!tree.checkPosRangeValid(fromPos to toPos)) {
             logError(TAG, "has invalid pos range, skip executing the operation")
-            return emptyList()
+            return ExecutionResult(opInfos = emptyList())
         }
 
         val editedAt = executedAt
@@ -52,17 +56,19 @@ internal data class TreeEditOperation(
 
         gcPairs.forEach(root::registerGCPair)
 
-        return changes.map {
-            OperationInfo.TreeEditOpInfo(
-                it.from,
-                it.to,
-                it.fromPath,
-                it.toPath,
-                it.value?.map(TreeNode::toJsonTreeNode),
-                it.splitLevel,
-                root.createPath(parentCreatedAt),
-            )
-        }
+        return ExecutionResult(
+            opInfos = changes.map {
+                OperationInfo.TreeEditOpInfo(
+                    it.from,
+                    it.to,
+                    it.fromPath,
+                    it.toPath,
+                    it.value?.map(TreeNode::toJsonTreeNode),
+                    it.splitLevel,
+                    root.createPath(parentCreatedAt),
+                )
+            },
+        )
     }
 
     private fun issueTimeTicket(executedAt: TimeTicket): () -> TimeTicket {

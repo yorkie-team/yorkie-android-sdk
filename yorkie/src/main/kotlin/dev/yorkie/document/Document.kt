@@ -213,7 +213,7 @@ public class Document(
                 return@async result
             }
             val change = context.toChange()
-            val (operationInfos, newPresences) = change.execute(root, _presences.value)
+            val (operationInfos, newPresences, _) = change.execute(root, _presences.value)
 
             localChanges += change
             changeID = context.getNextId()
@@ -370,7 +370,7 @@ public class Document(
     private suspend fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, clone.presences).also { (_, newPresences) ->
+            change.execute(clone.root, clone.presences).also { (_, newPresences, _) ->
                 this.clone = clone.copy(presences = newPresences ?: return@also)
             }
             val actorID = change.id.actor
@@ -403,7 +403,7 @@ public class Document(
                 }
             }
 
-            val (opInfos, newPresences) = change.execute(root, _presences.value)
+            val (opInfos, newPresences, _) = change.execute(root, _presences.value)
             if (opInfos.isNotEmpty()) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }

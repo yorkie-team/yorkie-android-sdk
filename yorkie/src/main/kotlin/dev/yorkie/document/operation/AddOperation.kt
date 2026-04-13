@@ -11,7 +11,7 @@ import dev.yorkie.util.Logger.Companion.logError
  * [AddOperation] is an operation representing adding an element to an [CrdtArray].
  */
 internal data class AddOperation(
-    val prevCreatedAt: TimeTicket,
+    var prevCreatedAt: TimeTicket,
     val value: CrdtElement,
     override val parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
@@ -26,22 +26,36 @@ internal data class AddOperation(
     /**
      * Executes this [AddOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtArray) {
             val copiedValue = value.deepCopy()
             parentObject.insertAfter(prevCreatedAt, copiedValue)
             root.registerElement(copiedValue, parentObject)
-            listOf(
-                OperationInfo.AddOpInfo(
-                    parentObject.subPathOf(effectedCreatedAt).toInt(),
-                    root.createPath(parentCreatedAt),
+
+            val reverseOp = RemoveOperation(
+                createdAt = copiedValue.createdAt,
+                parentCreatedAt = parentCreatedAt,
+                executedAt = executedAt,
+            )
+
+            ExecutionResult(
+                opInfos = listOf(
+                    OperationInfo.AddOpInfo(
+                        parentObject.subPathOf(effectedCreatedAt).toInt(),
+                        root.createPath(parentCreatedAt),
+                    ),
                 ),
+                reverseOp = reverseOp,
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only array can execute add")
-            emptyList()
+            ExecutionResult(opInfos = emptyList())
         }
     }
 

@@ -19,7 +19,11 @@ internal data class StyleOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val result = parentObject.style(
@@ -33,18 +37,20 @@ internal data class StyleOperation(
             root.acc(result.dataSize)
 
             result.gcPairs.forEach(root::registerGCPair)
-            changes.map {
-                OperationInfo.StyleOpInfo(
-                    it.from,
-                    it.to,
-                    it.attributes.orEmpty(),
-                    root.createPath(parentCreatedAt),
-                )
-            }
+            ExecutionResult(
+                opInfos = changes.map {
+                    OperationInfo.StyleOpInfo(
+                        it.from,
+                        it.to,
+                        it.attributes.orEmpty(),
+                        root.createPath(parentCreatedAt),
+                    )
+                },
+            )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only Text can execute style")
-            emptyList()
+            ExecutionResult(opInfos = emptyList())
         }
     }
 

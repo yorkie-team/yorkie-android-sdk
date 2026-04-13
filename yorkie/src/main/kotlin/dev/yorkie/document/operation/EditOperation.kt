@@ -27,7 +27,11 @@ internal data class EditOperation(
     override val effectedCreatedAt: TimeTicket
         get() = parentCreatedAt
 
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
             val result = parentObject.edit(
@@ -41,20 +45,22 @@ internal data class EditOperation(
             root.acc(result.dataSize)
 
             result.gcPairs.forEach(root::registerGCPair)
-            result.textChanges.map { (_, _, from, to, content, attributes) ->
-                OperationInfo.EditOpInfo(
-                    from,
-                    to,
-                    TextWithAttributes(content.orEmpty() to attributes.orEmpty()),
-                    root.createPath(parentCreatedAt),
-                )
-            }
+            ExecutionResult(
+                opInfos = result.textChanges.map { (_, _, from, to, content, attributes) ->
+                    OperationInfo.EditOpInfo(
+                        from,
+                        to,
+                        TextWithAttributes(content.orEmpty() to attributes.orEmpty()),
+                        root.createPath(parentCreatedAt),
+                    )
+                },
+            )
         } else {
             if (parentObject == null) {
                 logError(TAG, "fail to find $parentCreatedAt")
             }
             logError(TAG, "fail to execute, only Text can execute edit")
-            emptyList()
+            ExecutionResult(opInfos = emptyList())
         }
     }
 

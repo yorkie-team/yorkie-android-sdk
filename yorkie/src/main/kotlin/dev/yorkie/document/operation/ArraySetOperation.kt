@@ -11,7 +11,7 @@ import dev.yorkie.util.YorkieException
  * `ArraySetOperation` is an operation representing setting an element in Array.
  */
 internal data class ArraySetOperation(
-    val createdAt: TimeTicket,
+    var createdAt: TimeTicket,
     val value: CrdtElement,
     override val parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
@@ -19,7 +19,11 @@ internal data class ArraySetOperation(
     override val effectedCreatedAt: TimeTicket
         get() = createdAt
 
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
@@ -33,21 +37,29 @@ internal data class ArraySetOperation(
             )
         }
 
+        val previousValue = parentObject[createdAt]
         val value = value.deepCopy()
         parentObject.insertAfter(createdAt, value, executedAt)
         parentObject.delete(createdAt, executedAt)
 
-        // TODO(junseo): GC logic is not implemented here
-        // because there is no way to distinguish between old and new element with same `createdAt`.
         root.registerElement(value, null)
 
-        // TODO(emplam27): The reverse operation is not implemented yet.
-        val reverseOp = null
+        val reverseOp = previousValue?.let {
+            ArraySetOperation(
+                createdAt = createdAt,
+                value = it.deepCopy(),
+                parentCreatedAt = parentCreatedAt,
+                executedAt = executedAt,
+            )
+        }
 
-        return listOf(
-            OperationInfo.ArraySetOpInfo(
-                path = root.createPath(parentCreatedAt),
+        return ExecutionResult(
+            opInfos = listOf(
+                OperationInfo.ArraySetOpInfo(
+                    path = root.createPath(parentCreatedAt),
+                ),
             ),
+            reverseOp = reverseOp,
         )
     }
 }

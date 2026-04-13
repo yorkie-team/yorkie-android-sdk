@@ -13,8 +13,10 @@ import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
+import dev.yorkie.util.YorkieException
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.asFlow
@@ -911,6 +913,97 @@ class JsonTreeTest {
             "<doc><tc><p><tn>12345678</tn></p></tc></doc>",
             document.getRoot().tree().toXml(),
         )
+    }
+
+    @Test
+    fun `splitByPath with empty path throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().splitByPath(emptyList())
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    @Test
+    fun `mergeByPath with empty path throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                    element("p") { text { "world" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().mergeByPath(emptyList())
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    @Test
+    fun `mergeByPath on text node throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                    element("p") { text { "world" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().mergeByPath(listOf(0, 0))
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    @Test
+    fun `mergeByPath on first child throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                    element("p") { text { "world" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().mergeByPath(listOf(0))
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
     }
 
     companion object {

@@ -2801,6 +2801,123 @@ class JsonTreeTest {
         )
     }
 
+    // ===== Tree Split/Merge Public API Tests =====
+
+    @Test
+    fun test_tree_splitByPath_preserves_attributes_after_split() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                attr { "bold" to "true" }
+                                text { "helloworld" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><p bold=\"true\">helloworld</p></doc>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(listOf(0, 5))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><p bold=\"true\">hello</p><p bold=\"true\">world</p></doc>",
+                d1,
+                d2,
+            )
+        }
+    }
+
+    @Test
+    fun test_tree_split_then_merge_roundtrip_restores_original() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") { text { "helloworld" } }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>helloworld</p></doc>", d1, d2)
+
+            // Split at offset 5
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(listOf(0, 5))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><p>hello</p><p>world</p></doc>",
+                d1,
+                d2,
+            )
+
+            // Merge back
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().mergeByPath(listOf(1))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<doc><p>helloworld</p></doc>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_tree_concurrent_split_and_merge_on_same_boundary_converges() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") { text { "hello" } }
+                            element("p") { text { "world" } }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                "<doc><p>hello</p><p>world</p></doc>",
+                d1,
+                d2,
+            )
+
+            // c1 splits first <p> at offset 3, c2 merges second <p> into first
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().splitByPath(listOf(0, 3))
+                },
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().mergeByPath(listOf(1))
+                },
+            )
+
+            // Both should converge to the same tree
+            val d1Xml = d1.getRoot().rootTree().toXml()
+            val d2Xml = d2.getRoot().rootTree().toXml()
+            assertEquals(d1Xml, d2Xml)
+        }
+    }
+
     // ===== Tree LWW Tests (from PR #1097) =====
 
     @Test

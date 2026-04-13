@@ -23,4 +23,4 @@ captures/
 *.iws
 *.ipr
 .claude/settings.local.json
-docs/superpowers/plans/
+docs/superpowers/

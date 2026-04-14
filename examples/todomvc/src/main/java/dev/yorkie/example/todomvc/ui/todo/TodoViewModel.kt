@@ -257,7 +257,7 @@ class TodoViewModel(
         _state.value = _state.value.copy(filter = filter)
     }
 
-    private fun refreshFromDocument() {
+    private suspend fun refreshFromDocument() {
         val todosArray = document.getRoot().getAsOrNull<JsonArray>(DOCUMENT_TODOS_KEY)
         if (todosArray != null) {
             updateTodosFromDocument(todosArray)

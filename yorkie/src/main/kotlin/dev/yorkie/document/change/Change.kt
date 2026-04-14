@@ -47,9 +47,9 @@ public data class Change internal constructor(
         for (op in operations) {
             val result = op.execute(root, source, id.versionVector)
             allOpInfos.addAll(result.opInfos)
-            for (reverseOp in result.reverseOps) {
-                reverseOps.add(0, reverseOp)
-            }
+            // addAll(0, ...) preserves internal order of multi-op reverses
+            // while reversing the outer operation order (first op's reverse runs last)
+            reverseOps.addAll(0, result.reverseOps)
         }
 
         return Triple(allOpInfos, newPresences, reverseOps)

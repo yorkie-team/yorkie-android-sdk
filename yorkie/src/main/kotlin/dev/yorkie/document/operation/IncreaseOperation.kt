@@ -15,7 +15,7 @@ import dev.yorkie.util.Logger.Companion.logError
  */
 internal data class IncreaseOperation(
     val value: CrdtElement,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 
@@ -61,7 +61,7 @@ internal data class IncreaseOperation(
                         root.createPath(parentCreatedAt),
                     ),
                 ),
-                reverseOp = reverseOp,
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

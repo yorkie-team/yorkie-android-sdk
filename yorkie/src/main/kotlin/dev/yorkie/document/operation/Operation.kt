@@ -9,7 +9,7 @@ import dev.yorkie.document.time.VersionVector
  */
 internal data class ExecutionResult(
     val opInfos: List<OperationInfo>,
-    val reverseOp: Operation? = null,
+    val reverseOps: List<Operation> = emptyList(),
 )
 
 /**
@@ -18,7 +18,7 @@ internal data class ExecutionResult(
  * [executedAt] is the execution time of this operation.
  */
 internal abstract class Operation {
-    abstract val parentCreatedAt: TimeTicket
+    abstract var parentCreatedAt: TimeTicket
 
     abstract var executedAt: TimeTicket
 

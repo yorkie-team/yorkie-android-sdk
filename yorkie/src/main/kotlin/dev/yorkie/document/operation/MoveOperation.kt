@@ -12,7 +12,7 @@ import dev.yorkie.util.Logger.Companion.logError
 internal data class MoveOperation(
     var prevCreatedAt: TimeTicket,
     var createdAt: TimeTicket,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 
@@ -52,7 +52,7 @@ internal data class MoveOperation(
                         path = root.createPath(parentCreatedAt),
                     ),
                 ),
-                reverseOp = reverseOp,
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

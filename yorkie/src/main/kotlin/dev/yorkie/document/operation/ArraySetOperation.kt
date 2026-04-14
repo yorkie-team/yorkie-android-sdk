@@ -13,7 +13,7 @@ import dev.yorkie.util.YorkieException
 internal data class ArraySetOperation(
     var createdAt: TimeTicket,
     val value: CrdtElement,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
     override val effectedCreatedAt: TimeTicket
@@ -39,6 +39,7 @@ internal data class ArraySetOperation(
 
         val previousValue = parentObject[createdAt]
         val value = value.deepCopy()
+        value.removedAt = null
         parentObject.insertAfter(createdAt, value, executedAt)
         parentObject.delete(createdAt, executedAt)
 
@@ -59,7 +60,7 @@ internal data class ArraySetOperation(
                     path = root.createPath(parentCreatedAt),
                 ),
             ),
-            reverseOp = reverseOp,
+            reverseOps = listOfNotNull(reverseOp),
         )
     }
 }

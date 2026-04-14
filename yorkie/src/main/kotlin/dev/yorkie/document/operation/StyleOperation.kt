@@ -12,7 +12,7 @@ internal data class StyleOperation(
     val fromPos: RgaTreeSplitPos,
     val toPos: RgaTreeSplitPos,
     val attributes: Map<String, String>,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 

@@ -13,7 +13,7 @@ import dev.yorkie.util.Logger.Companion.logError
 internal data class AddOperation(
     var prevCreatedAt: TimeTicket,
     val value: CrdtElement,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 
@@ -34,6 +34,7 @@ internal data class AddOperation(
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtArray) {
             val copiedValue = value.deepCopy()
+            copiedValue.removedAt = null
             parentObject.insertAfter(prevCreatedAt, copiedValue)
             root.registerElement(copiedValue, parentObject)
 
@@ -50,7 +51,7 @@ internal data class AddOperation(
                         root.createPath(parentCreatedAt),
                     ),
                 ),
-                reverseOp = reverseOp,
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

@@ -49,14 +49,11 @@ class TodoViewModel(
             launch {
                 document.events.collect { event ->
                     when (event) {
-                        is Document.Event.SyncStatusChanged.Synced -> {
-                            document.getRoot().getAsOrNull<JsonArray>(DOCUMENT_TODOS_KEY)
-                                ?.let(::updateTodosFromDocument)
-                        }
+                        is Document.Event.SyncStatusChanged.Synced,
+                        is Document.Event.LocalChange,
+                        -> refreshFromDocument()
 
-                        else -> {
-                            Unit
-                        }
+                        else -> Unit
                     }
                 }
             }
@@ -148,6 +145,8 @@ class TodoViewModel(
             is TodoAction.ClearCompleted -> clearCompleted()
             is TodoAction.ToggleAll -> toggleAll()
             is TodoAction.SetFilter -> setFilter(action.filter)
+            is TodoAction.Undo -> undo()
+            is TodoAction.Redo -> redo()
         }
     }
 
@@ -162,8 +161,8 @@ class TodoViewModel(
                     set("text", text.trim())
                     set("completed", false)
                 }
-                updateTodosFromDocument(todos)
             }.await()
+            refreshFromDocument()
         }
     }
 
@@ -174,8 +173,8 @@ class TodoViewModel(
                 val todoToRemove = todos.filterIsInstance<JsonObject>()
                     .find { it.getAs<JsonPrimitive>("id").getValueAs<String>() == id }
                 todoToRemove?.let { todos.remove(it.id) }
-                updateTodosFromDocument(todos)
             }.await()
+            refreshFromDocument()
         }
     }
 
@@ -191,8 +190,8 @@ class TodoViewModel(
                 todos.filterIsInstance<JsonObject>()
                     .find { it.getAs<JsonPrimitive>("id").getValueAs<String>() == id }
                     ?.set("text", text.trim())
-                updateTodosFromDocument(todos)
             }.await()
+            refreshFromDocument()
         }
     }
 
@@ -207,8 +206,8 @@ class TodoViewModel(
                             todo.getAs<JsonPrimitive>("completed").getValueAs<Boolean>()
                         todo["completed"] = !currentCompleted
                     }
-                updateTodosFromDocument(todos)
             }.await()
+            refreshFromDocument()
         }
     }
 
@@ -219,8 +218,8 @@ class TodoViewModel(
                 val completedTodos = todos.filterIsInstance<JsonObject>()
                     .filter { it.getAs<JsonPrimitive>("completed").getValueAs<Boolean>() }
                 completedTodos.forEach { todos.remove(it.id) }
-                updateTodosFromDocument(todos)
             }.await()
+            refreshFromDocument()
         }
     }
 
@@ -235,8 +234,22 @@ class TodoViewModel(
                 todoObjects.forEach { todo ->
                     todo["completed"] = !allCompleted
                 }
-                updateTodosFromDocument(todos)
             }.await()
+            refreshFromDocument()
+        }
+    }
+
+    private fun undo() {
+        viewModelScope.launch {
+            document.history.undoAsync().await()
+            refreshFromDocument()
+        }
+    }
+
+    private fun redo() {
+        viewModelScope.launch {
+            document.history.redoAsync().await()
+            refreshFromDocument()
         }
     }
 
@@ -244,28 +257,37 @@ class TodoViewModel(
         _state.value = _state.value.copy(filter = filter)
     }
 
-    private fun updateTodosFromDocument(todosArray: JsonArray) {
-        viewModelScope.launch {
-            val todos = todosArray.filterIsInstance<JsonObject>()
-                .mapNotNull { todoObj ->
-                    val id = todoObj.getAsOrNull<JsonPrimitive>("id")
-                    if (id != null) {
-                        Todo(
-                            id = todoObj.getAs<JsonPrimitive>("id").getValueAs(),
-                            text = todoObj.getAs<JsonPrimitive>("text").getValueAs(),
-                            completed = todoObj.getAs<JsonPrimitive>("completed").getValueAs(),
-                        )
-                    } else {
-                        null
-                    }
-                }
-
-            _state.value = _state.value.copy(
-                todos = todos,
-                isLoading = false,
-                error = null,
-            )
+    private suspend fun refreshFromDocument() {
+        val todosArray = document.getRoot().getAsOrNull<JsonArray>(DOCUMENT_TODOS_KEY)
+        if (todosArray != null) {
+            updateTodosFromDocument(todosArray)
         }
+        _state.value = _state.value.copy(
+            canUndo = document.history.canUndo(),
+            canRedo = document.history.canRedo(),
+        )
+    }
+
+    private fun updateTodosFromDocument(todosArray: JsonArray) {
+        val todos = todosArray.filterIsInstance<JsonObject>()
+            .mapNotNull { todoObj ->
+                val id = todoObj.getAsOrNull<JsonPrimitive>("id")
+                if (id != null) {
+                    Todo(
+                        id = todoObj.getAs<JsonPrimitive>("id").getValueAs(),
+                        text = todoObj.getAs<JsonPrimitive>("text").getValueAs(),
+                        completed = todoObj.getAs<JsonPrimitive>("completed").getValueAs(),
+                    )
+                } else {
+                    null
+                }
+            }
+
+        _state.value = _state.value.copy(
+            todos = todos,
+            isLoading = false,
+            error = null,
+        )
     }
 
     override fun onCleared() {

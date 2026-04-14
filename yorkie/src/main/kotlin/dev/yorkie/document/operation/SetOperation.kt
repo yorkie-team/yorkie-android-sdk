@@ -14,7 +14,7 @@ import dev.yorkie.util.Logger.Companion.logError
 internal data class SetOperation(
     val key: String,
     val value: CrdtElement,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 
@@ -40,6 +40,7 @@ internal data class SetOperation(
                 null
             }
             val copiedValue = value.deepCopy()
+            copiedValue.removedAt = null
             val removed = parentObject.set(key, copiedValue, executedAt)
             root.registerElement(copiedValue, parentObject)
             removed?.let(root::registerRemovedElement)
@@ -54,7 +55,7 @@ internal data class SetOperation(
                 opInfos = listOf(
                     OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)),
                 ),
-                reverseOp = reverseOp,
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

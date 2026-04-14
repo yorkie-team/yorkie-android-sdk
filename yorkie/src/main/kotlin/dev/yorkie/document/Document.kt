@@ -36,6 +36,7 @@ import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.schema.Rule
 import dev.yorkie.document.schema.validateYorkieRuleset
+import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DocSize
@@ -318,7 +319,7 @@ public class Document(
                 root = clone.root,
             )
 
-            for (historyOp in ops) {
+            for ((index, historyOp) in ops.withIndex()) {
                 when (historyOp) {
                     is HistoryOperation.Op -> {
                         val op = historyOp.operation
@@ -330,10 +331,12 @@ public class Document(
                             val prev = op.createdAt
                             op.value.createdAt = ticket
                             internalHistory.reconcileCreatedAt(prev, ticket)
+                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
                         } else if (op is AddOperation) {
                             val prev = op.value.createdAt
                             op.value.createdAt = ticket
                             internalHistory.reconcileCreatedAt(prev, ticket)
+                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
                         }
 
                         context.push(op)
@@ -380,6 +383,28 @@ public class Document(
             }
 
             Result.success(Unit)
+        }
+    }
+
+    /**
+     * Reconciles parentCreatedAt references in the remaining ops of the current batch.
+     * When an AddOperation or ArraySetOperation assigns a new createdAt to its value,
+     * subsequent ops in the same batch that reference the old createdAt as their
+     * parentCreatedAt must be updated to point to the new one.
+     */
+    private fun reconcileOpsCreatedAt(
+        ops: List<HistoryOperation>,
+        fromIndex: Int,
+        prevCreatedAt: TimeTicket,
+        currCreatedAt: TimeTicket,
+    ) {
+        for (i in fromIndex until ops.size) {
+            val historyOp = ops[i]
+            if (historyOp !is HistoryOperation.Op) continue
+            val op = historyOp.operation
+            if (op.parentCreatedAt === prevCreatedAt) {
+                op.parentCreatedAt = currCreatedAt
+            }
         }
     }
 

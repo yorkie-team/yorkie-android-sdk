@@ -13,7 +13,7 @@ import dev.yorkie.util.Logger.Companion.logError
  * [TreeEditOperation] is an operation representing Tree editing.
  */
 internal data class TreeEditOperation(
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
     val contents: List<CrdtTreeNode>?,

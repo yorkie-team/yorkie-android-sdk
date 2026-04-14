@@ -12,7 +12,7 @@ import dev.yorkie.util.Logger.Companion.logError
  * [TreeStyleOperation] represents an operation that modifies the style of the node in the Tree.
  */
 internal data class TreeStyleOperation(
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
     override var executedAt: TimeTicket,

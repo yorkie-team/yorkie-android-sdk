@@ -52,7 +52,7 @@ internal data class MoveOperation(
                         path = root.createPath(parentCreatedAt),
                     ),
                 ),
-                reverseOp = reverseOp,
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

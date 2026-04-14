@@ -60,7 +60,7 @@ internal data class ArraySetOperation(
                     path = root.createPath(parentCreatedAt),
                 ),
             ),
-            reverseOp = reverseOp,
+            reverseOps = listOfNotNull(reverseOp),
         )
     }
 }

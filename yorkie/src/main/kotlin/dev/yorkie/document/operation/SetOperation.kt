@@ -55,7 +55,7 @@ internal data class SetOperation(
                 opInfos = listOf(
                     OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)),
                 ),
-                reverseOp = reverseOp,
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

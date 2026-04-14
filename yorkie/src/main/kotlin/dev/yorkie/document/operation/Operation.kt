@@ -9,7 +9,7 @@ import dev.yorkie.document.time.VersionVector
  */
 internal data class ExecutionResult(
     val opInfos: List<OperationInfo>,
-    val reverseOp: Operation? = null,
+    val reverseOps: List<Operation> = emptyList(),
 )
 
 /**

@@ -61,7 +61,7 @@ internal data class IncreaseOperation(
                         root.createPath(parentCreatedAt),
                     ),
                 ),
-                reverseOp = reverseOp,
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

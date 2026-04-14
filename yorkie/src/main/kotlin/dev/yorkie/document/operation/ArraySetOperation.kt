@@ -39,6 +39,7 @@ internal data class ArraySetOperation(
 
         val previousValue = parentObject[createdAt]
         val value = value.deepCopy()
+        value.removedAt = null
         parentObject.insertAfter(createdAt, value, executedAt)
         parentObject.delete(createdAt, executedAt)
 

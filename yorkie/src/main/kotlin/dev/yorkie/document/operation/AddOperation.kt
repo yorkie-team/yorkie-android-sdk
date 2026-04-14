@@ -34,6 +34,7 @@ internal data class AddOperation(
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtArray) {
             val copiedValue = value.deepCopy()
+            copiedValue.removedAt = null
             parentObject.insertAfter(prevCreatedAt, copiedValue)
             root.registerElement(copiedValue, parentObject)
 

@@ -40,6 +40,7 @@ internal data class SetOperation(
                 null
             }
             val copiedValue = value.deepCopy()
+            copiedValue.removedAt = null
             val removed = parentObject.set(key, copiedValue, executedAt)
             root.registerElement(copiedValue, parentObject)
             removed?.let(root::registerRemovedElement)

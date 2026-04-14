@@ -16,7 +16,7 @@ internal data class EditOperation(
     val fromPos: RgaTreeSplitPos,
     val toPos: RgaTreeSplitPos,
     val content: String,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
     val attributes: Map<String, String>,
 ) : Operation() {

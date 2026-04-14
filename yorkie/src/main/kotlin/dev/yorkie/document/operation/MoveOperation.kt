@@ -12,7 +12,7 @@ import dev.yorkie.util.Logger.Companion.logError
 internal data class MoveOperation(
     var prevCreatedAt: TimeTicket,
     var createdAt: TimeTicket,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 

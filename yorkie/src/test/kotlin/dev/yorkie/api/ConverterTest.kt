@@ -511,7 +511,7 @@ class ConverterTest {
     }
 
     private class TestOperation(
-        override val parentCreatedAt: TimeTicket,
+        override var parentCreatedAt: TimeTicket,
         override var executedAt: TimeTicket,
         override val effectedCreatedAt: TimeTicket,
     ) : Operation() {

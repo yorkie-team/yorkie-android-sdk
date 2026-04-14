@@ -13,7 +13,7 @@ import dev.yorkie.util.YorkieException
 internal data class ArraySetOperation(
     var createdAt: TimeTicket,
     val value: CrdtElement,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
     override val effectedCreatedAt: TimeTicket

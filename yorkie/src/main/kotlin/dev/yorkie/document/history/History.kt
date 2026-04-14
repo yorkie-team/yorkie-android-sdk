@@ -69,7 +69,12 @@ internal class History {
                 if (historyOp !is HistoryOperation.Op) continue
                 val op = historyOp.operation
 
-                // Update createdAt references
+                // Update parentCreatedAt for all operation types
+                if (op.parentCreatedAt === prevCreatedAt) {
+                    op.parentCreatedAt = currCreatedAt
+                }
+
+                // Update type-specific createdAt references
                 when (op) {
                     is ArraySetOperation -> {
                         if (op.createdAt === prevCreatedAt) {
@@ -99,7 +104,7 @@ internal class History {
                     }
 
                     else -> {
-                        // No reconciliation needed for other operation types
+                        // No additional reconciliation needed
                     }
                 }
             }

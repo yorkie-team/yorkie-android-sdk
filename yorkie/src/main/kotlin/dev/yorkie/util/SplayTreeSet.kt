@@ -39,10 +39,11 @@ internal class SplayTreeSet<V>(
     }
 
     /**
-     * Returns the value and offset of the given index.
+     * Returns the value and offset of the given cursor position.
+     * Used for Text where cursor lives between characters.
      */
     @Suppress("UNCHECKED_CAST")
-    fun find(pos: Int): ValueToOffset<V> {
+    fun findForText(pos: Int): ValueToOffset<V> {
         var target = pos
         val root = root
         if (root == null || target < 0) {
@@ -67,6 +68,35 @@ internal class SplayTreeSet<V>(
         }
         splayInternal(node)
         return ValueToOffset(node.value, target)
+    }
+
+    /**
+     * Returns the value at the given array index.
+     * Used for Array where index points to an element (removed nodes have length 0).
+     *
+     * @throws IndexOutOfBoundsException when [idx] is negative or past the tree length.
+     */
+    fun findForArray(idx: Int): V? {
+        val root = root ?: return null
+        if (idx < 0 || idx >= length) {
+            throw IndexOutOfBoundsException(
+                "out of index range: idx: $idx, length: $length",
+            )
+        }
+        var target = idx
+        var node: Node<V> = root
+        while (true) {
+            if (node.left != null && target < node.leftWeight) {
+                node = requireNotNull(node.left)
+            } else if (node.right != null && node.leftWeight + node.length <= target) {
+                target -= node.leftWeight + node.length
+                node = requireNotNull(node.right)
+            } else {
+                break
+            }
+        }
+        splayInternal(node)
+        return node.value
     }
 
     /**

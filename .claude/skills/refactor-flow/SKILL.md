@@ -66,7 +66,16 @@ the refactoring must preserve:
 ```bash
 ./gradlew yorkie:testDebugUnitTest lintKotlin
 ```
-Record the result. If tests already fail, stop and tell the user — refactoring on a
+
+Also capture an instrumented-test baseline (critical for refactors that touch sync,
+presence, or CRDT paths):
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
+./scripts/config-yorkie-local-server.sh
+./gradlew yorkie:connectedDebugAndroidTest
+```
+
+Record both results. If tests already fail, stop and tell the user — refactoring on a
 broken baseline is risky.
 
 ### Step 2: Understand the current code
@@ -139,18 +148,26 @@ Prompt must include:
 - Commit message format: `refactor: {description}`
 - Run `./gradlew formatKotlin` before committing
 - Run `./gradlew yorkie:testDebugUnitTest lintKotlin` to verify after each commit
+- Run instrumented tests before handing off: `docker compose -f docker/docker-compose.yml up --build -d && ./scripts/config-yorkie-local-server.sh && ./gradlew yorkie:connectedDebugAndroidTest`
 
 ### Step 2: Final verification
 
-Run the full test suite one more time to confirm nothing is broken:
+Run the fast suite:
 ```bash
 ./gradlew formatKotlin
 ./gradlew yorkie:testDebugUnitTest lintKotlin
 ```
 
-Compare with the baseline from Phase 2 Step 1 — the same number of tests should pass.
-If any test that previously passed now fails, the refactoring introduced a regression.
-Fix it before proceeding.
+Then run the instrumented suite against a local Yorkie server:
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
+./scripts/config-yorkie-local-server.sh
+./gradlew yorkie:connectedDebugAndroidTest
+```
+
+Compare with the baseline from Phase 2 Step 1 — the same number of tests should pass
+in both suites. If any test that previously passed now fails, the refactoring introduced
+a regression. Fix it before proceeding.
 
 ### Step 3: Commit and push
 

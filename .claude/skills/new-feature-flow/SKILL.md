@@ -128,12 +128,18 @@ If reviewing:
 ### Single PR flow
 
 1. Implement the changes as described in the plan
-2. Verify:
+2. Verify (fast loop):
    ```bash
    ./gradlew formatKotlin
    ./gradlew yorkie:testDebugUnitTest lintKotlin
    ```
-3. Commit and push
+3. Run instrumented tests before PR:
+   ```bash
+   docker compose -f docker/docker-compose.yml up --build -d
+   ./scripts/config-yorkie-local-server.sh
+   ./gradlew yorkie:connectedDebugAndroidTest
+   ```
+4. Commit and push
 
 Delegate to implementation subagent if the feature is large:
 - `model`: `--exec-model` value or `sonnet`
@@ -145,6 +151,7 @@ Prompt must include:
 - Commit message format: `feat: {description}`
 - Run `./gradlew formatKotlin` before committing
 - Run `./gradlew yorkie:testDebugUnitTest lintKotlin` to verify
+- Run instrumented tests before handing off: `docker compose -f docker/docker-compose.yml up --build -d && ./scripts/config-yorkie-local-server.sh && ./gradlew yorkie:connectedDebugAndroidTest`
 
 ### Multi-PR flow
 
@@ -159,13 +166,20 @@ For each subtask PR:
 
 2. Implement the subtask changes
 
-3. Verify:
+3. Verify (fast loop):
    ```bash
    ./gradlew formatKotlin
    ./gradlew yorkie:testDebugUnitTest lintKotlin
    ```
 
-4. Commit, push, and create PR targeting the **base feature branch**:
+4. Run instrumented tests before PR:
+   ```bash
+   docker compose -f docker/docker-compose.yml up --build -d
+   ./scripts/config-yorkie-local-server.sh
+   ./gradlew yorkie:connectedDebugAndroidTest
+   ```
+
+5. Commit, push, and create PR targeting the **base feature branch**:
    ```
    /create-pr --jira RTCOLLABPLATFORM-{subN} --base feat/RTCOLLABPLATFORM-{N}-{short-desc}
    ```

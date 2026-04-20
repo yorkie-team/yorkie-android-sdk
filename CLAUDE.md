@@ -16,6 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Instrumented tests (requires running Yorkie server via Docker)
 docker compose -f docker/docker-compose.yml up --build -d
+./scripts/config-yorkie-local-server.sh   # must be run before instrumented tests — writes YORKIE_SERVER_URL to local.properties
 ./gradlew yorkie:connectedDebugAndroidTest
 
 # Lint

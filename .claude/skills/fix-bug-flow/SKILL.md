@@ -128,10 +128,17 @@ and focused on the bug. Do not refactor surrounding code.
 
 ### Step 2: Verify
 
-Run the full verification suite:
+Run the fast verification suite:
 ```bash
 ./gradlew formatKotlin
 ./gradlew yorkie:testDebugUnitTest lintKotlin
+```
+
+Then run instrumented tests against a local Yorkie server (required before PR):
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
+./scripts/config-yorkie-local-server.sh
+./gradlew yorkie:connectedDebugAndroidTest
 ```
 
 If a failing test was written in Phase 2, confirm it now passes.

@@ -31,6 +31,10 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
         if (node == null || node.value.getPositionedAt() < executedAt) {
             nodeMapByKey[key] = newNode
             value.movedAt = executedAt
+        } else if (!node.isRemoved) {
+            // The new node loses the LWW conflict; tombstone it so it does not
+            // surface as a duplicate key during iteration.
+            value.remove(node.value.getPositionedAt())
         }
         return removed
     }

@@ -239,6 +239,70 @@ class ElementRhtTest {
     }
 
     @Test
+    fun `Verify CrdtObject keys has no duplicates when late-arriving set loses LWW conflict`() {
+        // given: client A sets "color" at lamport=2 (winner)
+        val elementRht = ElementRht<CrdtPrimitive>()
+        val winnerTicket = generateTimeTicket(2, 2, "actorA")
+        elementRht.set(
+            key = "color",
+            value = CrdtPrimitive("red", winnerTicket),
+            executedAt = winnerTicket,
+        )
+
+        // when: client B's set for the same key arrives with earlier lamport=1 (loser)
+        val loserTicket = generateTimeTicket(1, 1, "actorB")
+        elementRht.set(
+            key = "color",
+            value = CrdtPrimitive("blue", loserTicket),
+            executedAt = loserTicket,
+        )
+
+        // then: CrdtObject keys must not contain duplicates
+        val obj =
+            CrdtObject(
+                TimeTicket.InitialTimeTicket,
+                memberNodes = elementRht as ElementRht<CrdtElement>,
+            )
+        assertEquals(listOf("color"), obj.keys)
+        assertEquals("red", (obj["color"] as CrdtPrimitive).value)
+    }
+
+    @Test
+    fun `Verify CrdtObject keys stays unique across multiple late-arriving concurrent sets`() {
+        // given: initial value at lamport=3
+        val elementRht = ElementRht<CrdtPrimitive>()
+        val firstTicket = generateTimeTicket(3, 3, "actor1")
+        elementRht.set(
+            key = "key",
+            value = CrdtPrimitive("first", firstTicket),
+            executedAt = firstTicket,
+        )
+
+        // when: two late-arriving sets with earlier lamports
+        val secondTicket = generateTimeTicket(1, 1, "actor2")
+        elementRht.set(
+            key = "key",
+            value = CrdtPrimitive("second", secondTicket),
+            executedAt = secondTicket,
+        )
+        val thirdTicket = generateTimeTicket(2, 2, "actor3")
+        elementRht.set(
+            key = "key",
+            value = CrdtPrimitive("third", thirdTicket),
+            executedAt = thirdTicket,
+        )
+
+        // then: exactly one live key, winner is the first (latest positionedAt)
+        val obj =
+            CrdtObject(
+                TimeTicket.InitialTimeTicket,
+                memberNodes = elementRht as ElementRht<CrdtElement>,
+            )
+        assertEquals(listOf("key"), obj.keys)
+        assertEquals("first", (obj["key"] as CrdtPrimitive).value)
+    }
+
+    @Test
     fun `Verity the getKeyOfQueue() using sequence`() {
         val elementRht = ElementRht<CrdtPrimitive>()
         val list = mutableListOf<String>()

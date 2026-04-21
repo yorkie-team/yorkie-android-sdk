@@ -68,6 +68,22 @@ internal data class CrdtTree(
         get() = nodeMapByID.size
 
     /**
+     * Returns true when [node]'s insertion-next sibling was created by a concurrent split
+     * that is not yet reflected in [versionVector], meaning the styling client did not know
+     * about the split when the style operation was issued.
+     *
+     * Deliberately omits the parent-equality check used by advancePastUnknownSplitSiblings:
+     * reparented siblings still carry the authoritative split witness in [CrdtTreeNode.insNextID].
+     */
+    private fun hasUnknownSplitSibling(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
+        val insNextID = node.insNextID ?: return false
+        val sibling = nodeMapByID[insNextID] ?: return false
+        if (sibling.isText) return false
+        val knownLamport = versionVector.get(sibling.id.createdAt.actorID)
+        return knownLamport == null || knownLamport < sibling.id.createdAt.lamport
+    }
+
+    /**
      * Applies the given [attributes] of the given [range].
      */
     fun style(
@@ -97,6 +113,13 @@ internal data class CrdtTree(
             toParent = toParent,
             toLeft = toLeft,
         ) { (node, tokenType), _ ->
+            if (tokenType == TokenType.End &&
+                versionVector != null &&
+                hasUnknownSplitSibling(node, versionVector)
+            ) {
+                return@traverseInPosRange
+            }
+
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
@@ -484,7 +507,14 @@ internal data class CrdtTree(
 
         val changes = mutableListOf<TreeChange>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
-        traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
+        traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, tokenType), _ ->
+            if (tokenType == TokenType.End &&
+                versionVector != null &&
+                hasUnknownSplitSibling(node, versionVector)
+            ) {
+                return@traverseInPosRange
+            }
+
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 

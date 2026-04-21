@@ -1,0 +1,95 @@
+{
+  "project": "yorkie-android-sdk",
+  "version": "0.1.0",
+
+  "policies": {
+    "max_file_lines": 300,
+    "min_test_coverage": 70,
+    "max_ticket_failures": 3,
+    "stale_doc_threshold_days": 30
+  },
+
+  "retry": {
+    "max_retries_per_ticket": 3,
+    "action_on_max_failures": "block_and_report"
+  },
+
+  "verify_lanes": {
+    "fast": ["lint", "architecture_check"],
+    "full": ["lint", "architecture_check", "android_lint", "unit_tests", "coverage"],
+    "entropy": ["unused_code", "stale_deps", "untested_modules"],
+    "session": ["full", "harness_check"]
+  },
+
+  "spec_states": {
+    "backlog": "docs/specs/backlog/",
+    "active": "docs/specs/"
+  },
+
+  "exec_plans": {
+    "active": "docs/exec-plans/active/",
+    "completed": "docs/exec-plans/completed/"
+  },
+
+  "work_state": ".work/state.json",
+
+  "evaluator": {
+    "components": {
+      "yorkie_sdk_unit": {
+        "type": "cli",
+        "test_entry": "yorkie/src/test",
+        "test_tools": ["gradle", "bash"],
+        "_comment": "JVM-only unit tests. Does not require a running Yorkie server."
+      },
+      "yorkie_sdk_instrumented": {
+        "type": "cli",
+        "deployment": "docker",
+        "docker_config": {
+          "compose_file": "docker/docker-compose.yml",
+          "service_name": "yorkie",
+          "image": "yorkieteam/yorkie:0.6.36"
+        },
+        "test_entry": "yorkie/src/androidTest",
+        "test_tools": ["gradle", "bash", "docker"],
+        "_comment": "Instrumented tests against a real Yorkie server. Requires an Android emulator/device AND docker-compose."
+      }
+    },
+    "start_commands": {
+      "yorkie_server": "docker compose -f docker/docker-compose.yml up --build -d",
+      "config_server_url": "./scripts/config-yorkie-local-server.sh"
+    },
+    "health_check": "docker ps --filter name=yorkie --filter status=running --format '{{.Names}}' | grep -q '^yorkie$'",
+    "test_env": {
+      "YORKIE_SERVER_HOST": "localhost",
+      "YORKIE_SERVER_PORT": "8080"
+    },
+    "test_env_notes": "YORKIE_SERVER_URL is written to local.properties by scripts/config-yorkie-local-server.sh and picked up by the yorkie module's testInstrumentationRunnerArguments. For unit tests these values are unused.",
+    "lint_commands": {
+      "kotlin": "./gradlew lintKotlin",
+      "android": "./gradlew lint",
+      "architecture": "bash scripts/lint_architecture.sh"
+    },
+    "stop_commands": "docker compose -f docker/docker-compose.yml down"
+  },
+
+  "safety": {
+    "blocked_ticket_action": "stop_and_report",
+    "require_evidence_before_complete": true
+  },
+
+  "session": {
+    "start_ritual": [
+      "run init_check",
+      "check exec-plans/active/",
+      "read progress.md",
+      "read lessons.md"
+    ],
+    "end_ritual": [
+      "verify.sh full",
+      "update checkpoint",
+      "update progress.md",
+      "capture lessons",
+      "harness_check"
+    ]
+  }
+}

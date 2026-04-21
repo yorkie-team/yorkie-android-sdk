@@ -1,0 +1,10 @@
+{
+  "phase": "idle",
+  "active_ticket": null,
+  "session_count": 0,
+  "current_round": 0,
+  "last_round_outcome": null,
+  "completed_features": [],
+  "last_session": null,
+  "stop_requested": false
+}

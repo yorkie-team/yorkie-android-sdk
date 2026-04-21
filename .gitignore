@@ -24,3 +24,10 @@ captures/
 *.ipr
 .claude/settings.local.json
 docs/superpowers/
+
+# Harness engineering
+.worktrees/
+docs/round-reports/
+# Track .work/state.json (default idle state) but ignore anything else placed there
+.work/*
+!.work/state.json

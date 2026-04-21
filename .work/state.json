@@ -1,18 +1,26 @@
 {
-  "phase": "evaluating",
-  "active_ticket": "RTCOLLABPLATFORM-643",
-  "active_feature": "RTCOLLABPLATFORM-643-tree-end-token-guard",
-  "active_exec_plan": "docs/exec-plans/active/RTCOLLABPLATFORM-643-tree-end-token-guard.md",
+  "phase": "idle",
+  "active_ticket": null,
+  "active_feature": null,
+  "active_exec_plan": null,
   "session_count": 1,
-  "current_round": 2,
-  "last_round_outcome": null,
-  "completed_features": [],
+  "current_round": 0,
+  "last_round_outcome": {
+    "score": 13,
+    "pass_threshold": 11,
+    "auto_fails": [],
+    "round_count": 2,
+    "feature": "RTCOLLABPLATFORM-643-tree-end-token-guard"
+  },
+  "completed_features": [
+    "RTCOLLABPLATFORM-643"
+  ],
   "last_session": "2026-04-21",
   "stop_requested": false,
   "auto_run": {
     "started_at": "2026-04-21T10:55:00Z",
     "flags": {"mode": "queue-only", "max_phases": 5},
     "phase_counter": 1,
-    "termination_reason": null
+    "termination_reason": "queue_exhausted"
   }
 }

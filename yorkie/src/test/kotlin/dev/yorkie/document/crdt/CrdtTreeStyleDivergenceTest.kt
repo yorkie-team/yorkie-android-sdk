@@ -103,16 +103,9 @@ class CrdtTreeStyleDivergenceTest {
 
         // Cross-apply: B applies A's style with A's version vector.
         // The guard fires at the End token of the original <p> (insNextID = B's split sibling,
-        // which is unknown to vvA) and skips that token.
-        val crossApplyResult = treeB.style(styleRange, mapOf("bold" to "true"), styleTicket, vvA)
-
-        // The guard fired: the End-token visit is absent from the changes list.
-        // All changes that were produced came from token visits where the guard did NOT fire.
-        // (The changes list may still be non-empty because the Start token is not guarded.)
-        assertTrue(
-            "Cross-apply with guard must complete without error",
-            crossApplyResult.changes.size >= 0,
-        )
+        // which is unknown to vvA) and skips that token. Changes may still be produced by
+        // non-guarded visits (Start, Text); convergence below is the load-bearing assertion.
+        treeB.style(styleRange, mapOf("bold" to "true"), styleTicket, vvA)
 
         // Cross-apply: A applies B's split
         treeA.edit(splitPos to splitPos, null, 1, splitTicket, ctxA::issueTimeTicket, null)

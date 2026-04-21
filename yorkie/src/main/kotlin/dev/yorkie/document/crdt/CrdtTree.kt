@@ -72,8 +72,9 @@ internal data class CrdtTree(
      * that is not yet reflected in [versionVector], meaning the styling client did not know
      * about the split when the style operation was issued.
      *
-     * Deliberately omits the parent-equality check used by advancePastUnknownSplitSiblings:
-     * reparented siblings still carry the authoritative split witness in [CrdtTreeNode.insNextID].
+     * Used by [style] and [removeStyle] on End-token visits; ports the guard from
+     * yorkie-js-sdk#1211. Omits a parent-equality check — reparented siblings still
+     * carry the authoritative split witness in [CrdtTreeNode.insNextID].
      */
     private fun hasUnknownSplitSibling(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
         val insNextID = node.insNextID ?: return false

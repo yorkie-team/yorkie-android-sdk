@@ -280,6 +280,88 @@ class ClientTest {
     }
 
     @Test
+    fun test_should_cancel_watch_stream_when_changing_to_manual_sync_mode() {
+        // Port of Yorkie JS PR #1105. Verifies that changing a client from
+        // Realtime to Manual sync mode closes the watch stream: peers observe
+        // Others.Unwatched, remote updates are no longer auto-delivered, and
+        // a manual sync is still able to fetch them.
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+            val d2 = Document(key)
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            c1.attachDocument(d1).await()
+            c2.attachDocument(d2).await()
+
+            val d1RemoteChanges = mutableListOf<RemoteChange>()
+            val d2PresenceEvents = mutableListOf<Document.Event.PresenceChanged.Others>()
+            val jobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<RemoteChange>().collect(d1RemoteChanges::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d2.events
+                        .filterIsInstance<Document.Event.PresenceChanged.Others>()
+                        .collect(d2PresenceEvents::add)
+                },
+            )
+
+            // given: initial sync works — d1 receives a RemoteChange from d2
+            d2.updateAsync { root, _ ->
+                root["version"] = "v1"
+            }.await()
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1RemoteChanges.isEmpty()) {
+                    delay(50)
+                }
+            }
+            assertJsonContentEquals("""{"version":"v1"}""", d1.toJson())
+
+            // when: c1 switches to Manual — watch stream should cancel and
+            //       c2 should see an Unwatched event for c1
+            c1.changeSyncMode(d1, Manual)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (
+                    d2PresenceEvents.none {
+                        it is Document.Event.PresenceChanged.Others.Unwatched &&
+                            it.changed.actorID == c1.requireClientId()
+                    }
+                ) {
+                    delay(50)
+                }
+            }
+
+            // then: c2's further update does not auto-deliver to c1
+            d1RemoteChanges.clear()
+            d2.updateAsync { root, _ ->
+                root["version"] = "v2"
+            }.await()
+            delay(1_000)
+            assertTrue(d1RemoteChanges.isEmpty())
+            assertJsonContentEquals("""{"version":"v1"}""", d1.toJson())
+
+            // then: manual sync still works
+            c1.syncAsync().await()
+            assertJsonContentEquals("""{"version":"v2"}""", d1.toJson())
+
+            jobs.forEach(Job::cancel)
+            c1.detachDocument(d1).await()
+            c2.detachDocument(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            d1.close()
+            d2.close()
+            c1.close()
+            c2.close()
+        }
+    }
+
+    @Test
     fun test_applying_previous_changes_after_switching_to_realtime() = runBlocking {
         val client1 = createClient()
         val client2 = createClient()

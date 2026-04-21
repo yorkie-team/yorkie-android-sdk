@@ -101,6 +101,13 @@ internal data class CrdtTree(
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
             if (node.canStyle(executedAt, clientLamportAtChange) && attributes != null) {
+                if (tokenType == TokenType.End &&
+                    versionVector != null &&
+                    hasUnknownSplitSibling(node, versionVector)
+                ) {
+                    return@traverseInPosRange
+                }
+
                 val parentOfNode = requireNotNull(node.parent)
                 val previousNode = node.prevSibling ?: parentOfNode
 
@@ -484,7 +491,7 @@ internal data class CrdtTree(
 
         val changes = mutableListOf<TreeChange>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
-        traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, _), _ ->
+        traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, tokenType), _ ->
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
@@ -493,6 +500,13 @@ internal data class CrdtTree(
                     clientLamportAtChange,
                 ) && attributeToRemove.isNotEmpty()
             ) {
+                if (tokenType == TokenType.End &&
+                    versionVector != null &&
+                    hasUnknownSplitSibling(node, versionVector)
+                ) {
+                    return@traverseInPosRange
+                }
+
                 attributeToRemove.forEach { key ->
                     node.removeAttribute(key, executedAt)
                         .map { rhtNode -> GCPair(node, rhtNode) }
@@ -592,6 +606,27 @@ internal data class CrdtTree(
     fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
         val (key, value) = nodeMapByID.floorEntry(id) ?: return null
         return value.takeIf { key.createdAt == id.createdAt }
+    }
+
+    /**
+     * Checks whether [node] has a split sibling (via [CrdtTreeNode.insNextID])
+     * whose creation the editor did not know about. Prevents styling via End
+     * tokens when a concurrent split extended the range into the split sibling.
+     *
+     * Unlike a traversal-advance helper, intentionally omits the parent-equality
+     * check: in multi-level splits the sibling may have been moved to a
+     * different parent by the recursive ancestor split. The End-token guard
+     * must still fire because the node WAS split — [CrdtTreeNode.insNextID]
+     * is only set by SplitElement.
+     */
+    private fun hasUnknownSplitSibling(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
+        val insNextID = node.insNextID ?: return false
+        val next = findFloorNode(insNextID) ?: return false
+        if (next.isText) return false
+
+        val actorID = next.id.createdAt.actorID
+        val knownLamport = versionVector.get(actorID)
+        return knownLamport == null || knownLamport < next.id.createdAt.lamport
     }
 
     fun checkPosRangeValid(posRange: TreePosRange): Boolean {

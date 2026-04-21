@@ -185,6 +185,25 @@ class JsonArrayTest {
     }
 
     @Test
+    fun `elements returns wrapped JsonElement entries in array order`() {
+        // given: primitives and a nested object mixed in one array
+        target.apply {
+            put(1)
+            put("two")
+            putNewObject().set("k", "v")
+        }
+
+        // when
+        val elements = target.elements().asSequence().toList()
+
+        // then: each yielded entry is the typed wrapper, in insertion order
+        assertEquals(3, elements.size)
+        assertEquals(1, assertIs<JsonPrimitive>(elements[0]).value)
+        assertEquals("two", assertIs<JsonPrimitive>(elements[1]).value)
+        assertIs<JsonObject>(elements[2])
+    }
+
+    @Test
     fun `should return requested type with getAs`() {
         target.put(0)
         val get = assertIs<JsonPrimitive>(target[0])

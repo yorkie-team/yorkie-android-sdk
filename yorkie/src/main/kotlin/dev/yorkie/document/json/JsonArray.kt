@@ -320,6 +320,14 @@ public class JsonArray internal constructor(
         return JsonArrayIterator(context, target)
     }
 
+    /**
+     * Returns an iterator over wrapped [JsonElement] entries, exposing CRDT
+     * metadata via [JsonElement.id] and the typed subclass ([JsonPrimitive],
+     * [JsonObject], [JsonArray], [JsonText], [JsonCounter], [JsonTree]).
+     * Mirrors the JS SDK's `elements()` method added in PR #1178.
+     */
+    public fun elements(): Iterator<JsonElement> = iterator()
+
     private class JsonArrayIterator(
         private val context: ChangeContext,
         target: CrdtArray,

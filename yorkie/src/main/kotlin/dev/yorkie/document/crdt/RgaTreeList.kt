@@ -173,16 +173,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
      */
     fun getByIndex(index: Int): Node? {
         if (length <= index) return null
-
-        val (value, offset) = nodeMapByIndex.find(index)
-        var rgaNode = nodeMapByCreatedAt[value?.value?.createdAt ?: ""]
-
-        if ((index == 0 && rgaNode == dummyHead) || offset > 0) {
-            do {
-                rgaNode = rgaNode?.next
-            } while (rgaNode?.isRemoved == true)
-        }
-        return rgaNode
+        return nodeMapByIndex.findForArray(index)
     }
 
     /**

@@ -345,7 +345,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      * Finds [RgaTreeSplitPos] of the given [index].
      */
     fun indexToPos(index: Int): RgaTreeSplitPos {
-        val (node, offset) = treeByIndex.find(index)
+        val (node, offset) = treeByIndex.findForText(index)
         return node?.let {
             RgaTreeSplitPos(it.id, offset)
         } ?: throw NoSuchElementException("no node found with the given index: $index")

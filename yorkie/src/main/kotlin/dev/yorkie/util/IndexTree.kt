@@ -671,8 +671,37 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
     /**
      * Removes the given [child] (physically purges it from the tree).
+     *
+     * Returns silently when [child] is no longer a child of this node: a
+     * prior [detachChild] from a concurrent merge can have moved it out
+     * before GC purge reaches the same node.
      */
     fun removeChild(child: T) {
+        check(!isText) {
+            "Text node cannot have children"
+        }
+
+        val offset = childNodes.indexOf(child).takeUnless { it == -1 } ?: return
+
+        childNodes.removeAt(offset)
+
+        // NOTE(hackerwins): Decrease totalSize including removed nodes
+        // since this node is being purged (physically removed from tree).
+        child.updateAncestorSize(-child.paddedSize(true), true)
+
+        child.parent = null
+    }
+
+    /**
+     * Detaches the given alive [child] from this node for moving between
+     * parents (i.e. merge). Updates both `visibleSize` and `totalSize`.
+     *
+     * Differs from [removeChild], which only updates `totalSize` because
+     * it is used on tombstoned children during GC purge. Throws
+     * [NoSuchElementException] when [child] is not present — callers that
+     * may race with a prior detach must wrap in `try`/`catch`.
+     */
+    fun detachChild(child: T) {
         check(!isText) {
             "Text node cannot have children"
         }
@@ -682,8 +711,7 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
         childNodes.removeAt(offset)
 
-        // NOTE(hackerwins): Decrease totalSize including removed nodes
-        // since this node is being purged (physically removed from tree).
+        child.updateAncestorSize(-child.paddedSize())
         child.updateAncestorSize(-child.paddedSize(true), true)
 
         child.parent = null

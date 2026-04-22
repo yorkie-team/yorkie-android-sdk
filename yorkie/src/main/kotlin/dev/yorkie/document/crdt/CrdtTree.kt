@@ -213,6 +213,7 @@ internal data class CrdtTree(
         val nodesToBeRemoved = mutableListOf<CrdtTreeNode>()
         val tokensToBeRemoved = mutableListOf<CrdtTreeToken>()
         val toBeMovedToFromParents = mutableListOf<CrdtTreeNode>()
+        val toBeMergedNodes = mutableListOf<CrdtTreeNode>()
 
         // Treat missing or empty VersionVector as local operation.
         val isLocal = versionVector == null || versionVector.size() == 0
@@ -226,6 +227,7 @@ internal data class CrdtTree(
             // NOTE(hackerwins): If the node overlaps as a start tag with the
             // range then we need to move the remaining children to fromParent.
             if (tokenType == TokenType.Start && !ended) {
+                toBeMergedNodes.add(node)
                 toBeMovedToFromParents.addAll(node.children)
             }
 
@@ -250,14 +252,46 @@ internal data class CrdtTree(
                 }
             }
 
+            // NOTE(sejongk): If the node is removable or its parent is going to
+            // be removed, then this node should be removed.
+            // Do not cascade-delete children of merge-boundary nodes
+            // (toBeMergedNodes), because those children are moved rather than
+            // deleted.
+            val parentScheduledForDelete =
+                node.parent in nodesToBeRemoved && node.parent !in toBeMergedNodes
             if (node.canDelete(
                     executedAt,
                     creationKnown,
                     tombstoneKnown,
-                ) || node.parent in nodesToBeRemoved
+                ) || parentScheduledForDelete
             ) {
                 if (tokenType == TokenType.Text || tokenType == TokenType.Start) {
                     nodesToBeRemoved.add(node)
+
+                    // Cascade delete to split siblings created by concurrent
+                    // SplitElement. Only for element nodes.
+                    val splitHead = node.insNextID
+                    if (!node.isText && splitHead != null && node !in toBeMergedNodes) {
+                        var next = findFloorNode(splitHead)
+                        while (next != null) {
+                            val splitCreationKnown = if (isLocal) {
+                                true
+                            } else {
+                                val vv = versionVector?.get(next.createdAt.actorID)
+                                vv != null && vv >= next.createdAt.lamport
+                            }
+                            if (!splitCreationKnown) {
+                                val sibling = next
+                                nodesToBeRemoved.add(sibling)
+                                // Cascade through the full subtree, not just immediate children.
+                                traverseAll(sibling) { n, _ ->
+                                    if (n !== sibling) nodesToBeRemoved.add(n)
+                                }
+                            }
+                            val followID = next.insNextID ?: break
+                            next = findFloorNode(followID)
+                        }
+                    }
                 }
                 tokensToBeRemoved.add(TreeToken(node, tokenType))
             }
@@ -277,7 +311,64 @@ internal data class CrdtTree(
         }
 
         // 03. Merge: move the nodes that are marked as moved.
-        toBeMovedToFromParents.filter { it.removedAt == null }.forEach(fromParent::append)
+        toBeMovedToFromParents.filter { it.removedAt == null }.forEach { node ->
+            // Record the child ID on its actual source parent only.
+            val oldParent = node.parent
+            if (oldParent != null) {
+                val src = toBeMergedNodes.firstOrNull { it === oldParent }
+                if (src != null) {
+                    val ids = src.mergedChildIDs ?: mutableListOf<CrdtTreeNodeID>().also {
+                        src.mergedChildIDs = it
+                    }
+                    ids.add(node.id)
+                }
+                // Detach from old parent to prevent ghost references. Swallow
+                // NoSuchElementException: a cascade delete of a split sibling
+                // may have already detached the child.
+                try {
+                    oldParent.detachChild(node)
+                } catch (_: NoSuchElementException) {
+                    // Child already detached, skip.
+                }
+            }
+            fromParent.append(node)
+        }
+        // Set forwarding pointer on merge-source nodes so future insertions
+        // that land on the tombstoned parent redirect to the merge target.
+        toBeMergedNodes.forEach { src -> src.mergedInto = fromParent.id }
+
+        // 03-1. Propagate deletes to children moved by prior merges. When a
+        // merge-source node is fully deleted (not itself a merge boundary),
+        // its former children in the merge target should also be deleted.
+        // Skip when mergedInto points to fromParent (concurrent merge).
+        nodesToBeRemoved.forEach { node ->
+            val mergedInto = node.mergedInto
+            val mergedChildIDs = node.mergedChildIDs
+            if (mergedInto != null &&
+                !mergedChildIDs.isNullOrEmpty() &&
+                node !in toBeMergedNodes &&
+                mergedInto != fromParent.id
+            ) {
+                mergedChildIDs.forEach { childID ->
+                    val child = findFloorNode(childID)
+                    if (child != null && child.removedAt == null) {
+                        child.remove(executedAt)
+                        if (child.isRemoved) {
+                            gcPairs.add(GCPair(this, child))
+                        }
+                        // Also tombstone descendants if the moved child is an element.
+                        traverseAll(child) { n, _ ->
+                            if (n !== child && n.removedAt == null) {
+                                n.remove(executedAt)
+                                if (n.isRemoved) {
+                                    gcPairs.add(GCPair(this, n))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // 04. Split: split the element nodes for the given split level.
         if (splitLevel > 0 && issueTimeTicket != null) {
@@ -539,6 +630,9 @@ internal data class CrdtTree(
     ) {
         val fromIndex = toIndex(fromParent, fromLeft)
         val toIndex = toIndex(toParent, toLeft)
+        // When a concurrent merge redirects the to-position ahead of the
+        // from-position, the range is empty — a prior step already handled it.
+        if (fromIndex > toIndex) return
         indexTree.tokensBetween(fromIndex, toIndex, callback)
     }
 
@@ -573,6 +667,33 @@ internal data class CrdtTree(
         val realParent =
             leftSibling.parent.takeIf { leftSibling.parent != null && !isLeftMost }
                 ?: parent
+
+        // 02-1. If the parent has been tombstoned by a merge, redirect to the
+        // merge destination using the forwarding pointer.
+        val mergedIntoID = realParent.mergedInto
+        if (realParent.isRemoved && isLeftMost && mergedIntoID != null) {
+            val mergeTarget = findFloorNode(mergedIntoID)
+            if (mergeTarget != null && !mergeTarget.isRemoved) {
+                val mergedChildIDs = realParent.mergedChildIDs
+                if (!mergedChildIDs.isNullOrEmpty()) {
+                    val firstChild = findFloorNode(mergedChildIDs.first())
+                    if (firstChild?.parent == mergeTarget) {
+                        // Use allChildren consistently to avoid visible/total offset mismatch.
+                        val allCh = mergeTarget.allChildren
+                        val offset = allCh.indexOf(firstChild)
+                        val redirectedLeft = if (offset <= 0) mergeTarget else allCh[offset - 1]
+                        return Pair(
+                            first = Pair(mergeTarget, redirectedLeft),
+                            second = diff,
+                        )
+                    }
+                }
+                return Pair(
+                    first = Pair(mergeTarget, mergeTarget),
+                    second = diff,
+                )
+            }
+        }
 
         // 03. Split text node if the left node is a text node.
         if (leftSibling.isText) {
@@ -953,6 +1074,21 @@ internal data class CrdtTreeNode(
     var insPrevID: CrdtTreeNodeID? = null
 
     var insNextID: CrdtTreeNodeID? = null
+
+    /**
+     * Runtime-only forwarding pointer set when this node is tombstoned by a
+     * merge. Records which parent received the children so that later
+     * insertions landing on this tombstoned parent redirect to the merge
+     * destination.
+     */
+    var mergedInto: CrdtTreeNodeID? = null
+
+    /**
+     * Runtime-only IDs of children moved during a merge. Propagates
+     * concurrent deletes of this node to children already relocated under
+     * [mergedInto].
+     */
+    var mergedChildIDs: MutableList<CrdtTreeNodeID>? = null
 
     val rhtNodes: Iterable<RhtNode>
         get() = _attributes

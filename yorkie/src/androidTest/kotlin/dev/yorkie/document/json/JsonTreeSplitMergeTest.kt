@@ -319,4 +319,123 @@ class JsonTreeSplitMergeTest {
             JsonTreeTest.assertTreesXmlEquals("<doc><p>ab</p></doc>", d1, d2)
         }
     }
+
+    @Test
+    fun test_side_by_side_concurrent_merge_and_merge() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") { text { "a" } }
+                            element("p") { text { "b" } }
+                            element("p") { text { "c" } }
+                            element("p") { text { "d" } }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals(
+                "<r><p>a</p><p>b</p><p>c</p><p>d</p></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(2, 4)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(8, 10)
+                },
+            ) {
+                JsonTreeTest.assertTreesXmlEquals(
+                    "<r><p>ab</p><p>c</p><p>d</p></r>",
+                    d1,
+                )
+                JsonTreeTest.assertTreesXmlEquals(
+                    "<r><p>a</p><p>b</p><p>cd</p></r>",
+                    d2,
+                )
+            }
+            JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p><p>cd</p></r>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_concurrent_delete_after_merge_with_nested_content() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") {
+                                element("b") { text { "a" } }
+                            }
+                            element("p") {
+                                element("b") { text { "b" } }
+                            }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals(
+                "<r><p><b>a</b></p><p><b>b</b></p></r>",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(4, 6)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(0, 10)
+                },
+            ) {
+                JsonTreeTest.assertTreesXmlEquals(
+                    "<r><p><b>a</b><b>b</b></p></r>",
+                    d1,
+                )
+                JsonTreeTest.assertTreesXmlEquals("<r></r>", d2)
+            }
+            JsonTreeTest.assertTreesXmlEquals("<r></r>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_delete_starting_inside_merge_target() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") { text { "ab" } }
+                            element("p") { text { "c" } }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p><p>c</p></r>", d1, d2)
+
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(3, 5)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(3, 7)
+                },
+            ) {
+                JsonTreeTest.assertTreesXmlEquals("<r><p>abc</p></r>", d1)
+                JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d2)
+            }
+            JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
+        }
+    }
 }

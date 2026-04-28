@@ -82,11 +82,25 @@ internal data class CrdtTree(
         )
 
         val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
-        val (fromParent, fromLeft) = from
+        val (fromParent, fromLeftRaw) = from
         val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
-        val (toParent, toLeft) = to
+        val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
+
+        // Advance past split siblings the editor did not know about so range
+        // boundaries land after every unseen split product. Skip when leftRaw
+        // equals the parent (leftmost-child sentinel).
+        val fromLeft = if (fromLeftRaw === fromParent) {
+            fromLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector)
+        }
+        val toLeft = if (toLeftRaw === toParent) {
+            toLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
+        }
 
         val changes = mutableListOf<TreeChange>()
 
@@ -201,11 +215,25 @@ internal data class CrdtTree(
 
         // 01. find nodes from the given range and split nodes.
         val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
-        val (fromParent, fromLeft) = from
+        val (fromParent, fromLeftRaw) = from
         val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
-        val (toParent, toLeft) = to
+        val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
+
+        // 01-1. Advance past split siblings the editor did not know about so
+        // range boundaries land after every unseen split product. Skip when
+        // leftRaw equals the parent (leftmost-child sentinel).
+        val fromLeft = if (fromLeftRaw === fromParent) {
+            fromLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector)
+        }
+        val toLeft = if (toLeftRaw === toParent) {
+            toLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
+        }
 
         val fromIndex = toIndex(fromParent, fromLeft)
         val fromPath = toPath(fromParent, fromLeft)
@@ -740,6 +768,36 @@ internal data class CrdtTree(
      * must still fire because the node WAS split — [CrdtTreeNode.insNextID]
      * is only set by SplitElement.
      */
+    /**
+     * Walks the [CrdtTreeNode.insNextID] chain from [node], returning the last
+     * element-type sibling whose creation the editor did not know about.
+     * Stops at text nodes, on a sibling whose parent differs from the current
+     * node's parent (moved by a higher-level split), or as soon as a known
+     * sibling is encountered. Treats null or empty [versionVector] as a local
+     * operation and returns [node] unchanged.
+     */
+    private fun advancePastUnknownSplitSiblings(
+        node: CrdtTreeNode,
+        versionVector: VersionVector?,
+    ): CrdtTreeNode {
+        if (versionVector == null || versionVector.size() == 0) return node
+
+        var current = node
+        while (true) {
+            val nextID = current.insNextID ?: return current
+            val next = findFloorNode(nextID) ?: return current
+            if (next.isText) return current
+            if (next.parent !== current.parent) return current
+
+            val actorID = next.id.createdAt.actorID
+            val knownLamport = versionVector.get(actorID)
+            val isUnknown = knownLamport == null || knownLamport < next.id.createdAt.lamport
+            if (!isUnknown) return current
+
+            current = next
+        }
+    }
+
     private fun hasUnknownSplitSibling(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
         val insNextID = node.insNextID ?: return false
         val next = findFloorNode(insNextID) ?: return false

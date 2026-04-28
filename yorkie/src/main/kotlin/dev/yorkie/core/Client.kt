@@ -367,7 +367,7 @@ public class Client(
                             request,
                             resource.getKey().attachmentBasedRequestHeader,
                         ).getOrThrow()
-                        resource.updateCount(response.count, 0L)
+                        resource.updateSessionCount(response.sessionCount, 0L)
                         attachment.updateHeartbeatTime()
                     }
                 }
@@ -714,22 +714,22 @@ public class Client(
 
     private fun handleWatchChannelResponse(channel: Channel, response: WatchChannelResponse) {
         if (response.hasInitialized()) {
-            val count = response.initialized.count
+            val sessionCount = response.initialized.sessionCount
             val seq = response.initialized.seq
-            if (channel.updateCount(count, seq)) {
+            if (channel.updateSessionCount(sessionCount, seq)) {
                 channel.publish(
-                    ChannelEvent.Initialized(count = count),
+                    ChannelEvent.Initialized(sessionCount = sessionCount),
                 )
             }
         } else if (response.hasEvent()) {
             val event = response.event
             when (event.type) {
                 PbChannelEventType.TYPE_PRESENCE -> {
-                    val count = event.count
+                    val sessionCount = event.sessionCount
                     val seq = event.seq
-                    if (channel.updateCount(count, seq)) {
+                    if (channel.updateSessionCount(sessionCount, seq)) {
                         channel.publish(
-                            ChannelEvent.Changed(count = count),
+                            ChannelEvent.Changed(sessionCount = sessionCount),
                         )
                     }
                 }
@@ -1032,7 +1032,7 @@ public class Client(
                 }
 
                 channel.setSessionId(response.sessionId)
-                channel.updateCount(response.count, 0L)
+                channel.updateSessionCount(response.sessionCount, 0L)
                 channel.applyStatus(ResourceStatus.Attached)
 
                 val syncMode = if (isRealtime != false) {
@@ -1097,7 +1097,7 @@ public class Client(
                 return@async Result.failure(it)
             }
 
-            channel.updateCount(response.count, 0L)
+            channel.updateSessionCount(response.sessionCount, 0L)
             channel.applyStatus(ResourceStatus.Detached)
             channel.close()
 

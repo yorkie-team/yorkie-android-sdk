@@ -8,31 +8,31 @@ import org.junit.Test
 class ChannelTest {
 
     @Test
-    fun `updateCount ignores stale sequence number`() {
+    fun `updateSessionCount ignores stale sequence number`() {
         // given
         val channel = Channel("key")
-        channel.updateCount(5L, 10L)
+        channel.updateSessionCount(5L, 10L)
 
         // when
-        val updated = channel.updateCount(3L, 9L)
+        val updated = channel.updateSessionCount(3L, 9L)
 
         // then
         assertFalse(updated)
-        assertEquals(5L, channel.getCount())
+        assertEquals(5L, channel.getSessionCount())
     }
 
     @Test
-    fun `updateCount accepts seq zero as initialization bypass`() {
+    fun `updateSessionCount accepts seq zero as initialization bypass`() {
         // given
         val channel = Channel("key")
-        channel.updateCount(5L, 10L)
+        channel.updateSessionCount(5L, 10L)
 
         // when
-        val updated = channel.updateCount(2L, 0L)
+        val updated = channel.updateSessionCount(2L, 0L)
 
         // then
         assertTrue(updated)
-        assertEquals(2L, channel.getCount())
+        assertEquals(2L, channel.getSessionCount())
     }
 
     @Test

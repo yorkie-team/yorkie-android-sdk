@@ -25,6 +25,7 @@ import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.ArraySetOperation
+import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.presence.DocPresence
@@ -261,8 +262,10 @@ public class Document(
                 return@async result
             }
             val change = context.toChange()
-            val (operationInfos, newPresences, reverseOps) =
-                change.execute(root, _presences.value)
+            val localResult = change.execute(root, _presences.value)
+            val operationInfos = localResult.opInfos
+            val newPresences = localResult.newPresences
+            val reverseOps = localResult.reverseOps
 
             localChanges += change
             changeID = context.getNextId()
@@ -356,11 +359,13 @@ public class Document(
             // Execute on clone (validation)
             change.execute(clone.root, clone.presences, OpSource.UndoRedo)
             // Execute on root (real application)
-            val (opInfos, _, reverseOps) = change.execute(
+            val undoRedoResult = change.execute(
                 root,
                 _presences.value,
                 OpSource.UndoRedo,
             )
+            val opInfos = undoRedoResult.opInfos
+            val reverseOps = undoRedoResult.reverseOps
 
             val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
             if (reverseHistoryOps.isNotEmpty()) {
@@ -537,6 +542,8 @@ public class Document(
         changeID = changeID.setClocks(snapshotVector.maxLamport(), snapshotVector)
         clone = null
         removePushedLocalChanges(clientSeq)
+        internalHistory.clearUndo()
+        internalHistory.clearRedo()
         eventStream.emit(Event.Snapshot(snapshot))
     }
 
@@ -546,8 +553,8 @@ public class Document(
     private suspend fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, clone.presences).also { (_, newPresences, _) ->
-                this.clone = clone.copy(presences = newPresences ?: return@also)
+            change.execute(clone.root, clone.presences, OpSource.Remote).also { cloneResult ->
+                this.clone = clone.copy(presences = cloneResult.newPresences ?: return@also)
             }
             val actorID = change.id.actor
             var presenceEvent: PresenceChanged? = null
@@ -579,7 +586,42 @@ public class Document(
                 }
             }
 
-            val (opInfos, newPresences, _) = change.execute(root, _presences.value)
+            val remoteResult = change.execute(root, _presences.value, OpSource.Remote)
+            val opInfos = remoteResult.opInfos
+            val newPresences = remoteResult.newPresences
+
+            // Reconcile text undo/redo stack entries against remote edits.
+            // Only reconcile against changes from other clients.
+            if (change.id.actor != changeID.actor) {
+                var opInfoIndex = 0
+                for (executedOp in remoteResult.executedOperations) {
+                    if (executedOp is EditOperation) {
+                        // Collect all opInfos produced by this EditOperation.
+                        // For text edits there is at most one EditOpInfo per operation.
+                        while (opInfoIndex < remoteResult.opInfos.size) {
+                            val opInfo = remoteResult.opInfos[opInfoIndex]
+                            opInfoIndex++
+                            if (opInfo is OperationInfo.EditOpInfo) {
+                                internalHistory.reconcileTextEdit(
+                                    executedOp.parentCreatedAt,
+                                    opInfo.from,
+                                    opInfo.to,
+                                    opInfo.value.text.length,
+                                )
+                                break
+                            }
+                        }
+                    } else {
+                        // Skip opInfos for non-EditOperations
+                        while (opInfoIndex < remoteResult.opInfos.size) {
+                            val opInfo = remoteResult.opInfos[opInfoIndex]
+                            opInfoIndex++
+                            if (opInfo !is OperationInfo.EditOpInfo) break
+                        }
+                    }
+                }
+            }
+
             if (opInfos.isNotEmpty()) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }

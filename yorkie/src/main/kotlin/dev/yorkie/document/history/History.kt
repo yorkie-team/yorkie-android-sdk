@@ -2,6 +2,7 @@ package dev.yorkie.document.history
 
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.ArraySetOperation
+import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.time.TimeTicket
@@ -47,6 +48,10 @@ internal class History {
 
     fun clearRedo() {
         redoStack.clear()
+    }
+
+    fun clearUndo() {
+        undoStack.clear()
     }
 
     /**
@@ -106,6 +111,39 @@ internal class History {
                     else -> {
                         // No additional reconciliation needed
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Scans both undo and redo stacks for any [EditOperation] targeting the text
+     * element identified by [parentCreatedAt] and calls [EditOperation.reconcileOperation]
+     * with the integer offsets of the remote edit that just landed.
+     */
+    fun reconcileTextEdit(
+        parentCreatedAt: TimeTicket,
+        remoteFrom: Int,
+        remoteTo: Int,
+        remoteContentLen: Int,
+    ) {
+        reconcileTextStack(undoStack, parentCreatedAt, remoteFrom, remoteTo, remoteContentLen)
+        reconcileTextStack(redoStack, parentCreatedAt, remoteFrom, remoteTo, remoteContentLen)
+    }
+
+    private fun reconcileTextStack(
+        stack: ArrayDeque<List<HistoryOperation>>,
+        parentCreatedAt: TimeTicket,
+        remoteFrom: Int,
+        remoteTo: Int,
+        remoteContentLen: Int,
+    ) {
+        for (ops in stack) {
+            for (historyOp in ops) {
+                if (historyOp !is HistoryOperation.Op) continue
+                val op = historyOp.operation
+                if (op is EditOperation && op.parentCreatedAt == parentCreatedAt) {
+                    op.reconcileOperation(remoteFrom, remoteTo, remoteContentLen)
                 }
             }
         }

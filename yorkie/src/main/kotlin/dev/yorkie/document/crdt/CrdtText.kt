@@ -47,6 +47,7 @@ internal data class CrdtText(
 
     /**
      * Edits the given [range] with the given [value] and [attributes].
+     * Returns [TextEditResult] including [TextEditResult.removedValues] for undo support.
      */
     fun edit(
         range: RgaTreeSplitPosRange,
@@ -63,12 +64,13 @@ internal data class CrdtText(
             null
         }
 
-        val (caretPos, contentChanges, gcPairs, dataSize) = rgaTreeSplit.edit(
+        val editResult = rgaTreeSplit.edit(
             range,
             executedAt,
             textValue,
             versionVector,
         )
+        val (caretPos, contentChanges, gcPairs, dataSize, removedValues) = editResult
 
         val changes = contentChanges.map {
             TextChange(
@@ -83,8 +85,14 @@ internal data class CrdtText(
         if (value.isNotEmpty() && attributes != null) {
             changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        return TextEditResult(changes, caretPos to caretPos, gcPairs, dataSize)
+        return TextEditResult(changes, caretPos to caretPos, gcPairs, dataSize, removedValues)
     }
+
+    /**
+     * Returns the integer index of the given [pos].
+     */
+    internal fun posToIndex(pos: RgaTreeSplitPos, preferToLeft: Boolean): Int =
+        rgaTreeSplit.posToIndex(pos, preferToLeft)
 
     /**
      * Applies the style of the given [range].

@@ -7,6 +7,7 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
 import dev.yorkie.document.json.JsonTreeTest.Companion.updateAndSync
 import kotlin.test.assertEquals
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -636,6 +637,160 @@ class JsonTreeSplitMergeTest {
                 JsonTreeTest.assertTreesXmlEquals("<r><p>abcd</p></r>", d2)
             }
             JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p></r>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_cascade_delete_across_parent_after_multi_level_split() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") {
+                                element("p") { text { "ab" } }
+                                element("p") { text { "cd" } }
+                            }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals(
+                "<r><p><p>ab</p><p>cd</p></p></r>",
+                d1,
+                d2,
+            )
+
+            // d1: multi-level split at position 3 (splitLevel=2)
+            // d2: merge-delete from 1 to 6 (removes inner p1 and its content)
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(3, 3, 2)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(1, 6)
+                },
+            ) {
+                JsonTreeTest.assertTreesXmlEquals(
+                    "<r><p><p>a</p></p><p><p>b</p><p>cd</p></p></r>",
+                    d1,
+                )
+                JsonTreeTest.assertTreesXmlEquals("<r><p>cd</p></r>", d2)
+            }
+
+            JsonTreeTest.assertTreesXmlEquals("<r><p>cd</p><p></p></r>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_sequential_merge_then_split() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") { text { "ab" } }
+                            element("p") { text { "cd" } }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p><p>cd</p></r>", d1, d2)
+
+            // d1: merge two paragraphs (sequential, c2 will learn about it)
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(3, 5)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals("<r><p>abcd</p></r>", d1, d2)
+
+            // d2: split the merged paragraph at ab|cd (sequential, knows about merge)
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1),
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(3, 3, 1)
+                },
+            )
+            JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p><p>cd</p></r>", d1, d2)
+        }
+    }
+
+    @Test
+    fun test_multi_level_split_with_concurrent_merge_and_text_split() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") {
+                                element("p") { text { "ab" } }
+                                element("p") { text { "cd" } }
+                            }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals(
+                "<r><p><p>ab</p><p>cd</p></p></r>",
+                d1,
+                d2,
+            )
+
+            // d1: multi-level split at position 3 (splitLevel=2)
+            // d2: merge the two inner paragraphs (edit 1 to 6)
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(3, 3, 2)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(1, 6)
+                },
+            )
+
+            JsonTreeTest.assertTreesXmlEquals(d1.getRoot().rootTree().toXml(), d1, d2)
+        }
+    }
+
+    @Ignore("TODO: fix concurrent delete + split convergence on overlapping content")
+    @Test
+    fun test_split_with_concurrent_delete_overlapping_content() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") { text { "abcd" } }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals("<r><p>abcd</p></r>", d1, d2)
+
+            // d1: delete "bc" (positions 2-4)
+            // d2: split <p> at position 3 (between b and c) with splitLevel=1
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(2, 4)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(3, 3, 1)
+                },
+            ) {
+                JsonTreeTest.assertTreesXmlEquals("<r><p>ad</p></r>", d1)
+                JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p><p>cd</p></r>", d2)
+            }
+
+            JsonTreeTest.assertTreesXmlEquals(d1.getRoot().rootTree().toXml(), d1, d2)
         }
     }
 }

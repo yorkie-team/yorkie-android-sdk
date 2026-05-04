@@ -8,6 +8,16 @@ import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.presence.Presences
 
 /**
+ * Result of executing a [Change] against a CRDT root.
+ */
+internal data class ChangeExecutionResult(
+    val opInfos: List<OperationInfo>,
+    val newPresences: Presences?,
+    val reverseOps: List<Operation>,
+    val executedOperations: List<Operation>,
+)
+
+/**
  * Represents a unit of modification in the document.
  */
 public data class Change internal constructor(
@@ -34,7 +44,7 @@ public data class Change internal constructor(
         root: CrdtRoot,
         presences: Presences,
         source: OpSource = OpSource.Local,
-    ): Triple<List<OperationInfo>, Presences?, List<Operation>> {
+    ): ChangeExecutionResult {
         val newPresences = presenceChange?.let {
             when (presenceChange) {
                 is PresenceChange.Put -> presences + (id.actor to presenceChange.presence)
@@ -52,6 +62,6 @@ public data class Change internal constructor(
             reverseOps.addAll(0, result.reverseOps)
         }
 
-        return Triple(allOpInfos, newPresences, reverseOps)
+        return ChangeExecutionResult(allOpInfos, newPresences, reverseOps, operations)
     }
 }

@@ -101,8 +101,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
         // 4. Add removed nodes.
         val gcPairs = removedNodes.map { (_, node) -> GCPair(this, node) }
+        val removedValues = removedNodes.map { (_, node) -> node.value }
 
-        return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff)
+        return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff, removedValues)
     }
 
     /**
@@ -313,7 +314,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         return posToIndex(fromPos, false) to posToIndex(toPos, true)
     }
 
-    private fun posToIndex(pos: RgaTreeSplitPos, preferToLeft: Boolean): Int {
+    internal fun posToIndex(pos: RgaTreeSplitPos, preferToLeft: Boolean): Int {
         val absoluteID = pos.absoluteID
         val node = if (preferToLeft) {
             findFloorNodePreferToLeft(absoluteID)

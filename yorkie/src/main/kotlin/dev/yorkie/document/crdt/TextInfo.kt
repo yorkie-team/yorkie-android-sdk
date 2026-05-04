@@ -112,6 +112,7 @@ internal data class TextEditResult(
     val posRange: RgaTreeSplitPosRange,
     val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
     val dataSize: DataSize,
+    val removedValues: List<TextValue> = emptyList(),
 )
 
 internal data class TextStyleResult(

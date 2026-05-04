@@ -37,7 +37,7 @@ class ChannelTest {
             assertEquals(channelKey, channel.getKey())
             assertEquals(ResourceStatus.Detached, channel.getStatus())
             assertFalse(channel.isAttached())
-            assertEquals(0L, channel.getCount())
+            assertEquals(0L, channel.getSessionCount())
 
             // Attach channel counter
             c1.attachChannel(channel).await()
@@ -45,7 +45,7 @@ class ChannelTest {
             // Verify attached state
             assertEquals(ResourceStatus.Attached, channel.getStatus())
             assertTrue(channel.isAttached())
-            assertEquals(1L, channel.getCount())
+            assertEquals(1L, channel.getSessionCount())
 
             // Detach channel counter
             c1.detachChannel(channel).await()
@@ -78,45 +78,45 @@ class ChannelTest {
 
             // First client attaches
             c1.attachChannel(channel1).await()
-            assertEquals(1L, channel1.getCount())
+            assertEquals(1L, channel1.getSessionCount())
 
             // Second client attaches
             c2.attachChannel(channel2).await()
-            assertEquals(2L, channel2.getCount())
+            assertEquals(2L, channel2.getSessionCount())
 
             // First client should receive the update
             withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getCount() != 2L) {
+                while (channel1.getSessionCount() != 2L) {
                     delay(50)
                 }
             }
-            assertEquals(2L, channel1.getCount())
+            assertEquals(2L, channel1.getSessionCount())
 
             // Third client attaches
             c3.attachChannel(channel3).await()
-            assertEquals(3L, channel3.getCount())
+            assertEquals(3L, channel3.getSessionCount())
 
             // Wait for all clients to sync
             withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getCount() != 3L || channel2.getCount() != 3L) {
+                while (channel1.getSessionCount() != 3L || channel2.getSessionCount() != 3L) {
                     delay(50)
                 }
             }
-            assertEquals(3L, channel1.getCount())
-            assertEquals(3L, channel2.getCount())
+            assertEquals(3L, channel1.getSessionCount())
+            assertEquals(3L, channel2.getSessionCount())
 
             // One client detaches
             c2.detachChannel(channel2).await()
-            assertEquals(2L, channel2.getCount())
+            assertEquals(2L, channel2.getSessionCount())
 
             // Other clients should see the count decrease
             withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getCount() != 2L || channel3.getCount() != 2L) {
+                while (channel1.getSessionCount() != 2L || channel3.getSessionCount() != 2L) {
                     delay(50)
                 }
             }
-            assertEquals(2L, channel1.getCount())
-            assertEquals(2L, channel3.getCount())
+            assertEquals(2L, channel1.getSessionCount())
+            assertEquals(2L, channel3.getSessionCount())
 
             // Cleanup
             c1.detachChannel(channel1).await()
@@ -161,7 +161,7 @@ class ChannelTest {
 
             // Should receive initialized event
             assertIs<ChannelEvent.Initialized>(events[0])
-            assertEquals(1L, events[0].count)
+            assertEquals(1L, events[0].sessionCount)
 
             // Second client attaches
             c2.attachChannel(channel2).await()
@@ -173,7 +173,7 @@ class ChannelTest {
 
             // Should receive count-changed event
             assertIs<ChannelEvent.Changed>(events.last())
-            assertEquals(2L, events.last().count)
+            assertEquals(2L, events.last().sessionCount)
 
             // Cleanup
             collectJob.cancel()
@@ -204,24 +204,24 @@ class ChannelTest {
             c2.attachChannel(channel2).await()
 
             withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getCount() != 2L || channel2.getCount() != 2L) {
+                while (channel1.getSessionCount() != 2L || channel2.getSessionCount() != 2L) {
                     delay(50)
                 }
             }
-            assertEquals(2L, channel1.getCount())
-            assertEquals(2L, channel2.getCount())
+            assertEquals(2L, channel1.getSessionCount())
+            assertEquals(2L, channel2.getSessionCount())
 
             // One detaches
             c1.detachChannel(channel1).await()
-            assertEquals(1L, channel1.getCount())
+            assertEquals(1L, channel1.getSessionCount())
 
             // Other channel should also see the decrease
             withTimeout(GENERAL_TIMEOUT) {
-                while (channel2.getCount() != 1L) {
+                while (channel2.getSessionCount() != 1L) {
                     delay(50)
                 }
             }
-            assertEquals(1L, channel2.getCount())
+            assertEquals(1L, channel2.getSessionCount())
 
             // Cleanup
             c2.detachChannel(channel2).await()
@@ -248,7 +248,7 @@ class ChannelTest {
 
             // Attach channel counter
             c1.attachChannel(channel).await()
-            assertEquals(1L, channel.getCount())
+            assertEquals(1L, channel.getSessionCount())
 
             // Wait for 3 heartbeat cycles (3 seconds)
             // The channel should still be active because heartbeat refreshes TTL
@@ -256,7 +256,7 @@ class ChannelTest {
 
             // Verify channel is still active
             assertTrue(channel.isAttached())
-            assertEquals(1L, channel.getCount())
+            assertEquals(1L, channel.getSessionCount())
 
             // Cleanup
             c1.detachChannel(channel).await()
@@ -281,29 +281,29 @@ class ChannelTest {
 
             // Attach client1 with manual sync mode (no watch stream)
             c1.attachChannel(p1, isRealtime = false).await()
-            assertEquals(1L, p1.getCount())
+            assertEquals(1L, p1.getSessionCount())
 
             // Attach client2 with manual sync mode
             c2.attachChannel(p2, isRealtime = false).await()
-            assertEquals(2L, p2.getCount())
+            assertEquals(2L, p2.getSessionCount())
 
             // In manual mode, p1's count doesn't update automatically
             // even though p2 was attached
             delay(500)
-            assertEquals(1L, p1.getCount())
+            assertEquals(1L, p1.getSessionCount())
 
             // Must call syncAsync() explicitly to refresh TTL and fetch latest count
             c1.syncAsync(p1).await()
-            assertEquals(2L, p1.getCount())
+            assertEquals(2L, p1.getSessionCount())
 
             // Detach p2 and verify p1 doesn't auto-update
             c2.detachChannel(p2).await()
             delay(500)
-            assertEquals(2L, p1.getCount())
+            assertEquals(2L, p1.getSessionCount())
 
             // Sync to refresh TTL and fetch latest count after c2 detached
             c1.syncAsync(p1).await()
-            assertEquals(1L, p1.getCount())
+            assertEquals(1L, p1.getSessionCount())
 
             // Cleanup
             c1.detachChannel(p1).await()
@@ -332,37 +332,37 @@ class ChannelTest {
 
             // c1: Attach with realtime mode (default)
             c1.attachChannel(realtimeChannel).await()
-            assertEquals(1L, realtimeChannel.getCount())
+            assertEquals(1L, realtimeChannel.getSessionCount())
 
             // c2: Attach with manual mode
             c2.attachChannel(manualChannel, isRealtime = false).await()
-            assertEquals(2L, manualChannel.getCount())
+            assertEquals(2L, manualChannel.getSessionCount())
 
             // c1's realtime channel should automatically receive the update
             withTimeout(GENERAL_TIMEOUT) {
-                while (realtimeChannel.getCount() != 2L) {
+                while (realtimeChannel.getSessionCount() != 2L) {
                     delay(50)
                 }
             }
-            assertEquals(2L, realtimeChannel.getCount())
+            assertEquals(2L, realtimeChannel.getSessionCount())
 
             // c2's manual channel doesn't receive updates
-            assertEquals(2L, manualChannel.getCount())
+            assertEquals(2L, manualChannel.getSessionCount())
 
             // c3: Attach another client
             c3.attachChannel(thirdChannel, isRealtime = false).await()
-            assertEquals(3L, thirdChannel.getCount())
+            assertEquals(3L, thirdChannel.getSessionCount())
 
             // c1's realtime channel receives the update automatically
             withTimeout(GENERAL_TIMEOUT) {
-                while (realtimeChannel.getCount() != 3L) {
+                while (realtimeChannel.getSessionCount() != 3L) {
                     delay(50)
                 }
             }
-            assertEquals(3L, realtimeChannel.getCount())
+            assertEquals(3L, realtimeChannel.getSessionCount())
 
             // c2's manual channel still doesn't update
-            assertEquals(2L, manualChannel.getCount())
+            assertEquals(2L, manualChannel.getSessionCount())
 
             // Cleanup
             c1.detachChannel(realtimeChannel).await()

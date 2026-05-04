@@ -14,16 +14,16 @@ import kotlinx.coroutines.launch
 
 sealed interface ChannelEvent : ResourceEvent {
     /**
-     * Current count value. Zero for non-count events.
+     * Current session count value. Zero for non-count events.
      */
-    val count: Long
+    val sessionCount: Long
 
     data class Changed(
-        override val count: Long,
+        override val sessionCount: Long,
     ) : ChannelEvent
 
     data class Initialized(
-        override val count: Long,
+        override val sessionCount: Long,
     ) : ChannelEvent
 
     /**
@@ -34,7 +34,7 @@ sealed interface ChannelEvent : ResourceEvent {
         val topic: String,
         val payload: String,
     ) : ChannelEvent {
-        override val count: Long = 0L
+        override val sessionCount: Long = 0L
     }
 }
 
@@ -52,7 +52,7 @@ class Channel(
     private var sessionId: String? = null
 
     @Volatile
-    private var count = 0L
+    private var sessionCount = 0L
 
     @Volatile
     private var seq = 0L
@@ -96,25 +96,48 @@ class Channel(
     }
 
     /**
-     * `getCount` returns the current count value.
+     * `getSessionCount` returns the current online session count value.
      */
-    fun getCount(): Long {
-        return count
+    fun getSessionCount(): Long {
+        return sessionCount
     }
 
     /**
-     * `updateCount` updates the count and sequence number if the sequence is newer.
-     * Returns true if the count was updated, false if the update was ignored.
+     * `getCount` returns the current online session count value.
      */
-    fun updateCount(count: Long, seq: Long): Boolean {
+    @Deprecated(
+        "Renamed to getSessionCount",
+        replaceWith = ReplaceWith("getSessionCount()"),
+    )
+    fun getCount(): Long {
+        return getSessionCount()
+    }
+
+    /**
+     * `updateSessionCount` updates the session count and sequence number if the sequence is newer.
+     * Returns true if the session count was updated, false if the update was ignored.
+     */
+    fun updateSessionCount(sessionCount: Long, seq: Long): Boolean {
         // Always accept initialization (seq === 0)
         if (seq == 0L || seq > this.seq) {
-            this.count = count
+            this.sessionCount = sessionCount
             this.seq = seq
             return true
         }
 
         return false
+    }
+
+    /**
+     * `updateCount` updates the session count and sequence number if the sequence is newer.
+     * Returns true if the session count was updated, false if the update was ignored.
+     */
+    @Deprecated(
+        "Renamed to updateSessionCount",
+        replaceWith = ReplaceWith("updateSessionCount(sessionCount, seq)"),
+    )
+    fun updateCount(count: Long, seq: Long): Boolean {
+        return updateSessionCount(count, seq)
     }
 
     /**

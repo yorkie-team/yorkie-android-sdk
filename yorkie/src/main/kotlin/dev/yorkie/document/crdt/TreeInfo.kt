@@ -81,4 +81,10 @@ internal data class TreeOperationResult(
     val changes: List<TreeChange>,
     val gcPairs: List<GCPair<*>> = emptyList(),
     val dataSize: DataSize,
+    /**
+     * Deep-copy snapshots of top-level nodes that were deleted by this edit,
+     * captured before they were tombstoned.  Used to build the reverse
+     * [dev.yorkie.document.operation.TreeEditOperation] for undo/redo.
+     */
+    val removedNodes: List<CrdtTreeNode> = emptyList(),
 )

@@ -5,6 +5,7 @@ import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.time.TimeTicket
 
 /**
@@ -144,6 +145,39 @@ internal class History {
                 val op = historyOp.operation
                 if (op is EditOperation && op.parentCreatedAt == parentCreatedAt) {
                     op.reconcileOperation(remoteFrom, remoteTo, remoteContentLen)
+                }
+            }
+        }
+    }
+
+    /**
+     * Scans both undo and redo stacks for any [TreeEditOperation] targeting the tree
+     * element identified by [parentCreatedAt] and calls [TreeEditOperation.reconcileOperation]
+     * with the integer offsets of the remote edit that just landed.
+     */
+    fun reconcileTreeEdit(
+        parentCreatedAt: TimeTicket,
+        remoteFrom: Int,
+        remoteTo: Int,
+        remoteContentSize: Int,
+    ) {
+        reconcileTreeStack(undoStack, parentCreatedAt, remoteFrom, remoteTo, remoteContentSize)
+        reconcileTreeStack(redoStack, parentCreatedAt, remoteFrom, remoteTo, remoteContentSize)
+    }
+
+    private fun reconcileTreeStack(
+        stack: ArrayDeque<List<HistoryOperation>>,
+        parentCreatedAt: TimeTicket,
+        remoteFrom: Int,
+        remoteTo: Int,
+        remoteContentSize: Int,
+    ) {
+        for (ops in stack) {
+            for (historyOp in ops) {
+                if (historyOp !is HistoryOperation.Op) continue
+                val op = historyOp.operation
+                if (op is TreeEditOperation && op.parentCreatedAt == parentCreatedAt) {
+                    op.reconcileOperation(remoteFrom, remoteTo, remoteContentSize)
                 }
             }
         }

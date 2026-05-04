@@ -119,4 +119,6 @@ internal data class TextStyleResult(
     val textChanges: List<TextChange>,
     val gcPairs: List<GCPair<RhtNode>>,
     val dataSize: DataSize,
+    val prevAttributes: Map<String, String> = emptyMap(),
+    val attributesToRemove: List<String> = emptyList(),
 )

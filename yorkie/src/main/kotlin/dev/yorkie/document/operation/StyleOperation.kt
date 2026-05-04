@@ -14,6 +14,7 @@ internal data class StyleOperation(
     val attributes: Map<String, String>,
     override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
+    val attributesToRemove: List<String> = emptyList(),
 ) : Operation() {
 
     override val effectedCreatedAt: TimeTicket
@@ -26,19 +27,45 @@ internal data class StyleOperation(
     ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
-            val result = parentObject.style(
-                RgaTreeSplitPosRange(fromPos, toPos),
-                attributes,
-                executedAt,
-                versionVector,
-            )
-            val changes = result.textChanges
+            val allChanges = mutableListOf<dev.yorkie.document.crdt.TextChange>()
+            val reversePrevAttributes = mutableMapOf<String, String>()
+            val reverseAttrsToRemove = mutableListOf<String>()
 
-            root.acc(result.dataSize)
+            if (attributesToRemove.isNotEmpty()) {
+                val result = parentObject.removeStyle(
+                    RgaTreeSplitPosRange(fromPos, toPos),
+                    attributesToRemove,
+                    executedAt,
+                    versionVector,
+                )
+                root.acc(result.dataSize)
+                result.gcPairs.forEach(root::registerGCPair)
+                allChanges.addAll(result.textChanges)
+                reversePrevAttributes.putAll(result.prevAttributes)
+            }
 
-            result.gcPairs.forEach(root::registerGCPair)
+            if (attributes.isNotEmpty()) {
+                val result = parentObject.style(
+                    RgaTreeSplitPosRange(fromPos, toPos),
+                    attributes,
+                    executedAt,
+                    versionVector,
+                )
+                root.acc(result.dataSize)
+                result.gcPairs.forEach(root::registerGCPair)
+                allChanges.addAll(result.textChanges)
+                reversePrevAttributes.putAll(result.prevAttributes)
+                reverseAttrsToRemove.addAll(result.attributesToRemove)
+            }
+
+            val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
+                buildReverseOps(reversePrevAttributes, reverseAttrsToRemove)
+            } else {
+                emptyList()
+            }
+
             ExecutionResult(
-                opInfos = changes.map {
+                opInfos = allChanges.map {
                     OperationInfo.StyleOpInfo(
                         it.from,
                         it.to,
@@ -46,12 +73,47 @@ internal data class StyleOperation(
                         root.createPath(parentCreatedAt),
                     )
                 },
+                reverseOps = reverseOps,
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only Text can execute style")
             ExecutionResult(opInfos = emptyList())
         }
+    }
+
+    private fun buildReverseOps(
+        prevAttributes: Map<String, String>,
+        attrsToRemove: List<String>,
+    ): List<Operation> {
+        if (prevAttributes.isEmpty() && attrsToRemove.isEmpty()) return emptyList()
+        val reverseOp = when {
+            prevAttributes.isNotEmpty() && attrsToRemove.isNotEmpty() -> StyleOperation(
+                fromPos = fromPos,
+                toPos = toPos,
+                attributes = prevAttributes,
+                parentCreatedAt = parentCreatedAt,
+                executedAt = executedAt,
+                attributesToRemove = attrsToRemove,
+            )
+            attrsToRemove.isNotEmpty() -> StyleOperation(
+                fromPos = fromPos,
+                toPos = toPos,
+                attributes = emptyMap(),
+                parentCreatedAt = parentCreatedAt,
+                executedAt = executedAt,
+                attributesToRemove = attrsToRemove,
+            )
+            else -> StyleOperation(
+                fromPos = fromPos,
+                toPos = toPos,
+                attributes = prevAttributes,
+                parentCreatedAt = parentCreatedAt,
+                executedAt = executedAt,
+                attributesToRemove = emptyList(),
+            )
+        }
+        return listOf(reverseOp)
     }
 
     companion object {

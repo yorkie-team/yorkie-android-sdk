@@ -79,6 +79,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.style.attributesMap,
                 parentCreatedAt = it.style.parentCreatedAt.toTimeTicket(),
                 executedAt = it.style.executedAt.toTimeTicket(),
+                attributesToRemove = it.style.attributesToRemoveList,
             )
 
             it.hasTreeEdit() -> TreeEditOperation(
@@ -187,6 +188,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTextNodePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
+                    operation.attributesToRemove.forEach { attributesToRemove.add(it) }
                 }
             }
         }

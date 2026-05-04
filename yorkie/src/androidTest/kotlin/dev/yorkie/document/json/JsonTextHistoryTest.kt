@@ -5,6 +5,7 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -308,6 +309,103 @@ class JsonTextHistoryTest {
             val text1 = d1.getRoot().getAs<JsonText>("text").toString()
             val text2 = d2.getRoot().getAs<JsonText>("text").toString()
             assertEquals(text1, text2)
+        }
+    }
+
+    @Test
+    fun test_undo_and_redo_style_op() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, "hello")
+            }.await()
+            c1.syncAsync().await()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").style(0, 5, mapOf("bold" to "true"))
+            }.await()
+            c1.syncAsync().await()
+            assertEquals(
+                mapOf("bold" to "true"),
+                d1.getRoot().getAs<JsonText>("text").values.first().attributes,
+            )
+
+            assertTrue(d1.history.canUndo())
+            d1.history.undoAsync().await()
+            val attrsAfterUndo = d1.getRoot().getAs<JsonText>("text").values.first().attributes
+            assertNull(attrsAfterUndo["bold"])
+
+            assertTrue(d1.history.canRedo())
+            d1.history.redoAsync().await()
+            assertEquals(
+                mapOf("bold" to "true"),
+                d1.getRoot().getAs<JsonText>("text").values.first().attributes,
+            )
+        }
+    }
+
+    @Test
+    fun test_undo_style_restores_previous_attribute_value() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, "hello")
+            }.await()
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").style(0, 5, mapOf("bold" to "true"))
+            }.await()
+            c1.syncAsync().await()
+            assertEquals(
+                "true",
+                d1.getRoot().getAs<JsonText>("text").values.first().attributes["bold"],
+            )
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").style(0, 5, mapOf("bold" to "false"))
+            }.await()
+            c1.syncAsync().await()
+            assertEquals(
+                "false",
+                d1.getRoot().getAs<JsonText>("text").values.first().attributes["bold"],
+            )
+
+            d1.history.undoAsync().await()
+            assertEquals(
+                "true",
+                d1.getRoot().getAs<JsonText>("text").values.first().attributes["bold"],
+            )
+
+            d1.history.redoAsync().await()
+            assertEquals(
+                "false",
+                d1.getRoot().getAs<JsonText>("text").values.first().attributes["bold"],
+            )
+        }
+    }
+
+    @Test
+    fun test_converge_with_concurrent_style_operations() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, "hello")
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").style(0, 5, mapOf("bold" to "true"))
+            }.await()
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").style(0, 5, mapOf("italic" to "true"))
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            val attrs1 = d1.getRoot().getAs<JsonText>("text").values.first().attributes
+            val attrs2 = d2.getRoot().getAs<JsonText>("text").values.first().attributes
+            assertEquals(attrs1, attrs2)
+            assertEquals("true", attrs1["bold"])
+            assertEquals("true", attrs1["italic"])
         }
     }
 

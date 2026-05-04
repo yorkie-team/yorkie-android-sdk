@@ -350,6 +350,9 @@ internal data class CrdtTree(
                     }
                     ids.add(node.id)
                 }
+                // Record source parent for split-skip check (Fix 8).
+                node.mergedFrom = oldParent.id
+                node.mergedAt = executedAt
                 // Detach from old parent to prevent ghost references. Swallow
                 // NoSuchElementException: a cascade delete of a split sibling
                 // may have already detached the child.
@@ -403,7 +406,7 @@ internal data class CrdtTree(
             var parent = fromParent
             var left = fromLeft
             repeat(splitLevel) {
-                parent.split(this, parent.findOffset(left) + 1, issueTimeTicket)
+                parent.split(this, parent.findOffset(left) + 1, issueTimeTicket, versionVector)
                 left = parent
                 parent = parent.parent ?: return@repeat
             }
@@ -1148,6 +1151,21 @@ internal data class CrdtTreeNode(
      */
     var mergedChildIDs: MutableList<CrdtTreeNodeID>? = null
 
+    /**
+     * Runtime-only reverse pointer recording the source parent this node was
+     * moved from during a merge. Used by splitElement to keep merge-moved
+     * children in the original node instead of moving them to the split sibling
+     * when the merge is concurrent with the split.
+     */
+    var mergedFrom: CrdtTreeNodeID? = null
+
+    /**
+     * Runtime-only timestamp recording when the merge that moved this node
+     * was executed. Compared against the split editor's [VersionVector] to
+     * detect concurrency.
+     */
+    var mergedAt: TimeTicket? = null
+
     val rhtNodes: Iterable<RhtNode>
         get() = _attributes
 
@@ -1181,11 +1199,12 @@ internal data class CrdtTreeNode(
         tree: CrdtTree,
         offset: Int,
         issueTimeTicket: (() -> TimeTicket)? = null,
+        versionVector: VersionVector? = null,
     ): Pair<CrdtTreeNode?, DataSize> {
         val (split, diff) = if (isText) {
             splitText(offset, id.offset)
         } else {
-            splitElement(offset, requireNotNull(issueTimeTicket))
+            splitElement(offset, versionVector, requireNotNull(issueTimeTicket))
         }
 
         val node = this
@@ -1291,6 +1310,23 @@ internal data class CrdtTreeNode(
         }
         val nodeExisted = createdAt.lamport <= clientLamportAtChange
         return nodeExisted && (removedAt == null || executedAt > removedAt)
+    }
+
+    /**
+     * Returns true when [child] should stay in the original (left) node rather
+     * than moving to the split sibling. Vetoes the move when the child was
+     * relocated by a concurrent merge that the split editor did not yet know
+     * about (checked via [versionVector]). Local splits always know about all
+     * prior operations, so never veto.
+     */
+    override fun shouldKeepChildInLeft(
+        child: CrdtTreeNode,
+        versionVector: VersionVector?,
+    ): Boolean {
+        if (versionVector == null || versionVector.size() == 0) return false
+        val mergedAt = child.mergedAt ?: return false
+        child.mergedFrom ?: return false
+        return !versionVector.afterOrEqual(mergedAt)
     }
 
     override fun delete(node: RhtNode) {

@@ -1,6 +1,7 @@
 package dev.yorkie.util
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 
 /**
  * About `index`, `path`, `size` and `TreePos` in crdt.IndexTree.
@@ -759,7 +760,11 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         )
     }
 
-    fun splitElement(offset: Int, issueTimeTicket: () -> TimeTicket): Pair<T?, DataSize> {
+    fun splitElement(
+        offset: Int,
+        versionVector: VersionVector? = null,
+        issueTimeTicket: () -> TimeTicket,
+    ): Pair<T?, DataSize> {
         var diff = DataSize(
             data = 0,
             meta = 0,
@@ -772,11 +777,39 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         clone.updateAncestorSize(clone.paddedSize(true), true)
 
         clone.childNodes.clear()
+
+        // Fix 8: Keep merge-moved children in the original (left) node when
+        // the merge is concurrent with this split. A child should stay left if
+        // it carries a mergedFrom marker whose mergedAt ticket is not covered
+        // by the editor's versionVector (i.e. the editor did not know about
+        // the merge when it issued the split). The boundary check prevents
+        // veto when the split position itself is inside merged content.
+        val hasVersionVector = versionVector != null && versionVector.size() > 0
+        val boundaryNode = if (offset > 0) childNodes.getOrNull(offset - 1) else null
+        val boundaryIsMerged = boundaryNode != null &&
+            shouldKeepChildInLeft(boundaryNode, versionVector)
+
+        val movedToLeft = mutableListOf<T>()
         repeat(childNodes.size - offset) {
             val rightChild = childNodes.removeAt(offset)
-            clone.childNodes.add(rightChild)
-            rightChild.parent = clone
+            // Veto moving this child to the clone if it was moved here by a
+            // concurrent merge and the split did not know about it.
+            if (!boundaryIsMerged && hasVersionVector &&
+                shouldKeepChildInLeft(rightChild, versionVector)
+            ) {
+                movedToLeft.add(rightChild)
+            } else {
+                clone.childNodes.add(rightChild)
+                rightChild.parent = clone
+            }
         }
+        // Re-insert the vetoed children at the end of the left node
+        // (they stay in this.childNodes, with corrected parent pointer).
+        movedToLeft.forEach { child ->
+            childNodes.add(child)
+            child.parent = this as T
+        }
+
         visibleSize = childNodes.fold(0) { acc, child ->
             acc + child.paddedSize(false)
         }
@@ -802,6 +835,13 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             second = diff,
         )
     }
+
+    /**
+     * Returns true when [child] should be kept in the original (left) node
+     * rather than moved to the split sibling. Subclasses override this to
+     * implement merge-aware split semantics. The default always returns false.
+     */
+    open fun shouldKeepChildInLeft(child: T, versionVector: VersionVector?): Boolean = false
 
     private fun insertAfterInternal(targetNode: T, newNode: T) {
         check(!isText) {

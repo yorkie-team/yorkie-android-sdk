@@ -254,9 +254,20 @@ internal data class CrdtTree(
         ) { (node, tokenType), ended ->
             // NOTE(hackerwins): If the node overlaps as a start tag with the
             // range then we need to move the remaining children to fromParent.
+            // Fix 9: Skip merge for elements created by concurrent operations.
+            // The editor didn't know about this element, so crossing into it is
+            // an artifact of a concurrent split, not an intentional merge.
             if (tokenType == TokenType.Start && !ended) {
-                toBeMergedNodes.add(node)
-                toBeMovedToFromParents.addAll(node.children)
+                val nodeCreationKnown = if (isLocal) {
+                    true
+                } else {
+                    val createdAtVV = versionVector?.get(node.createdAt.actorID)
+                    createdAtVV != null && createdAtVV >= node.createdAt.lamport
+                }
+                if (nodeCreationKnown) {
+                    toBeMergedNodes.add(node)
+                    toBeMovedToFromParents.addAll(node.children)
+                }
             }
 
             // Compute per-node creationKnown and tombstoneKnown for LWW semantics
@@ -340,8 +351,7 @@ internal data class CrdtTree(
         // 02. Delete: delete the nodes that are marked as removed.
         val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
         nodesToBeRemoved.forEach { node ->
-            node.remove(executedAt)
-            if (node.isRemoved) {
+            if (node.remove(executedAt)) {
                 gcPairs.add(GCPair(this, node))
             }
         }
@@ -391,15 +401,13 @@ internal data class CrdtTree(
                 mergedChildIDs.forEach { childID ->
                     val child = findFloorNode(childID)
                     if (child != null && child.removedAt == null) {
-                        child.remove(executedAt)
-                        if (child.isRemoved) {
+                        if (child.remove(executedAt)) {
                             gcPairs.add(GCPair(this, child))
                         }
                         // Also tombstone descendants if the moved child is an element.
                         traverseAll(child) { n, _ ->
                             if (n !== child && n.removedAt == null) {
-                                n.remove(executedAt)
-                                if (n.isRemoved) {
+                                if (n.remove(executedAt)) {
                                     gcPairs.add(GCPair(this, n))
                                 }
                             }
@@ -1186,7 +1194,12 @@ internal data class CrdtTreeNode(
     /**
      * Clones this text node with the given [offset].
      */
-    override fun cloneText(offset: Int) = clone(offset, id.createdAt)
+    override fun cloneText(offset: Int): CrdtTreeNode {
+        return clone(offset, id.createdAt).apply {
+            mergedFrom = this@CrdtTreeNode.mergedFrom
+            mergedAt = this@CrdtTreeNode.mergedAt
+        }
+    }
 
     /**
      * Clones this element node with the given [issueTimeTicket] function.
@@ -1260,9 +1273,9 @@ internal data class CrdtTreeNode(
     }
 
     /**
-     * Marks the node as removed.
+     * Marks the node as removed. Returns true if the node was newly tombstoned.
      */
-    fun remove(executedAt: TimeTicket) {
+    fun remove(executedAt: TimeTicket): Boolean {
         val alived = removedAt == null
 
         if (alived || removedAt < executedAt) {
@@ -1271,6 +1284,7 @@ internal data class CrdtTreeNode(
         if (alived) {
             updateAncestorSize(-paddedSize())
         }
+        return alived
     }
 
     /**
@@ -1294,6 +1308,10 @@ internal data class CrdtTreeNode(
             it.removedAt = removedAt
             it.insPrevID = insPrevID
             it.insNextID = insNextID
+            it.mergedInto = mergedInto
+            it.mergedChildIDs = mergedChildIDs?.toMutableList()
+            it.mergedFrom = mergedFrom
+            it.mergedAt = mergedAt
             if (it.isText) {
                 it.value = value
             }

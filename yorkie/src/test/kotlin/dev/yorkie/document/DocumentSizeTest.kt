@@ -657,7 +657,7 @@ class DocumentSizeTest {
             actual = rightText?.dataSize,
         )
 
-        val (rightElem, diffElem) = para.splitElement(1) {
+        val (rightElem, diffElem) = para.splitElement(1, null) {
             TimeTicket.InitialTimeTicket
         }
         assertEquals(
@@ -709,7 +709,7 @@ class DocumentSizeTest {
         val left = para.children[0]
         left.splitText(5, 0)
 
-        val (rightElem, diffElem) = para.splitElement(1) {
+        val (rightElem, diffElem) = para.splitElement(1, null) {
             TimeTicket.InitialTimeTicket
         }
         assertEquals(

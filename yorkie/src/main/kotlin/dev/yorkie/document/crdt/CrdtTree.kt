@@ -329,6 +329,14 @@ internal data class CrdtTree(
         // range(from, to) into multiple ranges.
         val changes = makeDeletionChanges(tokensToBeRemoved, executedAt).toMutableList()
 
+        // Capture deep-copy snapshots of the top-level deleted nodes BEFORE they are
+        // tombstoned, so that a reverse TreeEditOperation can convert them to plain
+        // TreeNode snapshots for undo re-insertion. Only root-level removed nodes are
+        // captured; their children are already included in each node's subtree via deepCopy().
+        val removedNodes = nodesToBeRemoved
+            .filter { it.parent !in nodesToBeRemoved }
+            .map(CrdtTreeNode::deepCopy)
+
         // 02. Delete: delete the nodes that are marked as removed.
         val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
         nodesToBeRemoved.forEach { node ->
@@ -474,7 +482,7 @@ internal data class CrdtTree(
                 }
             }
         }
-        return TreeOperationResult(changes, gcPairs, diff)
+        return TreeOperationResult(changes, gcPairs, diff, removedNodes)
     }
 
     /**
@@ -1221,6 +1229,25 @@ internal data class CrdtTreeNode(
         return Pair(split, diff)
     }
 
+    /**
+     * Returns true when [child] was moved here by a merge that is concurrent
+     * with the current split operation. In that case the child should stay in
+     * the original (left) node rather than being moved to the split sibling,
+     * so that a later sequential split lands them correctly.
+     *
+     * Only applies for remote splits (non-null, non-empty [versionVector]).
+     * Local splits always know about all prior operations, so never veto.
+     */
+    override fun shouldKeepChildInLeft(
+        child: CrdtTreeNode,
+        versionVector: VersionVector?,
+    ): Boolean {
+        if (versionVector == null || versionVector.size() == 0) return false
+        val mergedAt = child.mergedAt ?: return false
+        child.mergedFrom ?: return false
+        return !versionVector.afterOrEqual(mergedAt)
+    }
+
     fun setAttributes(
         attributes: Map<String, String>,
         executedAt: TimeTicket,
@@ -1310,23 +1337,6 @@ internal data class CrdtTreeNode(
         }
         val nodeExisted = createdAt.lamport <= clientLamportAtChange
         return nodeExisted && (removedAt == null || executedAt > removedAt)
-    }
-
-    /**
-     * Returns true when [child] should stay in the original (left) node rather
-     * than moving to the split sibling. Vetoes the move when the child was
-     * relocated by a concurrent merge that the split editor did not yet know
-     * about (checked via [versionVector]). Local splits always know about all
-     * prior operations, so never veto.
-     */
-    override fun shouldKeepChildInLeft(
-        child: CrdtTreeNode,
-        versionVector: VersionVector?,
-    ): Boolean {
-        if (versionVector == null || versionVector.size() == 0) return false
-        val mergedAt = child.mergedAt ?: return false
-        child.mergedFrom ?: return false
-        return !versionVector.afterOrEqual(mergedAt)
     }
 
     override fun delete(node: RhtNode) {

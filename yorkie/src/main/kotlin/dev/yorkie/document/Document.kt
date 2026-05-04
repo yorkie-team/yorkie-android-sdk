@@ -28,6 +28,7 @@ import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
@@ -590,33 +591,70 @@ public class Document(
             val opInfos = remoteResult.opInfos
             val newPresences = remoteResult.newPresences
 
-            // Reconcile text undo/redo stack entries against remote edits.
+            // Reconcile text and tree undo/redo stack entries against remote edits.
             // Only reconcile against changes from other clients.
             if (change.id.actor != changeID.actor) {
                 var opInfoIndex = 0
                 for (executedOp in remoteResult.executedOperations) {
-                    if (executedOp is EditOperation) {
-                        // Collect all opInfos produced by this EditOperation.
-                        // For text edits there is at most one EditOpInfo per operation.
-                        while (opInfoIndex < remoteResult.opInfos.size) {
-                            val opInfo = remoteResult.opInfos[opInfoIndex]
-                            opInfoIndex++
-                            if (opInfo is OperationInfo.EditOpInfo) {
-                                internalHistory.reconcileTextEdit(
+                    when (executedOp) {
+                        is EditOperation -> {
+                            // For text edits there is at most one EditOpInfo per operation.
+                            while (opInfoIndex < remoteResult.opInfos.size) {
+                                val opInfo = remoteResult.opInfos[opInfoIndex]
+                                opInfoIndex++
+                                if (opInfo is OperationInfo.EditOpInfo) {
+                                    internalHistory.reconcileTextEdit(
+                                        executedOp.parentCreatedAt,
+                                        opInfo.from,
+                                        opInfo.to,
+                                        opInfo.value.text.length,
+                                    )
+                                    break
+                                }
+                            }
+                        }
+
+                        is TreeEditOperation -> {
+                            // For tree edits there may be multiple TreeEditOpInfos per operation
+                            // (split/merge decomposes into multiple ranges). Reconcile using the
+                            // first deletion range's from/to and the inserted node count.
+                            var firstTreeEditOpInfo: OperationInfo.TreeEditOpInfo? = null
+                            while (opInfoIndex < remoteResult.opInfos.size) {
+                                val opInfo = remoteResult.opInfos[opInfoIndex]
+                                opInfoIndex++
+                                if (opInfo is OperationInfo.TreeEditOpInfo) {
+                                    if (firstTreeEditOpInfo == null) {
+                                        firstTreeEditOpInfo = opInfo
+                                    }
+                                    // Keep consuming TreeEditOpInfos for this operation
+                                    val next = remoteResult.opInfos.getOrNull(opInfoIndex)
+                                    if (next !is OperationInfo.TreeEditOpInfo) break
+                                } else {
+                                    break
+                                }
+                            }
+                            firstTreeEditOpInfo?.let { opInfo ->
+                                val insertedSize = opInfo.nodes?.size ?: 0
+                                internalHistory.reconcileTreeEdit(
                                     executedOp.parentCreatedAt,
                                     opInfo.from,
                                     opInfo.to,
-                                    opInfo.value.text.length,
+                                    insertedSize,
                                 )
-                                break
                             }
                         }
-                    } else {
-                        // Skip opInfos for non-EditOperations
-                        while (opInfoIndex < remoteResult.opInfos.size) {
-                            val opInfo = remoteResult.opInfos[opInfoIndex]
-                            opInfoIndex++
-                            if (opInfo !is OperationInfo.EditOpInfo) break
+
+                        else -> {
+                            // Skip opInfos for non-Edit operations
+                            while (opInfoIndex < remoteResult.opInfos.size) {
+                                val opInfo = remoteResult.opInfos[opInfoIndex]
+                                opInfoIndex++
+                                if (opInfo !is OperationInfo.EditOpInfo &&
+                                    opInfo !is OperationInfo.TreeEditOpInfo
+                                ) {
+                                    break
+                                }
+                            }
                         }
                     }
                 }

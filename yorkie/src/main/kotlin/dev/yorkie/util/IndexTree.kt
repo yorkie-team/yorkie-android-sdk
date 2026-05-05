@@ -807,13 +807,13 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         }
 
         visibleSize = childNodes.fold(0) { acc, child ->
-            acc + child.paddedSize(false)
+            acc + if (child.isRemoved) 0 else child.paddedSize(false)
         }
         totalSize = childNodes.fold(0) { acc, child ->
             acc + child.paddedSize(true)
         }
         clone.visibleSize = clone.childNodes.fold(0) { acc, child ->
-            acc + child.paddedSize(false)
+            acc + if (child.isRemoved) 0 else child.paddedSize(false)
         }
         clone.totalSize = clone.childNodes.fold(0) { acc, child ->
             acc + child.paddedSize(true)

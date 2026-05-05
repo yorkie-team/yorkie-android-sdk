@@ -48,6 +48,13 @@ internal data class TreeEditOperation(
      * Not serialised to protobuf.
      */
     val removedNodeSnapshots: List<TreeNode>? = null,
+    /**
+     * Non-zero when this is a boundary-deletion op that was generated to undo a split.
+     * Set so that its own reverse (the redo) regenerates a proper split instead of
+     * re-inserting the tombstoned boundary nodes as raw content.
+     * Not serialised to protobuf.
+     */
+    var redoSplitLevel: Int = 0,
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
 
@@ -133,14 +140,23 @@ internal data class TreeEditOperation(
                         .filterIsInstance<OperationInfo.TreeEditOpInfo>()
                         .firstOrNull()
                         ?.from ?: 0
-                listOf(
-                    toReverseOperation(
-                        actualFrom,
-                        fromIndex,
-                        editContents,
-                        result.removedNodes,
-                    ),
-                )
+                val isPureL1Split =
+                    splitLevel == 1 && editContents.isNullOrEmpty() && result.removedNodes.isEmpty()
+                val reverseOp =
+                    if (isPureL1Split) {
+                        toSplitReverseOperation(tree, fromIndex)
+                    } else if (splitLevel == 0) {
+                        toReverseOperation(
+                            tree,
+                            actualFrom,
+                            fromIndex,
+                            editContents,
+                            result.removedNodes,
+                        )
+                    } else {
+                        null
+                    }
+                listOfNotNull(reverseOp)
             } else {
                 emptyList()
             }
@@ -161,13 +177,32 @@ internal data class TreeEditOperation(
      *
      * [undoFromOffset]/[undoToOffset] capture the document-index range so that
      * [reconcileOperation] can adjust them when concurrent remote edits arrive.
+     *
+     * Special case: if [redoSplitLevel] > 0, this op is a boundary-deletion
+     * that undid a split. Its redo must regenerate a proper split at the
+     * merge point rather than re-inserting raw tombstoned boundary nodes.
      */
     private fun toReverseOperation(
+        tree: CrdtTree,
         actualFrom: CrdtTreePos,
         fromIndex: Int,
         editContents: List<CrdtTreeNode>?,
         removedNodes: List<CrdtTreeNode>,
     ): TreeEditOperation {
+        if (redoSplitLevel > 0) {
+            val splitFromPos = tree.findPos(fromIndex)
+            return TreeEditOperation(
+                parentCreatedAt = parentCreatedAt,
+                fromPos = splitFromPos,
+                toPos = splitFromPos,
+                contents = null,
+                splitLevel = redoSplitLevel,
+                executedAt = executedAt,
+                undoFromOffset = fromIndex,
+                undoToOffset = fromIndex,
+            )
+        }
+
         // Document-index span occupied by what was actually inserted. For undo
         // ops this comes from the freshly-rebuilt snapshot nodes, not the
         // original [contents] (which is null on undo ops). Each node
@@ -194,6 +229,43 @@ internal data class TreeEditOperation(
             undoFromOffset = reverseFromIndex,
             undoToOffset = reverseToIndex,
             removedNodeSnapshots = snapshots,
+        )
+    }
+
+    /**
+     * Builds the reverse [TreeEditOperation] for a pure splitLevel=1 split.
+     *
+     * A split creates 2*splitLevel boundary tokens (one close + one open tag
+     * per level). The reverse is a boundary-deletion: a splitLevel=0 edit
+     * that removes those tokens, merging the split elements back together.
+     *
+     * Tags [redoSplitLevel] on the returned op so that its own reverse (the
+     * redo) regenerates a proper split rather than re-inserting raw boundary
+     * nodes as content.
+     *
+     * Returns null if the boundary indices exceed the tree size (the split
+     * was a no-op due to concurrent parent deletion).
+     */
+    private fun toSplitReverseOperation(tree: CrdtTree, preEditFromIdx: Int): TreeEditOperation? {
+        val boundarySize = 2 * splitLevel
+        val reverseFromIdx = preEditFromIdx
+        val reverseToIdx = preEditFromIdx + boundarySize
+
+        if (reverseToIdx > tree.size) return null
+
+        val reverseFromPos = tree.findPos(reverseFromIdx)
+        val reverseToPos = tree.findPos(reverseToIdx)
+
+        return TreeEditOperation(
+            parentCreatedAt = parentCreatedAt,
+            fromPos = reverseFromPos,
+            toPos = reverseToPos,
+            contents = null,
+            splitLevel = 0,
+            executedAt = executedAt,
+            undoFromOffset = reverseFromIdx,
+            undoToOffset = reverseToIdx,
+            redoSplitLevel = splitLevel,
         )
     }
 

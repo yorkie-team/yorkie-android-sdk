@@ -443,7 +443,12 @@ internal data class CrdtTree(
             var parent = fromParent
             var left = fromLeft
             repeat(splitLevel) {
-                parent.split(this, parent.findOffset(left) + 1, issueTimeTicket, versionVector)
+                parent.split(
+                    this,
+                    parent.findOffset(left, includeRemoved = true) + 1,
+                    issueTimeTicket,
+                    versionVector,
+                )
                 left = parent
                 parent = parent.parent ?: return@repeat
             }

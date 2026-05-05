@@ -791,4 +791,42 @@ class JsonTreeSplitMergeTest {
             JsonTreeTest.assertTreesXmlEquals("<r><p>a</p><p>d</p></r>", d1, d2)
         }
     }
+
+    // Regression test for https://github.com/yorkie-team/yorkie/issues/1726.
+    // When one client splits inside a block that the other client merges,
+    // replicas must converge to the same tree.
+    @Test
+    fun test_contained_split_and_merge_same_block() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        TreeBuilder.element("r") {
+                            element("p") { text { "ab" } }
+                            element("p") { text { "cd" } }
+                        },
+                    )
+                },
+                JsonTreeTest.Companion.Updater(c2, d2),
+            )
+            JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p><p>cd</p></r>", d1, d2)
+
+            // d1: split first paragraph at a|b (position 2, splitLevel=1)
+            // d2: merge both paragraphs by deleting the boundary (positions 3-5)
+            updateAndSync(
+                JsonTreeTest.Companion.Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(2, 2, 1)
+                },
+                JsonTreeTest.Companion.Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(3, 5)
+                },
+            ) {
+                JsonTreeTest.assertTreesXmlEquals("<r><p>a</p><p>b</p><p>cd</p></r>", d1)
+                JsonTreeTest.assertTreesXmlEquals("<r><p>abcd</p></r>", d2)
+            }
+
+            JsonTreeTest.assertTreesXmlEquals(d1.getRoot().rootTree().toXml(), d1, d2)
+        }
+    }
 }

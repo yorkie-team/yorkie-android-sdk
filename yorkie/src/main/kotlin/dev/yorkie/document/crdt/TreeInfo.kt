@@ -87,4 +87,14 @@ internal data class TreeOperationResult(
      * [dev.yorkie.document.operation.TreeEditOperation] for undo/redo.
      */
     val removedNodes: List<CrdtTreeNode> = emptyList(),
+    /**
+     * Previous attribute values captured from the first styled node in the
+     * range.  Used to build the reverse style operation for undo/redo.
+     */
+    val prevAttributes: Map<String, String> = emptyMap(),
+    /**
+     * Keys of attributes that did not previously exist on the first styled
+     * node.  The reverse op must remove them to restore the prior state.
+     */
+    val attributesToRemove: List<String> = emptyList(),
 )

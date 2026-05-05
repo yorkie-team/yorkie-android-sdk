@@ -279,4 +279,204 @@ class JsonTreeUndoTest {
             // canUndo() remains true after both edit reverses are popped.
         }
     }
+
+    /**
+     * Verifies undo/redo for setting an attribute that did not previously exist.
+     */
+    @Test
+    fun test_undo_and_redo_tree_style_set_new_attribute() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") { text { "AB" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            val before = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").style(0, 1, mapOf("bold" to "true"))
+            }.await()
+            c1.syncAsync().await()
+
+            val after = d1.getRoot().getAs<JsonTree>("tree").toXml()
+            assertTrue(after.contains("bold"))
+
+            d1.history.undoAsync().await()
+            assertEquals(before, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(after, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    /**
+     * Verifies undo/redo for overwriting an existing attribute.
+     */
+    @Test
+    fun test_undo_and_redo_tree_style_overwrite_attribute() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") {
+                            attr { "color" to "blue" }
+                            text { "AB" }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            val before = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").style(0, 1, mapOf("color" to "red"))
+            }.await()
+            c1.syncAsync().await()
+
+            val after = d1.getRoot().getAs<JsonTree>("tree").toXml()
+            assertTrue(after.contains("color=\"red\""))
+
+            d1.history.undoAsync().await()
+            assertEquals(before, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(after, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    /**
+     * Verifies undo/redo for removeStyle.
+     */
+    @Test
+    fun test_undo_and_redo_tree_remove_style() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") {
+                            attr { "bold" to "true" }
+                            text { "AB" }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            val before = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").removeStyle(0, 1, listOf("bold"))
+            }.await()
+            c1.syncAsync().await()
+
+            val after = d1.getRoot().getAs<JsonTree>("tree").toXml()
+            assertFalse(after.contains("bold"))
+
+            d1.history.undoAsync().await()
+            assertEquals(before, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(after, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    /**
+     * Verifies undo/redo for a chain of style operations.
+     */
+    @Test
+    fun test_undo_and_redo_tree_style_chain() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") {
+                            attr { "bold" to "true" }
+                            text { "AB" }
+                        }
+                        element("p") { text { "CD" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            val s0 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").style(0, 1, mapOf("italic" to "true"))
+            }.await()
+            c1.syncAsync().await()
+            val s1 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").style(3, 4, mapOf("color" to "red"))
+            }.await()
+            c1.syncAsync().await()
+            val s2 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.history.undoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.undoAsync().await()
+            assertEquals(s0, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(s2, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    /**
+     * Verifies undo/redo for a mixed edit + style chain.
+     */
+    @Test
+    fun test_undo_and_redo_tree_style_after_edit() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") { text { "AB" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            val s0 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(1, 1, text { "X" })
+            }.await()
+            c1.syncAsync().await()
+            val s1 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").style(0, 1, mapOf("italic" to "true"))
+            }.await()
+            c1.syncAsync().await()
+            val s2 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.history.undoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.undoAsync().await()
+            assertEquals(s0, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(s2, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
 }

@@ -105,6 +105,9 @@ internal data class CrdtTree(
         val changes = mutableListOf<TreeChange>()
 
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        val prevAttributes = mutableMapOf<String, String>()
+        val newAttrKeys = mutableListOf<String>()
+        var capturedPrev = false
         traverseInPosRange(
             fromParent = fromParent,
             fromLeft = fromLeft,
@@ -120,6 +123,18 @@ internal data class CrdtTree(
                     hasUnknownSplitSibling(node, versionVector)
                 ) {
                     return@traverseInPosRange
+                }
+
+                if (!capturedPrev) {
+                    val attrs = node.getAttrs()
+                    for ((key, _) in attributes) {
+                        if (attrs.has(key)) {
+                            prevAttributes[key] = attrs[key]!!
+                        } else {
+                            newAttrKeys.add(key)
+                        }
+                    }
+                    capturedPrev = true
                 }
 
                 val parentOfNode = requireNotNull(node.parent)
@@ -156,7 +171,13 @@ internal data class CrdtTree(
                 }
             }
         }
-        return TreeOperationResult(changes, gcPairs, diff)
+        return TreeOperationResult(
+            changes,
+            gcPairs,
+            diff,
+            prevAttributes = prevAttributes,
+            attributesToRemove = newAttrKeys,
+        )
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {
@@ -629,6 +650,8 @@ internal data class CrdtTree(
 
         val changes = mutableListOf<TreeChange>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        val prevAttributes = mutableMapOf<String, String>()
+        var capturedPrev = false
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, tokenType), _ ->
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
@@ -643,6 +666,16 @@ internal data class CrdtTree(
                     hasUnknownSplitSibling(node, versionVector)
                 ) {
                     return@traverseInPosRange
+                }
+
+                if (!capturedPrev) {
+                    val attrs = node.getAttrs()
+                    for (key in attributeToRemove) {
+                        if (attrs.has(key)) {
+                            prevAttributes[key] = attrs[key]!!
+                        }
+                    }
+                    capturedPrev = true
                 }
 
                 attributeToRemove.forEach { key ->
@@ -665,7 +698,7 @@ internal data class CrdtTree(
                 ).let(changes::add)
             }
         }
-        return TreeOperationResult(changes, gcPairs, diff)
+        return TreeOperationResult(changes, gcPairs, diff, prevAttributes = prevAttributes)
     }
 
     private fun traverseInPosRange(

@@ -1276,10 +1276,12 @@ internal data class CrdtTreeNode(
     }
 
     /**
-     * Returns true when [child] was moved here by a merge that is concurrent
-     * with the current split operation. In that case the child should stay in
-     * the original (left) node rather than being moved to the split sibling,
-     * so that a later sequential split lands them correctly.
+     * Returns true when [child] was moved here by a concurrent merge and
+     * its merge source is a child of this node. When the source is local
+     * to this level the content must stay in the original (left) node so
+     * that it is not incorrectly split away. When the source is external
+     * (e.g. a sibling that was merged in) the child flows naturally to the
+     * split (right) node.
      *
      * Only applies for remote splits (non-null, non-empty [versionVector]).
      * Local splits always know about all prior operations, so never veto.
@@ -1287,11 +1289,13 @@ internal data class CrdtTreeNode(
     override fun shouldKeepChildInLeft(
         child: CrdtTreeNode,
         versionVector: VersionVector?,
+        allChildren: List<CrdtTreeNode>,
     ): Boolean {
         if (versionVector == null || versionVector.size() == 0) return false
         val mergedAt = child.mergedAt ?: return false
-        child.mergedFrom ?: return false
-        return !versionVector.afterOrEqual(mergedAt)
+        val mergedFrom = child.mergedFrom ?: return false
+        if (versionVector.afterOrEqual(mergedAt)) return false
+        return allChildren.any { sibling -> sibling.id == mergedFrom }
     }
 
     fun setAttributes(

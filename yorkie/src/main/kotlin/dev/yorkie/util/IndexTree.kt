@@ -778,24 +778,20 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
         clone.childNodes.clear()
 
-        // Fix 8: Keep merge-moved children in the original (left) node when
-        // the merge is concurrent with this split. A child should stay left if
-        // it carries a mergedFrom marker whose mergedAt ticket is not covered
-        // by the editor's versionVector (i.e. the editor did not know about
-        // the merge when it issued the split). The boundary check prevents
-        // veto when the split position itself is inside merged content.
+        // Fix 8 (revised): Keep merge-moved children in the original (left)
+        // node when the merge is concurrent with this split. The decision is
+        // per-child: if the child's merge source is itself a child of this
+        // node, the content was local to this level and must stay left. If
+        // the source is external (e.g., a sibling element that was merged),
+        // the content flows naturally to the split (right) node.
         val hasVersionVector = versionVector != null && versionVector.size() > 0
-        val boundaryNode = if (offset > 0) childNodes.getOrNull(offset - 1) else null
-        val boundaryIsMerged = boundaryNode != null &&
-            shouldKeepChildInLeft(boundaryNode, versionVector)
+        val allChildNodes = childNodes.toList()
 
         val movedToLeft = mutableListOf<T>()
         repeat(childNodes.size - offset) {
             val rightChild = childNodes.removeAt(offset)
-            // Veto moving this child to the clone if it was moved here by a
-            // concurrent merge and the split did not know about it.
-            if (!boundaryIsMerged && hasVersionVector &&
-                shouldKeepChildInLeft(rightChild, versionVector)
+            if (hasVersionVector &&
+                shouldKeepChildInLeft(rightChild, versionVector, allChildNodes)
             ) {
                 movedToLeft.add(rightChild)
             } else {
@@ -840,8 +836,14 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
      * Returns true when [child] should be kept in the original (left) node
      * rather than moved to the split sibling. Subclasses override this to
      * implement merge-aware split semantics. The default always returns false.
+     *
+     * @param allChildren snapshot of all children (left + right) before the split.
      */
-    open fun shouldKeepChildInLeft(child: T, versionVector: VersionVector?): Boolean = false
+    open fun shouldKeepChildInLeft(
+        child: T,
+        versionVector: VersionVector?,
+        allChildren: List<T>,
+    ): Boolean = false
 
     private fun insertAfterInternal(targetNode: T, newNode: T) {
         check(!isText) {

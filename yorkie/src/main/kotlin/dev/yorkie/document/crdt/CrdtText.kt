@@ -131,10 +131,24 @@ internal data class CrdtText(
         }
 
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        val prevAttributes = mutableMapOf<String, String>()
+        val newAttributeKeys = mutableListOf<String>()
+        var capturedPrev = false
         val changes = toBeStyleds
             .filterNot { it.isRemoved }
             .map { node ->
                 val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
+                if (!capturedPrev) {
+                    val attrs = node.value.getAttrs()
+                    for ((key, _) in attributes) {
+                        if (attrs.has(key)) {
+                            prevAttributes[key] = attrs[key]!!
+                        } else {
+                            newAttributeKeys.add(key)
+                        }
+                    }
+                    capturedPrev = true
+                }
                 attributes.forEach {
                     val prev = node.value.setAttribute(it.key, it.value, executedAt).prev
                     prev?.let {
@@ -156,7 +170,71 @@ internal data class CrdtText(
                 )
             }
 
-        return TextStyleResult(changes, gcPairs, diff)
+        return TextStyleResult(changes, gcPairs, diff, prevAttributes, newAttributeKeys)
+    }
+
+    /**
+     * Removes style attributes in [attributesToRemove] from nodes in [range].
+     * Returns [TextStyleResult] with previous values of removed attributes for reverse op construction.
+     */
+    @SuppressLint("VisibleForTests")
+    fun removeStyle(
+        range: RgaTreeSplitPosRange,
+        attributesToRemove: List<String>,
+        executedAt: TimeTicket,
+        versionVector: VersionVector? = null,
+    ): TextStyleResult {
+        var diff = DataSize(data = 0, meta = 0)
+
+        val (_, toRight, diffTo) = rgaTreeSplit.findNodeWithSplit(range.second, executedAt)
+        val (_, fromRight, diffFrom) = rgaTreeSplit.findNodeWithSplit(range.first, executedAt)
+
+        diff = addDataSizes(diff, diffTo, diffFrom)
+
+        val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
+        val toBeStyleds = nodes.mapNotNull { node ->
+            val actorID = node.createdAt.actorID
+            val clientLamportAtChange = versionVector?.let {
+                versionVector.get(actorID) ?: 0L
+            } ?: MAX_LAMPORT
+
+            node.takeIf { it.canStyle(executedAt, clientLamportAtChange) }
+        }
+
+        val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        val prevAttributes = mutableMapOf<String, String>()
+        var capturedPrev = false
+        val changes = toBeStyleds
+            .filterNot { it.isRemoved }
+            .map { node ->
+                val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
+                if (!capturedPrev) {
+                    val attrs = node.value.getAttrs()
+                    for (key in attributesToRemove) {
+                        if (attrs.has(key)) {
+                            prevAttributes[key] = attrs[key]!!
+                        }
+                    }
+                    capturedPrev = true
+                }
+                for (key in attributesToRemove) {
+                    val removedNodes = node.value.getAttrs().remove(key, executedAt)
+                    for (rhtNode in removedNodes) {
+                        gcPairs.add(GCPair(node.value, rhtNode))
+                        diff = addDataSizes(diff, rhtNode.dataSize)
+                    }
+                }
+                TextChange(
+                    TextChangeType.Style,
+                    executedAt.actorID,
+                    fromIndex,
+                    toIndex,
+                    null,
+                    emptyMap(),
+                )
+            }
+
+        return TextStyleResult(changes, gcPairs, diff, prevAttributes)
     }
 
     /**

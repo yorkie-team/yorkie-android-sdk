@@ -479,4 +479,204 @@ class JsonTreeUndoTest {
             assertEquals(s2, d1.getRoot().getAs<JsonTree>("tree").toXml())
         }
     }
+
+    /**
+     * Verifies undo/redo for splitLevel=1 split at front/middle/back positions.
+     */
+    @Test
+    fun test_undo_and_redo_split_at_front() {
+        runSplitUndoRedoCase(
+            splitIdx = 1,
+            afterXml = "<doc><p></p><p>ABCD</p></doc>",
+        )
+    }
+
+    @Test
+    fun test_undo_and_redo_split_at_middle() {
+        runSplitUndoRedoCase(
+            splitIdx = 3,
+            afterXml = "<doc><p>AB</p><p>CD</p></doc>",
+        )
+    }
+
+    @Test
+    fun test_undo_and_redo_split_at_back() {
+        runSplitUndoRedoCase(
+            splitIdx = 5,
+            afterXml = "<doc><p>ABCD</p><p></p></doc>",
+        )
+    }
+
+    /**
+     * Verifies undo-redo-undo cycle for splitLevel=1 split returns to the
+     * pre-split state.
+     */
+    @Test
+    fun test_undo_redo_undo_split_at_middle() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") { text { "ABCD" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            val before = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(3, 3, 1)
+            }.await()
+            c1.syncAsync().await()
+
+            d1.history.undoAsync().await()
+            d1.history.redoAsync().await()
+            d1.history.undoAsync().await()
+            assertEquals(before, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    /**
+     * Verifies undo/redo for chained ops: split -> insert-text.
+     */
+    @Test
+    fun test_undo_and_redo_split_then_insert_text() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") { text { "ABCD" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            val s0 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(3, 3, 1)
+            }.await()
+            c1.syncAsync().await()
+            val s1 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(1, 1, text { "X" })
+            }.await()
+            c1.syncAsync().await()
+            val s2 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.history.undoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            d1.history.undoAsync().await()
+            assertEquals(s0, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            d1.history.redoAsync().await()
+            assertEquals(s2, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    /**
+     * Verifies undo/redo for chained ops: split -> split.
+     */
+    @Test
+    fun test_undo_and_redo_split_then_split() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") { text { "ABCD" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            val s0 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(3, 3, 1)
+            }.await()
+            c1.syncAsync().await()
+            val s1 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(2, 2, 1)
+            }.await()
+            c1.syncAsync().await()
+            val s2 = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.history.undoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            d1.history.undoAsync().await()
+            assertEquals(s0, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(s1, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            d1.history.redoAsync().await()
+            assertEquals(s2, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    /**
+     * Verifies that the redo stack is cleared when a new edit is made after a
+     * split undo.
+     */
+    @Test
+    fun test_split_undo_clears_redo_stack_on_new_edit() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") { text { "ABCD" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(3, 3, 1)
+            }.await()
+            c1.syncAsync().await()
+
+            d1.history.undoAsync().await()
+            assertTrue(d1.history.canRedo())
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(1, 1, text { "Z" })
+            }.await()
+            c1.syncAsync().await()
+
+            assertFalse(d1.history.canRedo())
+        }
+    }
+
+    private fun runSplitUndoRedoCase(splitIdx: Int, afterXml: String) {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "tree",
+                    element("doc") {
+                        element("p") { text { "ABCD" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            val before = d1.getRoot().getAs<JsonTree>("tree").toXml()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(splitIdx, splitIdx, 1)
+            }.await()
+            c1.syncAsync().await()
+            assertEquals(afterXml, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.undoAsync().await()
+            assertEquals(before, d1.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals(afterXml, d1.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
 }

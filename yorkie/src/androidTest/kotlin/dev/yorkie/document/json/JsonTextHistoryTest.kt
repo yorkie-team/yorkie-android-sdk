@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -425,6 +426,90 @@ class JsonTextHistoryTest {
 
             // After sync (no snapshot triggered), the undo stack remains intact.
             assertTrue(d1.history.canUndo())
+        }
+    }
+
+    // Case 3 correctness: d1 deletes [4,6)="45", d2 deletes [2,8)="234567"
+    // (d2's range fully contains d1's). After both undo, the expected content
+    // is "0123456789", but the undo mechanism produces "012345674589" because
+    // each client deep-copies and re-inserts its removed nodes as new CRDT
+    // nodes — the overlapping "45" is re-inserted twice.
+    //
+    // Fixing this requires un-tombstone (resurrect) semantics or node-ID-based
+    // overlap detection. Tracked as a known limitation.
+    @Ignore("known limitation: overlapping undo duplicates content; see RTCOLLABPLATFORM-652")
+    @Test
+    fun test_case3_both_undo_of_overlapping_deletes_restores_original() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewText("t").edit(0, 0, "0123456789")
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("t").edit(4, 6, "")
+            }.await()
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("t").edit(2, 8, "")
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            d1.history.undoAsync().await()
+            d2.history.undoAsync().await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            val text1 = d1.getRoot().getAs<JsonText>("t").toString()
+            val text2 = d2.getRoot().getAs<JsonText>("t").toString()
+            assertEquals(text1, text2, "convergence")
+            assertEquals("0123456789", text1, "content correctness after both undo")
+        }
+    }
+
+    // Case 5 correctness: d1 deletes [4,8)="4567", d2 deletes [2,6)="2345"
+    // (partial overlap at "45"). After both undo, the expected content is
+    // "0123456789", but the undo mechanism produces "012345456789" because the
+    // overlapping "45" is re-inserted twice — once by each client's undo.
+    //
+    // Same root cause as Case 3. Tracked as a known limitation.
+    @Ignore("known limitation: overlapping undo duplicates content; see RTCOLLABPLATFORM-652")
+    @Test
+    fun test_case5_both_undo_of_partially_overlapping_deletes_restores_original() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewText("t").edit(0, 0, "0123456789")
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("t").edit(4, 8, "")
+            }.await()
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("t").edit(2, 6, "")
+            }.await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            d1.history.undoAsync().await()
+            d2.history.undoAsync().await()
+
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            val text1 = d1.getRoot().getAs<JsonText>("t").toString()
+            val text2 = d2.getRoot().getAs<JsonText>("t").toString()
+            assertEquals(text1, text2, "convergence")
+            assertEquals("0123456789", text1, "content correctness after both undo")
         }
     }
 }

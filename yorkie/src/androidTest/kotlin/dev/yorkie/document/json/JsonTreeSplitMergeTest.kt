@@ -7,7 +7,6 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
 import dev.yorkie.document.json.JsonTreeTest.Companion.updateAndSync
 import kotlin.test.assertEquals
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -759,7 +758,6 @@ class JsonTreeSplitMergeTest {
         }
     }
 
-    @Ignore("TODO: fix concurrent delete + split convergence on overlapping content")
     @Test
     fun test_split_with_concurrent_delete_overlapping_content() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
@@ -790,7 +788,7 @@ class JsonTreeSplitMergeTest {
                 JsonTreeTest.assertTreesXmlEquals("<r><p>ab</p><p>cd</p></r>", d2)
             }
 
-            JsonTreeTest.assertTreesXmlEquals(d1.getRoot().rootTree().toXml(), d1, d2)
+            JsonTreeTest.assertTreesXmlEquals("<r><p>a</p><p>d</p></r>", d1, d2)
         }
     }
 }

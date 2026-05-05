@@ -510,6 +510,53 @@ class ConverterTest {
         assertEquals(document.getRoot().tree().toXml(), obj.toXml())
     }
 
+    @Test
+    fun `should persist merge state across bytes roundtrip`() {
+        // given: a tree where one child was moved by a merge
+        val ticket0 = InitialTimeTicket
+        val ticket1 = TimeTicket(lamport = 1, delimiter = 0u, actorID = ActorID.INITIAL_ACTOR_ID)
+        val ticket2 = TimeTicket(lamport = 2, delimiter = 0u, actorID = ActorID.INITIAL_ACTOR_ID)
+        val ticket3 = TimeTicket(lamport = 3, delimiter = 0u, actorID = ActorID.INITIAL_ACTOR_ID)
+
+        val rootID = CrdtTreeNodeID(ticket0, 0)
+        val targetID = CrdtTreeNodeID(ticket1, 0)
+        val sourceID = CrdtTreeNodeID(ticket2, 0)
+        val childID = CrdtTreeNodeID(ticket3, 0)
+
+        val root = CrdtTreeElement(rootID, DEFAULT_ROOT_TYPE)
+        val target = CrdtTreeElement(targetID, "p")
+        val source = CrdtTreeElement(sourceID, "p")
+        val child = CrdtTreeText(childID, "hello")
+
+        root.append(target)
+        root.append(source)
+        target.append(child)
+
+        // simulate a merge: child moved from source to target
+        child.mergedFrom = sourceID
+        child.mergedAt = ticket2
+        source.mergedInto = targetID
+        source.mergedChildIDs = mutableListOf(childID)
+        source.remove(ticket2)
+
+        val original = CrdtTree(root, ticket0)
+
+        // when: roundtrip through bytes
+        val bytes = original.toByteString()
+        val restored = bytes.toCrdtTree()
+
+        // then: mergedFrom and mergedAt survive on the moved child
+        val restoredTarget = restored.findFloorNode(targetID)
+        val restoredChild = restoredTarget?.allChildren?.firstOrNull()
+        assertEquals(sourceID, restoredChild?.mergedFrom)
+        assertEquals(ticket2, restoredChild?.mergedAt)
+
+        // then: mergedInto is rebuilt on the tombstoned source
+        val restoredSource = restored.findFloorNode(sourceID)
+        assertEquals(targetID, restoredSource?.mergedInto)
+        assertEquals(listOf(childID), restoredSource?.mergedChildIDs?.toList())
+    }
+
     private class TestOperation(
         override var parentCreatedAt: TimeTicket,
         override var executedAt: TimeTicket,

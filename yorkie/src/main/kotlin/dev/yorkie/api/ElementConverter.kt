@@ -11,6 +11,7 @@ import dev.yorkie.api.v1.JSONElementKt.tree
 import dev.yorkie.api.v1.NodeAttr
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.jSONElementSimple
+import dev.yorkie.api.v1.mergedAtOrNull
 import dev.yorkie.api.v1.movedAtOrNull
 import dev.yorkie.api.v1.nodeAttr
 import dev.yorkie.api.v1.rGANode
@@ -248,6 +249,7 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
 }
 
 internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
+    val pbNode = this
     val id = id.toCrdtTreeNodeID()
     val convertedRemovedAt = removedAtOrNull?.toTimeTicket()
     return if (type == IndexTreeNode.DEFAULT_TEXT_TYPE) {
@@ -260,12 +262,16 @@ internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
         )
     }.apply {
         convertedRemovedAt?.let(::remove)
-        if (hasInsPrevId()) {
-            insPrevID = insPrevId.toCrdtTreeNodeID()
+        if (pbNode.hasInsPrevId()) {
+            insPrevID = pbNode.insPrevId.toCrdtTreeNodeID()
         }
-        if (hasInsNextId()) {
-            insNextID = insNextId.toCrdtTreeNodeID()
+        if (pbNode.hasInsNextId()) {
+            insNextID = pbNode.insNextId.toCrdtTreeNodeID()
         }
+        if (pbNode.hasMergedFrom()) {
+            mergedFrom = pbNode.mergedFrom.toCrdtTreeNodeID()
+        }
+        mergedAt = pbNode.mergedAtOrNull?.toTimeTicket() ?: convertedRemovedAt
     }
 }
 
@@ -367,6 +373,12 @@ internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
                 }
                 depth = nodeDepth
                 attributes.putAll(node.rhtNodes.toPBRht())
+                node.mergedFrom?.let {
+                    mergedFrom = it.toPBTreeNodeID()
+                }
+                node.mergedAt?.let {
+                    mergedAt = it.toPBTimeTicket()
+                }
             }
             add(pbTreeNode)
         }

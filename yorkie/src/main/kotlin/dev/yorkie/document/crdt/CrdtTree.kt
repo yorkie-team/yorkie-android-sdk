@@ -58,6 +58,22 @@ internal data class CrdtTree(
         indexTree.traverseAll { node, _ ->
             nodeMapByID[node.id] = node
         }
+        rebuildMergeState()
+    }
+
+    private fun rebuildMergeState() {
+        indexTree.traverseAll { node, _ ->
+            val mergedFromID = node.mergedFrom ?: return@traverseAll
+            val source = findFloorNode(mergedFromID) ?: return@traverseAll
+            val target = node.parent ?: return@traverseAll
+            source.mergedInto = target.id
+            val ids = source.mergedChildIDs ?: mutableListOf<CrdtTreeNodeID>().also {
+                source.mergedChildIDs = it
+            }
+            if (!ids.contains(node.id)) {
+                ids.add(node.id)
+            }
+        }
     }
 
     val size: Int

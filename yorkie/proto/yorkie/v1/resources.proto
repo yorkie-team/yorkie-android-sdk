@@ -254,6 +254,8 @@ message TreeNode {
   TreeNodeID ins_next_id = 6;
   int32 depth = 7;
   map<string, NodeAttr> attributes = 8;
+  TreeNodeID merged_from = 9;
+  TimeTicket merged_at = 10;
 }
 
 message TreeNodes {

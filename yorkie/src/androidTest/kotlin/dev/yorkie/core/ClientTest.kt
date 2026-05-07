@@ -844,16 +844,17 @@ class ClientTest {
                 root.setNewText("t").edit(0, 0, "a")
             }.await()
 
+            fun JsonObject.rootText() = getAs<JsonText>("t")
+
             withTimeout(GENERAL_TIMEOUT) {
-                while (d2SyncEvents.isEmpty()) {
+                while (d2SyncEvents.isEmpty() ||
+                    runCatching { d2.getRoot().rootText().toString() }.getOrNull() != "a"
+                ) {
                     delay(50)
                 }
             }
 
-            fun JsonObject.rootText() = getAs<JsonText>("t")
-
             assertIs<SyncStatusChanged.Synced>(d2SyncEvents.last())
-            delay(100L)
             assertEquals("a", d1.getRoot().rootText().toString())
             assertEquals("a", d2.getRoot().rootText().toString())
 

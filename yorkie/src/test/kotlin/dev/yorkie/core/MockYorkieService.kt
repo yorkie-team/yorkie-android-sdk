@@ -33,12 +33,10 @@ import dev.yorkie.api.v1.RefreshChannelRequest
 import dev.yorkie.api.v1.RefreshChannelResponse
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.RemoveDocumentResponse
+import dev.yorkie.api.v1.ResourceDescriptor
 import dev.yorkie.api.v1.ValueType
-import dev.yorkie.api.v1.WatchChannelRequest
-import dev.yorkie.api.v1.WatchChannelResponse
-import dev.yorkie.api.v1.WatchDocumentRequest
-import dev.yorkie.api.v1.WatchDocumentResponse
-import dev.yorkie.api.v1.WatchDocumentResponseKt.initialization
+import dev.yorkie.api.v1.WatchRequest
+import dev.yorkie.api.v1.WatchResponse
 import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.activateClientResponse
 import dev.yorkie.api.v1.attachChannelResponse
@@ -47,18 +45,23 @@ import dev.yorkie.api.v1.broadcastResponse
 import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.channelEvent
+import dev.yorkie.api.v1.channelInit
+import dev.yorkie.api.v1.channelWatchEvent
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachChannelResponse
 import dev.yorkie.api.v1.detachDocumentResponse
 import dev.yorkie.api.v1.docEvent
+import dev.yorkie.api.v1.docWatchEvent
+import dev.yorkie.api.v1.documentInit
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.pushPullChangesResponse
 import dev.yorkie.api.v1.refreshChannelResponse
 import dev.yorkie.api.v1.removeDocumentResponse
-import dev.yorkie.api.v1.watchChannelInitialized
-import dev.yorkie.api.v1.watchChannelResponse
-import dev.yorkie.api.v1.watchDocumentResponse
+import dev.yorkie.api.v1.resourceInit
+import dev.yorkie.api.v1.watchEvent
+import dev.yorkie.api.v1.watchInitialization
+import dev.yorkie.api.v1.watchResponse
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtPrimitive
@@ -117,7 +120,6 @@ class MockYorkieService(
             )
         }
         if (request.changePack.documentKey == AUTH_ERROR_DOCUMENT_KEY) {
-            // Create ErrorInfo with unauthenticated error code
             val errorInfo = ErrorInfo.newBuilder()
                 .putMetadata("code", ErrUnauthenticated.codeString)
                 .build()
@@ -226,11 +228,11 @@ class MockYorkieService(
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    override suspend fun watchDocument(
+    override suspend fun watch(
         headers: Headers,
-    ): ServerOnlyStreamInterface<WatchDocumentRequest, WatchDocumentResponse> {
-        return object : ServerOnlyStreamInterface<WatchDocumentRequest, WatchDocumentResponse> {
-            private var responseChannel = Channel<WatchDocumentResponse>()
+    ): ServerOnlyStreamInterface<WatchRequest, WatchResponse> {
+        return object : ServerOnlyStreamInterface<WatchRequest, WatchResponse> {
+            private var responseChannel = Channel<WatchResponse>()
 
             override fun isClosed(): Boolean {
                 return responseChannel.isClosedForSend
@@ -244,9 +246,9 @@ class MockYorkieService(
                 responseChannel.close()
             }
 
-            override fun responseChannel(): ReceiveChannel<WatchDocumentResponse> {
+            override fun responseChannel(): ReceiveChannel<WatchResponse> {
                 return responseChannel.takeUnless { it.isClosedForReceive || it.isClosedForSend }
-                    ?: Channel<WatchDocumentResponse>().also { responseChannel = it }
+                    ?: Channel<WatchResponse>().also { responseChannel = it }
             }
 
             override fun responseHeaders(): Deferred<Headers> {
@@ -257,56 +259,134 @@ class MockYorkieService(
                 return CompletableDeferred(emptyMap())
             }
 
-            override suspend fun sendAndClose(input: WatchDocumentRequest): Result<Unit> {
+            override suspend fun sendAndClose(input: WatchRequest): Result<Unit> {
                 return runCatching {
-                    val key = input.documentId
                     val clientId = input.clientId
+                    val isDocumentWatch = input.resourcesList.any {
+                        it.resourceCase == ResourceDescriptor.ResourceCase.DOCUMENT
+                    }
                     CoroutineScope(Dispatchers.Default).launch {
-                        if (responseChannel.isClosedForSend) {
-                            return@launch
+                        if (responseChannel.isClosedForSend) return@launch
+                        if (isDocumentWatch) {
+                            handleDocumentWatch(input, clientId)
+                        } else {
+                            handleChannelWatch()
                         }
-                        responseChannel.trySend(
-                            watchDocumentResponse {
-                                initialization = initialization {
-                                    clientIds.add(TEST_ACTOR_ID)
-                                }
-                            },
-                        )
-                        delay(50)
-                        if (key == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
-                            responseChannel.close(
-                                ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!),
+                    }
+                }
+            }
+
+            private suspend fun handleDocumentWatch(input: WatchRequest, clientId: String) {
+                val documentId = input.resourcesList
+                    .firstOrNull { it.resourceCase == ResourceDescriptor.ResourceCase.DOCUMENT }
+                    ?.document?.documentId ?: return
+
+                responseChannel.trySend(
+                    watchResponse {
+                        initialization = watchInitialization {
+                            resourceInits.add(
+                                resourceInit {
+                                    documentInit = documentInit {
+                                        this.documentId = documentId
+                                        clientIds.add(TEST_ACTOR_ID)
+                                    }
+                                },
                             )
-                            return@launch
                         }
-                        responseChannel.trySend(
-                            watchDocumentResponse {
+                    },
+                )
+                delay(50)
+                if (documentId == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
+                    responseChannel.close(
+                        ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!),
+                    )
+                    return
+                }
+                responseChannel.trySend(
+                    watchResponse {
+                        event = watchEvent {
+                            docEvent = docWatchEvent {
+                                this.documentId = documentId
                                 event = docEvent {
                                     type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED
                                     publisher = clientId
                                 }
-                            },
-                        )
-                        delay(1_000)
-                        responseChannel.trySend(
-                            watchDocumentResponse {
+                            }
+                        }
+                    },
+                )
+                delay(1_000)
+                responseChannel.trySend(
+                    watchResponse {
+                        event = watchEvent {
+                            docEvent = docWatchEvent {
+                                this.documentId = documentId
                                 event = docEvent {
                                     type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED
                                     publisher = clientId
                                 }
-                            },
-                        )
-                        delay(2_000)
-                        responseChannel.trySend(
-                            watchDocumentResponse {
+                            }
+                        }
+                    },
+                )
+                delay(2_000)
+                responseChannel.trySend(
+                    watchResponse {
+                        event = watchEvent {
+                            docEvent = docWatchEvent {
+                                this.documentId = documentId
                                 event = docEvent {
                                     type = DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED
                                     publisher = clientId
                                 }
-                            },
-                        )
-                    }
+                            }
+                        }
+                    },
+                )
+            }
+
+            private suspend fun handleChannelWatch() {
+                responseChannel.trySend(
+                    watchResponse {
+                        initialization = watchInitialization {
+                            resourceInits.add(
+                                resourceInit {
+                                    channelInit = channelInit {}
+                                },
+                            )
+                        }
+                    },
+                )
+                delay(50)
+                repeat(3) {
+                    responseChannel.trySend(
+                        watchResponse {
+                            event = watchEvent {
+                                channelEvent = channelWatchEvent {
+                                    event = channelEvent {
+                                        type = PbChannelEventType.TYPE_PRESENCE
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    delay(1_000)
                 }
+                delay(500)
+                responseChannel.trySend(
+                    watchResponse {
+                        event = watchEvent {
+                            channelEvent = channelWatchEvent {
+                                event = channelEvent {
+                                    type = PbChannelEventType.TYPE_BROADCAST
+                                    publisher = ""
+                                    topic = "test-topic"
+                                    payload = ByteString.copyFromUtf8("test-payload")
+                                }
+                            }
+                        }
+                    },
+                )
             }
         }
     }
@@ -342,93 +422,6 @@ class MockYorkieService(
             headers = emptyMap(),
             trailers = emptyMap(),
         )
-    }
-
-    @OptIn(DelicateCoroutinesApi::class)
-    override suspend fun watchChannel(
-        headers: Headers,
-    ): ServerOnlyStreamInterface<WatchChannelRequest, WatchChannelResponse> {
-        return object : ServerOnlyStreamInterface<WatchChannelRequest, WatchChannelResponse> {
-            private var responseChannel =
-                kotlinx.coroutines.channels.Channel<WatchChannelResponse>()
-
-            override fun isClosed(): Boolean {
-                return responseChannel.isClosedForSend
-            }
-
-            override fun isReceiveClosed(): Boolean {
-                return responseChannel.isClosedForReceive
-            }
-
-            override suspend fun receiveClose() {
-                responseChannel.close()
-            }
-
-            override fun responseChannel(): ReceiveChannel<WatchChannelResponse> {
-                return responseChannel.takeUnless { it.isClosedForReceive || it.isClosedForSend }
-                    ?: kotlinx.coroutines.channels.Channel<WatchChannelResponse>()
-                        .also { responseChannel = it }
-            }
-
-            override fun responseHeaders(): Deferred<Headers> {
-                return CompletableDeferred(emptyMap())
-            }
-
-            override fun responseTrailers(): Deferred<Headers> {
-                return CompletableDeferred(emptyMap())
-            }
-
-            override suspend fun sendAndClose(input: WatchChannelRequest): Result<Unit> {
-                return runCatching {
-                    CoroutineScope(Dispatchers.Default).launch {
-                        if (responseChannel.isClosedForSend) {
-                            return@launch
-                        }
-                        responseChannel.trySend(
-                            watchChannelResponse {
-                                initialized = watchChannelInitialized {}
-                            },
-                        )
-                        delay(50)
-                        responseChannel.trySend(
-                            watchChannelResponse {
-                                event = channelEvent {
-                                    type = PbChannelEventType.TYPE_PRESENCE
-                                }
-                            },
-                        )
-                        delay(1_000)
-                        responseChannel.trySend(
-                            watchChannelResponse {
-                                event = channelEvent {
-                                    type = PbChannelEventType.TYPE_PRESENCE
-                                }
-                            },
-                        )
-                        delay(2_000)
-                        responseChannel.trySend(
-                            watchChannelResponse {
-                                event = channelEvent {
-                                    type = PbChannelEventType.TYPE_PRESENCE
-                                }
-                            },
-                        )
-                        delay(500)
-                        responseChannel.trySend(
-                            watchChannelResponse {
-                                event = channelEvent {
-                                    type = PbChannelEventType.TYPE_BROADCAST
-                                    publisher = input.clientId
-                                    topic = "test-topic"
-                                    payload =
-                                        ByteString.copyFromUtf8("test-payload")
-                                }
-                            },
-                        )
-                    }
-                }
-            }
-        }
     }
 
     override suspend fun removeDocument(

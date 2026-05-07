@@ -782,7 +782,11 @@ class DocPresenceTest {
                 d1.events.filterIsInstance<Others>().toList(d1Events)
             }
 
-            delay(1000)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
 
             assertEquals(
                 expected = 1,

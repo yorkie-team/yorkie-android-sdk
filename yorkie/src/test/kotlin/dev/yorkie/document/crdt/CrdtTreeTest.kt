@@ -443,11 +443,9 @@ class CrdtTreeTest {
 
         val targetID = issuePos()
         val sourceID = issuePos()
-        val childID = issuePos()
         val mergeTicket = issueTime()
 
         para.mergedInto = targetID
-        para.mergedChildIDs = mutableListOf(childID)
         text.mergedFrom = sourceID
         text.mergedAt = mergeTicket
 
@@ -456,7 +454,6 @@ class CrdtTreeTest {
 
         // then
         assertEquals(targetID, clone.mergedInto)
-        assertEquals(listOf(childID), clone.mergedChildIDs)
         val clonedText = clone.allChildren.first()
         assertEquals(sourceID, clonedText.mergedFrom)
         assertEquals(mergeTicket, clonedText.mergedAt)

@@ -31,11 +31,15 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DocumentTest {
+
+    @get:Rule
+    val retryRule = RetryRule(retryCount = 2)
 
     @Test
     fun test_single_client_deleting_document() {

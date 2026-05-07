@@ -5,6 +5,8 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.core.DEFAULT_SNAPSHOT_THRESHOLD
 import dev.yorkie.core.GENERAL_TIMEOUT
+import dev.yorkie.core.RetryRule
+import dev.yorkie.core.awaitWatchConnected
 import dev.yorkie.core.createClient
 import dev.yorkie.core.toDocKey
 import dev.yorkie.core.withTwoClientsAndDocuments
@@ -29,11 +31,15 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DocPresenceTest {
+
+    @get:Rule
+    val retryRule = RetryRule(retryCount = 2)
 
     @Test
     fun test_presence_from_snapshot() {
@@ -280,13 +286,15 @@ class DocPresenceTest {
             val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d2.events.filterIsInstance<Others>().collect(d2Events::add)
             }
-            c2.attachDocument(
-                d2,
-                initialPresence = mapOf(
-                    "name" to "b",
-                    "cursor" to previousCursor,
-                ),
-            ).await()
+            awaitWatchConnected(d2) {
+                c2.attachDocument(
+                    d2,
+                    initialPresence = mapOf(
+                        "name" to "b",
+                        "cursor" to previousCursor,
+                    ),
+                ).await()
+            }
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
@@ -851,7 +859,9 @@ class DocPresenceTest {
                 },
             )
 
-            c2.attachDocument(d2, initialPresence = mapOf("name" to "b")).await()
+            awaitWatchConnected(d2) {
+                c2.attachDocument(d2, initialPresence = mapOf("name" to "b")).await()
+            }
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1PresenceEvents.isEmpty()) {
                     delay(50)

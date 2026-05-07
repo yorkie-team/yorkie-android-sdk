@@ -536,7 +536,6 @@ class ConverterTest {
         child.mergedFrom = sourceID
         child.mergedAt = ticket2
         source.mergedInto = targetID
-        source.mergedChildIDs = mutableListOf(childID)
         source.remove(ticket2)
 
         val original = CrdtTree(root, ticket0)
@@ -554,7 +553,6 @@ class ConverterTest {
         // then: mergedInto is rebuilt on the tombstoned source
         val restoredSource = restored.findFloorNode(sourceID)
         assertEquals(targetID, restoredSource?.mergedInto)
-        assertEquals(listOf(childID), restoredSource?.mergedChildIDs?.toList())
     }
 
     private class TestOperation(

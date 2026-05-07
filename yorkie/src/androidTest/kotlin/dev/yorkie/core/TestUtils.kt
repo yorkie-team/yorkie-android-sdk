@@ -5,7 +5,13 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.time.VersionVector
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 
 const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
 const val GENERAL_TIMEOUT = 15_000L
@@ -195,6 +201,31 @@ fun withThreeClientsAndDocuments(
         client2.close()
         client3.close()
     }
+}
+
+/**
+ * Awaits the next [Document.Event.StreamConnectionChanged.Connected] event on
+ * [document]. Uses an UNDISPATCHED collector that subscribes before [block]
+ * runs, so the event is not missed even if it fires synchronously inside the
+ * block.
+ *
+ * Use after attaching a peer document when the next assertion depends on the
+ * watch stream being established (e.g. expecting a Watched event for the peer).
+ */
+suspend fun awaitWatchConnected(
+    document: Document,
+    timeoutMs: Long = GENERAL_TIMEOUT,
+    block: suspend () -> Unit,
+) = coroutineScope {
+    val connected = launch(start = CoroutineStart.UNDISPATCHED) {
+        withTimeout(timeoutMs) {
+            document.events
+                .filterIsInstance<Document.Event.StreamConnectionChanged>()
+                .first { it == Document.Event.StreamConnectionChanged.Connected }
+        }
+    }
+    block()
+    connected.join()
 }
 
 fun versionVectorHelper(

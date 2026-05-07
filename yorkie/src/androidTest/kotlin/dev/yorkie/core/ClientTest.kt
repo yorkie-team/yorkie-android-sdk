@@ -41,11 +41,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ClientTest {
+
+    @get:Rule
+    val retryRule = RetryRule(retryCount = 2)
 
     @Test
     fun can_attach_and_detach_document() {

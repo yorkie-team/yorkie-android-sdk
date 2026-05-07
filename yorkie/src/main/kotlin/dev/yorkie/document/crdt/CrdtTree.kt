@@ -66,12 +66,8 @@ internal data class CrdtTree(
             val mergedFromID = node.mergedFrom ?: return@traverseAll
             val source = findFloorNode(mergedFromID) ?: return@traverseAll
             val target = node.parent ?: return@traverseAll
-            source.mergedInto = target.id
-            val ids = source.mergedChildIDs ?: mutableListOf<CrdtTreeNodeID>().also {
-                source.mergedChildIDs = it
-            }
-            if (!ids.contains(node.id)) {
-                ids.add(node.id)
+            if (source.mergedInto == null) {
+                source.mergedInto = target.id
             }
         }
     }
@@ -395,16 +391,8 @@ internal data class CrdtTree(
 
         // 03. Merge: move the nodes that are marked as moved.
         toBeMovedToFromParents.filter { it.removedAt == null }.forEach { node ->
-            // Record the child ID on its actual source parent only.
             val oldParent = node.parent
             if (oldParent != null) {
-                val src = toBeMergedNodes.firstOrNull { it === oldParent }
-                if (src != null) {
-                    val ids = src.mergedChildIDs ?: mutableListOf<CrdtTreeNodeID>().also {
-                        src.mergedChildIDs = it
-                    }
-                    ids.add(node.id)
-                }
                 // Record source parent for split-skip check (Fix 8).
                 node.mergedFrom = oldParent.id
                 node.mergedAt = executedAt
@@ -429,28 +417,28 @@ internal data class CrdtTree(
         // Skip when mergedInto points to fromParent (concurrent merge).
         nodesToBeRemoved.forEach { node ->
             val mergedInto = node.mergedInto
-            val mergedChildIDs = node.mergedChildIDs
             if (mergedInto != null &&
-                !mergedChildIDs.isNullOrEmpty() &&
                 node !in toBeMergedNodes &&
                 mergedInto != fromParent.id
             ) {
-                mergedChildIDs.forEach { childID ->
-                    val child = findFloorNode(childID)
-                    if (child != null && child.removedAt == null) {
-                        if (child.remove(executedAt)) {
-                            gcPairs.add(GCPair(this, child))
-                        }
-                        // Also tombstone descendants if the moved child is an element.
-                        traverseAll(child) { n, _ ->
-                            if (n !== child && n.removedAt == null) {
-                                if (n.remove(executedAt)) {
-                                    gcPairs.add(GCPair(this, n))
+                val mergeTarget = findFloorNode(mergedInto) ?: return@forEach
+                mergeTarget.allChildren
+                    .filter { it.mergedFrom == node.id }
+                    .forEach { child ->
+                        if (child.removedAt == null) {
+                            if (child.remove(executedAt)) {
+                                gcPairs.add(GCPair(this, child))
+                            }
+                            // Also tombstone descendants if the moved child is an element.
+                            traverseAll(child) { n, _ ->
+                                if (n !== child && n.removedAt == null) {
+                                    if (n.remove(executedAt)) {
+                                        gcPairs.add(GCPair(this, n))
+                                    }
                                 }
                             }
                         }
                     }
-                }
             }
         }
 
@@ -775,19 +763,17 @@ internal data class CrdtTree(
         if (realParent.isRemoved && isLeftMost && mergedIntoID != null) {
             val mergeTarget = findFloorNode(mergedIntoID)
             if (mergeTarget != null && !mergeTarget.isRemoved) {
-                val mergedChildIDs = realParent.mergedChildIDs
-                if (!mergedChildIDs.isNullOrEmpty()) {
-                    val firstChild = findFloorNode(mergedChildIDs.first())
-                    if (firstChild?.parent == mergeTarget) {
-                        // Use allChildren consistently to avoid visible/total offset mismatch.
-                        val allCh = mergeTarget.allChildren
-                        val offset = allCh.indexOf(firstChild)
-                        val redirectedLeft = if (offset <= 0) mergeTarget else allCh[offset - 1]
-                        return Pair(
-                            first = Pair(mergeTarget, redirectedLeft),
-                            second = diff,
-                        )
-                    }
+                val allCh = mergeTarget.allChildren
+                val firstChild = allCh.firstOrNull { child ->
+                    child.mergedFrom == realParent.id
+                }
+                if (firstChild != null) {
+                    val offset = allCh.indexOf(firstChild)
+                    val redirectedLeft = if (offset <= 0) mergeTarget else allCh[offset - 1]
+                    return Pair(
+                        first = Pair(mergeTarget, redirectedLeft),
+                        second = diff,
+                    )
                 }
                 return Pair(
                     first = Pair(mergeTarget, mergeTarget),
@@ -1215,13 +1201,6 @@ internal data class CrdtTreeNode(
     var mergedInto: CrdtTreeNodeID? = null
 
     /**
-     * Runtime-only IDs of children moved during a merge. Propagates
-     * concurrent deletes of this node to children already relocated under
-     * [mergedInto].
-     */
-    var mergedChildIDs: MutableList<CrdtTreeNodeID>? = null
-
-    /**
      * Runtime-only reverse pointer recording the source parent this node was
      * moved from during a merge. Used by splitElement to keep merge-moved
      * children in the original node instead of moving them to the split sibling
@@ -1367,7 +1346,6 @@ internal data class CrdtTreeNode(
             it.insPrevID = insPrevID
             it.insNextID = insNextID
             it.mergedInto = mergedInto
-            it.mergedChildIDs = mergedChildIDs?.toMutableList()
             it.mergedFrom = mergedFrom
             it.mergedAt = mergedAt
             if (it.isText) {

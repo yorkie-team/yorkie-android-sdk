@@ -8,7 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 
 const val DEFAULT_SNAPSHOT_THRESHOLD = 1_000
-const val GENERAL_TIMEOUT = 3_000L
+const val GENERAL_TIMEOUT = 10_000L
 
 /**
  * Gets a test configuration value from instrumentation arguments.

@@ -17,21 +17,22 @@ import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.DocEventType
-import dev.yorkie.api.v1.WatchChannelResponse
-import dev.yorkie.api.v1.WatchDocumentResponse
+import dev.yorkie.api.v1.WatchResponse
 import dev.yorkie.api.v1.YorkieServiceClient
 import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.attachChannelRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.broadcastRequest
+import dev.yorkie.api.v1.channelDescriptor
 import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachChannelRequest
 import dev.yorkie.api.v1.detachDocumentRequest
+import dev.yorkie.api.v1.documentDescriptor
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.refreshChannelRequest
 import dev.yorkie.api.v1.removeDocumentRequest
-import dev.yorkie.api.v1.watchChannelRequest
-import dev.yorkie.api.v1.watchDocumentRequest
+import dev.yorkie.api.v1.resourceDescriptor
+import dev.yorkie.api.v1.watchRequest
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.AuthError
 import dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod.PushPull
@@ -395,8 +396,8 @@ public class Client(
     }
 
     /**
-     * runWatchLoop() runs the watch loop for the given document. The watch loop
-     * listens to the events of the given document from the server.
+     * Runs the watch loop for the given resource. The watch loop
+     * listens to events from the server via the unified Watch RPC.
      */
     private fun runWatchLoop(key: String) {
         scope.launch(activationJob) {
@@ -411,17 +412,9 @@ public class Client(
             attachment.watchJobHolder = WatchJobHolder(
                 attachment.resource.getKey(),
                 when (attachment.resource) {
-                    is Document -> {
-                        createDocumentWatchJob(attachment)
-                    }
-
-                    is Channel -> {
-                        createChannelWatchJob(attachment)
-                    }
-
-                    else -> {
-                        throw IllegalArgumentException("attachment resource type is not correct")
-                    }
+                    is Document -> createDocumentWatchJob(attachment)
+                    is Channel -> createChannelWatchJob(attachment)
+                    else -> throw IllegalArgumentException("unknown attachment resource type")
                 },
             )
         }
@@ -439,20 +432,18 @@ public class Client(
                 latestStream.safeClose()
 
                 val stream = withTimeoutOrNull(streamTimeout) {
-                    service.watchDocument(
-                        documentKey.attachmentBasedRequestHeader,
-                    ).also {
+                    service.watch(documentKey.attachmentBasedRequestHeader).also {
                         latestStream = it
                     }
                 } ?: continue
 
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                    val channel = stream.responseChannel()
+                    val responseChannel = stream.responseChannel()
                     while (!stream.isReceiveClosed() &&
-                        !channel.isClosedForReceive && shouldContinue
+                        !responseChannel.isClosedForReceive && shouldContinue
                     ) {
                         withTimeoutOrNull(streamTimeout) {
-                            val receiveResult = channel.receiveCatching()
+                            val receiveResult = responseChannel.receiveCatching()
                             receiveResult.onSuccess {
                                 handleWatchDocumentResponse(
                                     documentKey = documentKey,
@@ -464,13 +455,12 @@ public class Client(
                                     stream.safeClose()
                                     return@onFailure
                                 }
-                                shouldContinue =
-                                    handleWatchDocumentStreamFailure(
-                                        document = document,
-                                        stream = stream,
-                                        cause = it,
-                                        cancelled = attachment.cancelled,
-                                    )
+                                shouldContinue = handleWatchDocumentStreamFailure(
+                                    document = document,
+                                    stream = stream,
+                                    cause = it,
+                                    cancelled = attachment.cancelled,
+                                )
                             }.onClosed {
                                 handleWatchDocumentStreamFailure(
                                     document = document,
@@ -492,15 +482,17 @@ public class Client(
                     }
                 }
                 stream.sendAndClose(
-                    watchDocumentRequest {
+                    watchRequest {
                         clientId = requireClientId()
-                        documentId = attachment.resourceId
+                        resources += resourceDescriptor {
+                            this.document = documentDescriptor {
+                                documentId = attachment.resourceId
+                            }
+                        }
                     },
                 )
 
-                document.publish(
-                    StreamConnectionChanged.Connected,
-                )
+                document.publish(StreamConnectionChanged.Connected)
 
                 if (attachment.changeEventReceived != null) {
                     attachment.changeEventReceived = true
@@ -518,28 +510,37 @@ public class Client(
         }
     }
 
-    private suspend fun handleWatchDocumentResponse(
-        documentKey: String,
-        response: WatchDocumentResponse,
-    ) {
+    private suspend fun handleWatchDocumentResponse(documentKey: String, response: WatchResponse) {
         if (response.hasInitialization()) {
             val document = attachments[documentKey]?.resource as? Document ?: return
-            val clientIDs = response.initialization.clientIdsList
-            document.publishEvent(
-                Initialized(
-                    document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
-                ),
-            )
-            document.setOnlineClients(clientIDs.toSet())
+            for (ri in response.initialization.resourceInitsList) {
+                if (!ri.hasDocumentInit()) continue
+                val clientIDs = ri.documentInit.clientIdsList
+                document.publishEvent(
+                    Initialized(
+                        document.allPresences.value.filterKeys { it in clientIDs }.asPresences(),
+                    ),
+                )
+                document.setOnlineClients(clientIDs.toSet())
+                val selfId = requireClientId()
+                for (clientID in document.allPresences.value.keys) {
+                    if (clientID != selfId && clientID !in clientIDs) {
+                        document.clearPresence(clientID)
+                    }
+                }
+            }
             return
         }
 
+        if (!response.hasEvent()) return
         val watchEvent = response.event
-        val eventType = checkNotNull(watchEvent.type)
-        // only single key will be received since 0.3.1 server.
+        if (!watchEvent.hasDocEvent()) return
+
+        val docWatchEvent = watchEvent.docEvent
+        val eventType = checkNotNull(docWatchEvent.event.type)
         val attachment = attachments[documentKey] ?: return
         val document = attachment.resource as? Document ?: return
-        val publisher = watchEvent.publisher
+        val publisher = docWatchEvent.event.publisher
 
         when (eventType) {
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_WATCHED -> {
@@ -548,8 +549,6 @@ public class Client(
                 ) {
                     return
                 }
-                // NOTE(chacha912): We added to onlineClients, but we won't trigger watched event
-                // unless we also know their initial presence data at this point.
                 val presence = document.allPresences.value[publisher]
                 if (presence != null) {
                     document.publishEvent(Others.Watched(PresenceInfo(publisher, presence)))
@@ -558,12 +557,10 @@ public class Client(
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
-                // NOTE(chacha912): There is no presence,
-                // when PresenceChange(clear) is applied before unwatching. In that case,
-                // the 'unwatched' event is triggered while handling the PresenceChange.
                 val presence = document.presences.value[publisher] ?: return
                 document.publishEvent(Others.Unwatched(PresenceInfo(publisher, presence)))
                 document.removeOnlineClient(publisher)
+                document.clearPresence(publisher)
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {
@@ -573,8 +570,8 @@ public class Client(
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_BROADCAST -> {
-                val topic = response.event.body.topic
-                val payload = response.event.body.payload.toStringUtf8()
+                val topic = docWatchEvent.event.body.topic
+                val payload = docWatchEvent.event.body.payload.toStringUtf8()
                 document.publishEvent(
                     Document.Event.Broadcast(
                         actorID = publisher,
@@ -591,8 +588,8 @@ public class Client(
     }
 
     /**
-     * handleWatchStreamFailure() handles the failure of the watch stream.
-     * return true if the stream should be reconnected, false otherwise.
+     * Handles a failure on the document watch stream.
+     * Returns true if the stream should be reconnected, false otherwise.
      */
     private suspend fun handleWatchDocumentStreamFailure(
         document: Document,
@@ -604,16 +601,13 @@ public class Client(
         stream.safeClose()
 
         cause?.let {
-            sendWatchAttachmentResourceStreamException(
-                tag = "Client.WatchDocument",
-                t = it,
-            )
+            sendWatchAttachmentResourceStreamException(tag = "Client.Watch", t = it)
         }
 
         if (handleDocumentAuthenticationError(
                 exception = cause,
                 document = document,
-                method = AuthError.AuthErrorMethod.WatchDocument,
+                method = AuthError.AuthErrorMethod.Watch,
             ) && !cancelled
         ) {
             coroutineContext.ensureActive()
@@ -627,9 +621,7 @@ public class Client(
 
     private suspend fun onWatchDocumentStreamCanceled(document: Document) {
         if (document.getStatus() == ResourceStatus.Attached && status.value is Status.Activated) {
-            document.publishEvent(
-                Initialized(document.presences.value),
-            )
+            document.publishEvent(Initialized(document.presences.value))
             document.setOnlineClients(emptySet())
             document.publishEvent(StreamConnectionChanged.Disconnected)
         }
@@ -647,9 +639,7 @@ public class Client(
                 latestStream.safeClose()
 
                 val stream = withTimeoutOrNull(streamTimeout) {
-                    service.watchChannel(
-                        channelKey.attachmentBasedRequestHeader,
-                    ).also {
+                    service.watch(channelKey.attachmentBasedRequestHeader).also {
                         latestStream = it
                     }
                 } ?: continue
@@ -661,22 +651,18 @@ public class Client(
                         withTimeoutOrNull(streamTimeout) {
                             val receiveResult = responseChannel.receiveCatching()
                             receiveResult.onSuccess {
-                                handleWatchChannelResponse(
-                                    channel = channel,
-                                    response = it,
-                                )
+                                handleWatchChannelResponse(channel = channel, response = it)
                                 shouldContinue = true
                             }.onFailure {
                                 if (receiveResult.isClosed) {
                                     stream.safeClose()
                                     return@onFailure
                                 }
-                                shouldContinue =
-                                    handleWatchChannelStreamFailure(
-                                        stream = stream,
-                                        cause = it,
-                                        cancelled = attachment.cancelled,
-                                    )
+                                shouldContinue = handleWatchChannelStreamFailure(
+                                    stream = stream,
+                                    cause = it,
+                                    cancelled = attachment.cancelled,
+                                )
                             }.onClosed {
                                 handleWatchChannelStreamFailure(
                                     stream = stream,
@@ -696,9 +682,13 @@ public class Client(
                     }
                 }
                 stream.sendAndClose(
-                    watchChannelRequest {
+                    watchRequest {
                         clientId = requireClientId()
-                        this.channelKey = channelKey
+                        resources += resourceDescriptor {
+                            this.channel = channelDescriptor {
+                                this.channelKey = channelKey
+                            }
+                        }
                     },
                 )
                 streamJob.join()
@@ -712,47 +702,51 @@ public class Client(
         }
     }
 
-    private fun handleWatchChannelResponse(channel: Channel, response: WatchChannelResponse) {
-        if (response.hasInitialized()) {
-            val sessionCount = response.initialized.sessionCount
-            val seq = response.initialized.seq
-            if (channel.updateSessionCount(sessionCount, seq)) {
+    private fun handleWatchChannelResponse(channel: Channel, response: WatchResponse) {
+        if (response.hasInitialization()) {
+            for (ri in response.initialization.resourceInitsList) {
+                if (!ri.hasChannelInit()) continue
+                val sessionCount = ri.channelInit.sessionCount
+                val seq = ri.channelInit.seq
+                if (channel.updateSessionCount(sessionCount, seq)) {
+                    channel.publish(ChannelEvent.Initialized(sessionCount = sessionCount))
+                }
+            }
+            return
+        }
+
+        if (!response.hasEvent()) return
+        val watchEvent = response.event
+        if (!watchEvent.hasChannelEvent()) return
+
+        val event = watchEvent.channelEvent.event
+        when (event.type) {
+            PbChannelEventType.TYPE_PRESENCE -> {
+                val sessionCount = event.sessionCount
+                val seq = event.seq
+                if (channel.updateSessionCount(sessionCount, seq)) {
+                    channel.publish(ChannelEvent.Changed(sessionCount = sessionCount))
+                }
+            }
+
+            PbChannelEventType.TYPE_BROADCAST -> {
                 channel.publish(
-                    ChannelEvent.Initialized(sessionCount = sessionCount),
+                    ChannelEvent.Broadcast(
+                        actorID = event.publisher.takeIf { it.isNotEmpty() },
+                        topic = event.topic,
+                        payload = event.payload.toStringUtf8(),
+                    ),
                 )
             }
-        } else if (response.hasEvent()) {
-            val event = response.event
-            when (event.type) {
-                PbChannelEventType.TYPE_PRESENCE -> {
-                    val sessionCount = event.sessionCount
-                    val seq = event.seq
-                    if (channel.updateSessionCount(sessionCount, seq)) {
-                        channel.publish(
-                            ChannelEvent.Changed(sessionCount = sessionCount),
-                        )
-                    }
-                }
 
-                PbChannelEventType.TYPE_BROADCAST -> {
-                    channel.publish(
-                        ChannelEvent.Broadcast(
-                            actorID = event.publisher.takeIf { it.isNotEmpty() },
-                            topic = event.topic,
-                            payload = event.payload.toStringUtf8(),
-                        ),
-                    )
-                }
-
-                else -> {
-                    // nothing to do
-                }
+            else -> {
+                // nothing to do
             }
         }
     }
 
     /**
-     * handleWatchChannelStreamFailure() handles the failure of the channel watch stream.
+     * Handles a failure on the channel watch stream.
      * Returns true if the stream should be reconnected, false otherwise.
      */
     private suspend fun handleWatchChannelStreamFailure(
@@ -763,10 +757,7 @@ public class Client(
         stream.safeClose()
 
         cause?.let {
-            sendWatchAttachmentResourceStreamException(
-                tag = "Client.WatchChannel",
-                t = it,
-            )
+            sendWatchAttachmentResourceStreamException(tag = "Client.Watch", t = it)
         }
 
         val handleAuthenticationError =

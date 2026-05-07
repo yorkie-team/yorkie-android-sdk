@@ -840,6 +840,10 @@ public class Document(
         onlineClients.value -= actorID
     }
 
+    internal fun clearPresence(actorID: String) {
+        _presences.value = _presences.value - actorID
+    }
+
     /**
      * `getVersionVector` returns the version vector of document
      */
@@ -1012,7 +1016,7 @@ public class Document(
         ) : Event {
             enum class AuthErrorMethod(val value: String) {
                 PushPull("PushPull"),
-                WatchDocument("WatchDocument"),
+                Watch("Watch"),
                 Broadcast("Broadcast"),
             }
         }

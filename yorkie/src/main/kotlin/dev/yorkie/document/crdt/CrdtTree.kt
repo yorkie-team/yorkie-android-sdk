@@ -199,9 +199,10 @@ internal data class CrdtTree(
     private fun toCrdtTreePos(
         parentNode: CrdtTreeNode,
         leftSiblingNode: CrdtTreeNode,
+        includeRemoved: Boolean = false,
     ): TreePos<CrdtTreeNode> {
         return when {
-            parentNode.isRemoved -> {
+            !includeRemoved && parentNode.isRemoved -> {
                 var child = parentNode
                 var parent = parentNode
                 while (parent.isRemoved) {
@@ -209,15 +210,15 @@ internal data class CrdtTree(
                     parent = child.parent ?: break
                 }
 
-                val childOffset = parent.findOffset(child)
+                val childOffset = parent.findOffset(child, includeRemoved)
                 TreePos(parent, childOffset)
             }
 
             parentNode == leftSiblingNode -> TreePos(parentNode, 0)
 
             else -> {
-                var offset = parentNode.findOffset(leftSiblingNode)
-                if (!leftSiblingNode.isRemoved) {
+                var offset = parentNode.findOffset(leftSiblingNode, includeRemoved)
+                if (includeRemoved || !leftSiblingNode.isRemoved) {
                     if (leftSiblingNode.isText) {
                         return TreePos(leftSiblingNode, leftSiblingNode.paddedSize)
                     } else {
@@ -271,6 +272,35 @@ internal data class CrdtTree(
         val fromIndex = toIndex(fromParent, fromLeft)
         val fromPath = toPath(fromParent, fromLeft)
 
+        // §3 Range Narrowing — when fromLeft and toLeft are in different
+        // parents (due to a concurrent element split), follow fromLeft's
+        // insNextID chain to find a split sibling in toParent and narrow the
+        // traversal range. The original fromParent/fromLeft are preserved for
+        // merge, split, and insert steps. VV-independent for clone/root
+        // consistency.
+        var collectFromParent = fromParent
+        var collectFromLeft = fromLeft
+        if (fromLeft !== fromParent && fromParent !== toParent) {
+            var current = fromLeft
+            while (true) {
+                val nextID = current.insNextID ?: break
+                val next = findFloorNode(nextID) ?: break
+                if (next.isText) break
+                if (next.parent === toParent) {
+                    // Skip narrowing when toLeft === toParent (leftmost child
+                    // position, offset 0). The narrowed collectFromLeft would
+                    // be a child at offset >= 1, producing a backwards range
+                    // that suppresses the intended merge.
+                    if (toLeft !== toParent) {
+                        collectFromLeft = next
+                        collectFromParent = toParent
+                    }
+                    break
+                }
+                current = next
+            }
+        }
+
         val nodesToBeRemoved = mutableListOf<CrdtTreeNode>()
         val tokensToBeRemoved = mutableListOf<CrdtTreeToken>()
         val toBeMovedToFromParents = mutableListOf<CrdtTreeNode>()
@@ -280,17 +310,22 @@ internal data class CrdtTree(
         val isLocal = versionVector == null || versionVector.size() == 0
 
         traverseInPosRange(
-            fromParent = fromParent,
-            fromLeft = fromLeft,
+            fromParent = collectFromParent,
+            fromLeft = collectFromLeft,
             toParent = toParent,
             toLeft = toLeft,
+            includeRemoved = true,
         ) { (node, tokenType), ended ->
             // NOTE(hackerwins): If the node overlaps as a start tag with the
             // range then we need to move the remaining children to fromParent.
             // Fix 9: Skip merge for elements created by concurrent operations.
             // The editor didn't know about this element, so crossing into it is
             // an artifact of a concurrent split, not an intentional merge.
-            if (tokenType == TokenType.Start && !ended) {
+            // Also skip already-tombstoned nodes: when a prior merge moved their
+            // children away, treating them as a fresh merge boundary blocks the
+            // cascade-delete (03-1) from propagating the delete to those moved
+            // children. Only live nodes need the merge treatment.
+            if (tokenType == TokenType.Start && !ended && node.removedAt == null) {
                 val nodeCreationKnown = if (isLocal) {
                     true
                 } else {
@@ -715,14 +750,15 @@ internal data class CrdtTree(
         fromLeft: CrdtTreeNode,
         toParent: CrdtTreeNode,
         toLeft: CrdtTreeNode,
+        includeRemoved: Boolean = false,
         callback: (CrdtTreeToken, Boolean) -> Unit,
     ) {
-        val fromIndex = toIndex(fromParent, fromLeft)
-        val toIndex = toIndex(toParent, toLeft)
+        val fromIndex = toIndex(fromParent, fromLeft, includeRemoved)
+        val toIndex = toIndex(toParent, toLeft, includeRemoved)
         // When a concurrent merge redirects the to-position ahead of the
         // from-position, the range is empty — a prior step already handled it.
         if (fromIndex > toIndex) return
-        indexTree.tokensBetween(fromIndex, toIndex, callback)
+        indexTree.tokensBetween(fromIndex, toIndex, callback, includeRemoved)
     }
 
     fun registerNode(node: CrdtTreeNode) {
@@ -947,8 +983,15 @@ internal data class CrdtTree(
     /**
      * Converts the given [parentNode] to the index of the tree.
      */
-    fun toIndex(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): Int {
-        return indexTree.indexOf(toCrdtTreePos(parentNode, leftSiblingNode))
+    fun toIndex(
+        parentNode: CrdtTreeNode,
+        leftSiblingNode: CrdtTreeNode,
+        includeRemoved: Boolean = false,
+    ): Int {
+        return indexTree.indexOf(
+            toCrdtTreePos(parentNode, leftSiblingNode, includeRemoved),
+            includeRemoved,
+        )
     }
 
     /**

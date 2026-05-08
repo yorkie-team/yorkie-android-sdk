@@ -18,6 +18,8 @@ import dev.yorkie.api.v1.AttachDocumentRequest
 import dev.yorkie.api.v1.AttachDocumentResponse
 import dev.yorkie.api.v1.BroadcastRequest
 import dev.yorkie.api.v1.BroadcastResponse
+import dev.yorkie.api.v1.CreateRevisionRequest
+import dev.yorkie.api.v1.CreateRevisionResponse
 import dev.yorkie.api.v1.DeactivateClientRequest
 import dev.yorkie.api.v1.DeactivateClientResponse
 import dev.yorkie.api.v1.DetachChannelRequest
@@ -25,6 +27,8 @@ import dev.yorkie.api.v1.DetachChannelResponse
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.DetachDocumentResponse
 import dev.yorkie.api.v1.DocEventType
+import dev.yorkie.api.v1.ListRevisionsRequest
+import dev.yorkie.api.v1.ListRevisionsResponse
 import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
 import dev.yorkie.api.v1.PushPullChangesRequest
@@ -34,6 +38,8 @@ import dev.yorkie.api.v1.RefreshChannelResponse
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.RemoveDocumentResponse
 import dev.yorkie.api.v1.ResourceDescriptor
+import dev.yorkie.api.v1.RestoreRevisionRequest
+import dev.yorkie.api.v1.RestoreRevisionResponse
 import dev.yorkie.api.v1.ValueType
 import dev.yorkie.api.v1.WatchRequest
 import dev.yorkie.api.v1.WatchResponse
@@ -47,6 +53,7 @@ import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.channelEvent
 import dev.yorkie.api.v1.channelInit
 import dev.yorkie.api.v1.channelWatchEvent
+import dev.yorkie.api.v1.createRevisionResponse
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachChannelResponse
 import dev.yorkie.api.v1.detachDocumentResponse
@@ -54,11 +61,14 @@ import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.docWatchEvent
 import dev.yorkie.api.v1.documentInit
 import dev.yorkie.api.v1.jSONElementSimple
+import dev.yorkie.api.v1.listRevisionsResponse
 import dev.yorkie.api.v1.operation
 import dev.yorkie.api.v1.pushPullChangesResponse
 import dev.yorkie.api.v1.refreshChannelResponse
 import dev.yorkie.api.v1.removeDocumentResponse
 import dev.yorkie.api.v1.resourceInit
+import dev.yorkie.api.v1.restoreRevisionResponse
+import dev.yorkie.api.v1.revisionSummary
 import dev.yorkie.api.v1.watchEvent
 import dev.yorkie.api.v1.watchInitialization
 import dev.yorkie.api.v1.watchResponse
@@ -457,6 +467,46 @@ class MockYorkieService(
         headers: Headers,
     ): ResponseMessage<BroadcastResponse> {
         return ResponseMessage.Success(broadcastResponse { }, emptyMap(), emptyMap())
+    }
+
+    override suspend fun createRevision(
+        request: CreateRevisionRequest,
+        headers: Headers,
+    ): ResponseMessage<CreateRevisionResponse> {
+        return ResponseMessage.Success(
+            createRevisionResponse {
+                revision = revisionSummary {
+                    id = "test-revision-id"
+                    label = request.label
+                    description = request.description
+                    snapshot = "{}"
+                }
+            },
+            emptyMap(),
+            emptyMap(),
+        )
+    }
+
+    override suspend fun listRevisions(
+        request: ListRevisionsRequest,
+        headers: Headers,
+    ): ResponseMessage<ListRevisionsResponse> {
+        return ResponseMessage.Success(
+            listRevisionsResponse {},
+            emptyMap(),
+            emptyMap(),
+        )
+    }
+
+    override suspend fun restoreRevision(
+        request: RestoreRevisionRequest,
+        headers: Headers,
+    ): ResponseMessage<RestoreRevisionResponse> {
+        return ResponseMessage.Success(
+            restoreRevisionResponse {},
+            emptyMap(),
+            emptyMap(),
+        )
     }
 
     companion object {

@@ -471,3 +471,11 @@ message Rule {
   string path = 1;
   string type = 2;
 }
+
+message RevisionSummary {
+  string id = 1;
+  string label = 2;
+  string description = 3;
+  string snapshot = 4;
+  google.protobuf.Timestamp created_at = 5;
+}

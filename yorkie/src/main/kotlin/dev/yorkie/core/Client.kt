@@ -41,6 +41,7 @@ import dev.yorkie.api.v1.watchRequest
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.AuthError
 import dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod.PushPull
+import dev.yorkie.document.Document.Event.EpochMismatch
 import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
@@ -60,6 +61,7 @@ import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
+import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -387,6 +389,18 @@ public class Client(
                             cause = it,
                         ),
                     )
+
+                    // NOTE: If the server returns ErrEpochMismatch, the document was
+                    // compacted and this client must detach and reattach to recover.
+                    if (it is ConnectException &&
+                        errorCodeOf(it) == ErrEpochMismatch.codeString
+                    ) {
+                        resource.publish(
+                            event = EpochMismatch(
+                                method = EpochMismatch.EpochMismatchMethod.PushPull,
+                            ),
+                        )
+                    }
                 }
 
                 (it as? ConnectException)?.let { exception ->

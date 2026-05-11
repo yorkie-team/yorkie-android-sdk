@@ -1022,6 +1022,18 @@ public class Document(
         }
 
         /**
+         * `EpochMismatch` indicates the document was compacted on the server
+         * and this client must detach and reattach to recover.
+         */
+        public data class EpochMismatch(
+            val method: EpochMismatchMethod,
+        ) : Event {
+            enum class EpochMismatchMethod(val value: String) {
+                PushPull("PushPull"),
+            }
+        }
+
+        /**
          * Represents the modification made during a document update and the message passed.
          */
         public data class ChangeInfo(

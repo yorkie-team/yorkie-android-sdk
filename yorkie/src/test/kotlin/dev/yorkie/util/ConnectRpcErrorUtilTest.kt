@@ -153,6 +153,19 @@ class ConnectRpcErrorUtilTest {
             )
         }
 
+    @Test
+    fun `should return not retryable if error code in metadata is ErrEpochMismatch`() = runTest {
+        val connectException =
+            produceConnectException(YorkieException.Code.ErrEpochMismatch.codeString)
+        assertEquals(
+            expected = false,
+            actual = handleConnectException(
+                exception = connectException,
+                handleError = null,
+            ),
+        )
+    }
+
     private fun produceConnectException(yorkieErrorCode: String): ConnectException {
         // Create ErrorInfo with unauthenticated error code
         val errorInfo = ErrorInfo.newBuilder()

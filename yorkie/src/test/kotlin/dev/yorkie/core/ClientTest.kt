@@ -17,6 +17,7 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.EPOCH_MISMATCH_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
@@ -24,6 +25,7 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_USER_ID
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.EpochMismatch
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.change.Change
@@ -312,6 +314,29 @@ class ClientTest {
 
         target.deactivateAsync().await()
     }
+
+    @Test
+    fun `should publish epoch mismatch event when server rejects sync with ErrEpochMismatch`() =
+        runTest {
+            // given
+            val document = Document(EPOCH_MISMATCH_DOCUMENT_KEY)
+            target.activateAsync().await()
+            target.attachDocument(document, syncMode = Manual).await()
+
+            val epochMismatchDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<EpochMismatch>().first()
+            }
+
+            // when
+            val syncResult = target.syncAsync(document).await()
+
+            // then
+            assertTrue(syncResult.isFailure)
+            val event = epochMismatchDeferred.await()
+            assertEquals(EpochMismatch.EpochMismatchMethod.PushPull, event.method)
+
+            target.deactivateAsync().await()
+        }
 
     @Test
     fun `should retry on network failure if error code was retryable`() = runTest {

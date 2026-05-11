@@ -15,6 +15,7 @@ import com.google.protobuf.ByteString
 import dev.yorkie.api.fromSchemaRules
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
+import dev.yorkie.api.toRevisionSummary
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchResponse
@@ -24,14 +25,17 @@ import dev.yorkie.api.v1.attachChannelRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.broadcastRequest
 import dev.yorkie.api.v1.channelDescriptor
+import dev.yorkie.api.v1.createRevisionRequest
 import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachChannelRequest
 import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.documentDescriptor
+import dev.yorkie.api.v1.listRevisionsRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.refreshChannelRequest
 import dev.yorkie.api.v1.removeDocumentRequest
 import dev.yorkie.api.v1.resourceDescriptor
+import dev.yorkie.api.v1.restoreRevisionRequest
 import dev.yorkie.api.v1.watchRequest
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.AuthError
@@ -47,6 +51,7 @@ import dev.yorkie.presence.Channel
 import dev.yorkie.presence.ChannelEvent
 import dev.yorkie.presence.Presence
 import dev.yorkie.util.Logger.Companion.log
+import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
@@ -1211,6 +1216,134 @@ public class Client(
                 document.applyChangePack(pack)
                 detachInternal(documentKey)
             }
+            SUCCESS
+        }
+    }
+
+    /**
+     * Creates a revision snapshot for the given [document] with the given [label] and
+     * optional [description]. The document must be attached to this client.
+     */
+    public fun createRevision(
+        document: Document,
+        label: String,
+        description: String = "",
+    ): Deferred<RevisionSummary> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            val documentKey = document.getKey()
+            val attachment = attachments[documentKey]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "document($documentKey) is not attached",
+                )
+
+            val request = createRevisionRequest {
+                clientId = requireClientId()
+                documentId = attachment.resourceId
+                this.label = label
+                this.description = description
+            }
+            val response = service.createRevision(
+                request,
+                documentKey.attachmentBasedRequestHeader,
+            ).getOrThrow()
+
+            if (!response.hasRevision()) {
+                throw YorkieException(
+                    YorkieException.Code.ErrInvalidArgument,
+                    "revision is not returned",
+                )
+            }
+
+            logDebug("CR", "c:\"${options.key}\" creates revision d:\"$documentKey\" l:\"$label\"")
+            response.revision.toRevisionSummary()
+        }
+    }
+
+    /**
+     * Lists revisions for the given [document]. The document must be attached.
+     *
+     * @param pageSize maximum number of revisions to return (default 10).
+     * @param offset number of revisions to skip for pagination (default 0).
+     * @param isForward when true, returns oldest-first; false (default) returns newest-first.
+     */
+    public fun listRevisions(
+        document: Document,
+        pageSize: Int = 10,
+        offset: Int = 0,
+        isForward: Boolean = false,
+    ): Deferred<List<RevisionSummary>> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            val documentKey = document.getKey()
+            val attachment = attachments[documentKey]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "document($documentKey) is not attached",
+                )
+
+            val request = listRevisionsRequest {
+                clientId = requireClientId()
+                documentId = attachment.resourceId
+                this.pageSize = pageSize
+                this.offset = offset
+                this.isForward = isForward
+            }
+            val response = service.listRevisions(
+                request,
+                documentKey.attachmentBasedRequestHeader,
+            ).getOrThrow()
+
+            logDebug(
+                "LR",
+                "c:\"${options.key}\" lists revisions d:\"$documentKey\"" +
+                    " count:${response.revisionsCount}",
+            )
+            response.revisionsList.map { it.toRevisionSummary() }
+        }
+    }
+
+    /**
+     * Restores the given [document] to the state captured by the revision with [revisionId].
+     * The document must be attached to this client.
+     */
+    public fun restoreRevision(document: Document, revisionId: String): Deferred<OperationResult> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            val documentKey = document.getKey()
+            val attachment = attachments[documentKey]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "document($documentKey) is not attached",
+                )
+
+            val request = restoreRevisionRequest {
+                clientId = requireClientId()
+                documentId = attachment.resourceId
+                this.revisionId = revisionId
+            }
+            service.restoreRevision(
+                request,
+                documentKey.attachmentBasedRequestHeader,
+            ).getOrThrow()
+
+            logDebug(
+                "RR",
+                "c:\"${options.key}\" restores revision d:\"$documentKey\" r:\"$revisionId\"",
+            )
             SUCCESS
         }
     }

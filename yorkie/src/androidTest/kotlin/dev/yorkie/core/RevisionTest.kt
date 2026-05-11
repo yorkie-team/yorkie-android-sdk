@@ -117,6 +117,64 @@ class RevisionTest {
     }
 
     @Test
+    fun can_retrieve_a_specific_revision_by_id() {
+        runBlocking {
+            val client = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val doc = Document(key)
+
+            client.activateAsync().await()
+            client.attachDocument(doc, syncMode = Manual).await()
+
+            // given — initial state synced and snapshotted
+            doc.updateAsync { root, _ ->
+                root["k1"] = "v1"
+                root["k2"] = "v2"
+            }.await()
+            client.syncAsync().await()
+            val rev1 = client.createRevision(doc, "v1.0", "First revision").await()
+            assertNotNull(rev1)
+
+            // given — further changes and a second revision
+            doc.updateAsync { root, _ ->
+                root["k2"] = "modified"
+                root["k3"] = "v3"
+            }.await()
+            client.syncAsync().await()
+            val rev2 = client.createRevision(doc, "v2.0", "Second revision").await()
+            assertNotNull(rev2)
+
+            // when — retrieve the first revision by id
+            val retRev1 = client.getRevision(doc, rev1.id).await()
+
+            // then — first revision matches the snapshot at that point
+            assertNotNull(retRev1)
+            assertEquals(rev1.id, retRev1.id)
+            assertEquals("v1.0", retRev1.label)
+            assertEquals("First revision", retRev1.description)
+            assertEquals("""{"k1":"v1","k2":"v2"}""", retRev1.snapshot)
+
+            // when — retrieve the second revision by id
+            val retRev2 = client.getRevision(doc, rev2.id).await()
+
+            // then — second revision matches the later snapshot
+            assertNotNull(retRev2)
+            assertEquals(rev2.id, retRev2.id)
+            assertEquals("v2.0", retRev2.label)
+            assertEquals("Second revision", retRev2.description)
+            assertEquals("""{"k1":"v1","k2":"modified","k3":"v3"}""", retRev2.snapshot)
+
+            // then — the two snapshots differ
+            assertTrue(retRev1.snapshot != retRev2.snapshot)
+
+            client.detachDocument(doc).await()
+            client.deactivateAsync().await()
+            doc.close()
+            client.close()
+        }
+    }
+
+    @Test
     fun can_restore_document_to_a_revision() {
         runBlocking {
             val client = createClient()

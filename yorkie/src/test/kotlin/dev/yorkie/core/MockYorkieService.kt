@@ -27,6 +27,8 @@ import dev.yorkie.api.v1.DetachChannelResponse
 import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.DetachDocumentResponse
 import dev.yorkie.api.v1.DocEventType
+import dev.yorkie.api.v1.GetRevisionRequest
+import dev.yorkie.api.v1.GetRevisionResponse
 import dev.yorkie.api.v1.ListRevisionsRequest
 import dev.yorkie.api.v1.ListRevisionsResponse
 import dev.yorkie.api.v1.OperationKt.remove
@@ -60,6 +62,7 @@ import dev.yorkie.api.v1.detachDocumentResponse
 import dev.yorkie.api.v1.docEvent
 import dev.yorkie.api.v1.docWatchEvent
 import dev.yorkie.api.v1.documentInit
+import dev.yorkie.api.v1.getRevisionResponse
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.listRevisionsResponse
 import dev.yorkie.api.v1.operation
@@ -479,6 +482,24 @@ class MockYorkieService(
                     id = "test-revision-id"
                     label = request.label
                     description = request.description
+                    snapshot = "{}"
+                }
+            },
+            emptyMap(),
+            emptyMap(),
+        )
+    }
+
+    override suspend fun getRevision(
+        request: GetRevisionRequest,
+        headers: Headers,
+    ): ResponseMessage<GetRevisionResponse> {
+        return ResponseMessage.Success(
+            getRevisionResponse {
+                revision = revisionSummary {
+                    id = request.revisionId
+                    label = "test-label"
+                    description = "test-description"
                     snapshot = "{}"
                 }
             },

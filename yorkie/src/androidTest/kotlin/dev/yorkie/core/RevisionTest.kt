@@ -31,7 +31,7 @@ import org.junit.runner.RunWith
 class RevisionTest {
 
     @Test
-    fun `can create a revision and list revisions`() {
+    fun can_create_a_revision_and_list_revisions() {
         runBlocking {
             val client = createClient()
             val key = UUID.randomUUID().toString().toDocKey()
@@ -83,7 +83,7 @@ class RevisionTest {
     }
 
     @Test
-    fun `can paginate revisions`() {
+    fun can_paginate_revisions() {
         runBlocking {
             val client = createClient()
             val key = UUID.randomUUID().toString().toDocKey()
@@ -117,7 +117,7 @@ class RevisionTest {
     }
 
     @Test
-    fun `can restore document to a revision`() {
+    fun can_restore_document_to_a_revision() {
         runBlocking {
             val client = createClient()
             val key = UUID.randomUUID().toString().toDocKey()
@@ -157,7 +157,7 @@ class RevisionTest {
     }
 
     @Test
-    fun `restore propagates to other clients`() {
+    fun restore_propagates_to_other_clients() {
         withTwoClientsAndDocuments(
             syncMode = Manual,
         ) { c1, c2, d1, d2, _ ->

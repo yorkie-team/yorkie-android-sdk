@@ -5,6 +5,7 @@ import com.connectrpc.ConnectException
 import com.google.rpc.ErrorInfo
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
+import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
 import dev.yorkie.util.YorkieException.Code.ErrTooManyAttachments
 import dev.yorkie.util.YorkieException.Code.ErrTooManySubscribers
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
@@ -36,6 +37,13 @@ internal suspend fun handleConnectException(
     }
 
     if (yorkieErrorCode == ErrTooManyAttachments.codeString) {
+        return false
+    }
+
+    // NOTE: ErrEpochMismatch means the document has been compacted on the server.
+    // The client's checkpoint is stale, retrying yields the same result, so the
+    // sync loop must stop. The user recovers by detaching and reattaching.
+    if (yorkieErrorCode == ErrEpochMismatch.codeString) {
         return false
     }
 

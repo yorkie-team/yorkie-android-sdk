@@ -81,6 +81,7 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 import io.mockk.every
 import io.mockk.mockk
@@ -199,6 +200,23 @@ class MockYorkieService(
                 ),
                 emptyMap(),
                 emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey == EPOCH_MISMATCH_DOCUMENT_KEY) {
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrEpochMismatch.codeString)
+                .build()
+
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns customError[EPOCH_MISMATCH_DOCUMENT_KEY]!!
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
             )
         }
         return ResponseMessage.Success(
@@ -538,6 +556,7 @@ class MockYorkieService(
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal const val AUTH_ERROR_DOCUMENT_KEY = "AUTH_ERROR_DOCUMENT_KEY"
+        internal const val EPOCH_MISMATCH_DOCUMENT_KEY = "EPOCH_MISMATCH_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = "0000000000ffff0000000000"
         internal const val TEST_USER_ID = "TEST_USER_ID"
 
@@ -547,6 +566,7 @@ class MockYorkieService(
             REMOVE_ERROR_DOCUMENT_KEY to Code.UNAVAILABLE,
             WATCH_SYNC_ERROR_DOCUMENT_KEY to Code.UNKNOWN,
             AUTH_ERROR_DOCUMENT_KEY to Code.UNAUTHENTICATED,
+            EPOCH_MISMATCH_DOCUMENT_KEY to Code.FAILED_PRECONDITION,
         )
     }
 }

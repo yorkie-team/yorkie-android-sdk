@@ -49,6 +49,7 @@ sealed interface Rule {
     data class YorkieTypeRule(
         override val path: String,
         override val type: String,
+        val treeNodes: List<TreeNodeRule>? = null,
     ) : Rule {
         enum class Type(val value: String) {
             TEXT("yorkie.Text"),
@@ -58,6 +59,18 @@ sealed interface Rule {
             ARRAY("yorkie.Array"),
         }
     }
+
+    /**
+     * Represents a single tree node rule used to validate the structure of
+     * a [dev.yorkie.document.crdt.CrdtTree] against the schema. Mirrors the
+     * `TreeNodeRule` type from the yorkie-js-sdk schema package.
+     */
+    data class TreeNodeRule(
+        val nodeType: String,
+        val content: String? = null,
+        val marks: String? = null,
+        val group: String? = null,
+    )
 
     data class EnumRule(
         override val path: String,

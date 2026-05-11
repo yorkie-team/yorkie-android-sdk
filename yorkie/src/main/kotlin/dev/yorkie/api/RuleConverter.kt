@@ -33,6 +33,18 @@ fun List<PBRule>.fromSchemaRules(): List<Rule> {
                 Rule.YorkieTypeRule(
                     path = it.path,
                     type = it.type,
+                    treeNodes = if (it.treeNodesList.isNotEmpty()) {
+                        it.treeNodesList.map { pbTreeNode ->
+                            Rule.TreeNodeRule(
+                                nodeType = pbTreeNode.nodeType,
+                                content = pbTreeNode.content,
+                                marks = pbTreeNode.marks,
+                                group = pbTreeNode.group,
+                            )
+                        }
+                    } else {
+                        null
+                    },
                 )
             }
 

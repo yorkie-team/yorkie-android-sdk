@@ -115,6 +115,18 @@ public class JsonObject internal constructor(
         return counter.toJsonElement(context)
     }
 
+    /**
+     * Creates a new dedup-mode [JsonCounter] at [key]. The counter is backed by a
+     * HyperLogLog sketch and counts unique actors via [JsonCounter.add]. Provides
+     * approximate counts with ~2% error.
+     */
+    public fun setNewDedupCounter(key: String): JsonCounter {
+        val createdAt = context.issueTimeTicket()
+        val counter = CrdtCounter.createDedup(createdAt)
+        setAndRegister(key, counter, createdAt)
+        return counter.toJsonElement(context)
+    }
+
     public fun setNewTree(key: String, initialRoot: JsonTree.ElementNode? = null): JsonTree {
         val ticket = context.issueTimeTicket()
         val tree = CrdtTree(JsonTree.buildRoot(initialRoot, context), ticket)

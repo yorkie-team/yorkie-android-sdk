@@ -17,6 +17,7 @@
 package dev.yorkie.core
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.document.Document
 import java.util.UUID
@@ -70,10 +71,11 @@ class RevisionTest {
             // when — list all revisions
             val revisions = client.listRevisions(doc).await()
 
-            // then — newest-first order
+            // then — both revisions are returned (order is server-defined)
             assertTrue(revisions.size >= 2)
-            assertEquals("v2.0", revisions[0].label)
-            assertEquals("v1.0", revisions[1].label)
+            val labels = revisions.map { it.label }.toSet()
+            assertTrue("v1.0" in labels)
+            assertTrue("v2.0" in labels)
 
             client.detachDocument(doc).await()
             client.deactivateAsync().await()
@@ -198,14 +200,14 @@ class RevisionTest {
                 root["k2"] = "v3"
             }.await()
             client.syncAsync().await()
-            assertEquals("""{"k1":"modified","k2":"v3"}""", doc.toJson())
+            assertJsonContentEquals("""{"k1":"modified","k2":"v3"}""", doc.toJson())
 
             // when — restore to snapshot
             client.restoreRevision(doc, revision.id).await()
             client.syncAsync().await()
 
             // then — document content matches the snapshot
-            assertEquals("""{"k1":"v1","k2":"v2"}""", doc.toJson())
+            assertJsonContentEquals("""{"k1":"v1","k2":"v2"}""", doc.toJson())
 
             client.detachDocument(doc).await()
             client.deactivateAsync().await()
@@ -226,8 +228,8 @@ class RevisionTest {
             }.await()
             c1.syncAsync().await()
             c2.syncAsync().await()
-            assertEquals("""{"k1":"v1","k2":"v2"}""", d1.toJson())
-            assertEquals("""{"k1":"v1","k2":"v2"}""", d2.toJson())
+            assertJsonContentEquals("""{"k1":"v1","k2":"v2"}""", d1.toJson())
+            assertJsonContentEquals("""{"k1":"v1","k2":"v2"}""", d2.toJson())
 
             // given — c1 creates a revision of the current state
             val revision = c1.createRevision(d1, "v1.0", "Initial state").await()
@@ -239,8 +241,8 @@ class RevisionTest {
             }.await()
             c1.syncAsync().await()
             c2.syncAsync().await()
-            assertEquals("""{"k1":"modified","k2":"v3"}""", d1.toJson())
-            assertEquals("""{"k1":"modified","k2":"v3"}""", d2.toJson())
+            assertJsonContentEquals("""{"k1":"modified","k2":"v3"}""", d1.toJson())
+            assertJsonContentEquals("""{"k1":"modified","k2":"v3"}""", d2.toJson())
 
             // when — c1 restores and syncs
             c1.restoreRevision(d1, revision.id).await()
@@ -250,8 +252,8 @@ class RevisionTest {
             c2.syncAsync().await()
 
             // then — both clients converge to the restored state
-            assertEquals("""{"k1":"v1","k2":"v2"}""", d1.toJson())
-            assertEquals("""{"k1":"v1","k2":"v2"}""", d2.toJson())
+            assertJsonContentEquals("""{"k1":"v1","k2":"v2"}""", d1.toJson())
+            assertJsonContentEquals("""{"k1":"v1","k2":"v2"}""", d2.toJson())
         }
     }
 }

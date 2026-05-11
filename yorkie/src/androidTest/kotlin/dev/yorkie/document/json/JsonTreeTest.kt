@@ -2104,6 +2104,90 @@ class JsonTreeTest {
     }
 
     @Test
+    fun test_sync_style_range_by_path() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                attr { "weight" to "bold" }
+                                text { "a" }
+                            }
+                            element("p") {
+                                text { "b" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                """<doc><p weight="bold">a</p><p>b</p></doc>""",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().styleByPath(listOf(0), listOf(2), mapOf("color" to "red"))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                """<doc><p color="red" weight="bold">a</p><p color="red">b</p></doc>""",
+                d1,
+                d2,
+            )
+        }
+    }
+
+    @Test
+    fun test_sync_remove_style_range_by_path() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("doc") {
+                            element("p") {
+                                attr { "bold" to "true" }
+                                attr { "italic" to "true" }
+                                text { "a" }
+                            }
+                            element("p") {
+                                attr { "bold" to "true" }
+                                attr { "italic" to "true" }
+                                text { "b" }
+                            }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                """<doc><p bold="true" italic="true">a</p>""" +
+                    """<p bold="true" italic="true">b</p></doc>""",
+                d1,
+                d2,
+            )
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().removeStyleByPath(listOf(0), listOf(2), listOf("italic"))
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals(
+                """<doc><p bold="true">a</p><p bold="true">b</p></doc>""",
+                d1,
+                d2,
+            )
+        }
+    }
+
+    @Test
     fun test_tree_style_events_concurrency() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             updateAndSync(

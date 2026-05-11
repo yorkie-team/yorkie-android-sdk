@@ -271,7 +271,7 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * Sets the [attributes] to the elements of the given [path].
+     * Sets the [attributes] to the element at the given [path].
      */
     public fun styleByPath(path: List<Int>, attributes: Map<String, String>) {
         require(path.isNotEmpty()) {
@@ -280,6 +280,27 @@ public class JsonTree internal constructor(
 
         val treeRange = target.pathToPosRange(path)
         styleByRange(treeRange, attributes)
+    }
+
+    /**
+     * Sets the [attributes] to the elements in the path range
+     * between [fromPath] and [toPath].
+     */
+    public fun styleByPath(
+        fromPath: List<Int>,
+        toPath: List<Int>,
+        attributes: Map<String, String>,
+    ) {
+        require(fromPath.size == toPath.size) {
+            "path length should be equal"
+        }
+        require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
+            "path should not be empty"
+        }
+
+        val fromPos = target.pathToPos(fromPath)
+        val toPos = target.pathToPos(toPath)
+        styleByRange(fromPos to toPos, attributes)
     }
 
     /**
@@ -318,6 +339,10 @@ public class JsonTree internal constructor(
         gcPairs.forEach(context::registerGCPair)
     }
 
+    /**
+     * Removes the attributes in [attributesToRemove] from the elements
+     * in the given index range.
+     */
     public fun removeStyle(
         fromIndex: Int,
         toIndex: Int,
@@ -329,9 +354,34 @@ public class JsonTree internal constructor(
 
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
+        removeStyleByRange(fromPos to toPos, attributesToRemove)
+    }
+
+    /**
+     * Removes the attributes in [attributesToRemove] from the elements
+     * in the path range between [fromPath] and [toPath].
+     */
+    public fun removeStyleByPath(
+        fromPath: List<Int>,
+        toPath: List<Int>,
+        attributesToRemove: List<String>,
+    ) {
+        require(fromPath.size == toPath.size) {
+            "path length should be equal"
+        }
+        require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
+            "path should not be empty"
+        }
+
+        val fromPos = target.pathToPos(fromPath)
+        val toPos = target.pathToPos(toPath)
+        removeStyleByRange(fromPos to toPos, attributesToRemove)
+    }
+
+    private fun removeStyleByRange(range: TreePosRange, attributesToRemove: List<String>) {
         val executedAt = context.issueTimeTicket()
         val (_, gcPairs, diff) = target.removeStyle(
-            fromPos to toPos,
+            range,
             attributesToRemove,
             executedAt,
         )
@@ -343,8 +393,8 @@ public class JsonTree internal constructor(
         context.push(
             TreeStyleOperation(
                 target.createdAt,
-                fromPos,
-                toPos,
+                range.first,
+                range.second,
                 executedAt,
                 attributesToRemove = attributesToRemove,
             ),

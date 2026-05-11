@@ -451,4 +451,149 @@ class YsonParserTest {
         val result = parse("Text([{\"val\":\"x\"}])") as YsonValue.YsonText
         assertNull(result.nodes[0].attrs)
     }
+
+    // --- typed parse with reified generics ---
+
+    @Test
+    fun `parseAs should narrow result to YsonObject`() {
+        val yson = "{\"content\":Text([{\"val\":\"H\"},{\"val\":\"i\"}]),\"title\":\"Hello\"}"
+        val result = parseAs<YsonValue.YsonObject>(yson)
+
+        assertEquals(YsonValue.YsonString("Hello"), result.entries["title"])
+        val content = result.entries["content"] as YsonValue.YsonText
+        assertEquals(2, content.nodes.size)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonArray`() {
+        val yson = "[{\"id\":1,\"text\":Text([{\"val\":\"A\"}])}," +
+            "{\"id\":2,\"text\":Text([{\"val\":\"B\"}])}]"
+        val result = parseAs<YsonValue.YsonArray>(yson)
+
+        assertEquals(2, result.elements.size)
+        val first = result.elements[0] as YsonValue.YsonObject
+        assertEquals(YsonValue.YsonNumber(1.0), first.entries["id"])
+        val firstText = first.entries["text"] as YsonValue.YsonText
+        assertEquals("A", firstText.nodes[0].value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonString`() {
+        val result = parseAs<YsonValue.YsonString>("\"hello\"")
+        assertEquals("hello", result.value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonNumber`() {
+        val result = parseAs<YsonValue.YsonNumber>("42")
+        assertEquals(42.0, result.value, 0.0)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonBoolean`() {
+        val result = parseAs<YsonValue.YsonBoolean>("true")
+        assertTrue(result.value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonInt`() {
+        val result = parseAs<YsonValue.YsonInt>("Int(42)")
+        assertEquals(42, result.value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonLong`() {
+        val result = parseAs<YsonValue.YsonLong>("Long(64)")
+        assertEquals(64L, result.value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonDate`() {
+        val dateStr = "2025-01-02T15:04:05.058Z"
+        val result = parseAs<YsonValue.YsonDate>("Date(\"$dateStr\")")
+        assertEquals(dateStr, result.value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonBinData`() {
+        val result = parseAs<YsonValue.YsonBinData>("BinData(\"AQID\")")
+        assertEquals("AQID", result.value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonCounter`() {
+        val result = parseAs<YsonValue.YsonCounter>("Counter(Int(10))")
+        val inner = result.value as YsonValue.YsonInt
+        assertEquals(10, inner.value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonText`() {
+        val result = parseAs<YsonValue.YsonText>("Text([{\"val\":\"H\"},{\"val\":\"i\"}])")
+        assertEquals(2, result.nodes.size)
+        assertEquals("H", result.nodes[0].value)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonTree`() {
+        val yson = "Tree({\"type\":\"doc\",\"children\":" +
+            "[{\"type\":\"p\",\"children\":[{\"type\":\"text\",\"value\":\"Hello\"}]}]})"
+        val result = parseAs<YsonValue.YsonTree>(yson)
+        assertEquals("doc", result.root.type)
+    }
+
+    @Test
+    fun `parseAs should narrow result to YsonValue for nested mixed types`() {
+        val yson = """
+            {
+              "text": Text([{"val":"H"}]),
+              "tree": Tree({"type":"p","children":[]}),
+              "counter": Counter(Int(10)),
+              "timestamp": Date("2025-01-02T15:04:05.058Z")
+            }
+        """.trimIndent()
+        val result = parseAs<YsonValue.YsonObject>(yson)
+
+        assertTrue(isText(result.entries["text"]))
+        assertTrue(isTree(result.entries["tree"]))
+        assertTrue(isCounter(result.entries["counter"]))
+        assertTrue(isDate(result.entries["timestamp"]))
+    }
+
+    @Test
+    fun `parseAs should throw when parsing number as YsonObject`() {
+        val error = assertThrows(YorkieException::class.java) {
+            parseAs<YsonValue.YsonObject>("123")
+        }
+        assertEquals(YorkieException.Code.ErrInvalidArgument, error.code)
+        assertTrue(error.errorMessage.contains("YsonObject"))
+        assertTrue(error.errorMessage.contains("YsonNumber"))
+    }
+
+    @Test
+    fun `parseAs should throw when parsing object as YsonArray`() {
+        val error = assertThrows(YorkieException::class.java) {
+            parseAs<YsonValue.YsonArray>("{}")
+        }
+        assertEquals(YorkieException.Code.ErrInvalidArgument, error.code)
+        assertTrue(error.errorMessage.contains("YsonArray"))
+        assertTrue(error.errorMessage.contains("YsonObject"))
+    }
+
+    @Test
+    fun `parseAs should throw when parsing Text as YsonTree`() {
+        val error = assertThrows(YorkieException::class.java) {
+            parseAs<YsonValue.YsonTree>("Text([{\"val\":\"H\"}])")
+        }
+        assertEquals(YorkieException.Code.ErrInvalidArgument, error.code)
+        assertTrue(error.errorMessage.contains("YsonTree"))
+        assertTrue(error.errorMessage.contains("YsonText"))
+    }
+
+    @Test
+    fun `parseAs should propagate parse errors`() {
+        assertThrows(YorkieException::class.java) {
+            parseAs<YsonValue.YsonObject>("invalid yson")
+        }
+    }
 }

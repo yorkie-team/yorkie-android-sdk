@@ -36,6 +36,34 @@ public fun parse(yson: String): YsonValue {
 }
 
 /**
+ * [parseAs] parses a YSON formatted string and narrows the result to [T].
+ *
+ * Mirrors the generic type parameter of `parse<T extends YSONValue>(...)` in
+ * yorkie-js-sdk. The reified type [T] is checked at runtime against the parsed
+ * root value; a mismatch surfaces as a [YorkieException] rather than a
+ * [ClassCastException].
+ *
+ * ```kotlin
+ * val obj = parseAs<YsonValue.YsonObject>("""{"content":Text([{"val":"Hi"}])}""")
+ * val text = obj.entries["content"] as YsonValue.YsonText
+ * ```
+ *
+ * @param yson YSON formatted string.
+ * @throws YorkieException with [YorkieException.Code.ErrInvalidArgument] when parsing fails
+ * or the parsed root is not an instance of [T].
+ */
+public inline fun <reified T : YsonValue> parseAs(yson: String): T {
+    val value = parse(yson)
+    if (value !is T) {
+        throw YorkieException(
+            YorkieException.Code.ErrInvalidArgument,
+            "Expected ${T::class.simpleName}, got ${value::class.simpleName}",
+        )
+    }
+    return value
+}
+
+/**
  * [textToString] returns the concatenated character values of a [YsonValue.YsonText].
  */
 public fun textToString(text: YsonValue.YsonText): String =

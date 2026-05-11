@@ -501,6 +501,40 @@ class ClientTest {
     }
 
     @Test
+    fun `getRevision fails when client is not active`() = runTest {
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.getRevision(document, "revision-id").await()
+        }
+        assertEquals(YorkieException.Code.ErrClientNotActivated, exception.code)
+    }
+
+    @Test
+    fun `getRevision fails when document is not attached`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.getRevision(document, "revision-id").await()
+        }
+        assertEquals(ErrDocumentNotAttached, exception.code)
+    }
+
+    @Test
+    fun `getRevision returns revision summary matching requested id`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        target.attachDocument(document, syncMode = Manual).await()
+
+        val revision = target.getRevision(document, "test-revision-id").await()
+
+        assertEquals("test-revision-id", revision.id)
+        assertEquals("test-label", revision.label)
+        assertEquals("test-description", revision.description)
+    }
+
+    @Test
     fun `restoreRevision fails when client is not active`() = runTest {
         val document = Document(NORMAL_DOCUMENT_KEY)
 

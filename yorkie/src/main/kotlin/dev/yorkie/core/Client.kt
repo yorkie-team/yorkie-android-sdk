@@ -30,6 +30,7 @@ import dev.yorkie.api.v1.deactivateClientRequest
 import dev.yorkie.api.v1.detachChannelRequest
 import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.documentDescriptor
+import dev.yorkie.api.v1.getRevisionRequest
 import dev.yorkie.api.v1.listRevisionsRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.refreshChannelRequest
@@ -1309,6 +1310,49 @@ public class Client(
                     " count:${response.revisionsCount}",
             )
             response.revisionsList.map { it.toRevisionSummary() }
+        }
+    }
+
+    /**
+     * Retrieves the revision identified by [revisionId] for the given [document],
+     * including its full snapshot. The document must be attached to this client.
+     */
+    public fun getRevision(document: Document, revisionId: String): Deferred<RevisionSummary> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            val documentKey = document.getKey()
+            val attachment = attachments[documentKey]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "document($documentKey) is not attached",
+                )
+
+            val request = getRevisionRequest {
+                clientId = requireClientId()
+                documentId = attachment.resourceId
+                this.revisionId = revisionId
+            }
+            val response = service.getRevision(
+                request,
+                documentKey.attachmentBasedRequestHeader,
+            ).getOrThrow()
+
+            if (!response.hasRevision()) {
+                throw YorkieException(
+                    YorkieException.Code.ErrInvalidArgument,
+                    "revision is not returned",
+                )
+            }
+
+            logDebug(
+                "GR",
+                "c:\"${options.key}\" gets revision d:\"$documentKey\" r:\"$revisionId\"",
+            )
+            response.revision.toRevisionSummary()
         }
     }
 

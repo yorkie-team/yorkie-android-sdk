@@ -37,6 +37,7 @@ service YorkieService {
   rpc Watch (WatchRequest) returns (stream WatchResponse) {}
 
   rpc CreateRevision (CreateRevisionRequest) returns (CreateRevisionResponse) {}
+  rpc GetRevision (GetRevisionRequest) returns (GetRevisionResponse) {}
   rpc ListRevisions (ListRevisionsRequest) returns (ListRevisionsResponse) {}
   rpc RestoreRevision (RestoreRevisionRequest) returns (RestoreRevisionResponse) {}
 
@@ -223,6 +224,16 @@ message CreateRevisionRequest {
 }
 
 message CreateRevisionResponse {
+  RevisionSummary revision = 1;
+}
+
+message GetRevisionRequest {
+  string client_id = 1;
+  string document_id = 2;
+  string revision_id = 3;
+}
+
+message GetRevisionResponse {
   RevisionSummary revision = 1;
 }
 

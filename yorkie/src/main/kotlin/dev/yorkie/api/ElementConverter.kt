@@ -194,27 +194,36 @@ internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
 
 internal fun PBCounter.toCrdtCounter(): CrdtCounter {
     val type = type.toCounterType()
-    return if (type == CounterType.Int) {
-        CrdtCounter(
+    val counter = when (type) {
+        CounterType.Int -> CrdtCounter(
             value = value.toByteArray().asCounterValue(type).toInt(),
             createdAt = createdAt.toTimeTicket(),
             movedAt = movedAtOrNull?.toTimeTicket(),
             removedAt = removedAtOrNull?.toTimeTicket(),
         )
-    } else {
-        CrdtCounter(
+        CounterType.Long -> CrdtCounter(
             value = value.toByteArray().asCounterValue(type).toLong(),
             createdAt = createdAt.toTimeTicket(),
             movedAt = movedAtOrNull?.toTimeTicket(),
             removedAt = removedAtOrNull?.toTimeTicket(),
         )
+        CounterType.IntDedup -> CrdtCounter.createDedup(createdAt.toTimeTicket()).apply {
+            movedAt = this@toCrdtCounter.movedAtOrNull?.toTimeTicket()
+            removedAt = this@toCrdtCounter.removedAtOrNull?.toTimeTicket()
+        }
     }
+    val hllBytes = hllRegisters.toByteArray()
+    if (counter.isDedup() && hllBytes.isNotEmpty()) {
+        counter.restoreHll(hllBytes)
+    }
+    return counter
 }
 
 internal fun PBValueType.toCounterType(): CounterType {
     return when (this) {
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.Int
         PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.Long
+        PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT -> CounterType.IntDedup
         else -> throw YorkieException(ErrUnimplemented, "unimplemented value type : $this")
     }
 }
@@ -513,6 +522,7 @@ internal fun CrdtCounter.toPBCounter(): PBJsonElement {
             createdAt = crdtCounter.createdAt.toPBTimeTicket()
             crdtCounter.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtCounter.removedAt?.let { removedAt = it.toPBTimeTicket() }
+            crdtCounter.hllBytes()?.let { hllRegisters = it.toByteString() }
         }
     }
 }
@@ -521,6 +531,7 @@ internal fun CounterType.toPBCounterType(): PBValueType {
     return when (this) {
         CounterType.Int -> PBValueType.VALUE_TYPE_INTEGER_CNT
         CounterType.Long -> PBValueType.VALUE_TYPE_LONG_CNT
+        CounterType.IntDedup -> PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT
     }
 }
 
@@ -584,6 +595,9 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             value.toByteArray().asCounterValue(type.toCounterType()).toLong(),
             createdAt.toTimeTicket(),
         )
+
+        PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT ->
+            CrdtCounter.createDedup(createdAt.toTimeTicket())
 
         PBValueType.VALUE_TYPE_TREE -> value.toCrdtTree()
 

@@ -4,6 +4,8 @@ import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.CrdtCounter.CounterType
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -51,6 +53,54 @@ class JsonCounterTest {
             val lengthInt = obj.setNewCounter("lengthInt", 1)
             lengthInt.increase(1000L)
             assertEquals(CounterType.Long, lengthInt.target.type)
+        }.await()
+    }
+
+    @Test
+    fun `dedup counter counts unique actors and ignores duplicates`() = runTest {
+        // given - when
+        document.updateAsync { root, _ ->
+            val uv = root.setNewDedupCounter("uv")
+            assertTrue(uv.isDedup)
+            uv.add("alice")
+            uv.add("bob")
+            uv.add("alice") // duplicate
+            uv.add("carol")
+        }.await()
+
+        // then
+        val uv = document.getRoot().getAs<JsonCounter>("uv")
+        assertEquals(CounterType.IntDedup, uv.target.type)
+        assertEquals(3, uv.value)
+    }
+
+    @Test
+    fun `dedup counter rejects increase()`() = runTest {
+        document.updateAsync { root, _ ->
+            val uv = root.setNewDedupCounter("uv")
+            assertFailsWith<IllegalStateException> {
+                uv.increase(1)
+            }
+        }.await()
+    }
+
+    @Test
+    fun `non-dedup counter rejects add(actor)`() = runTest {
+        document.updateAsync { root, _ ->
+            val pv = root.setNewCounter("pv", 0)
+            assertFailsWith<IllegalStateException> {
+                pv.add("alice")
+            }
+        }.await()
+    }
+
+    @Test
+    fun `dedup counter rejects empty actor`() = runTest {
+        document.updateAsync { root, _ ->
+            val uv = root.setNewDedupCounter("uv")
+            assertFailsWith<IllegalArgumentException> {
+                uv.add("")
+            }
         }.await()
     }
 }

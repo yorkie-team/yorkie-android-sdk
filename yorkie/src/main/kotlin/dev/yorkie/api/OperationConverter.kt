@@ -61,6 +61,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 parentCreatedAt = it.increase.parentCreatedAt.toTimeTicket(),
                 executedAt = it.increase.executedAt.toTimeTicket(),
                 value = it.increase.value.toCrdtElement(),
+                actor = it.increase.actor,
             )
 
             it.hasEdit() -> EditOperation(
@@ -163,6 +164,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                     parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
                     value = operation.value.toPBJsonElementSimple()
                     executedAt = operation.executedAt.toPBTimeTicket()
+                    actor = operation.actor
                 }
             }
         }

@@ -116,11 +116,11 @@ public class JsonObject internal constructor(
     }
 
     /**
-     * Creates a new dedup-mode [JsonCounter] at [key]. The counter is backed by a
-     * HyperLogLog sketch and counts unique actors via [JsonCounter.add]. Provides
-     * approximate counts with ~2% error.
+     * Creates a new dedup-mode [JsonDedupCounter] at [key]. The counter is
+     * backed by a HyperLogLog sketch and counts unique actors via
+     * [JsonDedupCounter.add]. Provides approximate counts with ~2% error.
      */
-    public fun setNewDedupCounter(key: String): JsonCounter {
+    public fun setNewDedupCounter(key: String): JsonDedupCounter {
         val createdAt = context.issueTimeTicket()
         val counter = CrdtCounter.createDedup(createdAt)
         setAndRegister(key, counter, createdAt)

@@ -7,11 +7,11 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.IncreaseOperation
 
 /**
- * [JsonCounter] is a custom data type that is used to counter.
+ * [JsonCounter] is a numeric counter that supports [increase].
  *
- * When [isDedup] is true the counter is backed by a HyperLogLog sketch and only
- * supports [add], which records a unique actor. Otherwise it supports [increase]
- * with arbitrary integer or long deltas.
+ * For counting unique actors via HyperLogLog, use [JsonDedupCounter] instead.
+ * Splitting the two roles into separate classes makes invalid method calls
+ * (such as [add] on a numeric counter) compile-time errors.
  */
 public class JsonCounter internal constructor(
     internal val context: ChangeContext,
@@ -22,23 +22,20 @@ public class JsonCounter internal constructor(
         get() = target.value
 
     /**
-     * Returns true when this counter is in dedup mode.
+     * Increases this counter by [value] as an [Int] delta.
      */
-    public val isDedup: Boolean
-        get() = target.isDedup()
-
     public fun increase(value: Int): JsonCounter {
         return increaseInternal(value)
     }
 
+    /**
+     * Increases this counter by [value] as a [Long] delta.
+     */
     public fun increase(value: Long): JsonCounter {
         return increaseInternal(value)
     }
 
     private fun increaseInternal(value: CounterValue): JsonCounter {
-        check(!target.isDedup()) {
-            "dedup counter does not support increase(), use add(actor)"
-        }
         val ticket = context.issueTimeTicket()
         val counterValue = CrdtPrimitive(value, ticket)
         target.increase(counterValue)
@@ -47,34 +44,6 @@ public class JsonCounter internal constructor(
                 value = counterValue,
                 parentCreatedAt = target.createdAt,
                 executedAt = ticket,
-            ),
-        )
-        return this
-    }
-
-    /**
-     * Records a unique [actor] token in the dedup counter. Duplicate actors are
-     * ignored. Returns this [JsonCounter] for chaining.
-     *
-     * @throws IllegalStateException when the counter is not in dedup mode.
-     * @throws IllegalArgumentException when [actor] is empty.
-     */
-    public fun add(actor: String): JsonCounter {
-        check(target.isDedup()) {
-            "add() is only supported on dedup counters"
-        }
-        require(actor.isNotEmpty()) {
-            "actor is required"
-        }
-        val ticket = context.issueTimeTicket()
-        val counterValue = CrdtPrimitive(1, ticket)
-        target.increaseDedup(counterValue, actor)
-        context.push(
-            IncreaseOperation(
-                value = counterValue,
-                parentCreatedAt = target.createdAt,
-                executedAt = ticket,
-                actor = actor,
             ),
         )
         return this

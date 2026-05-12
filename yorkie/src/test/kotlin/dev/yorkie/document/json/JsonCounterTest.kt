@@ -5,7 +5,6 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.crdt.CrdtCounter.CounterType
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -61,7 +60,6 @@ class JsonCounterTest {
         // given - when
         document.updateAsync { root, _ ->
             val uv = root.setNewDedupCounter("uv")
-            assertTrue(uv.isDedup)
             uv.add("alice")
             uv.add("bob")
             uv.add("alice") // duplicate
@@ -69,29 +67,9 @@ class JsonCounterTest {
         }.await()
 
         // then
-        val uv = document.getRoot().getAs<JsonCounter>("uv")
+        val uv = document.getRoot().getAs<JsonDedupCounter>("uv")
         assertEquals(CounterType.IntDedup, uv.target.type)
         assertEquals(3, uv.value)
-    }
-
-    @Test
-    fun `dedup counter rejects increase()`() = runTest {
-        document.updateAsync { root, _ ->
-            val uv = root.setNewDedupCounter("uv")
-            assertFailsWith<IllegalStateException> {
-                uv.increase(1)
-            }
-        }.await()
-    }
-
-    @Test
-    fun `non-dedup counter rejects add(actor)`() = runTest {
-        document.updateAsync { root, _ ->
-            val pv = root.setNewCounter("pv", 0)
-            assertFailsWith<IllegalStateException> {
-                pv.add("alice")
-            }
-        }.await()
     }
 
     @Test
@@ -102,5 +80,31 @@ class JsonCounterTest {
                 uv.add("")
             }
         }.await()
+    }
+
+    @Test
+    fun `getAs JsonCounter on a dedup counter is rejected at runtime`() = runTest {
+        // given - a dedup counter is stored at the key
+        document.updateAsync { root, _ ->
+            root.setNewDedupCounter("uv")
+        }.await()
+
+        // when - then - accessing it as a numeric JsonCounter must fail
+        assertFailsWith<TypeCastException> {
+            document.getRoot().getAs<JsonCounter>("uv")
+        }
+    }
+
+    @Test
+    fun `getAs JsonDedupCounter on a numeric counter is rejected at runtime`() = runTest {
+        // given - a numeric counter is stored at the key
+        document.updateAsync { root, _ ->
+            root.setNewCounter("pv", 0)
+        }.await()
+
+        // when - then - accessing it as a dedup counter must fail
+        assertFailsWith<TypeCastException> {
+            document.getRoot().getAs<JsonDedupCounter>("pv")
+        }
     }
 }

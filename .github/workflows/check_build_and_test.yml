@@ -24,9 +24,7 @@ jobs:
 
       - run: chmod +x gradlew
 
-      - uses: gradle/actions/setup-gradle@v3
-        with:
-          cache-read-only: true
+      - run: echo "org.gradle.caching=false" >> gradle.properties
 
       - run: ./gradlew clean
 
@@ -71,24 +69,16 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - run: echo "org.gradle.caching=false" >> gradle.properties
+
       - name: Set Yorkie Server Url
         run: ./scripts/config-yorkie-local-server.sh
 
-      - run: chmod +x gradlew
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          build-scan-publish: true
-          build-scan-terms-of-use-url: "https://gradle.com/terms-of-service"
-          build-scan-terms-of-use-agree: "yes"
-          cache-read-only: true
+      - run: chmod +x gradlew && ./gradlew clean
 
       - run: |
           docker system prune --all --force
           docker compose -f docker/docker-compose-ci.yml up --build -d
-
-      - run: ./gradlew clean
 
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2

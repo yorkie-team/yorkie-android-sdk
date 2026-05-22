@@ -25,6 +25,8 @@ import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
@@ -139,12 +141,16 @@ fun RichTextEditor(
     isStrikethrough: Boolean,
     styleOperations: List<OperationInfo.StyleOpInfo>,
     selectionPeers: Map<String, Selection?>,
+    canUndo: Boolean,
+    canRedo: Boolean,
     onContentChanged: (TextFieldBuffer.ChangeList, CharSequence) -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
     onToggleStrikethrough: () -> Unit,
     onClearFormatting: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -275,6 +281,38 @@ fun RichTextEditor(
                         Icons.Default.Clear,
                         contentDescription = "Clear Formatting",
                         tint = MaterialTheme.colors.onSurface,
+                    )
+                }
+
+                // Undo button
+                IconButton(
+                    onClick = onUndo,
+                    enabled = canUndo,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = "Undo",
+                        tint = if (canUndo) {
+                            MaterialTheme.colors.onSurface
+                        } else {
+                            MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                        },
+                    )
+                }
+
+                // Redo button
+                IconButton(
+                    onClick = onRedo,
+                    enabled = canRedo,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Redo,
+                        contentDescription = "Redo",
+                        tint = if (canRedo) {
+                            MaterialTheme.colors.onSurface
+                        } else {
+                            MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                        },
                     )
                 }
             }

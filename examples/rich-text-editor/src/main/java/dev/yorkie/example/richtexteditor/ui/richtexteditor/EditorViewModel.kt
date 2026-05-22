@@ -44,6 +44,8 @@ data class EditorUiState(
     val isItalic: Boolean = false,
     val isUnderline: Boolean = false,
     val isStrikethrough: Boolean = false,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
 )
 
 data class Selection(
@@ -87,6 +89,7 @@ class EditorViewModel(
                     when (event) {
                         is Document.Event.Snapshot -> {
                             syncTextSnapShot()
+                            refreshUndoRedoState()
                         }
 
                         is Document.Event.LocalChange -> {
@@ -97,6 +100,8 @@ class EditorViewModel(
                             _uiState.update {
                                 it.copy(
                                     selectionPeers = selectionPeers,
+                                    canUndo = document.history.canUndo(),
+                                    canRedo = document.history.canRedo(),
                                 )
                             }
                         }
@@ -104,6 +109,7 @@ class EditorViewModel(
                         is Document.Event.RemoteChange -> {
                             // Sync both text and selection for remote changes
                             syncTextRemoteChanged(event.changeInfo)
+                            refreshUndoRedoState()
                         }
 
                         is PresenceChanged.Others.PresenceChanged -> {
@@ -489,6 +495,33 @@ class EditorViewModel(
                 isItalic = false,
                 isUnderline = false,
                 isStrikethrough = false,
+            )
+        }
+    }
+
+    fun undo() {
+        viewModelScope.launch {
+            if (!document.history.canUndo()) return@launch
+            document.history.undoAsync().await()
+            syncTextSnapShot()
+            refreshUndoRedoState()
+        }
+    }
+
+    fun redo() {
+        viewModelScope.launch {
+            if (!document.history.canRedo()) return@launch
+            document.history.redoAsync().await()
+            syncTextSnapShot()
+            refreshUndoRedoState()
+        }
+    }
+
+    private fun refreshUndoRedoState() {
+        _uiState.update {
+            it.copy(
+                canUndo = document.history.canUndo(),
+                canRedo = document.history.canRedo(),
             )
         }
     }

@@ -278,15 +278,18 @@ class EditorViewModel(
         val content = document.getRoot().getAsOrNull<JsonText>(CONTENT)
         val newStyleOperations = ArrayList<OperationInfo.StyleOpInfo>()
         var idx = 0
-        content?.values?.forEach { textWithAttributes ->
-            newStyleOperations.add(
-                OperationInfo.StyleOpInfo(
-                    from = idx,
-                    to = idx + textWithAttributes.text.length,
-                    attributes = textWithAttributes.attributes,
-                ),
-            )
-            idx += textWithAttributes.text.length
+        try {
+            content?.values?.forEach { textWithAttributes ->
+                newStyleOperations.add(
+                    OperationInfo.StyleOpInfo(
+                        from = idx,
+                        to = idx + textWithAttributes.text.length,
+                        attributes = textWithAttributes.attributes,
+                    ),
+                )
+                idx += textWithAttributes.text.length
+            }
+        } catch (_: Exception) {
         }
 
         // Adjust local text selection based on remote edits
@@ -617,8 +620,13 @@ class EditorViewModel(
 
     override fun onCleared() {
         TerminationScope.launch {
-            client.detachDocument(document).await()
-            client.deactivateAsync().await()
+            try {
+                client.detachDocument(document).await()
+                client.deactivateAsync().await()
+            } catch (_: Exception) {
+            } finally {
+                client.close()
+            }
         }
         super.onCleared()
     }

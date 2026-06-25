@@ -1,11 +1,21 @@
 package dev.yorkie.document.change
 
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.presence.Presences
-import dev.yorkie.document.time.ActorID
+
+/**
+ * Result of executing a [Change] against a CRDT root.
+ */
+internal data class ChangeExecutionResult(
+    val opInfos: List<OperationInfo>,
+    val newPresences: Presences?,
+    val reverseOps: List<Operation>,
+    val executedOperations: List<Operation>,
+)
 
 /**
  * Represents a unit of modification in the document.
@@ -23,7 +33,7 @@ public data class Change internal constructor(
     internal val hasOperations: Boolean
         get() = operations.isNotEmpty()
 
-    internal fun setActor(actorID: ActorID) {
+    internal fun setActor(actorID: String) {
         operations.forEach {
             it.setActor(actorID)
         }
@@ -33,13 +43,25 @@ public data class Change internal constructor(
     internal fun execute(
         root: CrdtRoot,
         presences: Presences,
-    ): Pair<List<OperationInfo>, Presences?> {
+        source: OpSource = OpSource.Local,
+    ): ChangeExecutionResult {
         val newPresences = presenceChange?.let {
             when (presenceChange) {
                 is PresenceChange.Put -> presences + (id.actor to presenceChange.presence)
                 is PresenceChange.Clear -> presences - id.actor
             }
         }
-        return operations.flatMap { it.execute(root, id.versionVector) } to newPresences
+        val allOpInfos = mutableListOf<OperationInfo>()
+        val reverseOps = mutableListOf<Operation>()
+
+        for (op in operations) {
+            val result = op.execute(root, source, id.versionVector)
+            allOpInfos.addAll(result.opInfos)
+            // addAll(0, ...) preserves internal order of multi-op reverses
+            // while reversing the outer operation order (first op's reverse runs last)
+            reverseOps.addAll(0, result.reverseOps)
+        }
+
+        return ChangeExecutionResult(allOpInfos, newPresences, reverseOps, operations)
     }
 }

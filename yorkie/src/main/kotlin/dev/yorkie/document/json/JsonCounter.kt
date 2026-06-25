@@ -7,7 +7,11 @@ import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.IncreaseOperation
 
 /**
- * [JsonCounter] is a custom data type that is used to counter.
+ * [JsonCounter] is a numeric counter that supports [increase].
+ *
+ * For counting unique actors via HyperLogLog, use [JsonDedupCounter] instead.
+ * Splitting the two roles into separate classes makes invalid method calls
+ * (such as [add] on a numeric counter) compile-time errors.
  */
 public class JsonCounter internal constructor(
     internal val context: ChangeContext,
@@ -17,10 +21,16 @@ public class JsonCounter internal constructor(
     public val value: CounterValue
         get() = target.value
 
+    /**
+     * Increases this counter by [value] as an [Int] delta.
+     */
     public fun increase(value: Int): JsonCounter {
         return increaseInternal(value)
     }
 
+    /**
+     * Increases this counter by [value] as a [Long] delta.
+     */
     public fun increase(value: Long): JsonCounter {
         return increaseInternal(value)
     }

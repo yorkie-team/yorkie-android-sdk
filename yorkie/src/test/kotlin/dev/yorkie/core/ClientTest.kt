@@ -17,6 +17,7 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.EPOCH_MISMATCH_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
@@ -24,6 +25,7 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_USER_ID
 import dev.yorkie.core.MockYorkieService.Companion.WATCH_SYNC_ERROR_DOCUMENT_KEY
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.EpochMismatch
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.change.Change
@@ -32,7 +34,6 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.presence.PresenceChange
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.util.YorkieException
@@ -315,6 +316,29 @@ class ClientTest {
     }
 
     @Test
+    fun `should publish epoch mismatch event when server rejects sync with ErrEpochMismatch`() =
+        runTest {
+            // given
+            val document = Document(EPOCH_MISMATCH_DOCUMENT_KEY)
+            target.activateAsync().await()
+            target.attachDocument(document, syncMode = Manual).await()
+
+            val epochMismatchDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<EpochMismatch>().first()
+            }
+
+            // when
+            val syncResult = target.syncAsync(document).await()
+
+            // then
+            assertTrue(syncResult.isFailure)
+            val event = epochMismatchDeferred.await()
+            assertEquals(EpochMismatch.EpochMismatchMethod.PushPull, event.method)
+
+            target.deactivateAsync().await()
+        }
+
+    @Test
     fun `should retry on network failure if error code was retryable`() = runTest {
         runBlocking {
             val mockYorkieService = MockYorkieService()
@@ -435,8 +459,140 @@ class ClientTest {
         assertEquals(ResourceStatus.Detached, document.getStatus())
     }
 
+    @Test
+    fun `createRevision fails when client is not active`() = runTest {
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.createRevision(document, "v1.0").await()
+        }
+        assertEquals(YorkieException.Code.ErrClientNotActivated, exception.code)
+    }
+
+    @Test
+    fun `createRevision fails when document is not attached`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.createRevision(document, "v1.0").await()
+        }
+        assertEquals(ErrDocumentNotAttached, exception.code)
+    }
+
+    @Test
+    fun `createRevision returns revision summary with expected label and description`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        target.attachDocument(document, syncMode = Manual).await()
+
+        val revision = target.createRevision(document, "v1.0", "First release").await()
+
+        assertEquals("v1.0", revision.label)
+        assertEquals("First release", revision.description)
+        assertTrue(revision.id.isNotEmpty())
+    }
+
+    @Test
+    fun `listRevisions fails when client is not active`() = runTest {
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.listRevisions(document).await()
+        }
+        assertEquals(YorkieException.Code.ErrClientNotActivated, exception.code)
+    }
+
+    @Test
+    fun `listRevisions fails when document is not attached`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.listRevisions(document).await()
+        }
+        assertEquals(ErrDocumentNotAttached, exception.code)
+    }
+
+    @Test
+    fun `listRevisions returns empty list when no revisions exist`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        target.attachDocument(document, syncMode = Manual).await()
+
+        val revisions = target.listRevisions(document).await()
+
+        assertTrue(revisions.isEmpty())
+    }
+
+    @Test
+    fun `getRevision fails when client is not active`() = runTest {
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.getRevision(document, "revision-id").await()
+        }
+        assertEquals(YorkieException.Code.ErrClientNotActivated, exception.code)
+    }
+
+    @Test
+    fun `getRevision fails when document is not attached`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.getRevision(document, "revision-id").await()
+        }
+        assertEquals(ErrDocumentNotAttached, exception.code)
+    }
+
+    @Test
+    fun `getRevision returns revision summary matching requested id`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        target.attachDocument(document, syncMode = Manual).await()
+
+        val revision = target.getRevision(document, "test-revision-id").await()
+
+        assertEquals("test-revision-id", revision.id)
+        assertEquals("test-label", revision.label)
+        assertEquals("test-description", revision.description)
+    }
+
+    @Test
+    fun `restoreRevision fails when client is not active`() = runTest {
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.restoreRevision(document, "revision-id").await()
+        }
+        assertEquals(YorkieException.Code.ErrClientNotActivated, exception.code)
+    }
+
+    @Test
+    fun `restoreRevision fails when document is not attached`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+
+        val exception = assertFailsWith<YorkieException> {
+            target.restoreRevision(document, "revision-id").await()
+        }
+        assertEquals(ErrDocumentNotAttached, exception.code)
+    }
+
+    @Test
+    fun `restoreRevision succeeds when client is active and document is attached`() = runTest {
+        target.activateAsync().await()
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        target.attachDocument(document, syncMode = Manual).await()
+
+        val result = target.restoreRevision(document, "test-revision-id").await()
+
+        assertTrue(result.isSuccess)
+    }
+
     private fun assertIsTestActorID(clientId: String) {
-        assertEquals(TEST_ACTOR_ID, ActorID(clientId))
+        assertEquals(TEST_ACTOR_ID, clientId)
     }
 
     private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {

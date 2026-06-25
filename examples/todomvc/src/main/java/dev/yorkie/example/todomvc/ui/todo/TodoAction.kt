@@ -12,4 +12,6 @@ sealed class TodoAction {
     object ClearCompleted : TodoAction()
     object ToggleAll : TodoAction()
     data class SetFilter(val filter: TodoFilter) : TodoAction()
+    object Undo : TodoAction()
+    object Redo : TodoAction()
 }

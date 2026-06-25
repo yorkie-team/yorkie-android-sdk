@@ -30,7 +30,6 @@ public abstract class JsonElement {
             CrdtArray::class.java to JsonArray::class.java,
             CrdtText::class.java to JsonText::class.java,
             CrdtPrimitive::class.java to JsonPrimitive::class.java,
-            CrdtCounter::class.java to JsonCounter::class.java,
             CrdtTree::class.java to JsonTree::class.java,
         )
 
@@ -38,9 +37,28 @@ public abstract class JsonElement {
             context: ChangeContext,
         ): T {
             val clazz = if (T::class.java == JsonElement::class.java) {
-                TypeMapper[this::class.java]
+                if (this is CrdtCounter) {
+                    if (isDedup()) JsonDedupCounter::class.java else JsonCounter::class.java
+                } else {
+                    TypeMapper[this::class.java]
+                }
             } else {
                 T::class.java
+            }
+            // Reject JsonCounter / JsonDedupCounter requests that do not match
+            // the underlying counter mode so that callers see a type error at
+            // access time rather than a runtime error on a later method call.
+            if (this is CrdtCounter) {
+                if (clazz == JsonCounter::class.java && isDedup()) {
+                    throw TypeCastException(
+                        "expected numeric counter but found dedup counter: $this",
+                    )
+                }
+                if (clazz == JsonDedupCounter::class.java && !isDedup()) {
+                    throw TypeCastException(
+                        "expected dedup counter but found numeric counter: $this",
+                    )
+                }
             }
             return try {
                 when (clazz) {
@@ -49,6 +67,8 @@ public abstract class JsonElement {
                     JsonText::class.java -> JsonText(context, this as CrdtText)
                     JsonPrimitive::class.java -> JsonPrimitive(this as CrdtPrimitive)
                     JsonCounter::class.java -> JsonCounter(context, this as CrdtCounter)
+                    JsonDedupCounter::class.java ->
+                        JsonDedupCounter(context, this as CrdtCounter)
                     JsonTree::class.java -> JsonTree(context, this as CrdtTree)
                     else -> throw TypeCastException("unknown CrdtElement type: $this")
                 } as T

@@ -10,4 +10,6 @@
     <string name="item_left">%d item left</string>
     <string name="no_items_left">No items left</string>
     <string name="mark_all_complete">Mark all as complete</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
 </resources>

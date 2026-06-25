@@ -409,9 +409,8 @@ class JsonTreeConcurrencyTest {
         }
     }
 
-    @Ignore("should be resolved after JS SDK implementation")
     @Test
-    fun test_concurrent_split_and_split() {
+    fun test_concurrent_split_and_split_L1() {
         runBlocking {
             val root = element("r") {
                 element("p") {
@@ -444,7 +443,7 @@ class JsonTreeConcurrencyTest {
                 makeTwoRanges(Triple(3, 6, 9), Triple(9, 12, 15), "B is next to A"),
             )
 
-            val splitOperations = listOf(
+            val splitL1Operations = listOf(
                 EditOperationType(
                     RangeSelector.RangeFront,
                     EditOpCode.SplitUpdate,
@@ -473,6 +472,52 @@ class JsonTreeConcurrencyTest {
                     1,
                     "split-back-1",
                 ),
+            )
+
+            runTestConcurrency(
+                root,
+                initialXml,
+                ranges,
+                splitL1Operations,
+                splitL1Operations,
+                "concurrently-split-split-test-L1",
+            )
+        }
+    }
+
+    // splitLevel>=2 forward convergence still has unresolved offset and
+    // merge-redirect issues with nested elements.
+    @Ignore("splitLevel>=2 not yet supported; see RTCOLLABPLATFORM-651 design doc")
+    @Test
+    fun test_concurrent_split_and_split_L2() {
+        runBlocking {
+            val root = element("r") {
+                element("p") {
+                    element("p") {
+                        element("p") {
+                            element("p") {
+                                text { "abcd" }
+                            }
+                            element("p") {
+                                text { "efgh" }
+                            }
+                        }
+                        element("p") {
+                            text { "ijkl" }
+                        }
+                    }
+                }
+            }
+            val initialXml = "<r><p><p><p><p>abcd</p><p>efgh</p></p><p>ijkl</p></p></p></r>"
+            val ranges = listOf(
+                makeTwoRanges(Triple(3, 6, 9), Triple(3, 6, 9), "equal-single"),
+                makeTwoRanges(Triple(3, 9, 15), Triple(3, 9, 15), "equal-multiple"),
+                makeTwoRanges(Triple(3, 9, 15), Triple(9, 12, 15), "A contains B same level"),
+                makeTwoRanges(Triple(2, 16, 22), Triple(9, 12, 15), "A contains B multiple level"),
+                makeTwoRanges(Triple(3, 6, 9), Triple(9, 12, 15), "B is next to A"),
+            )
+
+            val splitL2Operations = listOf(
                 EditOperationType(
                     RangeSelector.RangeFront,
                     EditOpCode.SplitUpdate,
@@ -507,16 +552,136 @@ class JsonTreeConcurrencyTest {
                 root,
                 initialXml,
                 ranges,
-                splitOperations,
-                splitOperations,
-                "concurrently-split-split-test",
+                splitL2Operations,
+                splitL2Operations,
+                "concurrently-split-split-test-L2",
             )
         }
     }
 
-    @Ignore("should be resolved after JS SDK implementation")
     @Test
-    fun test_concurrent_split_and_edit() {
+    fun test_concurrent_split_and_edit_L1() {
+        runBlocking {
+            val root = element("r") {
+                element("p") {
+                    element("p") {
+                        element("p") {
+                            text { "abcd" }
+                            attrs { mapOf("italic" to "a") }
+                        }
+                        element("p") {
+                            text { "efgh" }
+                            attrs { mapOf("italic" to "a") }
+                        }
+                    }
+                    element("p") {
+                        text { "ijkl" }
+                        attrs { mapOf("italic" to "a") }
+                    }
+                }
+            }
+            val initialXml =
+                """<r><p><p><p italic="a">abcd</p><p italic="a">efgh</p></p>""" +
+                    """<p italic="a">ijkl</p></p></r>"""
+            val content = element("i")
+
+            val ranges = listOf(
+                makeTwoRanges(Triple(2, 5, 8), Triple(2, 5, 8), "equal"),
+                makeTwoRanges(Triple(2, 5, 8), Triple(4, 5, 6), "A contains B"),
+                makeTwoRanges(Triple(2, 5, 8), Triple(2, 8, 14), "B contains A"),
+                makeTwoRanges(Triple(2, 5, 8), Triple(3, 4, 5), "left node(text)"),
+                makeTwoRanges(Triple(2, 5, 8), Triple(5, 6, 7), "right node(text)"),
+                makeTwoRanges(Triple(2, 8, 14), Triple(2, 5, 8), "left node(element)"),
+                makeTwoRanges(Triple(2, 8, 14), Triple(8, 11, 14), "right node(element)"),
+                makeTwoRanges(Triple(2, 5, 8), Triple(8, 11, 14), "A -> B"),
+                makeTwoRanges(Triple(8, 11, 14), Triple(2, 5, 8), "B -> A"),
+            )
+
+            val splitL1Operations = listOf(
+                EditOperationType(
+                    RangeSelector.RangeMiddle,
+                    EditOpCode.SplitUpdate,
+                    null,
+                    1,
+                    "split-1",
+                ),
+            )
+
+            val editOperations = listOf(
+                EditOperationType(
+                    RangeSelector.RangeFront,
+                    EditOpCode.EditUpdate,
+                    content,
+                    0,
+                    "insertFront",
+                ),
+                EditOperationType(
+                    RangeSelector.RangeMiddle,
+                    EditOpCode.EditUpdate,
+                    content,
+                    0,
+                    "insertMiddle",
+                ),
+                EditOperationType(
+                    RangeSelector.RangeBack,
+                    EditOpCode.EditUpdate,
+                    content,
+                    0,
+                    "insertBack",
+                ),
+                EditOperationType(
+                    RangeSelector.RangeAll,
+                    EditOpCode.EditUpdate,
+                    content,
+                    0,
+                    "replace",
+                ),
+                EditOperationType(
+                    RangeSelector.RangeAll,
+                    EditOpCode.EditUpdate,
+                    null,
+                    0,
+                    "delete",
+                ),
+                EditOperationType(
+                    RangeSelector.RangeAll,
+                    EditOpCode.MergeUpdate,
+                    null,
+                    0,
+                    "merge",
+                ),
+                StyleOperationType(
+                    RangeSelector.RangeAll,
+                    StyleOpCode.StyleSet,
+                    "bold",
+                    "aa",
+                    "style",
+                ),
+                StyleOperationType(
+                    RangeSelector.RangeAll,
+                    StyleOpCode.StyleRemove,
+                    "italic",
+                    "",
+                    "remove-style",
+                ),
+            )
+
+            runTestConcurrency(
+                root,
+                initialXml,
+                ranges,
+                splitL1Operations,
+                editOperations,
+                "concurrently-split-edit-test-L1",
+            )
+        }
+    }
+
+    // splitLevel>=2 split×edit tests fail due to the same nested element
+    // issues as the split×split suite above.
+    @Ignore("splitLevel>=2 not yet supported; see RTCOLLABPLATFORM-651 design doc")
+    @Test
+    fun test_concurrent_split_and_edit_L2() {
         runBlocking {
             val root = element("r") {
                 element("p") {
@@ -544,34 +709,18 @@ class JsonTreeConcurrencyTest {
             val content = element("i")
 
             val ranges = listOf(
-                // equal: <p>abcd</p>
                 makeTwoRanges(Triple(2, 5, 8), Triple(2, 5, 8), "equal"),
-                // A contains B: <p>abcd</p> - bc
                 makeTwoRanges(Triple(2, 5, 8), Triple(4, 5, 6), "A contains B"),
-                // B contains A: <p>abcd</p> - <p>abcd</p><p>efgh</p>
                 makeTwoRanges(Triple(2, 5, 8), Triple(2, 8, 14), "B contains A"),
-                // left node(text): <p>abcd</p> - ab
                 makeTwoRanges(Triple(2, 5, 8), Triple(3, 4, 5), "left node(text)"),
-                // right node(text): <p>abcd</p> - cd
                 makeTwoRanges(Triple(2, 5, 8), Triple(5, 6, 7), "right node(text)"),
-                // left node(element): <p>abcd</p><p>efgh</p> - <p>abcd</p>
                 makeTwoRanges(Triple(2, 8, 14), Triple(2, 5, 8), "left node(element)"),
-                // right node(element): <p>abcd</p><p>efgh</p> - <p>efgh</p>
                 makeTwoRanges(Triple(2, 8, 14), Triple(8, 11, 14), "right node(element)"),
-                // A -> B: <p>abcd</p> - <p>efgh</p>
                 makeTwoRanges(Triple(2, 5, 8), Triple(8, 11, 14), "A -> B"),
-                // B -> A: <p>efgh</p> - <p>abcd</p>
                 makeTwoRanges(Triple(8, 11, 14), Triple(2, 5, 8), "B -> A"),
             )
 
-            val splitOperations = listOf(
-                EditOperationType(
-                    RangeSelector.RangeMiddle,
-                    EditOpCode.SplitUpdate,
-                    null,
-                    1,
-                    "split-1",
-                ),
+            val splitL2Operations = listOf(
                 EditOperationType(
                     RangeSelector.RangeMiddle,
                     EditOpCode.SplitUpdate,
@@ -644,9 +793,9 @@ class JsonTreeConcurrencyTest {
                 root,
                 initialXml,
                 ranges,
-                splitOperations,
+                splitL2Operations,
                 editOperations,
-                "concurrently-split-edit-test",
+                "concurrently-split-edit-test-L2",
             )
         }
     }

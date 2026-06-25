@@ -1,7 +1,6 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.JsonTree
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 
@@ -60,7 +59,7 @@ internal value class TreeTextNode(override val value: String = "") : TreeNode, J
 }
 
 data class TreeChange(
-    val actorID: ActorID,
+    val actorID: String,
     val type: TreeChangeType,
     val from: Int,
     val to: Int,
@@ -82,4 +81,20 @@ internal data class TreeOperationResult(
     val changes: List<TreeChange>,
     val gcPairs: List<GCPair<*>> = emptyList(),
     val dataSize: DataSize,
+    /**
+     * Deep-copy snapshots of top-level nodes that were deleted by this edit,
+     * captured before they were tombstoned.  Used to build the reverse
+     * [dev.yorkie.document.operation.TreeEditOperation] for undo/redo.
+     */
+    val removedNodes: List<CrdtTreeNode> = emptyList(),
+    /**
+     * Previous attribute values captured from the first styled node in the
+     * range.  Used to build the reverse style operation for undo/redo.
+     */
+    val prevAttributes: Map<String, String> = emptyMap(),
+    /**
+     * Keys of attributes that did not previously exist on the first styled
+     * node.  The reverse op must remove them to restore the prior state.
+     */
+    val attributesToRemove: List<String> = emptyList(),
 )

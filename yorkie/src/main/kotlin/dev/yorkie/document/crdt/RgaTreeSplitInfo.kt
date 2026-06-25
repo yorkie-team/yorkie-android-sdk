@@ -9,4 +9,5 @@ internal data class RgaTreeSplitEditResult<T : RgaTreeSplitValue<T>>(
     val changes: List<RgaTreeSplit.ContentChange>,
     val gcPairs: List<GCPair<RgaTreeSplitNode<T>>>,
     val dataSize: DataSize,
+    val removedValues: List<T> = emptyList(),
 )

@@ -1,6 +1,7 @@
 package dev.yorkie.util
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 
 /**
  * About `index`, `path`, `size` and `TreePos` in crdt.IndexTree.
@@ -671,8 +672,37 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
     /**
      * Removes the given [child] (physically purges it from the tree).
+     *
+     * Returns silently when [child] is no longer a child of this node: a
+     * prior [detachChild] from a concurrent merge can have moved it out
+     * before GC purge reaches the same node.
      */
     fun removeChild(child: T) {
+        check(!isText) {
+            "Text node cannot have children"
+        }
+
+        val offset = childNodes.indexOf(child).takeUnless { it == -1 } ?: return
+
+        childNodes.removeAt(offset)
+
+        // NOTE(hackerwins): Decrease totalSize including removed nodes
+        // since this node is being purged (physically removed from tree).
+        child.updateAncestorSize(-child.paddedSize(true), true)
+
+        child.parent = null
+    }
+
+    /**
+     * Detaches the given alive [child] from this node for moving between
+     * parents (i.e. merge). Updates both `visibleSize` and `totalSize`.
+     *
+     * Differs from [removeChild], which only updates `totalSize` because
+     * it is used on tombstoned children during GC purge. Throws
+     * [NoSuchElementException] when [child] is not present — callers that
+     * may race with a prior detach must wrap in `try`/`catch`.
+     */
+    fun detachChild(child: T) {
         check(!isText) {
             "Text node cannot have children"
         }
@@ -682,8 +712,7 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
         childNodes.removeAt(offset)
 
-        // NOTE(hackerwins): Decrease totalSize including removed nodes
-        // since this node is being purged (physically removed from tree).
+        child.updateAncestorSize(-child.paddedSize())
         child.updateAncestorSize(-child.paddedSize(true), true)
 
         child.parent = null
@@ -731,7 +760,11 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         )
     }
 
-    fun splitElement(offset: Int, issueTimeTicket: () -> TimeTicket): Pair<T?, DataSize> {
+    fun splitElement(
+        offset: Int,
+        versionVector: VersionVector? = null,
+        issueTimeTicket: () -> TimeTicket,
+    ): Pair<T?, DataSize> {
         var diff = DataSize(
             data = 0,
             meta = 0,
@@ -744,19 +777,43 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         clone.updateAncestorSize(clone.paddedSize(true), true)
 
         clone.childNodes.clear()
+
+        // Fix 8 (revised): Keep merge-moved children in the original (left)
+        // node when the merge is concurrent with this split. The decision is
+        // per-child: if the child's merge source is itself a child of this
+        // node, the content was local to this level and must stay left. If
+        // the source is external (e.g., a sibling element that was merged),
+        // the content flows naturally to the split (right) node.
+        val hasVersionVector = versionVector != null && versionVector.size() > 0
+        val allChildNodes = childNodes.toList()
+
+        val movedToLeft = mutableListOf<T>()
         repeat(childNodes.size - offset) {
             val rightChild = childNodes.removeAt(offset)
-            clone.childNodes.add(rightChild)
-            rightChild.parent = clone
+            if (hasVersionVector &&
+                shouldKeepChildInLeft(rightChild, versionVector, allChildNodes)
+            ) {
+                movedToLeft.add(rightChild)
+            } else {
+                clone.childNodes.add(rightChild)
+                rightChild.parent = clone
+            }
         }
+        // Re-insert the vetoed children at the end of the left node
+        // (they stay in this.childNodes, with corrected parent pointer).
+        movedToLeft.forEach { child ->
+            childNodes.add(child)
+            child.parent = this as T
+        }
+
         visibleSize = childNodes.fold(0) { acc, child ->
-            acc + child.paddedSize(false)
+            acc + if (child.isRemoved) 0 else child.paddedSize(false)
         }
         totalSize = childNodes.fold(0) { acc, child ->
             acc + child.paddedSize(true)
         }
         clone.visibleSize = clone.childNodes.fold(0) { acc, child ->
-            acc + child.paddedSize(false)
+            acc + if (child.isRemoved) 0 else child.paddedSize(false)
         }
         clone.totalSize = clone.childNodes.fold(0) { acc, child ->
             acc + child.paddedSize(true)
@@ -774,6 +831,19 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             second = diff,
         )
     }
+
+    /**
+     * Returns true when [child] should be kept in the original (left) node
+     * rather than moved to the split sibling. Subclasses override this to
+     * implement merge-aware split semantics. The default always returns false.
+     *
+     * @param allChildren snapshot of all children (left + right) before the split.
+     */
+    open fun shouldKeepChildInLeft(
+        child: T,
+        versionVector: VersionVector?,
+        allChildren: List<T>,
+    ): Boolean = false
 
     private fun insertAfterInternal(targetNode: T, newNode: T) {
         check(!isText) {

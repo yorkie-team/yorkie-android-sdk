@@ -4,7 +4,6 @@ import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPos
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 
 internal interface JsonSerializable<I, O : JsonSerializable.Struct<I>> {
@@ -76,7 +75,7 @@ public data class RgaTreeSplitNodeIDStruct(
 public data class TimeTicketStruct(
     val lamport: String,
     val delimiter: UInt,
-    val actorID: ActorID,
+    val actorID: String,
 ) : JsonSerializable.Struct<TimeTicket> {
 
     override fun toOriginal(): TimeTicket {

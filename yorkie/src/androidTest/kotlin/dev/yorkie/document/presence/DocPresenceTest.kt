@@ -5,6 +5,8 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.core.DEFAULT_SNAPSHOT_THRESHOLD
 import dev.yorkie.core.GENERAL_TIMEOUT
+import dev.yorkie.core.RetryRule
+import dev.yorkie.core.awaitWatchConnected
 import dev.yorkie.core.createClient
 import dev.yorkie.core.toDocKey
 import dev.yorkie.core.withTwoClientsAndDocuments
@@ -29,11 +31,15 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DocPresenceTest {
+
+    @get:Rule
+    val retryRule = RetryRule(retryCount = 2)
 
     @Test
     fun test_presence_from_snapshot() {
@@ -280,13 +286,15 @@ class DocPresenceTest {
             val d2Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d2.events.filterIsInstance<Others>().collect(d2Events::add)
             }
-            c2.attachDocument(
-                d2,
-                initialPresence = mapOf(
-                    "name" to "b",
-                    "cursor" to previousCursor,
-                ),
-            ).await()
+            awaitWatchConnected(d2) {
+                c2.attachDocument(
+                    d2,
+                    initialPresence = mapOf(
+                        "name" to "b",
+                        "cursor" to previousCursor,
+                    ),
+                ).await()
+            }
 
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1Events.isEmpty()) {
@@ -782,7 +790,11 @@ class DocPresenceTest {
                 d1.events.filterIsInstance<Others>().toList(d1Events)
             }
 
-            delay(1000)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
 
             assertEquals(
                 expected = 1,
@@ -847,7 +859,9 @@ class DocPresenceTest {
                 },
             )
 
-            c2.attachDocument(d2, initialPresence = mapOf("name" to "b")).await()
+            awaitWatchConnected(d2) {
+                c2.attachDocument(d2, initialPresence = mapOf("name" to "b")).await()
+            }
             withTimeout(GENERAL_TIMEOUT) {
                 while (d1PresenceEvents.isEmpty()) {
                     delay(50)
@@ -866,6 +880,89 @@ class DocPresenceTest {
                 }
             }
             assertNull(d1.presences.value[c2.requireClientId()])
+
+            jobs.forEach(Job::cancel)
+            c1.detachDocument(d1).await()
+            c2.detachDocument(d2).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c1.close()
+            c2.close()
+            d1.close()
+            d2.close()
+        }
+    }
+
+    @Test
+    fun test_peer_presence_retained_across_watch_stream_reconnection() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            val key = UUID.randomUUID().toString().toDocKey()
+            val d1 = Document(key)
+            val d2 = Document(key)
+
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
+
+            val d1PresenceEvents = mutableListOf<Others>()
+            val d1ConnectionEvents = mutableListOf<StreamConnectionChanged>()
+            val jobs = listOf(
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<Others>().collect(d1PresenceEvents::add)
+                },
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    d1.events.filterIsInstance<StreamConnectionChanged>()
+                        .collect(d1ConnectionEvents::add)
+                },
+            )
+
+            // given: c2 joins and c1 observes c2's Watched event
+            c2.attachDocument(d2, initialPresence = mapOf("name" to "b")).await()
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1PresenceEvents.none { it is Others.Watched }) {
+                    delay(50)
+                }
+            }
+            assertEquals(
+                Others.Watched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
+                d1PresenceEvents.last { it is Others.Watched },
+            )
+
+            // when: c1 drops its watch stream
+            c1.changeSyncMode(d1, Manual)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1ConnectionEvents.none { it is StreamConnectionChanged.Disconnected }) {
+                    delay(50)
+                }
+            }
+
+            // then: c2's presence is filtered out of d1.presences, but retained in allPresences
+            assertNull(d1.presences.value[c2.requireClientId()])
+            assertEquals(
+                mapOf("name" to "b"),
+                d1.allPresences.value[c2.requireClientId()],
+            )
+
+            // when: c1 reopens its watch stream
+            c1.changeSyncMode(d1, Realtime)
+            withTimeout(GENERAL_TIMEOUT) {
+                while (d1.presences.value[c2.requireClientId()] == null) {
+                    delay(50)
+                }
+            }
+
+            // then: c2's presence is visible again through the retained allPresences map
+            assertEquals(
+                mapOf("name" to "b"),
+                d1.presences.value[c2.requireClientId()],
+            )
+            assertEquals(
+                mapOf("name" to "b"),
+                d1.allPresences.value[c2.requireClientId()],
+            )
 
             jobs.forEach(Job::cancel)
             c1.detachDocument(d1).await()

@@ -14,7 +14,7 @@ import dev.yorkie.util.Logger.Companion.logError
 internal data class SetOperation(
     val key: String,
     val value: CrdtElement,
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 
@@ -27,18 +27,40 @@ internal data class SetOperation(
     /**
      * Executes this [SetOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtObject) {
+            val previousValue = if (parentObject.has(key)) {
+                parentObject[key].takeIf { !it.isRemoved }
+            } else {
+                null
+            }
             val copiedValue = value.deepCopy()
+            copiedValue.removedAt = null
             val removed = parentObject.set(key, copiedValue, executedAt)
             root.registerElement(copiedValue, parentObject)
             removed?.let(root::registerRemovedElement)
-            listOf(OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)))
+
+            val reverseOp = if (previousValue != null) {
+                SetOperation(key, previousValue.deepCopy(), parentCreatedAt, executedAt)
+            } else {
+                RemoveOperation(copiedValue.createdAt, parentCreatedAt, executedAt)
+            }
+
+            ExecutionResult(
+                opInfos = listOf(
+                    OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)),
+                ),
+                reverseOps = listOf(reverseOp),
+            )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only object can execute set")
-            emptyList()
+            ExecutionResult(opInfos = emptyList())
         }
     }
 

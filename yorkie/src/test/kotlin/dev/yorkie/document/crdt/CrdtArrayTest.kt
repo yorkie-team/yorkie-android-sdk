@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Assert
 import org.junit.Assert.assertEquals
@@ -12,9 +11,9 @@ class CrdtArrayTest {
     private val actorIDs = listOf("A", "B", "C", "D", "E", "F", "G")
     private val timeTickets = actorIDs.map {
         TimeTicket(
-            actorIDs.indexOf(it).toLong(),
-            TimeTicket.INITIAL_DELIMITER,
-            ActorID(it),
+            lamport = actorIDs.indexOf(it).toLong(),
+            delimiter = TimeTicket.INITIAL_DELIMITER,
+            actorID = it,
         )
     }
     private val crdtElements = timeTickets.map { CrdtPrimitive(1, it) }
@@ -178,7 +177,7 @@ class CrdtArrayTest {
     }
 
     private fun createTimeTicket(): TimeTicket {
-        return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, ActorID("H"))
+        return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, "H")
     }
 
     private fun createSampleCrdtArray(): CrdtArray {
@@ -186,6 +185,6 @@ class CrdtArrayTest {
     }
 
     private fun CrdtArray.toTestString() = buildString {
-        this@toTestString.forEach { append(it.createdAt.actorID.value) }
+        this@toTestString.forEach { append(it.createdAt.actorID) }
     }
 }

@@ -12,7 +12,7 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.JsonTree.TextNode
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
-import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
+import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.gson
 import dev.yorkie.helper.maxVectorOf
@@ -52,7 +52,7 @@ class GCTest {
             assertEquals(
                 expected = 4,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
             assertEquals(0, document.garbageLength)
@@ -83,7 +83,7 @@ class GCTest {
             assertEquals(
                 expected = 1,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
             assertEquals(0, document.garbageLength)
@@ -127,7 +127,7 @@ class GCTest {
             assertEquals(
                 expected = 4,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
             assertEquals(0, document.garbageLength)
@@ -173,7 +173,7 @@ class GCTest {
             assertEquals(
                 expected = 2,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
             assertEquals(0, document.garbageLength)
@@ -200,7 +200,7 @@ class GCTest {
             assertEquals(
                 expected = 1,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
             assertEquals(0, document.garbageLength)
@@ -228,7 +228,7 @@ class GCTest {
             assertEquals(
                 expected = 5,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
             assertEquals(0, document.garbageLength)
@@ -458,7 +458,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 1L),
+                        Pair(c1.requireClientId(), 1L),
                     ),
                 ),
             )
@@ -473,7 +473,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 1L),
+                        Pair(c1.requireClientId(), 1L),
                     ),
                 ),
             )
@@ -485,8 +485,8 @@ class GCTest {
                 versionVectorHelper(
                     d2.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 1L),
-                        Pair(c2.requireClientId().value, 2L),
+                        Pair(c1.requireClientId(), 1L),
+                        Pair(c2.requireClientId(), 2L),
                     ),
                 ),
             )
@@ -506,7 +506,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 2L),
+                        Pair(c1.requireClientId(), 2L),
                     ),
                 ),
             )
@@ -520,7 +520,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 2L),
+                        Pair(c1.requireClientId(), 2L),
                     ),
                 ),
             )
@@ -541,7 +541,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId().value, 2L),
+                        Pair(c1.requireClientId(), 2L),
                     ),
                 ),
             )
@@ -723,8 +723,8 @@ class GCTest {
 
             // Actual garbage-collected nodes
             val actors = listOf(
-                c1.requireClientId().value,
-                c2.requireClientId().value,
+                c1.requireClientId(),
+                c2.requireClientId(),
             )
             assertEquals(d1.garbageCollect(maxVectorOf(actors)), gcNodeLength)
             assertEquals(d2.garbageCollect(maxVectorOf(actors)), gcNodeLength)
@@ -865,7 +865,7 @@ class GCTest {
             assertEquals(
                 expected = size + 1,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
         }
@@ -895,7 +895,7 @@ class GCTest {
             assertEquals(
                 expected = 1,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
             assertEquals(0, document.garbageLength)
@@ -920,7 +920,7 @@ class GCTest {
             assertEquals(
                 expected = 4,
                 actual = document.garbageCollect(
-                    maxVectorOf(listOf(document.changeID.actor.value)),
+                    maxVectorOf(listOf(document.changeID.actor)),
                 ),
             )
         }
@@ -964,7 +964,7 @@ class GCTest {
 
             assertEquals(
                 expected = 3,
-                actual = doc.garbageCollect(maxVectorOf(listOf(doc.changeID.actor.value))),
+                actual = doc.garbageCollect(maxVectorOf(listOf(doc.changeID.actor))),
             )
             assertEquals(0, doc.garbageLength)
         }
@@ -989,7 +989,7 @@ class GCTest {
                 versionVectorHelper(
                     doc1.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 1L),
+                        Pair(client1.requireClientId(), 1L),
                     ),
                 ),
             )
@@ -999,8 +999,8 @@ class GCTest {
                 versionVectorHelper(
                     doc2.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 1L),
-                        Pair(client2.requireClientId().value, 2L),
+                        Pair(client1.requireClientId(), 1L),
+                        Pair(client2.requireClientId(), 2L),
                     ),
                 ),
             )
@@ -1010,8 +1010,8 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 1L),
-                        Pair(client3.requireClientId().value, 2L),
+                        Pair(client1.requireClientId(), 1L),
+                        Pair(client3.requireClientId(), 2L),
                     ),
                 ),
             )
@@ -1036,8 +1036,8 @@ class GCTest {
                 versionVectorHelper(
                     doc1.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 2001L),
-                        Pair(client2.requireClientId().value, 2000L),
+                        Pair(client1.requireClientId(), 2001L),
+                        Pair(client2.requireClientId(), 2000L),
                     ),
                 ),
             )
@@ -1047,8 +1047,8 @@ class GCTest {
                 versionVectorHelper(
                     doc2.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 1998L),
-                        Pair(client2.requireClientId().value, 2000L),
+                        Pair(client1.requireClientId(), 1998L),
+                        Pair(client2.requireClientId(), 2000L),
                     ),
                 ),
             )
@@ -1058,8 +1058,8 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 1L),
-                        Pair(client3.requireClientId().value, 2L),
+                        Pair(client1.requireClientId(), 1L),
+                        Pair(client3.requireClientId(), 2L),
                     ),
                 ),
             )
@@ -1074,10 +1074,10 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId().value, 1998L),
-                        Pair(client2.requireClientId().value, 2000L),
-                        Pair(INITIAL_ACTOR_ID.value, 2002L),
-                        Pair(client3.requireClientId().value, 2003L),
+                        Pair(client1.requireClientId(), 1998L),
+                        Pair(client2.requireClientId(), 2000L),
+                        Pair(ActorID.INITIAL_ACTOR_ID, 2002L),
+                        Pair(client3.requireClientId(), 2003L),
                     ),
                 ),
             )

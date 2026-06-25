@@ -12,7 +12,7 @@ import dev.yorkie.util.Logger.Companion.logError
  * [TreeStyleOperation] represents an operation that modifies the style of the node in the Tree.
  */
 internal data class TreeStyleOperation(
-    override val parentCreatedAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     val fromPos: CrdtTreePos,
     val toPos: CrdtTreePos,
     override var executedAt: TimeTicket,
@@ -21,30 +21,40 @@ internal data class TreeStyleOperation(
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
 
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
             logError(TAG, "fail to find $parentCreatedAt")
-            return emptyList()
+            return ExecutionResult(opInfos = emptyList())
         }
         if (tree !is CrdtTree) {
             logError(TAG, "fail to execute, only Tree can execute edit")
-            return emptyList()
+            return ExecutionResult(opInfos = emptyList())
         }
 
-        return when {
+        val reversePrevAttributes = mutableMapOf<String, String>()
+        val reverseAttrsToRemove = mutableListOf<String>()
+
+        val opInfos = when {
             attributes?.isNotEmpty() == true -> {
-                val (changes, gcPairs, diff) = tree.style(
+                val result = tree.style(
                     fromPos to toPos,
                     attributes,
                     executedAt,
                     versionVector,
                 )
 
-                root.acc(diff)
+                root.acc(result.dataSize)
+                result.gcPairs.forEach(root::registerGCPair)
 
-                gcPairs.forEach(root::registerGCPair)
-                changes.map {
+                reversePrevAttributes.putAll(result.prevAttributes)
+                reverseAttrsToRemove.addAll(result.attributesToRemove)
+
+                result.changes.map {
                     TreeStyleOpInfo(
                         it.from,
                         it.to,
@@ -57,14 +67,17 @@ internal data class TreeStyleOperation(
             }
 
             attributesToRemove?.isNotEmpty() == true -> {
-                val (changes, gcPairs) = tree.removeStyle(
+                val result = tree.removeStyle(
                     fromPos to toPos,
                     attributesToRemove,
                     executedAt,
                     versionVector,
                 )
-                gcPairs.forEach(root::registerGCPair)
-                changes.map {
+                result.gcPairs.forEach(root::registerGCPair)
+
+                reversePrevAttributes.putAll(result.prevAttributes)
+
+                result.changes.map {
                     TreeStyleOpInfo(
                         it.from,
                         it.to,
@@ -78,6 +91,48 @@ internal data class TreeStyleOperation(
 
             else -> emptyList()
         }
+
+        val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
+            buildReverseOps(reversePrevAttributes, reverseAttrsToRemove)
+        } else {
+            emptyList()
+        }
+
+        return ExecutionResult(opInfos = opInfos, reverseOps = reverseOps)
+    }
+
+    private fun buildReverseOps(
+        prevAttributes: Map<String, String>,
+        attrsToRemove: List<String>,
+    ): List<Operation> {
+        if (prevAttributes.isEmpty() && attrsToRemove.isEmpty()) return emptyList()
+        val reverseOp = when {
+            prevAttributes.isNotEmpty() && attrsToRemove.isNotEmpty() -> TreeStyleOperation(
+                parentCreatedAt = parentCreatedAt,
+                fromPos = fromPos,
+                toPos = toPos,
+                executedAt = executedAt,
+                attributes = prevAttributes,
+                attributesToRemove = attrsToRemove,
+            )
+            attrsToRemove.isNotEmpty() -> TreeStyleOperation(
+                parentCreatedAt = parentCreatedAt,
+                fromPos = fromPos,
+                toPos = toPos,
+                executedAt = executedAt,
+                attributes = null,
+                attributesToRemove = attrsToRemove,
+            )
+            else -> TreeStyleOperation(
+                parentCreatedAt = parentCreatedAt,
+                fromPos = fromPos,
+                toPos = toPos,
+                executedAt = executedAt,
+                attributes = prevAttributes,
+                attributesToRemove = null,
+            )
+        }
+        return listOf(reverseOp)
     }
 
     companion object {

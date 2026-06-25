@@ -18,6 +18,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Matches JS example behaviour (Yorkie JS PR #1108): if the launcher
+        // provides a "key" extra (e.g. `adb shell am start ... --es key my-room`),
+        // skip the Enter-Document-Key screen and open that document directly.
+        val initialDocumentKey = intent?.getStringExtra(EXTRA_DOCUMENT_KEY)
         setContent {
             TodoMVCTheme {
                 Surface(
@@ -27,9 +31,16 @@ class MainActivity : ComponentActivity() {
                         .navigationBarsPadding(),
                     color = MaterialTheme.colors.background,
                 ) {
-                    TodoAppHost(navController = rememberNavController())
+                    TodoAppHost(
+                        navController = rememberNavController(),
+                        initialDocumentKey = initialDocumentKey,
+                    )
                 }
             }
         }
+    }
+
+    companion object {
+        private const val EXTRA_DOCUMENT_KEY = "key"
     }
 }

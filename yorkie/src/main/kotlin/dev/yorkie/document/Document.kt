@@ -18,10 +18,17 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.history.History
+import dev.yorkie.document.history.HistoryOperation
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.operation.AddOperation
+import dev.yorkie.document.operation.ArraySetOperation
+import dev.yorkie.document.operation.EditOperation
+import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
@@ -31,7 +38,7 @@ import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.schema.Rule
 import dev.yorkie.document.schema.validateYorkieRuleset
-import dev.yorkie.document.time.ActorID
+import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DocSize
@@ -72,8 +79,6 @@ import kotlinx.coroutines.withContext
  * A single-threaded, [Closeable] [dispatcher] is used as default.
  * Therefore you need to [close] the document, when the document is no longer needed.
  * If you provide your own [dispatcher], it is up to you to decide [close] is needed or not.
- * [snapshotDispatcher] can be set differently from [dispatcher],
- * as snapshot operation can be much heavier than other operations.
  */
 public class Document(
     private val key: String,
@@ -84,6 +89,10 @@ public class Document(
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
+    private val internalHistory = History()
+
+    @Volatile
+    private var isUpdating = false
 
     @Volatile
     private var maxSizeLimit = 0
@@ -121,7 +130,7 @@ public class Document(
     internal val presenceEventQueue = mutableListOf<PresenceChanged>()
     private val pendingPresenceEvents = mutableListOf<PresenceChanged>()
 
-    private val onlineClients = MutableStateFlow(setOf<ActorID>())
+    private val onlineClients = MutableStateFlow(setOf<String>())
 
     private val _presences = MutableStateFlow(UninitializedPresences)
     public val presences: StateFlow<Presences> =
@@ -143,6 +152,44 @@ public class Document(
         get() = allPresences.value[changeID.actor]
             .takeIf { status == ResourceStatus.Attached }
             .orEmpty()
+
+    /**
+     * Provides undo/redo operations for this document.
+     */
+    public val history: DocumentHistory = object : DocumentHistory {
+        override fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating
+
+        override fun canRedo(): Boolean = internalHistory.hasRedo() && !isUpdating
+
+        override fun undoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = true)
+
+        override fun redoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = false)
+    }
+
+    /**
+     * Interface for undo/redo operations on a document.
+     */
+    public interface DocumentHistory {
+        /**
+         * Returns true if there are operations that can be undone.
+         */
+        fun canUndo(): Boolean
+
+        /**
+         * Returns true if there are operations that can be redone.
+         */
+        fun canRedo(): Boolean
+
+        /**
+         * Undoes the last local operation.
+         */
+        fun undoAsync(): Deferred<OperationResult>
+
+        /**
+         * Redoes the last undone operation.
+         */
+        fun redoAsync(): Deferred<OperationResult>
+    }
 
     /**
      * Executes the given [updater] to update this document.
@@ -216,10 +263,22 @@ public class Document(
                 return@async result
             }
             val change = context.toChange()
-            val (operationInfos, newPresences) = change.execute(root, _presences.value)
+            val localResult = change.execute(root, _presences.value)
+            val operationInfos = localResult.opInfos
+            val newPresences = localResult.newPresences
+            val reverseOps = localResult.reverseOps
 
             localChanges += change
             changeID = context.getNextId()
+
+            // Push reverse ops for undo
+            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+            if (reverseHistoryOps.isNotEmpty()) {
+                internalHistory.pushUndo(reverseHistoryOps)
+            }
+            if (operationInfos.isNotEmpty()) {
+                internalHistory.clearRedo()
+            }
 
             if (change.hasOperations) {
                 eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
@@ -235,7 +294,127 @@ public class Document(
         }
     }
 
-    private fun createPresenceChangedEvent(actorID: ActorID, presence: P): PresenceChanged {
+    private fun executeUndoRedo(isUndo: Boolean): Deferred<OperationResult> {
+        return scope.async {
+            if (isUpdating) {
+                return@async Result.failure(
+                    IllegalStateException(
+                        "${if (isUndo) "Undo" else "Redo"} is not allowed during an update",
+                    ),
+                )
+            }
+
+            val ops = if (isUndo) {
+                internalHistory.popUndo()
+            } else {
+                internalHistory.popRedo()
+            }
+            if (ops == null) {
+                return@async Result.failure(
+                    IllegalStateException(
+                        "There is no operation to be ${if (isUndo) "undone" else "redone"}",
+                    ),
+                )
+            }
+
+            val clone = ensureClone()
+            val context = ChangeContext(
+                prevId = changeID,
+                root = clone.root,
+            )
+
+            for ((index, historyOp) in ops.withIndex()) {
+                when (historyOp) {
+                    is HistoryOperation.Op -> {
+                        val op = historyOp.operation
+                        val ticket = context.issueTimeTicket()
+                        op.executedAt = ticket
+
+                        // Reconcile createdAt for ArraySet and Add operations
+                        if (op is ArraySetOperation) {
+                            val prev = op.createdAt
+                            op.value.createdAt = ticket
+                            internalHistory.reconcileCreatedAt(prev, ticket)
+                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                        } else if (op is AddOperation) {
+                            val prev = op.value.createdAt
+                            op.value.createdAt = ticket
+                            internalHistory.reconcileCreatedAt(prev, ticket)
+                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                        }
+
+                        context.push(op)
+                    }
+
+                    is HistoryOperation.Presence -> {
+                        // Presence undo — not implemented in v0.6.36 scope
+                    }
+                }
+            }
+
+            if (!context.hasChange) {
+                return@async Result.success(Unit)
+            }
+
+            val change = context.toChange()
+            // Execute on clone (validation)
+            change.execute(clone.root, clone.presences, OpSource.UndoRedo)
+            // Execute on root (real application)
+            val undoRedoResult = change.execute(
+                root,
+                _presences.value,
+                OpSource.UndoRedo,
+            )
+            val opInfos = undoRedoResult.opInfos
+            val reverseOps = undoRedoResult.reverseOps
+
+            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+            if (reverseHistoryOps.isNotEmpty()) {
+                if (isUndo) {
+                    internalHistory.pushRedo(reverseHistoryOps)
+                } else {
+                    internalHistory.pushUndo(reverseHistoryOps)
+                }
+            }
+
+            if (opInfos.isEmpty()) {
+                return@async Result.success(Unit)
+            }
+
+            localChanges += change
+            changeID = context.getNextId()
+
+            if (opInfos.isNotEmpty()) {
+                eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
+            }
+
+            Result.success(Unit)
+        }
+    }
+
+    /**
+     * Reconciles parentCreatedAt references in the remaining ops of the current batch.
+     * When an AddOperation or ArraySetOperation assigns a new createdAt to its value,
+     * subsequent ops in the same batch that reference the old createdAt as their
+     * parentCreatedAt must be updated to point to the new one.
+     */
+    private fun reconcileOpsCreatedAt(
+        ops: List<HistoryOperation>,
+        fromIndex: Int,
+        prevCreatedAt: TimeTicket,
+        currCreatedAt: TimeTicket,
+    ) {
+        for (i in fromIndex until ops.size) {
+            val historyOp = ops[i]
+            if (historyOp !is HistoryOperation.Op) continue
+            val op = historyOp.operation
+            if (op.parentCreatedAt === prevCreatedAt) {
+                op.parentCreatedAt = currCreatedAt
+            }
+        }
+    }
+
+    private fun createPresenceChangedEvent(actorID: String, presence: P): PresenceChanged {
         return if (actorID == changeID.actor) {
             MyPresence.PresenceChanged(PresenceInfo(actorID, presence))
         } else {
@@ -364,6 +543,8 @@ public class Document(
         changeID = changeID.setClocks(snapshotVector.maxLamport(), snapshotVector)
         clone = null
         removePushedLocalChanges(clientSeq)
+        internalHistory.clearUndo()
+        internalHistory.clearRedo()
         eventStream.emit(Event.Snapshot(snapshot))
     }
 
@@ -373,8 +554,8 @@ public class Document(
     private suspend fun applyChanges(changes: List<Change>) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, clone.presences).also { (_, newPresences) ->
-                this.clone = clone.copy(presences = newPresences ?: return@also)
+            change.execute(clone.root, clone.presences, OpSource.Remote).also { cloneResult ->
+                this.clone = clone.copy(presences = cloneResult.newPresences ?: return@also)
             }
             val actorID = change.id.actor
             var presenceEvent: PresenceChanged? = null
@@ -406,7 +587,79 @@ public class Document(
                 }
             }
 
-            val (opInfos, newPresences) = change.execute(root, _presences.value)
+            val remoteResult = change.execute(root, _presences.value, OpSource.Remote)
+            val opInfos = remoteResult.opInfos
+            val newPresences = remoteResult.newPresences
+
+            // Reconcile text and tree undo/redo stack entries against remote edits.
+            // Only reconcile against changes from other clients.
+            if (change.id.actor != changeID.actor) {
+                var opInfoIndex = 0
+                for (executedOp in remoteResult.executedOperations) {
+                    when (executedOp) {
+                        is EditOperation -> {
+                            // For text edits there is at most one EditOpInfo per operation.
+                            while (opInfoIndex < remoteResult.opInfos.size) {
+                                val opInfo = remoteResult.opInfos[opInfoIndex]
+                                opInfoIndex++
+                                if (opInfo is OperationInfo.EditOpInfo) {
+                                    internalHistory.reconcileTextEdit(
+                                        executedOp.parentCreatedAt,
+                                        opInfo.from,
+                                        opInfo.to,
+                                        opInfo.value.text.length,
+                                    )
+                                    break
+                                }
+                            }
+                        }
+
+                        is TreeEditOperation -> {
+                            // For tree edits there may be multiple TreeEditOpInfos per operation
+                            // (split/merge decomposes into multiple ranges). Reconcile using the
+                            // first deletion range's from/to and the inserted node count.
+                            var firstTreeEditOpInfo: OperationInfo.TreeEditOpInfo? = null
+                            while (opInfoIndex < remoteResult.opInfos.size) {
+                                val opInfo = remoteResult.opInfos[opInfoIndex]
+                                opInfoIndex++
+                                if (opInfo is OperationInfo.TreeEditOpInfo) {
+                                    if (firstTreeEditOpInfo == null) {
+                                        firstTreeEditOpInfo = opInfo
+                                    }
+                                    // Keep consuming TreeEditOpInfos for this operation
+                                    val next = remoteResult.opInfos.getOrNull(opInfoIndex)
+                                    if (next !is OperationInfo.TreeEditOpInfo) break
+                                } else {
+                                    break
+                                }
+                            }
+                            firstTreeEditOpInfo?.let { opInfo ->
+                                val insertedSize = opInfo.nodes?.size ?: 0
+                                internalHistory.reconcileTreeEdit(
+                                    executedOp.parentCreatedAt,
+                                    opInfo.from,
+                                    opInfo.to,
+                                    insertedSize,
+                                )
+                            }
+                        }
+
+                        else -> {
+                            // Skip opInfos for non-Edit operations
+                            while (opInfoIndex < remoteResult.opInfos.size) {
+                                val opInfo = remoteResult.opInfos[opInfoIndex]
+                                opInfoIndex++
+                                if (opInfo !is OperationInfo.EditOpInfo &&
+                                    opInfo !is OperationInfo.TreeEditOpInfo
+                                ) {
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (opInfos.isNotEmpty()) {
                 eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
             }
@@ -526,7 +779,7 @@ public class Document(
      * Sets [actorID] into this document.
      * This is also applied in the [localChanges] the document has.
      */
-    override fun setActor(actorID: ActorID) {
+    override fun setActor(actorID: String) {
         localChanges.forEach {
             it.setActor(actorID)
         }
@@ -575,16 +828,20 @@ public class Document(
 
     internal fun getOnlineClients() = onlineClients.value
 
-    internal fun setOnlineClients(actorIDs: Set<ActorID>) {
+    internal fun setOnlineClients(actorIDs: Set<String>) {
         onlineClients.value = actorIDs
     }
 
-    internal fun addOnlineClient(actorID: ActorID) {
+    internal fun addOnlineClient(actorID: String) {
         onlineClients.value += actorID
     }
 
-    internal fun removeOnlineClient(actorID: ActorID) {
+    internal fun removeOnlineClient(actorID: String) {
         onlineClients.value -= actorID
+    }
+
+    internal fun clearPresence(actorID: String) {
+        _presences.value = _presences.value - actorID
     }
 
     /**
@@ -738,14 +995,14 @@ public class Document(
          */
         public data class DocumentStatusChanged(
             val docStatus: ResourceStatus,
-            val actorID: ActorID?,
+            val actorID: String?,
         ) : Event
 
         /**
          * `Broadcast` means that the broadcast event is received from the remote client.
          */
         public data class Broadcast(
-            val actorID: ActorID?,
+            val actorID: String?,
             val topic: String,
             val payload: String,
         ) : Event
@@ -759,8 +1016,20 @@ public class Document(
         ) : Event {
             enum class AuthErrorMethod(val value: String) {
                 PushPull("PushPull"),
-                WatchDocument("WatchDocument"),
+                Watch("Watch"),
                 Broadcast("Broadcast"),
+            }
+        }
+
+        /**
+         * `EpochMismatch` indicates the document was compacted on the server
+         * and this client must detach and reattach to recover.
+         */
+        public data class EpochMismatch(
+            val method: EpochMismatchMethod,
+        ) : Event {
+            enum class EpochMismatchMethod(val value: String) {
+                PushPull("PushPull"),
             }
         }
 
@@ -770,7 +1039,7 @@ public class Document(
         public data class ChangeInfo(
             public val message: String,
             public val operations: List<OperationInfo>,
-            public val actorID: ActorID,
+            public val actorID: String,
             public val clientSeq: UInt,
             public val serverSeq: Long,
         )

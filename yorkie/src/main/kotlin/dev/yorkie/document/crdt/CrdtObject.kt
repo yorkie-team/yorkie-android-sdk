@@ -8,7 +8,7 @@ import dev.yorkie.util.DataSize
  * [TimeTicket]s which are created by logical clock.
  */
 internal data class CrdtObject(
-    override val createdAt: TimeTicket,
+    override var createdAt: TimeTicket,
     override var movedAt: TimeTicket? = null,
     override var removedAt: TimeTicket? = null,
     val memberNodes: ElementRht<CrdtElement> = ElementRht(),

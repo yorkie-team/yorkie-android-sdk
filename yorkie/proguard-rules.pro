@@ -15,6 +15,8 @@
 -keep class dev.yorkie.util.Logger { *; }
 -keep class dev.yorkie.util.Logger$** { *; }
 
+-keep enum dev.yorkie.core.ResourceStatus { *; }
+
 # =============================================================================
 # Protocol Buffers - CRITICAL: Prevent obfuscation for protobuf to work
 # =============================================================================

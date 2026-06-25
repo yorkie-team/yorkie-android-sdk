@@ -162,6 +162,21 @@ internal fun validateValue(value: Any?, rule: Rule): ValidationResult {
                     ),
                 )
             }
+            val treeNodes = (rule as? Rule.YorkieTypeRule)?.treeNodes
+            if (!treeNodes.isNullOrEmpty()) {
+                val treeResult = validateTreeAgainstSchema(value, treeNodes)
+                if (!treeResult.valid) {
+                    return ValidationResult(
+                        valid = false,
+                        errors = listOf(
+                            ValidationError(
+                                path = rule.path,
+                                message = treeResult.error.orEmpty(),
+                            ),
+                        ),
+                    )
+                }
+            }
         }
         Rule.YorkieTypeRule.Type.COUNTER.value -> {
             if (value !is CrdtCounter) {

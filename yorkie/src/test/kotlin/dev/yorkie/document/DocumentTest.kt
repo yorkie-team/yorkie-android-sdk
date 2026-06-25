@@ -6,7 +6,7 @@ import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
-import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
+import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.helper.maxVectorOf
@@ -320,7 +320,7 @@ class DocumentTest {
 
         target.garbageCollect(
             VersionVector().apply {
-                set(INITIAL_ACTOR_ID.value, MAX_LAMPORT)
+                set(ActorID.INITIAL_ACTOR_ID, MAX_LAMPORT)
             },
         )
         assertEquals(2, target.getRoot().getAs<JsonText>("text").treeByID.size)

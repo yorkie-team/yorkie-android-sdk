@@ -22,6 +22,7 @@ import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.FloatingActionButton
 import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Surface
@@ -29,6 +30,8 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -326,7 +329,47 @@ fun TodoScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Undo/Redo buttons
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(
+                onClick = { onAction(TodoAction.Undo) },
+                enabled = state.canUndo,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Undo,
+                    contentDescription = stringResource(id = R.string.undo),
+                    tint = if (state.canUndo) {
+                        MaterialTheme.colors.primary
+                    } else {
+                        MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                    },
+                )
+            }
+            IconButton(
+                onClick = { onAction(TodoAction.Redo) },
+                enabled = state.canRedo,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Redo,
+                    contentDescription = stringResource(id = R.string.redo),
+                    tint = if (state.canRedo) {
+                        MaterialTheme.colors.primary
+                    } else {
+                        MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                    },
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (state.isLoading) {
             Box(

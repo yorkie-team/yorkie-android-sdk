@@ -13,8 +13,10 @@ import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
+import dev.yorkie.util.YorkieException
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.asFlow
@@ -271,6 +273,133 @@ class JsonTreeTest {
             """{"type":"doc","children":[{"type":"tc","children":[{"type":"p","children":[{"type":"tn","children":[{"type":"text","value":""}],"attributes":{"z":"m"}}],"attributes":{"a":"b","c":"q"}}]}]}""",
             target.toJson(),
         )
+    }
+
+    @Test
+    fun `should style a range of elements by path`() {
+        // given
+        val target = createTreeWithMultipleParagraphs()
+        assertEquals(
+            """<doc><p weight="bold">a</p><p>b</p></doc>""",
+            target.toXml(),
+        )
+
+        // when
+        target.styleByPath(listOf(0), listOf(2), mapOf("color" to "red"))
+
+        // then
+        assertEquals(
+            """<doc><p color="red" weight="bold">a</p><p color="red">b</p></doc>""",
+            target.toXml(),
+        )
+    }
+
+    @Test
+    fun `should style multiple elements across a range by path`() {
+        // given
+        val target = createTreeWithTwoParagraphs()
+        assertEquals(
+            "<doc><p>ab</p><p>cd</p></doc>",
+            target.toXml(),
+        )
+
+        // when
+        target.styleByPath(listOf(0), listOf(2), mapOf("bold" to "true"))
+
+        // then
+        assertEquals(
+            """<doc><p bold="true">ab</p><p bold="true">cd</p></doc>""",
+            target.toXml(),
+        )
+    }
+
+    @Test
+    fun `should style a single element by path for backward compatibility`() {
+        // given
+        val target = createTreeWithSingleParagraph()
+        assertEquals(
+            "<doc><p>hello</p></doc>",
+            target.toXml(),
+        )
+
+        // when
+        target.styleByPath(listOf(0), mapOf("bold" to "true"))
+
+        // then
+        assertEquals(
+            """<doc><p bold="true">hello</p></doc>""",
+            target.toXml(),
+        )
+    }
+
+    @Test
+    fun `should remove style from a range of elements by path`() {
+        // given
+        val target = createTreeWithStyledParagraphs()
+        assertEquals(
+            """<doc><p bold="true" italic="true">a</p><p bold="true" italic="true">b</p></doc>""",
+            target.toXml(),
+        )
+
+        // when
+        target.removeStyleByPath(listOf(0), listOf(2), listOf("italic"))
+
+        // then
+        assertEquals(
+            """<doc><p bold="true">a</p><p bold="true">b</p></doc>""",
+            target.toXml(),
+        )
+    }
+
+    @Test
+    fun `should remove style from multiple elements across a range by path`() {
+        // given
+        val target = createTreeWithBoldParagraphs()
+        assertEquals(
+            """<doc><p bold="true">ab</p><p bold="true">cd</p></doc>""",
+            target.toXml(),
+        )
+
+        // when
+        target.removeStyleByPath(listOf(0), listOf(2), listOf("bold"))
+
+        // then
+        assertEquals(
+            "<doc><p>ab</p><p>cd</p></doc>",
+            target.toXml(),
+        )
+    }
+
+    @Test
+    fun `should throw on mismatched path lengths for range styleByPath`() {
+        val target = createTreeWithSingleParagraph()
+        assertThrows(IllegalArgumentException::class.java) {
+            target.styleByPath(listOf(0), listOf(0, 0), mapOf("bold" to "true"))
+        }
+    }
+
+    @Test
+    fun `should throw on empty paths for range styleByPath`() {
+        val target = createTreeWithSingleParagraph()
+        assertThrows(IllegalArgumentException::class.java) {
+            target.styleByPath(emptyList(), emptyList(), mapOf("bold" to "true"))
+        }
+    }
+
+    @Test
+    fun `should throw on mismatched path lengths for removeStyleByPath`() {
+        val target = createTreeWithSingleParagraph()
+        assertThrows(IllegalArgumentException::class.java) {
+            target.removeStyleByPath(listOf(0), listOf(0, 0), listOf("bold"))
+        }
+    }
+
+    @Test
+    fun `should throw on empty paths for removeStyleByPath`() {
+        val target = createTreeWithSingleParagraph()
+        assertThrows(IllegalArgumentException::class.java) {
+            target.removeStyleByPath(emptyList(), emptyList(), listOf("bold"))
+        }
     }
 
     @Test
@@ -913,6 +1042,97 @@ class JsonTreeTest {
         )
     }
 
+    @Test
+    fun `splitByPath with empty path throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().splitByPath(emptyList())
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    @Test
+    fun `mergeByPath with empty path throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                    element("p") { text { "world" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().mergeByPath(emptyList())
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    @Test
+    fun `mergeByPath on text node throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                    element("p") { text { "world" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().mergeByPath(listOf(0, 0))
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    @Test
+    fun `mergeByPath on first child throws YorkieException`() = runTest {
+        val document = Document("")
+        fun JsonObject.tree() = getAs<JsonTree>("t")
+
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "hello" } }
+                    element("p") { text { "world" } }
+                },
+            )
+        }.await()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().mergeByPath(listOf(0))
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
     companion object {
         private val rootCrdtTree: CrdtTree
             get() = CrdtTree(rootCrdtTreeNode, InitialTimeTicket)
@@ -929,6 +1149,85 @@ class JsonTreeTest {
                         }
                         attr { "a" to "b" }
                     }
+                }
+            }
+            return JsonTree(
+                DummyContext,
+                CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
+            )
+        }
+
+        private fun createTreeWithSingleParagraph(): JsonTree {
+            val root = element("doc") {
+                element("p") {
+                    text { "hello" }
+                }
+            }
+            return JsonTree(
+                DummyContext,
+                CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
+            )
+        }
+
+        private fun createTreeWithMultipleParagraphs(): JsonTree {
+            val root = element("doc") {
+                element("p") {
+                    text { "a" }
+                    attr { "weight" to "bold" }
+                }
+                element("p") {
+                    text { "b" }
+                }
+            }
+            return JsonTree(
+                DummyContext,
+                CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
+            )
+        }
+
+        private fun createTreeWithTwoParagraphs(): JsonTree {
+            val root = element("doc") {
+                element("p") {
+                    text { "ab" }
+                }
+                element("p") {
+                    text { "cd" }
+                }
+            }
+            return JsonTree(
+                DummyContext,
+                CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
+            )
+        }
+
+        private fun createTreeWithStyledParagraphs(): JsonTree {
+            val root = element("doc") {
+                element("p") {
+                    text { "a" }
+                    attr { "bold" to "true" }
+                    attr { "italic" to "true" }
+                }
+                element("p") {
+                    text { "b" }
+                    attr { "bold" to "true" }
+                    attr { "italic" to "true" }
+                }
+            }
+            return JsonTree(
+                DummyContext,
+                CrdtTree(JsonTree.buildRoot(root, DummyContext), InitialTimeTicket),
+            )
+        }
+
+        private fun createTreeWithBoldParagraphs(): JsonTree {
+            val root = element("doc") {
+                element("p") {
+                    text { "ab" }
+                    attr { "bold" to "true" }
+                }
+                element("p") {
+                    text { "cd" }
+                    attr { "bold" to "true" }
                 }
             }
             return JsonTree(

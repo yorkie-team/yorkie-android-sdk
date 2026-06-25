@@ -1,7 +1,6 @@
 package dev.yorkie.document.change
 
 import dev.yorkie.document.time.ActorID
-import dev.yorkie.document.time.ActorID.Companion.INITIAL_ACTOR_ID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
@@ -21,7 +20,7 @@ import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 public data class ChangeID(
     val clientSeq: UInt,
     val lamport: Long,
-    val actor: ActorID,
+    val actor: String,
     val versionVector: VersionVector,
     val serverSeq: Long = 0,
 ) {
@@ -39,7 +38,7 @@ public data class ChangeID(
         }
 
         val vector = versionVector.deepCopy()
-        vector.set(actor.value, lamport + 1)
+        vector.set(actor, lamport + 1)
         return copy(clientSeq = clientSeq + 1u, lamport = lamport + 1, versionVector = vector)
     }
 
@@ -73,7 +72,7 @@ public data class ChangeID(
             lamport = lamport,
             versionVector = maxVersionVector,
         )
-        newID.versionVector.set(actor.value, lamport)
+        newID.versionVector.set(actor, lamport)
         return newID
     }
 
@@ -85,7 +84,7 @@ public data class ChangeID(
         val lamport = if (otherLamport > lamport) otherLamport + 1 else lamport + 1
 
         val maxVersionVector = this.versionVector.max(vector)
-        maxVersionVector.set(actor.value, lamport)
+        maxVersionVector.set(actor, lamport)
         return copy(
             lamport = lamport,
             versionVector = maxVersionVector,
@@ -109,7 +108,7 @@ public data class ChangeID(
     /**
      * Sets the given [actorID].
      */
-    fun setActor(actorID: ActorID) = copy(actor = actorID)
+    fun setActor(actorID: String) = copy(actor = actorID)
 
     /**
      * Sets the vector [vector].
@@ -121,6 +120,6 @@ public data class ChangeID(
          * Represents the initial state ID.
          * Usually this is used to represent a state where nothing has been edited.
          */
-        val InitialChangeID = ChangeID(0u, 0, INITIAL_ACTOR_ID, INITIAL_VERSION_VECTOR)
+        val InitialChangeID = ChangeID(0u, 0, ActorID.INITIAL_ACTOR_ID, INITIAL_VERSION_VECTOR)
     }
 }

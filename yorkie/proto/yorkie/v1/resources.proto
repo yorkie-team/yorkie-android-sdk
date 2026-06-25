@@ -108,11 +108,13 @@ message Operation {
     map<string, string> attributes = 4;
     TimeTicket executed_at = 5;
     map<string, TimeTicket> created_at_map_by_actor = 6 [deprecated = true];
+    repeated string attributes_to_remove = 7;
   }
   message Increase {
     TimeTicket parent_created_at = 1;
     JSONElementSimple value = 2;
     TimeTicket executed_at = 3;
+    string actor = 4;
   }
   message TreeEdit {
     TimeTicket parent_created_at = 1;
@@ -197,6 +199,8 @@ message JSONElement {
     TimeTicket created_at = 3;
     TimeTicket moved_at = 4;
     TimeTicket removed_at = 5;
+    reserved 6;
+    bytes hll_registers = 7;
   }
   message Tree {
     repeated TreeNode nodes = 1;
@@ -253,6 +257,8 @@ message TreeNode {
   TreeNodeID ins_next_id = 6;
   int32 depth = 7;
   map<string, NodeAttr> attributes = 8;
+  TreeNodeID merged_from = 9;
+  TimeTicket merged_at = 10;
 }
 
 message TreeNodes {
@@ -410,6 +416,7 @@ enum ValueType {
   VALUE_TYPE_INTEGER_CNT = 11;
   VALUE_TYPE_LONG_CNT = 12;
   VALUE_TYPE_TREE = 13;
+  VALUE_TYPE_INTEGER_DEDUP_CNT = 14;
 }
 
 enum DocEventType {
@@ -430,15 +437,19 @@ message DocEvent {
   DocEventBody body = 3;
 }
 
-message PresenceEvent {
+message ChannelEvent {
   enum Type {
     TYPE_UNSPECIFIED = 0;
-    TYPE_COUNT_CHANGED = 1;
+    TYPE_PRESENCE = 1;
+    TYPE_BROADCAST = 2;
   }
 
   Type type = 1;
-  int64 count = 2;
-  int64 seq = 3;
+  string publisher = 2;
+  int64 session_count = 3;
+  int64 seq = 4;
+  string topic = 5;
+  bytes payload = 6;
 }
 
 message DataSize {
@@ -460,7 +471,23 @@ message Schema {
   google.protobuf.Timestamp created_at = 6;
 }
 
+message TreeNodeRule {
+  string node_type = 1;
+  string content = 2;
+  string marks = 3;
+  string group = 4;
+}
+
 message Rule {
   string path = 1;
   string type = 2;
+  repeated TreeNodeRule tree_nodes = 3;
+}
+
+message RevisionSummary {
+  string id = 1;
+  string label = 2;
+  string description = 3;
+  string snapshot = 4;
+  google.protobuf.Timestamp created_at = 5;
 }

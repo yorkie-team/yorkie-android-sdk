@@ -1,13 +1,12 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.escapeString
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.DataSize
 
 internal data class TextChange(
     val type: TextChangeType,
-    val actor: ActorID,
+    val actor: String,
     val from: Int,
     val to: Int,
     val content: String? = null,
@@ -113,10 +112,13 @@ internal data class TextEditResult(
     val posRange: RgaTreeSplitPosRange,
     val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
     val dataSize: DataSize,
+    val removedValues: List<TextValue> = emptyList(),
 )
 
 internal data class TextStyleResult(
     val textChanges: List<TextChange>,
     val gcPairs: List<GCPair<RhtNode>>,
     val dataSize: DataSize,
+    val prevAttributes: Map<String, String> = emptyMap(),
+    val attributesToRemove: List<String> = emptyList(),
 )

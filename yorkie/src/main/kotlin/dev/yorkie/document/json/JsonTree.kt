@@ -187,9 +187,15 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * `splitByPath` splits the tree by the given [path].
+     * Splits the tree at the given [path].
+     *
+     * The node at [path] is split into two sibling nodes. Content after the
+     * split point moves into a new node inserted immediately after. Internally
+     * decomposes into one or two [edit] calls (delete tail + insert new node).
+     *
+     * @throws YorkieException if [path] is empty.
      */
-    fun splitByPath(path: List<Int>) {
+    public fun splitByPath(path: List<Int>) {
         if (path.isEmpty()) {
             throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
@@ -218,9 +224,17 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * `mergeByPath` merges the tree by the given [path].
+     * Merges the element node at the given [path] into its left sibling.
+     *
+     * The children of the node at [path] are moved into the preceding sibling,
+     * then the now-empty node is deleted. Only element nodes can be merged;
+     * merging a text node throws [YorkieException]. The node must have a left
+     * sibling (i.e., it cannot be the first child).
+     *
+     * @throws YorkieException if [path] is empty, resolves to a text node, or
+     *   resolves to the first child (no left sibling).
      */
-    fun mergeByPath(path: List<Int>) {
+    public fun mergeByPath(path: List<Int>) {
         if (path.isEmpty()) {
             throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
@@ -233,6 +247,13 @@ public class JsonTree internal constructor(
             throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "text node cannot be merged",
+            )
+        }
+
+        if (treePos.offset == 0) {
+            throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "the first child cannot be merged (no left sibling)",
             )
         }
 
@@ -250,7 +271,7 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * Sets the [attributes] to the elements of the given [path].
+     * Sets the [attributes] to the element at the given [path].
      */
     public fun styleByPath(path: List<Int>, attributes: Map<String, String>) {
         require(path.isNotEmpty()) {
@@ -259,6 +280,27 @@ public class JsonTree internal constructor(
 
         val treeRange = target.pathToPosRange(path)
         styleByRange(treeRange, attributes)
+    }
+
+    /**
+     * Sets the [attributes] to the elements in the path range
+     * between [fromPath] and [toPath].
+     */
+    public fun styleByPath(
+        fromPath: List<Int>,
+        toPath: List<Int>,
+        attributes: Map<String, String>,
+    ) {
+        require(fromPath.size == toPath.size) {
+            "path length should be equal"
+        }
+        require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
+            "path should not be empty"
+        }
+
+        val fromPos = target.pathToPos(fromPath)
+        val toPos = target.pathToPos(toPath)
+        styleByRange(fromPos to toPos, attributes)
     }
 
     /**
@@ -297,6 +339,10 @@ public class JsonTree internal constructor(
         gcPairs.forEach(context::registerGCPair)
     }
 
+    /**
+     * Removes the attributes in [attributesToRemove] from the elements
+     * in the given index range.
+     */
     public fun removeStyle(
         fromIndex: Int,
         toIndex: Int,
@@ -308,9 +354,34 @@ public class JsonTree internal constructor(
 
         val fromPos = target.findPos(fromIndex)
         val toPos = target.findPos(toIndex)
+        removeStyleByRange(fromPos to toPos, attributesToRemove)
+    }
+
+    /**
+     * Removes the attributes in [attributesToRemove] from the elements
+     * in the path range between [fromPath] and [toPath].
+     */
+    public fun removeStyleByPath(
+        fromPath: List<Int>,
+        toPath: List<Int>,
+        attributesToRemove: List<String>,
+    ) {
+        require(fromPath.size == toPath.size) {
+            "path length should be equal"
+        }
+        require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
+            "path should not be empty"
+        }
+
+        val fromPos = target.pathToPos(fromPath)
+        val toPos = target.pathToPos(toPath)
+        removeStyleByRange(fromPos to toPos, attributesToRemove)
+    }
+
+    private fun removeStyleByRange(range: TreePosRange, attributesToRemove: List<String>) {
         val executedAt = context.issueTimeTicket()
         val (_, gcPairs, diff) = target.removeStyle(
-            fromPos to toPos,
+            range,
             attributesToRemove,
             executedAt,
         )
@@ -322,8 +393,8 @@ public class JsonTree internal constructor(
         context.push(
             TreeStyleOperation(
                 target.createdAt,
-                fromPos,
-                toPos,
+                range.first,
+                range.second,
                 executedAt,
                 attributesToRemove = attributesToRemove,
             ),

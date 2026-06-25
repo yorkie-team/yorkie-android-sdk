@@ -10,9 +10,9 @@ import dev.yorkie.util.Logger.Companion.logError
  * [MoveOperation] is an operation representing moving an element to an [CrdtArray].
  */
 internal data class MoveOperation(
-    val prevCreatedAt: TimeTicket,
-    val createdAt: TimeTicket,
-    override val parentCreatedAt: TimeTicket,
+    var prevCreatedAt: TimeTicket,
+    var createdAt: TimeTicket,
+    override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
 ) : Operation() {
 
@@ -25,23 +25,39 @@ internal data class MoveOperation(
     /**
      * Executes this [MoveOperation] on the given [root].
      */
-    override fun execute(root: CrdtRoot, versionVector: VersionVector?): List<OperationInfo> {
+    override fun execute(
+        root: CrdtRoot,
+        source: OpSource,
+        versionVector: VersionVector?,
+    ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtArray) {
+            val prevCreatedAtBefore = parentObject.getPrevCreatedAt(createdAt)
             val previousIndex = parentObject.subPathOf(createdAt).toInt()
             parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
             val index = parentObject.subPathOf(createdAt).toInt()
-            listOf(
-                OperationInfo.MoveOpInfo(
-                    previousIndex = previousIndex,
-                    index = index,
-                    path = root.createPath(parentCreatedAt),
+
+            val reverseOp = MoveOperation(
+                prevCreatedAt = prevCreatedAtBefore,
+                createdAt = createdAt,
+                parentCreatedAt = parentCreatedAt,
+                executedAt = executedAt,
+            )
+
+            ExecutionResult(
+                opInfos = listOf(
+                    OperationInfo.MoveOpInfo(
+                        previousIndex = previousIndex,
+                        index = index,
+                        path = root.createPath(parentCreatedAt),
+                    ),
                 ),
+                reverseOps = listOf(reverseOp),
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only array can execute move")
-            emptyList()
+            ExecutionResult(opInfos = emptyList())
         }
     }
 

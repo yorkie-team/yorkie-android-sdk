@@ -26,6 +26,8 @@ data class TodoState(
     val filter: TodoFilter = TodoFilter.ALL,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
 ) {
     val filteredTodos: List<Todo>
         get() = when (filter) {

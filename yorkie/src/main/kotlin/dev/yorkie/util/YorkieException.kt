@@ -58,6 +58,10 @@ public data class YorkieException(
 
         // ErrTooManyAttachments is returned when the number of attachments exceeds the limit.
         ErrTooManyAttachments("ErrTooManyAttachments"),
+
+        // ErrEpochMismatch is returned when the document has been compacted
+        // and the client's epoch no longer matches the server's epoch.
+        ErrEpochMismatch("ErrEpochMismatch"),
     }
 }
 

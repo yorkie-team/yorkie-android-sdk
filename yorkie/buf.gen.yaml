@@ -3,9 +3,9 @@ plugins:
   - plugin: buf.build/connectrpc/kotlin:v0.6.0
     out: kotlin
     opt: lite
-  - plugin: buf.build/protocolbuffers/kotlin
+  - plugin: buf.build/protocolbuffers/kotlin:v28.3
     out: kotlin
     opt: lite
-  - plugin: buf.build/protocolbuffers/java
+  - plugin: buf.build/protocolbuffers/java:v28.3
     out: java
     opt: lite

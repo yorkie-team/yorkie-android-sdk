@@ -25,6 +25,8 @@ import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
@@ -52,12 +54,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import dev.yorkie.document.operation.OperationInfo
-import dev.yorkie.document.time.ActorID
 import kotlin.math.roundToInt
 
 class CustomOutputTransformation : OutputTransformation {
     var styleOperations: List<OperationInfo.StyleOpInfo> by mutableStateOf(emptyList())
-    var selectionPeers: Map<ActorID, Selection?> by mutableStateOf(emptyMap())
+    var selectionPeers: Map<String, Selection?> by mutableStateOf(emptyMap())
 
     override fun TextFieldBuffer.transformOutput() {
         if (styleOperations.isNotEmpty()) {
@@ -139,13 +140,17 @@ fun RichTextEditor(
     isUnderline: Boolean,
     isStrikethrough: Boolean,
     styleOperations: List<OperationInfo.StyleOpInfo>,
-    selectionPeers: Map<ActorID, Selection?>,
+    selectionPeers: Map<String, Selection?>,
+    canUndo: Boolean,
+    canRedo: Boolean,
     onContentChanged: (TextFieldBuffer.ChangeList, CharSequence) -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
     onToggleStrikethrough: () -> Unit,
     onClearFormatting: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -278,6 +283,38 @@ fun RichTextEditor(
                         tint = MaterialTheme.colors.onSurface,
                     )
                 }
+
+                // Undo button
+                IconButton(
+                    onClick = onUndo,
+                    enabled = canUndo,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = "Undo",
+                        tint = if (canUndo) {
+                            MaterialTheme.colors.onSurface
+                        } else {
+                            MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                        },
+                    )
+                }
+
+                // Redo button
+                IconButton(
+                    onClick = onRedo,
+                    enabled = canRedo,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Redo,
+                        contentDescription = "Redo",
+                        tint = if (canRedo) {
+                            MaterialTheme.colors.onSurface
+                        } else {
+                            MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                        },
+                    )
+                }
             }
         }
 
@@ -333,7 +370,7 @@ private fun String.toColor(): Color {
 @Composable
 private fun RemoteCursorOverlay(
     text: String,
-    selectionPeers: Map<ActorID, Selection?>,
+    selectionPeers: Map<String, Selection?>,
     textLayoutResult: TextLayoutResult,
     scrollOffsetY: Float,
     modifier: Modifier = Modifier,

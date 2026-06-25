@@ -11,6 +11,7 @@ import dev.yorkie.api.v1.JSONElementKt.tree
 import dev.yorkie.api.v1.NodeAttr
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.jSONElementSimple
+import dev.yorkie.api.v1.mergedAtOrNull
 import dev.yorkie.api.v1.movedAtOrNull
 import dev.yorkie.api.v1.nodeAttr
 import dev.yorkie.api.v1.rGANode
@@ -47,7 +48,6 @@ import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.RhtNode
 import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.presence.P
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.YorkieException
@@ -74,7 +74,7 @@ internal typealias PBTreeNodeID = dev.yorkie.api.v1.TreeNodeID
 internal typealias PBTreeNodes = dev.yorkie.api.v1.TreeNodes
 internal typealias PBSnapshot = dev.yorkie.api.v1.Snapshot
 
-internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<ActorID, P>> {
+internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<String, P>> {
     return if (this == null) {
         CrdtObject(InitialTimeTicket) to emptyMap()
     } else {
@@ -194,27 +194,36 @@ internal fun PBValueType.toPrimitiveType(): CrdtPrimitive.Type {
 
 internal fun PBCounter.toCrdtCounter(): CrdtCounter {
     val type = type.toCounterType()
-    return if (type == CounterType.Int) {
-        CrdtCounter(
+    val counter = when (type) {
+        CounterType.Int -> CrdtCounter(
             value = value.toByteArray().asCounterValue(type).toInt(),
             createdAt = createdAt.toTimeTicket(),
             movedAt = movedAtOrNull?.toTimeTicket(),
             removedAt = removedAtOrNull?.toTimeTicket(),
         )
-    } else {
-        CrdtCounter(
+        CounterType.Long -> CrdtCounter(
             value = value.toByteArray().asCounterValue(type).toLong(),
             createdAt = createdAt.toTimeTicket(),
             movedAt = movedAtOrNull?.toTimeTicket(),
             removedAt = removedAtOrNull?.toTimeTicket(),
         )
+        CounterType.IntDedup -> CrdtCounter.createDedup(createdAt.toTimeTicket()).apply {
+            movedAt = this@toCrdtCounter.movedAtOrNull?.toTimeTicket()
+            removedAt = this@toCrdtCounter.removedAtOrNull?.toTimeTicket()
+        }
     }
+    val hllBytes = hllRegisters.toByteArray()
+    if (counter.isDedup() && hllBytes.isNotEmpty()) {
+        counter.restoreHll(hllBytes)
+    }
+    return counter
 }
 
 internal fun PBValueType.toCounterType(): CounterType {
     return when (this) {
         PBValueType.VALUE_TYPE_INTEGER_CNT -> CounterType.Int
         PBValueType.VALUE_TYPE_LONG_CNT -> CounterType.Long
+        PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT -> CounterType.IntDedup
         else -> throw YorkieException(ErrUnimplemented, "unimplemented value type : $this")
     }
 }
@@ -249,6 +258,7 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
 }
 
 internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
+    val pbNode = this
     val id = id.toCrdtTreeNodeID()
     val convertedRemovedAt = removedAtOrNull?.toTimeTicket()
     return if (type == IndexTreeNode.DEFAULT_TEXT_TYPE) {
@@ -261,12 +271,16 @@ internal fun PBTreeNode.toCrdtTreeNode(): CrdtTreeNode {
         )
     }.apply {
         convertedRemovedAt?.let(::remove)
-        if (hasInsPrevId()) {
-            insPrevID = insPrevId.toCrdtTreeNodeID()
+        if (pbNode.hasInsPrevId()) {
+            insPrevID = pbNode.insPrevId.toCrdtTreeNodeID()
         }
-        if (hasInsNextId()) {
-            insNextID = insNextId.toCrdtTreeNodeID()
+        if (pbNode.hasInsNextId()) {
+            insNextID = pbNode.insNextId.toCrdtTreeNodeID()
         }
+        if (pbNode.hasMergedFrom()) {
+            mergedFrom = pbNode.mergedFrom.toCrdtTreeNodeID()
+        }
+        mergedAt = pbNode.mergedAtOrNull?.toTimeTicket() ?: convertedRemovedAt
     }
 }
 
@@ -368,6 +382,12 @@ internal fun CrdtTreeNode.toPBTreeNodes(): List<PBTreeNode> {
                 }
                 depth = nodeDepth
                 attributes.putAll(node.rhtNodes.toPBRht())
+                node.mergedFrom?.let {
+                    mergedFrom = it.toPBTreeNodeID()
+                }
+                node.mergedAt?.let {
+                    mergedAt = it.toPBTimeTicket()
+                }
             }
             add(pbTreeNode)
         }
@@ -502,6 +522,7 @@ internal fun CrdtCounter.toPBCounter(): PBJsonElement {
             createdAt = crdtCounter.createdAt.toPBTimeTicket()
             crdtCounter.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtCounter.removedAt?.let { removedAt = it.toPBTimeTicket() }
+            crdtCounter.hllBytes()?.let { hllRegisters = it.toByteString() }
         }
     }
 }
@@ -510,6 +531,7 @@ internal fun CounterType.toPBCounterType(): PBValueType {
     return when (this) {
         CounterType.Int -> PBValueType.VALUE_TYPE_INTEGER_CNT
         CounterType.Long -> PBValueType.VALUE_TYPE_LONG_CNT
+        CounterType.IntDedup -> PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT
     }
 }
 
@@ -573,6 +595,9 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             value.toByteArray().asCounterValue(type.toCounterType()).toLong(),
             createdAt.toTimeTicket(),
         )
+
+        PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT ->
+            CrdtCounter.createDedup(createdAt.toTimeTicket())
 
         PBValueType.VALUE_TYPE_TREE -> value.toCrdtTree()
 

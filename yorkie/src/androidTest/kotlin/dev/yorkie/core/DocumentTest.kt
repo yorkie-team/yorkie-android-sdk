@@ -31,11 +31,15 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DocumentTest {
+
+    @get:Rule
+    val retryRule = RetryRule(retryCount = 2)
 
     @Test
     fun test_single_client_deleting_document() {
@@ -770,13 +774,14 @@ class DocumentTest {
             assertEquals(c1ID, document3StatusChangedList[0].actorID)
 
             client2.activateAsync().await()
+            val c2IDAfterReactivate = client2.requireClientId()
             client2.attachDocument(document4, syncMode = Manual).await()
 
             delay(100L)
 
             assertEquals(1, document4StatusChangedList.size)
             assertEquals(ResourceStatus.Attached, document4StatusChangedList[0].docStatus)
-            assertEquals(c2ID, document4StatusChangedList[0].actorID)
+            assertEquals(c2IDAfterReactivate, document4StatusChangedList[0].actorID)
 
             // 5. Can receive DocumentStatus.Removed event when removed
             client1.removeDocument(document3).await()

@@ -204,7 +204,7 @@ internal suspend fun runTest(
     assertTreesXmlEquals(initialXml, d1, d2)
 
     op1.run(d1, ranges.from)
-    op2.run(d1, ranges.from)
+    op2.run(d2, ranges.to)
 
     val before1 = d1.getRoot().rootTree().toXml()
     val before2 = d2.getRoot().rootTree().toXml()

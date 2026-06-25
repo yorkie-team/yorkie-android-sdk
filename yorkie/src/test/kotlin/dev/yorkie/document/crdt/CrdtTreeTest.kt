@@ -412,6 +412,53 @@ class CrdtTreeTest {
         assertEquals("<root><p>ab</p><b>cd</b><p>ef</p></root>", target.toXml())
     }
 
+    @Test
+    fun `splitText preserves mergedFrom and mergedAt`() {
+        // given
+        val para = CrdtTreeElement(issuePos(), "p")
+        val text = CrdtTreeText(issuePos(), "abcd")
+        para.append(text)
+
+        val sourceID = issuePos()
+        val mergeTicket = issueTime()
+        text.mergedFrom = sourceID
+        text.mergedAt = mergeTicket
+
+        // when
+        val (right) = text.splitText(2, 0)
+
+        // then
+        assertEquals("ab", text.value)
+        assertEquals("cd", right?.value)
+        assertEquals(sourceID, right?.mergedFrom)
+        assertEquals(mergeTicket, right?.mergedAt)
+    }
+
+    @Test
+    fun `deepCopy preserves merge metadata`() {
+        // given
+        val para = CrdtTreeElement(issuePos(), "p")
+        val text = CrdtTreeText(issuePos(), "hello")
+        para.append(text)
+
+        val targetID = issuePos()
+        val sourceID = issuePos()
+        val mergeTicket = issueTime()
+
+        para.mergedInto = targetID
+        text.mergedFrom = sourceID
+        text.mergedAt = mergeTicket
+
+        // when
+        val clone = para.deepCopy()
+
+        // then
+        assertEquals(targetID, clone.mergedInto)
+        val clonedText = clone.allChildren.first()
+        assertEquals(sourceID, clonedText.mergedFrom)
+        assertEquals(mergeTicket, clonedText.mergedAt)
+    }
+
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)
 
     private fun CrdtTreeNode.toList() = listOf(this)

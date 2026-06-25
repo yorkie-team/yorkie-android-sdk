@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.yorkie.document.operation.OperationInfo
-import dev.yorkie.document.time.ActorID
 
 @Composable
 fun RichTextEditorScreen(modifier: Modifier = Modifier, viewModel: EditorViewModel) {
@@ -42,12 +41,16 @@ fun RichTextEditorScreen(modifier: Modifier = Modifier, viewModel: EditorViewMod
         isUnderline = uiState.isUnderline,
         isStrikethrough = uiState.isStrikethrough,
         styleOperations = uiState.styleOperations,
+        canUndo = uiState.canUndo,
+        canRedo = uiState.canRedo,
         onContentChanged = viewModel::editContent,
         onToggleBold = viewModel::toggleBold,
         onToggleItalic = viewModel::toggleItalic,
         onToggleUnderline = viewModel::toggleUnderline,
         onToggleStrikethrough = viewModel::toggleStrikethrough,
         onClearFormatting = viewModel::clearFormatting,
+        onUndo = viewModel::undo,
+        onRedo = viewModel::redo,
         modifier = modifier,
     )
 }
@@ -63,13 +66,17 @@ fun RichTextEditorScreen(
     isStrikethrough: Boolean,
     styleOperations: List<OperationInfo.StyleOpInfo>,
     peers: List<String>,
-    selectionPeers: Map<ActorID, Selection?>,
+    selectionPeers: Map<String, Selection?>,
+    canUndo: Boolean,
+    canRedo: Boolean,
     onContentChanged: (TextFieldBuffer.ChangeList, CharSequence) -> Unit,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
     onToggleStrikethrough: () -> Unit,
     onClearFormatting: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -124,12 +131,16 @@ fun RichTextEditorScreen(
                     isStrikethrough = isStrikethrough,
                     styleOperations = styleOperations,
                     selectionPeers = selectionPeers,
+                    canUndo = canUndo,
+                    canRedo = canRedo,
                     onContentChanged = onContentChanged,
                     onToggleBold = onToggleBold,
                     onToggleItalic = onToggleItalic,
                     onToggleUnderline = onToggleUnderline,
                     onToggleStrikethrough = onToggleStrikethrough,
                     onClearFormatting = onClearFormatting,
+                    onUndo = onUndo,
+                    onRedo = onRedo,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(400.dp),

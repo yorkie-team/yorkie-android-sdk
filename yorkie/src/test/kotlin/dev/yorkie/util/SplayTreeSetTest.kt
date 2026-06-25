@@ -1,6 +1,8 @@
 package dev.yorkie.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 
@@ -35,8 +37,48 @@ class SplayTreeSetTest {
         assertEquals(5, target.indexOf(Node("C234")))
         assertEquals(9, target.indexOf(Node("D2345")))
 
-        assertEquals(SplayTreeSet.ValueToOffset.Empty, target.find(-1))
+        assertEquals(SplayTreeSet.ValueToOffset.Empty, target.findForText(-1))
         assertEquals(14, target.length)
+    }
+
+    @Test
+    fun `findForArray returns element at index and throws when out of range`() {
+        // given: array-style SplayTreeSet where removed nodes contribute length 0
+        val arrayTarget = SplayTreeSet<Node> {
+            if (it.isRemoved) 0 else 1
+        }
+
+        // when: empty tree — findForArray returns null
+        assertNull(arrayTarget.findForArray(0))
+
+        // given: four inserted nodes
+        val a = Node("A").also(arrayTarget::insert)
+        val b = Node("B").also(arrayTarget::insert)
+        val c = Node("C").also(arrayTarget::insert)
+        val d = Node("D").also(arrayTarget::insert)
+        assertEquals(4, arrayTarget.length)
+
+        // then: each index maps to the correct element
+        assertEquals(a, arrayTarget.findForArray(0))
+        assertEquals(b, arrayTarget.findForArray(1))
+        assertEquals(c, arrayTarget.findForArray(2))
+        assertEquals(d, arrayTarget.findForArray(3))
+
+        // when: B is marked removed and splayed — length shrinks, findForArray skips it
+        b.isRemoved = true
+        arrayTarget.splay(b)
+        assertEquals(3, arrayTarget.length)
+        assertEquals(a, arrayTarget.findForArray(0))
+        assertEquals(c, arrayTarget.findForArray(1))
+        assertEquals(d, arrayTarget.findForArray(2))
+
+        // then: out-of-range throws
+        assertThrows(IndexOutOfBoundsException::class.java) {
+            arrayTarget.findForArray(3)
+        }
+        assertThrows(IndexOutOfBoundsException::class.java) {
+            arrayTarget.findForArray(-1)
+        }
     }
 
     @Test

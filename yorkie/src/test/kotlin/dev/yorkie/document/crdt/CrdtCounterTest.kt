@@ -113,4 +113,114 @@ class CrdtCounterTest {
         assertNotSame(counter, clone)
         assertSame(counter.value, clone.value)
     }
+
+    @Test
+    fun `dedup counter reports zero before any actor is added`() {
+        // given
+        val counter = CrdtCounter.createDedup(InitialTimeTicket)
+
+        // when - then
+        assertEquals(CrdtCounter.CounterType.IntDedup, counter.type)
+        assertEquals(0, counter.value)
+    }
+
+    @Test
+    fun `dedup counter increments by unique actor`() {
+        // given
+        val counter = CrdtCounter.createDedup(InitialTimeTicket)
+        val unit = CrdtPrimitive(1, InitialTimeTicket)
+
+        // when
+        counter.increaseDedup(unit, "alice")
+        counter.increaseDedup(unit, "bob")
+        counter.increaseDedup(unit, "carol")
+
+        // then
+        assertEquals(3, counter.value)
+    }
+
+    @Test
+    fun `dedup counter ignores repeated actor`() {
+        // given
+        val counter = CrdtCounter.createDedup(InitialTimeTicket)
+        val unit = CrdtPrimitive(1, InitialTimeTicket)
+
+        // when
+        counter.increaseDedup(unit, "alice")
+        counter.increaseDedup(unit, "alice")
+        counter.increaseDedup(unit, "alice")
+
+        // then
+        assertEquals(1, counter.value)
+    }
+
+    @Test
+    fun `dedup counter rejects non-unit increment`() {
+        // given
+        val counter = CrdtCounter.createDedup(InitialTimeTicket)
+        val two = CrdtPrimitive(2, InitialTimeTicket)
+
+        // when - then
+        assertThrows(IllegalArgumentException::class.java) {
+            counter.increaseDedup(two, "alice")
+        }
+    }
+
+    @Test
+    fun `dedup counter rejects empty actor`() {
+        // given
+        val counter = CrdtCounter.createDedup(InitialTimeTicket)
+        val unit = CrdtPrimitive(1, InitialTimeTicket)
+
+        // when - then
+        assertThrows(IllegalArgumentException::class.java) {
+            counter.increaseDedup(unit, "")
+        }
+    }
+
+    @Test
+    fun `normal increase on dedup counter throws`() {
+        // given
+        val counter = CrdtCounter.createDedup(InitialTimeTicket)
+        val unit = CrdtPrimitive(1, InitialTimeTicket)
+
+        // when - then
+        assertThrows(IllegalArgumentException::class.java) {
+            counter.increase(unit)
+        }
+    }
+
+    @Test
+    fun `dedup counter deepCopy isolates HLL state`() {
+        // given
+        val original = CrdtCounter.createDedup(InitialTimeTicket)
+        val unit = CrdtPrimitive(1, InitialTimeTicket)
+        original.increaseDedup(unit, "alice")
+        val clone = original.deepCopy() as CrdtCounter
+
+        // when - mutate the clone
+        clone.increaseDedup(unit, "bob")
+
+        // then - original is untouched
+        assertEquals(1, original.value)
+        assertEquals(2, clone.value)
+    }
+
+    @Test
+    fun `dedup counter round-trips through HLL bytes`() {
+        // given
+        val source = CrdtCounter.createDedup(InitialTimeTicket)
+        val unit = CrdtPrimitive(1, InitialTimeTicket)
+        repeat(50) { i ->
+            source.increaseDedup(unit, "user-$i")
+        }
+        val bytes = checkNotNull(source.hllBytes())
+
+        // when
+        val restored = CrdtCounter.createDedup(InitialTimeTicket)
+        restored.restoreHll(bytes)
+
+        // then
+        assertEquals(source.value, restored.value)
+    }
 }

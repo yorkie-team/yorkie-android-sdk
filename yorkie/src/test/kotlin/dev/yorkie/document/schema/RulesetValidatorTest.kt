@@ -2,13 +2,18 @@ package dev.yorkie.document.schema
 
 import dev.yorkie.document.Document
 import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.toDocKey
+import dev.yorkie.util.YorkieException
 import java.util.Date
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -308,5 +313,141 @@ class RulesetValidatorTest {
             ),
             actual = result.errors,
         )
+    }
+
+    @Test
+    fun `should validate yorkie Tree structure against tree node rules`() = runTest {
+        // given
+        val ruleset = listOf(
+            Rule.YorkieTypeRule(
+                path = "\$.content",
+                type = "yorkie.Tree",
+                treeNodes = listOf(
+                    Rule.TreeNodeRule(
+                        nodeType = "doc",
+                        content = "block+",
+                        marks = "",
+                        group = "",
+                    ),
+                    Rule.TreeNodeRule(
+                        nodeType = "paragraph",
+                        content = "text*",
+                        marks = "",
+                        group = "block",
+                    ),
+                    Rule.TreeNodeRule(
+                        nodeType = "text",
+                        content = "",
+                        marks = "",
+                        group = "",
+                    ),
+                ),
+            ),
+        )
+        val document = Document(UUID.randomUUID().toString().toDocKey())
+
+        // when
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "content",
+                element("doc") {
+                    element("paragraph") { text { "hello" } }
+                },
+            )
+        }.await()
+
+        // then
+        val validResult = validateYorkieRuleset(document.getRootObject(), ruleset)
+        assertTrue(validResult.valid)
+        assertNull(validResult.errors.firstOrNull())
+
+        // when an unknown node type is added
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "content",
+                element("doc") {
+                    element("div") { text { "x" } }
+                },
+            )
+        }.await()
+
+        // then
+        val invalidResult = validateYorkieRuleset(document.getRootObject(), ruleset)
+        assertFalse(invalidResult.valid)
+        assertNotNull(invalidResult.errors.firstOrNull())
+        assertTrue(invalidResult.errors.first().message.contains("Unknown node type"))
+        assertTrue(invalidResult.errors.first().message.contains("div"))
+    }
+
+    @Test
+    fun `tree schema rejects local update via Document updateAsync`() = runTest {
+        // given
+        val document = Document(UUID.randomUUID().toString().toDocKey())
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "content",
+                element("doc") {
+                    element("paragraph") { text { "hello" } }
+                },
+            )
+        }.await()
+
+        document.setSchemaRules(
+            listOf(
+                Rule.ObjectRule(
+                    path = "\$",
+                    type = "object",
+                    properties = listOf("content"),
+                    optional = emptyList(),
+                ),
+                Rule.YorkieTypeRule(
+                    path = "\$.content",
+                    type = "yorkie.Tree",
+                    treeNodes = listOf(
+                        Rule.TreeNodeRule(
+                            nodeType = "doc",
+                            content = "paragraph+",
+                            marks = "",
+                            group = "",
+                        ),
+                        Rule.TreeNodeRule(
+                            nodeType = "paragraph",
+                            content = "text*",
+                            marks = "",
+                            group = "",
+                        ),
+                        Rule.TreeNodeRule(
+                            nodeType = "text",
+                            content = "",
+                            marks = "",
+                            group = "",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        // when invalid edit attempted, then exception is thrown
+        var thrown: YorkieException? = null
+        try {
+            document.updateAsync { root, _ ->
+                val tree = root.getAs<JsonTree>("content")
+                tree.edit(
+                    0,
+                    0,
+                    element("div") {
+                        text { "invalid" }
+                    },
+                )
+            }.await()
+        } catch (e: YorkieException) {
+            thrown = e
+        }
+        assertNotNull(thrown)
+        assertEquals(
+            YorkieException.Code.ErrDocumentSchemaValidationFailed,
+            thrown!!.code,
+        )
+        assertTrue(thrown.message.orEmpty().contains("Unknown node type"))
     }
 }

@@ -61,6 +61,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 parentCreatedAt = it.increase.parentCreatedAt.toTimeTicket(),
                 executedAt = it.increase.executedAt.toTimeTicket(),
                 value = it.increase.value.toCrdtElement(),
+                actor = it.increase.actor,
             )
 
             it.hasEdit() -> EditOperation(
@@ -79,6 +80,7 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributes = it.style.attributesMap,
                 parentCreatedAt = it.style.parentCreatedAt.toTimeTicket(),
                 executedAt = it.style.executedAt.toTimeTicket(),
+                attributesToRemove = it.style.attributesToRemoveList,
             )
 
             it.hasTreeEdit() -> TreeEditOperation(
@@ -162,6 +164,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                     parentCreatedAt = operation.parentCreatedAt.toPBTimeTicket()
                     value = operation.value.toPBJsonElementSimple()
                     executedAt = operation.executedAt.toPBTimeTicket()
+                    actor = operation.actor
                 }
             }
         }
@@ -187,6 +190,7 @@ internal fun Operation.toPBOperation(): PBOperation {
                     to = operation.toPos.toPBTextNodePos()
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
+                    operation.attributesToRemove.forEach { attributesToRemove.add(it) }
                 }
             }
         }

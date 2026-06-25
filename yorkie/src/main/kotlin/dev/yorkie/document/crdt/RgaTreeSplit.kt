@@ -3,7 +3,6 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.RgaTreeSplitNodeIDStruct
 import dev.yorkie.document.RgaTreeSplitPosStruct
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
@@ -102,8 +101,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
         // 4. Add removed nodes.
         val gcPairs = removedNodes.map { (_, node) -> GCPair(this, node) }
+        val removedValues = removedNodes.map { (_, node) -> node.value }
 
-        return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff)
+        return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff, removedValues)
     }
 
     /**
@@ -232,14 +232,14 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             if (isLocal) {
                 creationKnown = true
             } else {
-                val createdAtVV = vector?.get(node.createdAt.actorID.value)
+                val createdAtVV = vector?.get(node.createdAt.actorID)
                 creationKnown = createdAtVV != null && createdAtVV >= node.createdAt.lamport
             }
 
             var tombstoneKnown = false
             val nodeRemovedAt = node.removedAt
             if (nodeRemovedAt != null) {
-                val removedAtVV = vector?.get(nodeRemovedAt.actorID.value)
+                val removedAtVV = vector?.get(nodeRemovedAt.actorID)
                 if (isLocal) {
                     tombstoneKnown = true
                 } else if (removedAtVV != null && removedAtVV >= nodeRemovedAt.lamport) {
@@ -314,7 +314,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         return posToIndex(fromPos, false) to posToIndex(toPos, true)
     }
 
-    private fun posToIndex(pos: RgaTreeSplitPos, preferToLeft: Boolean): Int {
+    internal fun posToIndex(pos: RgaTreeSplitPos, preferToLeft: Boolean): Int {
         val absoluteID = pos.absoluteID
         val node = if (preferToLeft) {
             findFloorNodePreferToLeft(absoluteID)
@@ -346,7 +346,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      * Finds [RgaTreeSplitPos] of the given [index].
      */
     fun indexToPos(index: Int): RgaTreeSplitPos {
-        val (node, offset) = treeByIndex.find(index)
+        val (node, offset) = treeByIndex.findForText(index)
         return node?.let {
             RgaTreeSplitPos(it.id, offset)
         } ?: throw NoSuchElementException("no node found with the given index: $index")
@@ -426,7 +426,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     }
 
     data class ContentChange(
-        val actorID: ActorID,
+        val actorID: String,
         val from: Int,
         val to: Int,
         val content: String? = null,

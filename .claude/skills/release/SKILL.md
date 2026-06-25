@@ -172,8 +172,14 @@ git push origin --delete "release/v<version>"
 - The publish.yml run is green.
 - Artifact visible on Maven Central: `https://central.sonatype.com/artifact/dev.yorkie/yorkie-android/<version>`
   (propagation can take a few minutes to a couple hours).
+- **API docs auto-deploy — no manual step.** Merging the release PR to `main` (Phase 4) also
+  triggers `gh-pages.yml` on its own (it runs on `push: [main]`, not on the release/tag): it
+  builds `./gradlew dokkaHtml` and publishes to the `gh-pages` branch under `/docs`. Just confirm
+  that run is green and the docs at https://yorkie.dev/yorkie-android-sdk/ reflect the release.
+  If it failed, re-run `gh-pages.yml` or push an empty commit to `main` — it is independent of the
+  Maven Central publish, so a docs failure does not affect the published artifact.
 
-Report a short summary: version, PR links, Release URL, publish run result.
+Report a short summary: version, PR links, Release URL, publish run result, docs deploy result.
 
 ---
 

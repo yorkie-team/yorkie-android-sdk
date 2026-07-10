@@ -686,11 +686,25 @@ internal data class CrdtTree(
         )
 
         val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
-        val (fromParent, fromLeft) = from
+        val (fromParent, fromLeftRaw) = from
         val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
-        val (toParent, toLeft) = to
+        val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
+
+        // Advance past split siblings the editor did not know about so range
+        // boundaries land after every unseen split product, matching style().
+        // Skip when leftRaw equals the parent (leftmost-child sentinel).
+        val fromLeft = if (fromLeftRaw === fromParent) {
+            fromLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector)
+        }
+        val toLeft = if (toLeftRaw === toParent) {
+            toLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
+        }
 
         val changes = mutableListOf<TreeChange>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
@@ -1286,6 +1300,10 @@ internal data class CrdtTreeNode(
         return copy(
             id = CrdtTreeNodeID(createdAt, offset),
             _value = null,
+            // Deep-copy attributes so a split node keeps its own styling and a
+            // concurrent style operation whose range was computed before the
+            // split also covers the right part of the split.
+            _attributes = _attributes.deepCopy(),
             childNodes = IndexTreeNodeList(mutableListOf()),
         ).apply {
             removedAt = this@CrdtTreeNode.removedAt

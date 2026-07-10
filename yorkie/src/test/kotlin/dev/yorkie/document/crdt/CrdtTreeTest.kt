@@ -336,6 +336,42 @@ class CrdtTreeTest {
     }
 
     @Test
+    fun `should split element nodes with attributes`() {
+        //       0   1 2 3 4 5 6 7 8 9 10 11    12
+        // <root> <p> h e l l o w o r l  d  </p>  </root>
+        initializeTarget()
+        val para = CrdtTreeElement(issuePos(), "p").apply {
+            setAttributes(mapOf("bold" to "true"), issueTime())
+        }
+        target.edit(0 to 0, para.toList())
+        target.edit(1 to 1, CrdtTreeText(issuePos(), "helloworld").toList())
+        assertEquals("""<root><p bold="true">helloworld</p></root>""", target.toXml())
+
+        // Split at position 6 (after "hello"), splitLevel 1.
+        target.edit(6 to 6, null, 1)
+        assertEquals(
+            """<root><p bold="true">hello</p><p bold="true">world</p></root>""",
+            target.toXml(),
+        )
+    }
+
+    @Test
+    fun `should not share attributes between an element node and its split clone`() {
+        // given a styled element node
+        val original = CrdtTreeElement(issuePos(), "p").apply {
+            setAttributes(mapOf("bold" to "true"), issueTime())
+        }
+
+        // when cloning it (as split does) and mutating the clone's attribute
+        val clone = original.cloneElement(::issueTime)
+        clone.setAttributes(mapOf("bold" to "false"), issueTime())
+
+        // then the original keeps its own attribute — the RHT is not shared
+        assertEquals("true", original.attributes["bold"])
+        assertEquals("false", clone.attributes["bold"])
+    }
+
+    @Test
     fun `should split and merge element nodes by edit`() {
         target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
         target.edit(1 to 1, CrdtTreeText(issuePos(), "abcd").toList())

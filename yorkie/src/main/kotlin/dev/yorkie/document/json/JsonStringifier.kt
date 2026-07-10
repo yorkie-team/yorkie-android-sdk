@@ -8,7 +8,10 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.CrdtTree
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 internal object JsonStringifier {
 
@@ -24,8 +27,10 @@ internal object JsonStringifier {
                 buffer.append(
                     when (type) {
                         CrdtPrimitive.Type.String -> """"${escapeString(value as String)}""""
-                        CrdtPrimitive.Type.Bytes -> """"${(value as ByteString).toStringUtf8()}""""
-                        CrdtPrimitive.Type.Date -> (value as Date).time.toString()
+                        CrdtPrimitive.Type.Bytes ->
+                            """"${encodeBase64((value as ByteString).toByteArray())}""""
+                        CrdtPrimitive.Type.Date ->
+                            """"${isoDateFormat().format(value as Date)}""""
                         else -> "$value"
                     },
                 )
@@ -71,5 +76,41 @@ internal object JsonStringifier {
                 buffer.append(rootTreeNode)
             }
         }
+    }
+
+    /**
+     * Returns an ISO 8601 formatter (UTC, millisecond precision) matching the JS SDK's
+     * `Date.toISOString()`. A fresh instance is returned per call because [SimpleDateFormat]
+     * is not thread-safe.
+     */
+    private fun isoDateFormat(): SimpleDateFormat {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+    }
+
+    /**
+     * Encodes the given bytes as a standard, padded Base64 string, matching the JS SDK's
+     * `btoa(...)`. Implemented in pure Kotlin so it works in JVM unit tests and on every
+     * supported Android API level ([android.util.Base64] is unavailable off-device and
+     * [java.util.Base64] requires API 26 while the SDK targets API 24).
+     */
+    private fun encodeBase64(bytes: ByteArray): String {
+        if (bytes.isEmpty()) return ""
+        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        val builder = StringBuilder((bytes.size + 2) / 3 * 4)
+        var i = 0
+        while (i < bytes.size) {
+            val b0 = bytes[i].toInt() and 0xFF
+            val b1 = if (i + 1 < bytes.size) bytes[i + 1].toInt() and 0xFF else 0
+            val b2 = if (i + 2 < bytes.size) bytes[i + 2].toInt() and 0xFF else 0
+            val triple = (b0 shl 16) or (b1 shl 8) or b2
+            builder.append(alphabet[triple shr 18 and 0x3F])
+            builder.append(alphabet[triple shr 12 and 0x3F])
+            builder.append(if (i + 1 < bytes.size) alphabet[triple shr 6 and 0x3F] else '=')
+            builder.append(if (i + 2 < bytes.size) alphabet[triple and 0x3F] else '=')
+            i += 3
+        }
+        return builder.toString()
     }
 }

@@ -1,5 +1,7 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.api.toCrdtArray
+import dev.yorkie.api.toPBJsonArray
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Assert
 import org.junit.Assert.assertEquals
@@ -174,6 +176,47 @@ class CrdtArrayTest {
         Assert.assertThrows(NoSuchElementException::class.java) {
             target.getPrevCreatedAt(createTimeTicket())
         }
+    }
+
+    // #1227: deepCopy must preserve moved positions and dead position nodes so a later
+    // move on the clone anchors correctly (copying only live nodes would lose them).
+    @Test
+    fun `should preserve moved and dead positions on deepCopy`() {
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+        // move E after F → [A, B, C, D, F, E, G]
+        target.moveAfter(timeTickets[5], timeTickets[4], createTimeTicket())
+        assertEquals("ABCDFEG", target.toTestString())
+
+        val copy = target.deepCopy() as CrdtArray
+
+        assertEquals("ABCDFEG", copy.toTestString())
+        assertEquals(target.length, copy.length)
+        // the moved element keeps its index in the clone
+        assertEquals(target.subPathOf(timeTickets[4]), copy.subPathOf(timeTickets[4]))
+    }
+
+    // #1227: a move must survive a protobuf round-trip, including the dead position node
+    // (serialized with position timestamps and no element). Uses hex actor IDs because the
+    // converter encodes the actor ID as a 12-byte hex string.
+    @Test
+    fun `should preserve moves across a protobuf round-trip`() {
+        val actor = "000000000000000000000001"
+        fun ticket(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val array = CrdtArray(ticket(0))
+        val e0 = CrdtPrimitive(0, ticket(1))
+        val e1 = CrdtPrimitive(1, ticket(2))
+        val e2 = CrdtPrimitive(2, ticket(3))
+        listOf(e0, e1, e2).forEach { array.insertAfter(array.last.createdAt, it) }
+        // move e2 after e0 → [0, 2, 1], leaving a dead position node for e2's old slot
+        array.moveAfter(e0.createdAt, e2.createdAt, ticket(5))
+
+        val restored = array.toPBJsonArray().jsonArray.toCrdtArray()
+
+        assertEquals(array.length, restored.length)
+        // the moved element keeps its new index (1) after the round-trip
+        assertEquals(array.subPathOf(e2.createdAt), restored.subPathOf(e2.createdAt))
+        assertEquals(2, (restored[1] as CrdtPrimitive).value)
     }
 
     private fun createTimeTicket(): TimeTicket {

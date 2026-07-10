@@ -205,15 +205,27 @@ public class JsonArray internal constructor(
 
     private fun moveInternal(prevCreatedAt: TimeTicket, createdAt: TimeTicket) {
         val executedAt = context.issueTimeTicket()
+        // Convert the anchor from element identity to its current position identity for the
+        // operation wire format. Falls back to the input when it is already a position key
+        // (e.g. dummy head, or a position key from getPrevCreatedAt/lastCreatedAt).
+        val prevPosCreatedAt = posCreatedAtOrSelf(prevCreatedAt)
         context.push(
             MoveOperation(
                 parentCreatedAt = target.createdAt,
-                prevCreatedAt = prevCreatedAt,
+                prevCreatedAt = prevPosCreatedAt,
                 createdAt = createdAt,
                 executedAt = executedAt,
             ),
         )
-        target.moveAfter(prevCreatedAt, createdAt, executedAt)
+        target.moveAfter(prevPosCreatedAt, createdAt, executedAt)
+    }
+
+    /**
+     * Returns the current position identity for [createdAt], or [createdAt] itself when it
+     * is not an element key (already a position identity).
+     */
+    private fun posCreatedAtOrSelf(createdAt: TimeTicket): TimeTicket {
+        return runCatching { target.posCreatedAt(createdAt) }.getOrDefault(createdAt)
     }
 
     /**
@@ -293,15 +305,16 @@ public class JsonArray internal constructor(
             )
 
         val ticket = context.issueTimeTicket()
+        val prevPosCreatedAt = posCreatedAtOrSelf(prevElem.createdAt)
         context.push(
             MoveOperation(
-                prevCreatedAt = prevElem.createdAt,
+                prevCreatedAt = prevPosCreatedAt,
                 createdAt = targetElem.createdAt,
                 parentCreatedAt = target.createdAt,
                 executedAt = ticket,
             ),
         )
-        target.moveAfter(prevElem.createdAt, targetElem.createdAt, ticket)
+        target.moveAfter(prevPosCreatedAt, targetElem.createdAt, ticket)
     }
 
     override fun contains(element: JsonElement): Boolean {

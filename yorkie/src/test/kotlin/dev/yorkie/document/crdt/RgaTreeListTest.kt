@@ -3,7 +3,9 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
@@ -171,6 +173,89 @@ class RgaTreeListTest {
         assertEquals(null, target.get(newTimeTicket))
         assertNotSame(null, target.get(timeTickets[0]))
     }
+
+    // Ported from yorkie-js-sdk v0.7.6 (#1227): concurrent moves of the same element
+    // resolve by LWW on the position; the later executedAt wins and the earlier one loses.
+    @Test
+    fun `should keep the later move on concurrent moves of the same element`() {
+        // given — list [A, B, C, D]
+        val list = RgaTreeList()
+        val a = CrdtPrimitive("A", tick(1))
+        val b = CrdtPrimitive("B", tick(2))
+        val c = CrdtPrimitive("C", tick(3))
+        val d = CrdtPrimitive("D", tick(4))
+        listOf(a, b, c, d).forEach(list::insert)
+        assertEquals(4, list.length)
+
+        // when — op2 (lamport 6): move A after D → [B, C, D, A]
+        val dead2 = list.moveAfter(d.createdAt, a.createdAt, tick(6))
+
+        // then — op2 wins and returns a dead node for the old position
+        assertNotNull(dead2)
+        assertEquals(4, list.length)
+        assertEquals("A", valueAt(list, 3))
+
+        // when — op1 (lamport 5 < 6): move A after C → loses LWW
+        val dead1 = list.moveAfter(c.createdAt, a.createdAt, tick(5))
+
+        // then — op1 loses but still creates a bare dead position node; list unchanged
+        assertNotNull(dead1)
+        assertNotNull(dead1?.positionRemovedAt)
+        assertNull(dead1?.elementEntry)
+        assertEquals(4, list.length)
+        assertEquals("A", valueAt(list, 3))
+    }
+
+    // Ported from yorkie-js-sdk v0.7.6 (#1227): concurrent moves of different elements commute.
+    @Test
+    fun `should commute concurrent moves of different elements`() {
+        val list = RgaTreeList()
+        val a = CrdtPrimitive("A", tick(1))
+        val b = CrdtPrimitive("B", tick(2))
+        val c = CrdtPrimitive("C", tick(3))
+        val d = CrdtPrimitive("D", tick(4))
+        listOf(a, b, c, d).forEach(list::insert)
+
+        // op1 (lamport 5): move A after B → [B, A, C, D]
+        list.moveAfter(b.createdAt, a.createdAt, tick(5))
+        // op2 (lamport 6): move C after D → [B, A, D, C]
+        list.moveAfter(d.createdAt, c.createdAt, tick(6))
+
+        assertEquals(4, list.length)
+        assertEquals("B", valueAt(list, 0))
+        assertEquals("A", valueAt(list, 1))
+        assertEquals("D", valueAt(list, 2))
+        assertEquals("C", valueAt(list, 3))
+    }
+
+    // Ported from yorkie-js-sdk v0.7.6 (#1227): moveAfter returns a dead position node for GC
+    // whether it wins or loses the LWW race.
+    @Test
+    fun `should return a dead position node on both LWW win and loss`() {
+        val list = RgaTreeList()
+        val a = CrdtPrimitive("A", tick(1))
+        val b = CrdtPrimitive("B", tick(2))
+        val c = CrdtPrimitive("C", tick(3))
+        listOf(a, b, c).forEach(list::insert)
+
+        // win: move A after C (lamport 5)
+        val winnerDead = list.moveAfter(c.createdAt, a.createdAt, tick(5))
+        assertNotNull(winnerDead)
+        assertNotNull(winnerDead?.positionRemovedAt)
+        assertNull(winnerDead?.elementEntry)
+        assertEquals(3, list.length)
+
+        // loss: move A again with an older executedAt (lamport 4)
+        val loserDead = list.moveAfter(b.createdAt, a.createdAt, tick(4))
+        assertNotNull(loserDead)
+        assertNotNull(loserDead?.positionRemovedAt)
+        assertNull(loserDead?.elementEntry)
+    }
+
+    private fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, "x")
+
+    private fun valueAt(list: RgaTreeList, index: Int): Any? =
+        (list.getByIndex(index)?.value as? CrdtPrimitive)?.value
 
     private fun createTimeTicket(): TimeTicket {
         return TimeTicket(crdtElements.size.toLong(), TimeTicket.INITIAL_DELIMITER, "H")

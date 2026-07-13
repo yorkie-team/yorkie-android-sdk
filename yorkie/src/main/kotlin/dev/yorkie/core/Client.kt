@@ -388,6 +388,12 @@ public class Client(
                             event = SyncStatusChanged.Synced,
                         )
 
+                        // Reset the poll timer so a Polling document syncs once
+                        // per interval, not on every sync-loop tick. #1243.
+                        if (attachment.syncMode == SyncMode.Polling) {
+                            attachment.updateHeartbeatTime()
+                        }
+
                         // NOTE(chacha912): If a document has been removed, watchStream should
                         // be disconnected to not receive an event for that document.
                         if (resource.getStatus() == ResourceStatus.Removed) {

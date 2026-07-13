@@ -12,7 +12,6 @@ import dev.yorkie.document.json.TreeBuilder.text
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -485,9 +484,6 @@ class JsonTreeConcurrencyTest {
         }
     }
 
-    // splitLevel>=2 forward convergence still has unresolved offset and
-    // merge-redirect issues with nested elements.
-    @Ignore("splitLevel>=2 not yet supported; see RTCOLLABPLATFORM-651 design doc")
     @Test
     fun test_concurrent_split_and_split_L2() {
         runBlocking {
@@ -677,9 +673,6 @@ class JsonTreeConcurrencyTest {
         }
     }
 
-    // splitLevel>=2 split×edit tests fail due to the same nested element
-    // issues as the split×split suite above.
-    @Ignore("splitLevel>=2 not yet supported; see RTCOLLABPLATFORM-651 design doc")
     @Test
     fun test_concurrent_split_and_edit_L2() {
         runBlocking {

@@ -134,7 +134,11 @@ internal class YsonParser(private val input: String) {
             }
             'I' -> parseIntConstructor()
             'L' -> parseLongConstructor()
-            'D' -> parseDateConstructor()
+            'D' -> when {
+                matches("DedupCounter") -> parseDedupCounterConstructor()
+                matches("Date") -> parseDateConstructor()
+                else -> throw error("Unknown keyword starting with 'D'")
+            }
             'B' -> parseBinDataConstructor()
             'C' -> parseCounterConstructor()
             '-', in '0'..'9' -> parseNumber()
@@ -355,6 +359,28 @@ internal class YsonParser(private val input: String) {
         skipWhitespace()
         expect(')')
         return YsonValue.YsonCounter(inner)
+    }
+
+    private fun parseDedupCounterConstructor(): YsonValue.YsonDedupCounter {
+        expectKeyword("DedupCounter")
+        expect('(')
+        skipWhitespace()
+        val inner = parseValue()
+        if (inner !is YsonValue.YsonInt) {
+            throw YorkieException(
+                YorkieException.Code.ErrInvalidArgument,
+                "DedupCounter must contain Int",
+            )
+        }
+        expect(',')
+        skipWhitespace()
+        if (peek() != '"') {
+            throw error("DedupCounter expects a string literal for registers")
+        }
+        val registers = parseString()
+        skipWhitespace()
+        expect(')')
+        return YsonValue.YsonDedupCounter(inner, registers)
     }
 
     private fun parseTextConstructor(): YsonValue.YsonText {

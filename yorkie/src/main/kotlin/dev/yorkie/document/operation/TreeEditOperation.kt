@@ -140,10 +140,10 @@ internal data class TreeEditOperation(
                         .filterIsInstance<OperationInfo.TreeEditOpInfo>()
                         .firstOrNull()
                         ?.from ?: 0
-                val isPureL1Split =
-                    splitLevel == 1 && editContents.isNullOrEmpty() && result.removedNodes.isEmpty()
+                val isPureSplit =
+                    splitLevel > 0 && editContents.isNullOrEmpty() && result.removedNodes.isEmpty()
                 val reverseOp =
-                    if (isPureL1Split) {
+                    if (isPureSplit) {
                         toSplitReverseOperation(tree, fromIndex)
                     } else if (splitLevel == 0) {
                         toReverseOperation(
@@ -233,7 +233,7 @@ internal data class TreeEditOperation(
     }
 
     /**
-     * Builds the reverse [TreeEditOperation] for a pure splitLevel=1 split.
+     * Builds the reverse [TreeEditOperation] for a pure split (splitLevel > 0).
      *
      * A split creates 2*splitLevel boundary tokens (one close + one open tag
      * per level). The reverse is a boundary-deletion: a splitLevel=0 edit

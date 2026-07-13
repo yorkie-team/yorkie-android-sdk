@@ -41,6 +41,7 @@ class TreeEditOperationReverseTest {
         toIndex: Int,
         contents: List<CrdtTreeNode>?,
         lamport: Long,
+        splitLevel: Int = 0,
     ): TreeEditOperation {
         val ticket = makeTicket(lamport)
         val (fromPos, toPos) = tree.indexRangeToPosRange(fromIndex to toIndex)
@@ -49,7 +50,7 @@ class TreeEditOperationReverseTest {
             fromPos = fromPos,
             toPos = toPos,
             contents = contents,
-            splitLevel = 0,
+            splitLevel = splitLevel,
             executedAt = ticket,
         )
     }
@@ -128,6 +129,73 @@ class TreeEditOperationReverseTest {
         assertTrue(snapshots.isNotEmpty())
         val snapshot = snapshots[0] as TreeElementNode
         assertEquals("p", snapshot.type)
+    }
+
+    // #1234: pure splits at any level > 0 produce a boundary-deletion reverse op tagged
+    // with redoSplitLevel so redo re-splits (was only splitLevel == 1 before).
+
+    @Test
+    fun `reverse of pure L1 split is a boundary-deletion tagged for redo`() {
+        // given: <root><p>ab</p></root>
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        makeTreeEditOp(tree, 0, 0, listOf(pNode), 3).execute(root, OpSource.Local, null)
+        val textNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "ab")
+        makeTreeEditOp(tree, 1, 1, listOf(textNode), 4).execute(root, OpSource.Local, null)
+
+        // when: pure splitLevel=1 split between a and b
+        val op = makeTreeEditOp(tree, 2, 2, null, 5, splitLevel = 1)
+        val result = op.execute(root, OpSource.Local, null)
+
+        // then: reverse is a splitLevel=0 boundary deletion tagged redoSplitLevel=1
+        assertEquals(1, result.reverseOps.size)
+        val reverseOp = result.reverseOps[0] as TreeEditOperation
+        assertTrue(reverseOp.isUndoOp)
+        assertEquals(null, reverseOp.contents)
+        assertEquals(0, reverseOp.splitLevel)
+        assertEquals(1, reverseOp.redoSplitLevel)
+    }
+
+    @Test
+    fun `reverse of pure L2 split is generated`() {
+        // given: <root><div><p>ab</p></div></root>
+        val (tree, root) = buildTreeRoot()
+        val divNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "div")
+        makeTreeEditOp(tree, 0, 0, listOf(divNode), 3).execute(root, OpSource.Local, null)
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(4), 0), "p")
+        makeTreeEditOp(tree, 1, 1, listOf(pNode), 4).execute(root, OpSource.Local, null)
+        val textNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(5), 0), "ab")
+        makeTreeEditOp(tree, 2, 2, listOf(textNode), 5).execute(root, OpSource.Local, null)
+
+        // when: pure splitLevel=2 split (splits both p and div)
+        val op = makeTreeEditOp(tree, 3, 3, null, 6, splitLevel = 2)
+        val result = op.execute(root, OpSource.Local, null)
+
+        // then: a reverse op IS produced (before #1234, splitLevel>1 gave null)
+        assertEquals(1, result.reverseOps.size)
+        val reverseOp = result.reverseOps[0] as TreeEditOperation
+        assertTrue(reverseOp.isUndoOp)
+        assertEquals(null, reverseOp.contents)
+        assertEquals(0, reverseOp.splitLevel)
+        assertEquals(2, reverseOp.redoSplitLevel)
+    }
+
+    @Test
+    fun `split with content is not treated as a pure split`() {
+        // given: <root><p>ab</p></root>
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        makeTreeEditOp(tree, 0, 0, listOf(pNode), 3).execute(root, OpSource.Local, null)
+        val textNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "ab")
+        makeTreeEditOp(tree, 1, 1, listOf(textNode), 4).execute(root, OpSource.Local, null)
+
+        // when: splitLevel=1 AND inserting content — not a pure split
+        val insNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(5), 0), "X")
+        val op = makeTreeEditOp(tree, 2, 2, listOf(insNode), 5, splitLevel = 1)
+        val result = op.execute(root, OpSource.Local, null)
+
+        // then: no reverse op (isPureSplit false, splitLevel != 0)
+        assertTrue(result.reverseOps.isEmpty())
     }
 
     @Test

@@ -49,7 +49,8 @@ class JsonArrayTest {
         }
         assertTrue(jsonPrimitive in target)
         assertEquals(
-            """[false,0,1,2.0,"string","Ynl0ZSBhcnJheQ==","1970-01-01T00:00:01.000Z","json",[1],{"array":[]}]""",
+            """[false,0,1,2.0,"string","Ynl0ZSBhcnJheQ==","1970-01-01T00:00:01.000Z"""" +
+                ""","json",[1],{"array":[]}]""".trimMargin(),
             target.toJson(),
         )
     }

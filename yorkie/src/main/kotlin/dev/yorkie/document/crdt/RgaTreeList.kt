@@ -119,18 +119,9 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
     }
 
     /**
-     * Inserts a bare position node (no element) after the node identified by
-     * [prevPositionCreatedAt], marked dead at [executedAt].
+     * Inserts a bare position node (no element) after [prevNode], marked dead at [executedAt].
      */
-    private fun insertDeadPositionAfter(
-        prevPositionCreatedAt: TimeTicket,
-        executedAt: TimeTicket,
-    ): Node {
-        val prevNode = nodeMapByPositionCreatedAt[prevPositionCreatedAt]
-            ?: throw YorkieException(
-                code = YorkieException.Code.ErrInvalidArgument,
-                errorMessage = "can't find the given node createdAt: $prevPositionCreatedAt",
-            )
+    private fun insertDeadPositionAfter(prevNode: Node, executedAt: TimeTicket): Node {
         val anchor = findNextBeforeExecutedAt(prevNode, executedAt)
         val node = Node.create(CrdtPrimitive(null, executedAt), executedAt)
         insertNodeIntoStructures(node, anchor)
@@ -156,12 +147,11 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "can't find the given element createdAt: $createdAt",
             )
-        if (prevCreatedAt !in nodeMapByPositionCreatedAt) {
-            throw YorkieException(
+        val prevNode = nodeMapByPositionCreatedAt[prevCreatedAt]
+            ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "can't find the previous node createdAt: $prevCreatedAt",
             )
-        }
 
         // Idempotency: a node with this executedAt already exists.
         if (executedAt in nodeMapByPositionCreatedAt) {
@@ -172,13 +162,12 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         // dead position node so the GC pair set is complete.
         val posMovedAt = entry.posMovedAt
         if (posMovedAt != null && executedAt <= posMovedAt) {
-            return insertDeadPositionAfter(prevCreatedAt, executedAt)
+            return insertDeadPositionAfter(prevNode, executedAt)
         }
 
         // LWW winner: build the new position node carrying the element, wire the entry,
         // then kill the old position node.
         val oldPositionNode = entry.positionNode
-        val prevNode = requireNotNull(nodeMapByPositionCreatedAt[prevCreatedAt])
         val anchor = findNextBeforeExecutedAt(prevNode, executedAt)
         val newPositionNode = Node.create(entry.element, executedAt)
 

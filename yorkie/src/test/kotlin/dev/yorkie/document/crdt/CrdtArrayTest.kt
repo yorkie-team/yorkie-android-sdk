@@ -2,6 +2,7 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.api.toCrdtArray
 import dev.yorkie.api.toPBJsonArray
+import dev.yorkie.api.toPBTimeTicket
 import dev.yorkie.document.time.TimeTicket
 import org.junit.Assert
 import org.junit.Assert.assertEquals
@@ -217,6 +218,32 @@ class CrdtArrayTest {
         // the moved element keeps its new index (1) after the round-trip
         assertEquals(array.subPathOf(e2.createdAt), restored.subPathOf(e2.createdAt))
         assertEquals(2, (restored[1] as CrdtPrimitive).value)
+    }
+
+    // #1227: a node carrying position_created_at without position_moved_at (defensive wire
+    // shape) parses as a normal node.
+    @Test
+    fun `should parse a node with only position_created_at as a normal node`() {
+        val actor = "000000000000000000000001"
+        fun ticket(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val array = CrdtArray(ticket(0))
+        val e0 = CrdtPrimitive(0, ticket(1))
+        val e1 = CrdtPrimitive(1, ticket(2))
+        listOf(e0, e1).forEach { array.insertAfter(array.last.createdAt, it) }
+
+        val pb = array.toPBJsonArray().jsonArray
+        val mutated = pb.toBuilder().setNodes(
+            0,
+            pb.getNodes(0).toBuilder()
+                .setPositionCreatedAt(ticket(1).toPBTimeTicket())
+                .build(),
+        ).build()
+        val restored = mutated.toCrdtArray()
+
+        assertEquals(2, restored.length)
+        assertEquals(0, (restored[0] as CrdtPrimitive).value)
+        assertEquals(1, (restored[1] as CrdtPrimitive).value)
     }
 
     private fun createTimeTicket(): TimeTicket {

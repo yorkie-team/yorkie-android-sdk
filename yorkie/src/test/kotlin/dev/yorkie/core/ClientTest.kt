@@ -3,6 +3,7 @@ package dev.yorkie.core
 import android.util.Base64
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
+import com.connectrpc.ResponseMessage
 import dev.yorkie.api.PBChangePack
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -12,6 +13,7 @@ import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.YorkieServiceClientInterface
+import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
@@ -39,6 +41,7 @@ import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.handleConnectException
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockkStatic
@@ -122,6 +125,56 @@ class ClientTest {
         assertIsTestActorID(deactivateRequestCaptor.captured.clientId)
         assertFalse(target.isActive)
         assertIs<Client.Status.Deactivated>(target.status.value)
+    }
+
+    @Test
+    fun `should keep client active when deactivate fails with connect exception`() = runTest {
+        // given an active client whose deactivate RPC fails
+        target.activateAsync().await()
+        coEvery { service.deactivateClient(any(), any()) } returns ResponseMessage.Failure(
+            ConnectException(Code.FAILED_PRECONDITION),
+            emptyMap(),
+            emptyMap(),
+        )
+
+        // when
+        val result = target.deactivateAsync().await()
+
+        // then the failure is reported and the client stays active
+        assertTrue(result.isFailure)
+        assertTrue(target.isActive)
+
+        // and a later deactivate succeeds once the RPC recovers
+        coEvery { service.deactivateClient(any(), any()) } returns ResponseMessage.Success(
+            deactivateClientResponse { },
+            emptyMap(),
+            emptyMap(),
+        )
+        assertTrue(target.deactivateAsync().await().isSuccess)
+        assertFalse(target.isActive)
+    }
+
+    @Test
+    fun `should stop sync loop when client is deactivating`() = runTest {
+        runBlocking {
+            // given an active client with an attached document and a running sync loop
+            val document = Document(NORMAL_DOCUMENT_KEY)
+            target.activateAsync().await()
+            target.attachDocument(document).await()
+            assertTrue(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            // when marking the client as deactivating without cancelling the loop
+            target.deactivating = true
+            delay(1_000)
+
+            // then the sync loop observes the flag and stops
+            assertFalse(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            target.deactivating = false
+            target.detachDocument(document).await()
+            target.deactivateAsync().await()
+            document.close()
+        }
     }
 
     @Test

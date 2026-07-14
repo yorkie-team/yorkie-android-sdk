@@ -142,7 +142,8 @@ public class Client(
     // suppresses errors from in-flight RPCs. Volatile because the keepalive deactivate
     // path runs on a different thread (GlobalScope + Dispatchers.IO).
     @Volatile
-    private var deactivating = false
+    @VisibleForTesting
+    internal var deactivating = false
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()

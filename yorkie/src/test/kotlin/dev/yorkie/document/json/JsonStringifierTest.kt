@@ -21,6 +21,18 @@ class JsonStringifierTest {
     }
 
     @Test
+    fun `should serialize empty bytes primitive as empty string`() {
+        // given
+        val primitive = CrdtPrimitive(byteArrayOf(), TimeTicket.InitialTimeTicket)
+
+        // when
+        val json = primitive.toJson()
+
+        // then
+        assertEquals("\"\"", json)
+    }
+
+    @Test
     fun `should serialize date primitive as iso 8601 string`() {
         // given
         val primitive = CrdtPrimitive(Date(1_000L), TimeTicket.InitialTimeTicket)

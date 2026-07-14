@@ -2,8 +2,11 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
+import dev.yorkie.document.operation.OpSource
+import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.helper.maxVectorOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -99,5 +102,63 @@ class CrdtRootTest {
         root.registerRemovedElement(obj["k1"])
         root.registerRemovedElement(obj["k2"])
         root.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
+    }
+
+    // #1227: dead position nodes inside an array (e.g. restored from a snapshot) are
+    // registered for GC when the root is constructed.
+    @Test
+    fun `should register dead position nodes of an array for gc on construction`() {
+        val actor = "A"
+        fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val array = CrdtArray(tick(1))
+        val a = CrdtPrimitive("a", tick(2))
+        val b = CrdtPrimitive("b", tick(3))
+        listOf(a, b).forEach { array.insertAfter(array.lastCreatedAt, it) }
+        // move a after b — a's old position becomes a dead node
+        array.moveAfter(b.createdAt, a.createdAt, tick(4))
+
+        val rootObject = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
+        rootObject.set("arr", array, tick(5))
+        val root = CrdtRoot(rootObject)
+
+        assertEquals(1, root.garbageLength)
+        assertEquals(1, root.garbageCollect(maxVectorOf(listOf(actor))))
+        assertEquals(0, root.garbageLength)
+    }
+
+    @Test
+    fun `should register LWW-losing element in GC set on Set conflict`() {
+        // given
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
+        val actorA = "000000000000000000000001"
+        val actorB = "000000000000000000000002"
+        // actorB > actorA, so actorB wins LWW when lamport is equal.
+        val ticketA = TimeTicket(lamport = 1, delimiter = 0u, actorID = actorA)
+        val ticketB = TimeTicket(lamport = 1, delimiter = 0u, actorID = actorB)
+
+        // when actorA sets "key" = 1
+        SetOperation("key", CrdtPrimitive(1, ticketA), TimeTicket.InitialTimeTicket, ticketA)
+            .execute(root, OpSource.Remote, null)
+
+        // then no garbage yet
+        assertEquals(0, root.garbageLength)
+
+        // when actorB sets "key" = 2 (actorB wins, actorA is displaced)
+        SetOperation("key", CrdtPrimitive(2, ticketB), TimeTicket.InitialTimeTicket, ticketB)
+            .execute(root, OpSource.Remote, null)
+
+        // then the displaced actorA element is registered as garbage
+        assertEquals(1, root.garbageLength)
+        assertEquals("""{"key":2}""", root.rootObject.toJson())
+
+        // when actorA sets "key" = 3 (loses LWW to actorB's value)
+        val ticketA2 = TimeTicket(lamport = 1, delimiter = 1u, actorID = actorA)
+        SetOperation("key", CrdtPrimitive(3, ticketA2), TimeTicket.InitialTimeTicket, ticketA2)
+            .execute(root, OpSource.Remote, null)
+
+        // then the LWW-losing new value is also registered as garbage
+        assertEquals(2, root.garbageLength)
+        assertEquals("""{"key":2}""", root.rootObject.toJson())
     }
 }

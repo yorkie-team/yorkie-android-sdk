@@ -140,7 +140,29 @@ internal fun PBJsonObject.toCrdtObject(): CrdtObject {
 internal fun PBJsonArray.toCrdtArray(): CrdtArray {
     val rgaTreeList = RgaTreeList()
     nodesList.forEach { node ->
-        rgaTreeList.insert(node.element.toCrdtElement())
+        when {
+            !node.hasElement() -> {
+                // Dead position node — no element (JS/Go wire convention).
+                rgaTreeList.addDeadPosition(
+                    positionCreatedAt = node.positionCreatedAt.toTimeTicket(),
+                    positionRemovedAt = node.positionRemovedAt.toTimeTicket(),
+                )
+            }
+
+            node.hasPositionCreatedAt() && node.hasPositionMovedAt() -> {
+                // Moved node.
+                rgaTreeList.addMovedElement(
+                    value = node.element.toCrdtElement(),
+                    positionCreatedAt = node.positionCreatedAt.toTimeTicket(),
+                    positionMovedAt = node.positionMovedAt.toTimeTicket(),
+                )
+            }
+
+            else -> {
+                // Normal node.
+                rgaTreeList.insert(node.element.toCrdtElement())
+            }
+        }
     }
     return CrdtArray(
         createdAt = createdAt.toTimeTicket(),
@@ -350,14 +372,34 @@ internal fun CrdtArray.toPBJsonArray(): PBJsonElement {
             createdAt = crdtArray.createdAt.toPBTimeTicket()
             crdtArray.movedAt?.let { movedAt = it.toPBTimeTicket() }
             crdtArray.removedAt?.let { removedAt = it.toPBTimeTicket() }
-            nodes.addAll(elements.toPBRgaNodes())
+            nodes.addAll(crdtArray.toPBRgaNodes())
         }
     }
 }
 
-internal fun RgaTreeList.toPBRgaNodes(): List<PBRgaNode> {
-    return map {
-        rGANode { element = it.value.toPBJsonElement() }
+internal fun CrdtArray.toPBRgaNodes(): List<PBRgaNode> {
+    return getAllRGANodes().mapNotNull { node ->
+        val entry = node.elementEntry
+        if (entry != null) {
+            // Live or moved node — always encode the element.
+            rGANode {
+                element = entry.element.toPBJsonElement()
+                val posMovedAt = entry.posMovedAt
+                if (posMovedAt != null) {
+                    // Moved node — encode the position id and the move ticket.
+                    positionCreatedAt = node.positionCreatedAt.toPBTimeTicket()
+                    positionMovedAt = posMovedAt.toPBTimeTicket()
+                }
+                // Otherwise a normal node — no position fields.
+            }
+        } else {
+            // Dead position node — encode positionCreatedAt + positionRemovedAt, NO element.
+            val deadRemovedAt = node.positionRemovedAt ?: return@mapNotNull null
+            rGANode {
+                positionCreatedAt = node.positionCreatedAt.toPBTimeTicket()
+                positionRemovedAt = deadRemovedAt.toPBTimeTicket()
+            }
+        }
     }
 }
 

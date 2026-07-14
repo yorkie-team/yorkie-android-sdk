@@ -3,8 +3,10 @@ package dev.yorkie.document.crdt
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.issueTime
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
+import kotlin.test.assertFailsWith
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -336,6 +338,375 @@ class CrdtTreeTest {
     }
 
     @Test
+    fun `should split element nodes with attributes`() {
+        //       0   1 2 3 4 5 6 7 8 9 10 11    12
+        // <root> <p> h e l l o w o r l  d  </p>  </root>
+        initializeTarget()
+        val para = CrdtTreeElement(issuePos(), "p").apply {
+            setAttributes(mapOf("bold" to "true"), issueTime())
+        }
+        target.edit(0 to 0, para.toList())
+        target.edit(1 to 1, CrdtTreeText(issuePos(), "helloworld").toList())
+        assertEquals("""<root><p bold="true">helloworld</p></root>""", target.toXml())
+
+        // Split at position 6 (after "hello"), splitLevel 1.
+        target.edit(6 to 6, null, 1)
+        assertEquals(
+            """<root><p bold="true">hello</p><p bold="true">world</p></root>""",
+            target.toXml(),
+        )
+    }
+
+    @Test
+    fun `should not share attributes between an element node and its split clone`() {
+        // given a styled element node
+        val original = CrdtTreeElement(issuePos(), "p").apply {
+            setAttributes(mapOf("bold" to "true"), issueTime())
+        }
+
+        // when cloning it (as split does) and mutating the clone's attribute
+        val clone = original.cloneElement(::issueTime)
+        clone.setAttributes(mapOf("bold" to "false"), issueTime())
+
+        // then the original keeps its own attribute — the RHT is not shared
+        assertEquals("true", original.attributes["bold"])
+        assertEquals("false", clone.attributes["bold"])
+    }
+
+    @Test
+    fun `should propagate style to a split sibling unknown to the operation`() {
+        // given a <p> split into two siblings, the second unknown to the styler
+        val tree = createSplitTree()
+
+        // when styling the first <p> with a version vector unaware of the split
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the split-out sibling is styled as well
+        assertEquals(
+            """<root><p bold="true">a</p><p bold="true">b</p></root>""",
+            tree.toXml(),
+        )
+    }
+
+    @Test
+    fun `should not propagate style to a split sibling known to the operation`() {
+        // given a <p> split into two siblings, the second known to the styler
+        val tree = createSplitTree()
+
+        // when styling the first <p> with a version vector aware of the split
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to SPLIT_LAMPORT)),
+        )
+
+        // then only the first <p> is styled
+        assertEquals(
+            """<root><p bold="true">a</p><p>b</p></root>""",
+            tree.toXml(),
+        )
+    }
+
+    @Test
+    fun `should propagate style when the split sibling actor is missing from the version vector`() {
+        // given a <p> split by an actor absent from the styler's version vector
+        val tree = createSplitTree(splitActor = ACTOR_B)
+
+        // when styling the first <p>
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the split-out sibling is styled as well
+        assertEquals(
+            """<root><p bold="true">a</p><p bold="true">b</p></root>""",
+            tree.toXml(),
+        )
+    }
+
+    @Test
+    fun `should skip propagation change when the split sibling attribute wins lww`() {
+        // given a split tree whose second sibling was styled with a newer ticket
+        val tree = createSplitTree()
+        tree.root.children[1].setAttributes(mapOf("bold" to "high"), tick(10))
+
+        // when styling the first <p> with an older ticket, unaware of the split
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "low"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the sibling keeps its newer value
+        assertEquals(
+            """<root><p bold="low">a</p><p bold="high">b</p></root>""",
+            tree.toXml(),
+        )
+    }
+
+    @Test
+    fun `should re-style a split sibling whose attribute was removed`() {
+        // given a styled split tree whose attribute was removed on both siblings
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+        assertEquals("<root><p>a</p><p>b</p></root>", tree.toXml())
+
+        // when styling the first <p> again, unaware of the split
+        val result = tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "false"),
+            tick(7),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then both siblings carry the new value and the tombstones are GC targets
+        assertEquals(
+            """<root><p bold="false">a</p><p bold="false">b</p></root>""",
+            tree.toXml(),
+        )
+        assertEquals(2, result.gcPairs.size)
+    }
+
+    @Test
+    fun `should propagate remove-style to a split sibling unknown to the operation`() {
+        // given a split tree whose siblings inherited the attribute from the split
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        assertEquals(
+            """<root><p bold="true">a</p><p bold="true">b</p></root>""",
+            tree.toXml(),
+        )
+
+        // when removing the style from the first <p>, unaware of the split
+        val result = tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the attribute is removed from the split-out sibling as well
+        assertEquals("<root><p>a</p><p>b</p></root>", tree.toXml())
+        assertEquals(2, result.gcPairs.size)
+    }
+
+    @Test
+    fun `should not propagate remove-style to a split sibling known to the operation`() {
+        // given a split tree whose siblings inherited the attribute from the split
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+
+        // when removing the style from the first <p> with a version vector aware of the split
+        tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to SPLIT_LAMPORT)),
+        )
+
+        // then the split-out sibling keeps the attribute
+        assertEquals("""<root><p>a</p><p bold="true">b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should skip remove-style change when the split sibling attribute wins lww`() {
+        // given a split tree whose second sibling was styled with a newer ticket
+        val tree = createSplitTree()
+        tree.root.children[1].setAttributes(mapOf("bold" to "high"), tick(10))
+
+        // when removing the style from the first <p> with an older ticket, unaware of the split
+        tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the sibling keeps its newer value
+        assertEquals("""<root><p>a</p><p bold="high">b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should propagate style to a split sibling moved to another parent`() {
+        // given <root><p><b>ab</b></p></root> split at both levels
+        val tree = createMultiLevelSplitTree()
+
+        // when styling the first <b> with a version vector unaware of the split
+        tree.style(
+            tree.indexRangeToPosRange(1 to 3),
+            mapOf("bold" to "true"),
+            tick(7),
+            VersionVector(mapOf(ACTOR_A to 5L)),
+        )
+
+        // then the <b> moved into the split-out <p> is styled as well
+        assertEquals(
+            """<root><p><b bold="true">a</b></p><p><b bold="true">b</b></p></root>""",
+            tree.toXml(),
+        )
+    }
+
+    @Test
+    fun `should propagate remove-style to a split sibling moved to another parent`() {
+        // given a styled multi-level split tree
+        val tree = createMultiLevelSplitTree(attributes = mapOf("bold" to "true"))
+        assertEquals(
+            """<root><p><b bold="true">a</b></p><p><b bold="true">b</b></p></root>""",
+            tree.toXml(),
+        )
+
+        // when removing the style from the first <b>, unaware of the split
+        tree.removeStyle(
+            tree.indexRangeToPosRange(1 to 3),
+            listOf("bold"),
+            tick(7),
+            VersionVector(mapOf(ACTOR_A to 5L)),
+        )
+
+        // then the attribute is removed from the moved sibling as well
+        assertEquals("<root><p><b>a</b></p><p><b>b</b></p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating style at a dangling split sibling link`() {
+        // given a split tree whose sibling link points to an unregistered node
+        val tree = createSplitTree()
+        tree.root.children[0].insNextID = CrdtTreeNodeID(tick(99), 0)
+
+        // when styling the first <p>, unaware of the split
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops without styling the second sibling
+        assertEquals("""<root><p bold="true">a</p><p>b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating style at a text split sibling link`() {
+        // given a split tree whose sibling link points to a text node
+        val tree = createSplitTree()
+        tree.root.children[0].insNextID = tree.root.children[0].children[0].id
+
+        // when styling the first <p>, unaware of the split
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops without styling the second sibling
+        assertEquals("""<root><p bold="true">a</p><p>b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating remove-style at a dangling split sibling link`() {
+        // given a styled split tree whose sibling link points to an unregistered node
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        tree.root.children[0].insNextID = CrdtTreeNodeID(tick(99), 0)
+
+        // when removing the style from the first <p>, unaware of the split
+        tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops and the second sibling keeps the attribute
+        assertEquals("""<root><p>a</p><p bold="true">b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating remove-style at a text split sibling link`() {
+        // given a styled split tree whose sibling link points to a text node
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        tree.root.children[0].insNextID = tree.root.children[0].children[0].id
+
+        // when removing the style from the first <p>, unaware of the split
+        tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops and the second sibling keeps the attribute
+        assertEquals("""<root><p>a</p><p bold="true">b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should adjust remove-style range starting after a text node`() {
+        // given a styled split tree
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+
+        // when removing the style over a range that starts after the first text
+        // node, so the from-boundary has a real left sibling to advance from
+        tree.removeStyle(
+            tree.indexRangeToPosRange(2 to 6),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to SPLIT_LAMPORT)),
+        )
+
+        // then the attribute is removed from both siblings covered by the range
+        assertEquals("<root><p>a</p><p>b</p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `should require a parent when propagating style to a split sibling`() {
+        // given a split tree whose second sibling was physically removed from its parent
+        val tree = createSplitTree()
+        tree.root.removeChild(tree.root.children[1])
+
+        // when styling the first <p>, unaware of the split,
+        // then the parent invariant of the split sibling is enforced
+        assertFailsWith<IllegalArgumentException> {
+            tree.style(
+                tree.indexRangeToPosRange(0 to 2),
+                mapOf("bold" to "true"),
+                tick(6),
+                VersionVector(mapOf(ACTOR_A to 4L)),
+            )
+        }
+    }
+
+    @Test
+    fun `should require a parent when propagating remove-style to a split sibling`() {
+        // given a styled split tree whose second sibling was physically removed from its parent
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        tree.root.removeChild(tree.root.children[1])
+
+        // when removing the style from the first <p>, unaware of the split,
+        // then the parent invariant of the split sibling is enforced
+        assertFailsWith<IllegalArgumentException> {
+            tree.removeStyle(
+                tree.indexRangeToPosRange(0 to 2),
+                listOf("bold"),
+                tick(6),
+                VersionVector(mapOf(ACTOR_A to 4L)),
+            )
+        }
+    }
+
+    @Test
     fun `should split and merge element nodes by edit`() {
         target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
         target.edit(1 to 1, CrdtTreeText(issuePos(), "abcd").toList())
@@ -473,7 +844,76 @@ class CrdtTreeTest {
         edit(fromPos to toPos, nodes, splitLevel, issueTime(), ::issueTime)
     }
 
+    /**
+     * Issues a [TimeTicket] with an explicit lamport so that a [VersionVector]
+     * can distinguish nodes created before and after a split ([issueTime] always
+     * issues the same lamport).
+     */
+    private fun tick(
+        lamport: Long,
+        delimiter: UInt = 0u,
+        actor: String = ACTOR_A,
+    ) = TimeTicket(lamport, delimiter, actor)
+
+    private fun CrdtTree.editAt(
+        index: Int,
+        nodes: List<CrdtTreeNode>?,
+        executedAt: TimeTicket,
+        splitLevel: Int = 0,
+        issueTimeTicket: (() -> TimeTicket)? = null,
+    ) {
+        edit(findPos(index) to findPos(index), nodes, splitLevel, executedAt, issueTimeTicket)
+    }
+
+    /**
+     * Builds `<root><p>a</p><p>b</p></root>` where the second `<p>` is a split
+     * sibling of the first, created at [SPLIT_LAMPORT] by [splitActor]. When
+     * [attributes] are given, the `<p>` is styled before the split (lamport 4)
+     * so both siblings inherit them.
+     */
+    private fun createSplitTree(
+        splitActor: String = ACTOR_A,
+        attributes: Map<String, String>? = null,
+    ): CrdtTree {
+        val tree = CrdtTree(CrdtTreeElement(CrdtTreeNodeID(tick(1), 0), "root"), tick(1))
+        tree.editAt(0, CrdtTreeElement(CrdtTreeNodeID(tick(2), 0), "p").toList(), tick(2, 1u))
+        tree.editAt(1, CrdtTreeText(CrdtTreeNodeID(tick(3), 0), "ab").toList(), tick(3, 1u))
+        if (attributes != null) {
+            tree.style(tree.indexRangeToPosRange(0 to 4), attributes, tick(4))
+        }
+        var delimiter = 0u
+        tree.editAt(2, null, tick(SPLIT_LAMPORT, 99u, splitActor), splitLevel = 1) {
+            tick(SPLIT_LAMPORT, delimiter++, splitActor)
+        }
+        return tree
+    }
+
+    /**
+     * Builds `<root><p><b>a</b></p><p><b>b</b></p></root>` by splitting
+     * `<root><p><b>ab</b></p></root>` at both levels ([SPLIT_LAMPORT] + 1), so the
+     * second `<b>` is a split sibling of the first moved to another parent. When
+     * [attributes] are given, the `<b>` is styled before the split (lamport 5)
+     * so both siblings inherit them.
+     */
+    private fun createMultiLevelSplitTree(attributes: Map<String, String>? = null): CrdtTree {
+        val tree = CrdtTree(CrdtTreeElement(CrdtTreeNodeID(tick(1), 0), "root"), tick(1))
+        tree.editAt(0, CrdtTreeElement(CrdtTreeNodeID(tick(2), 0), "p").toList(), tick(2, 1u))
+        tree.editAt(1, CrdtTreeElement(CrdtTreeNodeID(tick(3), 0), "b").toList(), tick(3, 1u))
+        tree.editAt(2, CrdtTreeText(CrdtTreeNodeID(tick(4), 0), "ab").toList(), tick(4, 1u))
+        if (attributes != null) {
+            tree.style(tree.indexRangeToPosRange(1 to 5), attributes, tick(5))
+        }
+        var delimiter = 0u
+        tree.editAt(3, null, tick(SPLIT_LAMPORT + 1, 99u), splitLevel = 2) {
+            tick(SPLIT_LAMPORT + 1, delimiter++)
+        }
+        return tree
+    }
+
     companion object {
         private val DIP = CrdtTreeNodeID(TimeTicket.InitialTimeTicket, 0)
+        private const val ACTOR_A = "000000000000000000000001"
+        private const val ACTOR_B = "000000000000000000000002"
+        private const val SPLIT_LAMPORT = 5L
     }
 }

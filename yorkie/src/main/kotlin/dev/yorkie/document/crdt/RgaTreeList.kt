@@ -2,33 +2,43 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.compareTo
+import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.SplayTreeSet
 import dev.yorkie.util.YorkieException
 
 /**
- * [RgaTreeList] is a replicated growable array.
+ * [RgaTreeList] is a replicated growable array using an LWW position register so that
+ * concurrent array moves converge.
+ *
+ * Each element has a stable identity held in [ElementEntry], separate from its current
+ * position slot ([Node]). When two concurrent moves target the same element the one with
+ * the later `executedAt` wins; the old position becomes a *dead position node*
+ * (`elementEntry == null`, `positionRemovedAt` set, length 0) that is garbage-collected.
  */
-internal class RgaTreeList : Iterable<RgaTreeList.Node> {
-    private val dummyHead = Node(
-        CrdtPrimitive(
-            _value = 1,
-            createdAt = InitialTimeTicket,
-            removedAt = InitialTimeTicket,
-        ),
-    )
+internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.Node> {
+    private val dummyHead = Node.createDummy()
+
     var last: Node = dummyHead
         private set
 
     private val nodeMapByIndex = SplayTreeSet<Node> {
-        if (it.value.isRemoved) 0 else 1
+        if (it.elementEntry == null || it.value.isRemoved) 0 else 1
     }.apply {
         insert(dummyHead)
     }
 
-    private val nodeMapByCreatedAt = mutableMapOf<TimeTicket, Node>().apply {
-        set(dummyHead.createdAt, dummyHead)
+    /**
+     * Maps a position node's `positionCreatedAt` to the node itself.
+     */
+    private val nodeMapByPositionCreatedAt = mutableMapOf<TimeTicket, Node>().apply {
+        set(dummyHead.positionCreatedAt, dummyHead)
     }
+
+    /**
+     * Maps an element's `createdAt` to its [ElementEntry].
+     */
+    private val elementMapByCreatedAt = mutableMapOf<TimeTicket, ElementEntry>()
 
     val length
         get() = nodeMapByIndex.length
@@ -36,106 +46,214 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     val head
         get() = dummyHead.value
 
+    /**
+     * Returns the position identity of the last node.
+     */
     val lastCreatedAt
-        get() = last.createdAt
+        get() = last.positionCreatedAt
 
     /**
      * Adds a new node with [value] after the last node.
      */
     fun insert(value: CrdtElement) {
-        insertAfter(last.createdAt, value)
+        insertAfter(last.positionCreatedAt, value)
     }
 
     /**
-     * Adds a new node with [value] after the node created at [prevCreatedAt].
+     * Adds a new node with [value] after the node identified by [prevCreatedAt].
+     *
+     * [prevCreatedAt] is resolved as a position node key first, then an element key.
      */
     fun insertAfter(
         prevCreatedAt: TimeTicket,
         value: CrdtElement,
         executedAt: TimeTicket = value.createdAt,
     ): Node {
-        val prevNode = findNextBeforeExecutedAt(prevCreatedAt, executedAt)
-        val newNode = Node.createAfter(prevNode, value)
-        if (prevNode == last) {
-            last = newNode
-        }
-        nodeMapByIndex.insertAfter(prevNode, newNode)
-        nodeMapByCreatedAt[newNode.createdAt] = newNode
+        val anchorNode = nodeMapByPositionCreatedAt[prevCreatedAt]
+            ?: elementMapByCreatedAt[prevCreatedAt]?.positionNode
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "can't find the given node createdAt: $prevCreatedAt",
+            )
+        val anchor = findNextBeforeExecutedAt(anchorNode, executedAt)
+        val newNode = Node.create(value, value.createdAt)
+
+        // Wire the entry BEFORE splay-tree insertion so the length calculator sees 1.
+        val entry = ElementEntry(value, newNode)
+        newNode.elementEntry = entry
+        elementMapByCreatedAt[value.createdAt] = entry
+
+        insertNodeIntoStructures(newNode, anchor)
         return newNode
     }
 
     /**
-     * Returns the node by the given [createdAt] and [executedAt].
-     * It passes through nodes created after [executedAt] from the
-     * given node and returns the next node.
+     * Walks forward from [node] skipping nodes whose `positionedAt` is after [executedAt].
      */
-    private fun findNextBeforeExecutedAt(createdAt: TimeTicket, executedAt: TimeTicket): Node {
-        var node = nodeMapByCreatedAt[createdAt]
-            ?: throw YorkieException(
-                code = YorkieException.Code.ErrInvalidArgument,
-                errorMessage = "can't find the given node createdAt: $createdAt",
-            )
+    private fun findNextBeforeExecutedAt(node: Node, executedAt: TimeTicket): Node {
+        var current = node
+        while (true) {
+            val next = current.next ?: break
+            if (next.positionedAt <= executedAt) break
+            current = next
+        }
+        return current
+    }
 
-        while (node.value.movedAt != null && node.value.movedAt > executedAt) {
-            node = node.movedFrom ?: break
+    /**
+     * Links [node] into the linked list and splay tree after [anchor].
+     */
+    private fun insertNodeIntoStructures(node: Node, anchor: Node) {
+        val anchorNext = anchor.next
+        anchor.next = node
+        node.prev = anchor
+        node.next = anchorNext
+        anchorNext?.prev = node
+
+        if (anchor == last) {
+            last = node
         }
 
-        while (node.next != null && executedAt < node.next?.positionedAt) {
-            node = node.next ?: break
-        }
+        nodeMapByIndex.insertAfter(anchor, node)
+        nodeMapByPositionCreatedAt[node.positionCreatedAt] = node
+    }
+
+    /**
+     * Inserts a bare position node (no element) after [prevNode], marked dead at [executedAt].
+     */
+    private fun insertDeadPositionAfter(prevNode: Node, executedAt: TimeTicket): Node {
+        val anchor = findNextBeforeExecutedAt(prevNode, executedAt)
+        val node = Node.create(CrdtPrimitive(null, executedAt), executedAt)
+        insertNodeIntoStructures(node, anchor)
+        node.markDead(executedAt)
+        nodeMapByIndex.splay(node)
         return node
     }
 
     /**
-     * Moves the given [createdAt] element after the [prevCreatedAt] element.
+     * Moves the element identified by [createdAt] to after [prevCreatedAt].
+     *
+     * Uses an LWW position register: the winning position is the one with the latest
+     * [executedAt]. Returns the dead position node the caller must register for GC, or
+     * `null` when the move was already processed (idempotency).
      */
     fun moveAfter(
         prevCreatedAt: TimeTicket,
         createdAt: TimeTicket,
         executedAt: TimeTicket,
-    ) {
-        var prevNode = nodeMapByCreatedAt[prevCreatedAt]
+    ): Node? {
+        val entry = elementMapByCreatedAt[createdAt]
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
-                errorMessage = "can't find the given node createdAt: $prevCreatedAt",
+                errorMessage = "can't find the given element createdAt: $createdAt",
             )
-        var node = nodeMapByCreatedAt[createdAt]
+        val prevNode = nodeMapByPositionCreatedAt[prevCreatedAt]
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
-                errorMessage = "can't find the given node createdAt: $createdAt",
+                errorMessage = "can't find the previous node createdAt: $prevCreatedAt",
             )
 
-        if (prevNode != node && executedAt > node.positionedAt) {
-            val movedFrom = node.prev
-            var nextNode = node.next
-            release(node)
-
-            node = insertAfter(prevNode.createdAt, node.value, executedAt)
-            node.value.movedAt = executedAt
-            node.movedFrom = movedFrom
-
-            while (nextNode != null && nextNode.positionedAt > executedAt) {
-                prevNode = node
-                node = nextNode
-                nextNode = node.next
-
-                release(node)
-                node = insertAfter(prevNode.createdAt, node.value, executedAt)
-                node.value.movedAt = executedAt
-                node.movedFrom = movedFrom
-            }
+        // Idempotency: a node with this executedAt already exists.
+        if (executedAt in nodeMapByPositionCreatedAt) {
+            return null
         }
+
+        // LWW loser: superseded by a later move of the same element. Still create a bare
+        // dead position node so the GC pair set is complete.
+        val posMovedAt = entry.posMovedAt
+        if (posMovedAt != null && executedAt <= posMovedAt) {
+            return insertDeadPositionAfter(prevNode, executedAt)
+        }
+
+        // LWW winner: build the new position node carrying the element, wire the entry,
+        // then kill the old position node.
+        val oldPositionNode = entry.positionNode
+        val anchor = findNextBeforeExecutedAt(prevNode, executedAt)
+        val newPositionNode = Node.create(entry.element, executedAt)
+
+        newPositionNode.elementEntry = entry
+        entry.positionNode = newPositionNode
+        entry.posMovedAt = executedAt
+        entry.element.movedAt = executedAt
+
+        insertNodeIntoStructures(newPositionNode, anchor)
+
+        // Kill the old position node but keep it splayed (length 0) until GC purges it:
+        // a later insert/append may still anchor after it (e.g. it was `last`).
+        oldPositionNode.markDead(executedAt)
+        nodeMapByIndex.splay(oldPositionNode)
+
+        return oldPositionNode
     }
 
     /**
-     * `delete` deletes the node of the given creation time.
+     * Restores a dead position node from a snapshot.
+     */
+    fun addDeadPosition(positionCreatedAt: TimeTicket, positionRemovedAt: TimeTicket) {
+        val node = Node.create(CrdtPrimitive(null, positionCreatedAt), positionCreatedAt)
+        node.markDead(positionRemovedAt)
+
+        val prevNode = last
+        prevNode.next = node
+        node.prev = prevNode
+        last = node
+        nodeMapByIndex.insertAfter(prevNode, node)
+        nodeMapByPositionCreatedAt[positionCreatedAt] = node
+    }
+
+    /**
+     * Restores a moved element's position from a snapshot.
+     */
+    fun addMovedElement(
+        value: CrdtElement,
+        positionCreatedAt: TimeTicket,
+        positionMovedAt: TimeTicket,
+    ) {
+        val anchor = findNextBeforeExecutedAt(last, positionCreatedAt)
+        val node = Node.create(value, positionCreatedAt)
+
+        val entry = ElementEntry(value, node).apply { posMovedAt = positionMovedAt }
+        node.elementEntry = entry
+        elementMapByCreatedAt[value.createdAt] = entry
+
+        insertNodeIntoStructures(node, anchor)
+    }
+
+    /**
+     * Returns the current position node key for the element identified by [elemCreatedAt].
+     */
+    fun posCreatedAt(elemCreatedAt: TimeTicket): TimeTicket {
+        val entry = elementMapByCreatedAt[elemCreatedAt]
+            ?: throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "can't find the given element createdAt: $elemCreatedAt",
+            )
+        return entry.positionNode.positionCreatedAt
+    }
+
+    /**
+     * Returns all nodes in linked-list order, including dead position nodes.
+     */
+    fun allNodes(): List<Node> {
+        val result = mutableListOf<Node>()
+        var current = dummyHead.next
+        while (current != null) {
+            result.add(current)
+            current = current.next
+        }
+        return result
+    }
+
+    /**
+     * `delete` deletes the element of the given [createdAt].
      */
     fun delete(createdAt: TimeTicket, editedAt: TimeTicket): CrdtElement {
-        val node = nodeMapByCreatedAt[createdAt]
+        val entry = elementMapByCreatedAt[createdAt]
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "cant find the given node: $createdAt",
             )
+        val node = entry.positionNode
         val alreadyRemoved = node.isRemoved
         if (node.remove(editedAt) && !alreadyRemoved) {
             nodeMapByIndex.splay(node)
@@ -149,23 +267,23 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
         }
         node.release()
         nodeMapByIndex.delete(node)
-        nodeMapByCreatedAt.remove(node.value.createdAt)
+        nodeMapByPositionCreatedAt.remove(node.positionCreatedAt)
     }
 
     /**
      * Returns the element of the given [createdAt].
      */
     fun get(createdAt: TimeTicket): CrdtElement? {
-        return nodeMapByCreatedAt[createdAt]?.value
+        return elementMapByCreatedAt[createdAt]?.element
     }
 
     /**
      * Returns the sub path of the given element.
      */
     fun subPathOf(createdAt: TimeTicket): String {
-        val node = nodeMapByCreatedAt[createdAt]
+        val entry = elementMapByCreatedAt[createdAt]
             ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
-        return nodeMapByIndex.indexOf(node).toString()
+        return nodeMapByIndex.indexOf(entry.positionNode).toString()
     }
 
     /**
@@ -177,32 +295,46 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
     }
 
     /**
-     * Returns a creation time of the previous node.
+     * Returns the position identity of the previous node, skipping dead position nodes
+     * and tombstoned elements.
      */
     fun getPrevCreatedAt(createdAt: TimeTicket): TimeTicket {
-        var node = nodeMapByCreatedAt[createdAt]
+        val entry = elementMapByCreatedAt[createdAt]
             ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
+        var node: Node? = entry.positionNode
         do {
-            node = node.prev ?: break
-        } while (dummyHead != node && node.isRemoved)
-        return node.value.createdAt
+            node = node?.prev
+        } while (dummyHead != node && node != null && (node.elementEntry == null || node.isRemoved))
+        return (node ?: dummyHead).positionCreatedAt
     }
 
     /**
-     * Removes the node of the given [createdAt].
+     * Physically removes the element node from the list (final GC step).
      */
     fun purge(element: CrdtElement) {
-        val node = nodeMapByCreatedAt[element.createdAt]
+        val entry = elementMapByCreatedAt[element.createdAt]
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "can't find the given node createdAt: ${element.createdAt}",
             )
-
-        release(node)
+        release(entry.positionNode)
+        elementMapByCreatedAt.remove(element.createdAt)
     }
 
     /**
-     * Removes the node at the given [index]
+     * Physically removes a dead position node from the list (final GC step for moves).
+     */
+    private fun purgeDeadPosition(positionCreatedAt: TimeTicket) {
+        val node = nodeMapByPositionCreatedAt[positionCreatedAt] ?: return
+        release(node)
+    }
+
+    override fun delete(node: Node) {
+        purgeDeadPosition(node.positionCreatedAt)
+    }
+
+    /**
+     * Removes the node at the given [index].
      */
     fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {
         val node = getByIndex(index) ?: return null
@@ -220,24 +352,33 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
         element: CrdtElement,
         executedAt: TimeTicket,
     ): CrdtElement {
-        val node = nodeMapByCreatedAt[createdAt]
+        val entry = elementMapByCreatedAt[createdAt]
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "cant find the given node: $createdAt",
             )
-
-        insertAfter(node.createdAt, element, executedAt)
+        insertAfter(entry.positionNode.positionCreatedAt, element, executedAt)
         return delete(createdAt, executedAt)
     }
 
     override fun iterator(): Iterator<Node> {
         return object : Iterator<Node> {
-            var node = dummyHead
+            var node = nextLiveNode(dummyHead)
 
-            override fun hasNext() = node.next != null
+            override fun hasNext() = node != null
 
             override fun next(): Node {
-                return requireNotNull(node.next).also { node = it }
+                val current = requireNotNull(node)
+                node = nextLiveNode(current)
+                return current
+            }
+
+            private fun nextLiveNode(from: Node): Node? {
+                var current = from.next
+                while (current != null && current.elementEntry == null) {
+                    current = current.next
+                }
+                return current
             }
         }
     }
@@ -246,29 +387,64 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
         if (other !is RgaTreeList) {
             return false
         }
-        return nodeMapByCreatedAt == other.nodeMapByCreatedAt
+        return elementMapByCreatedAt == other.elementMapByCreatedAt
     }
 
     override fun hashCode(): Int {
-        return nodeMapByCreatedAt.hashCode()
+        return elementMapByCreatedAt.hashCode()
     }
 
-    class Node(val value: CrdtElement) {
+    /**
+     * [ElementEntry] holds the stable identity of an element and its current position node.
+     */
+    class ElementEntry(val element: CrdtElement, var positionNode: Node) {
+        var posMovedAt: TimeTicket? = null
+    }
+
+    /**
+     * [Node] represents a position slot in the list, not necessarily a live element.
+     * A dead position node has `elementEntry == null` and its `positionRemovedAt` set.
+     */
+    class Node private constructor(
+        val value: CrdtElement,
+        val positionCreatedAt: TimeTicket,
+    ) : GCChild {
         var prev: Node? = null
         var next: Node? = null
-        var movedFrom: Node? = null
+
+        var positionRemovedAt: TimeTicket? = null
+            private set
+
+        var elementEntry: ElementEntry? = null
 
         val createdAt: TimeTicket
             get() = value.createdAt
 
+        /**
+         * The LWW register key used to arbitrate insertion order.
+         */
         val positionedAt: TimeTicket
-            get() = value.movedAt ?: createdAt
+            get() = positionCreatedAt
 
         val isRemoved
             get() = value.isRemoved
 
+        override val removedAt: TimeTicket?
+            get() = positionRemovedAt
+
+        override val dataSize: DataSize
+            get() = DataSize(
+                data = 0,
+                meta = TIME_TICKET_SIZE + if (positionRemovedAt != null) TIME_TICKET_SIZE else 0,
+            )
+
         fun remove(removedAt: TimeTicket): Boolean {
             return value.remove(removedAt)
+        }
+
+        fun markDead(at: TimeTicket) {
+            positionRemovedAt = at
+            elementEntry = null
         }
 
         fun release() {
@@ -280,19 +456,17 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node> {
         }
 
         companion object {
-            /**
-             * Creates a new node with [value] after the node [prev].
-             */
-            fun createAfter(prev: Node, value: CrdtElement): Node {
-                val newNode = Node(value)
-                val prevNext = prev.next
-                prev.next = newNode
-                newNode.prev = prev
-                newNode.next = prevNext
-                if (prevNext != null) {
-                    prevNext.prev = newNode
-                }
-                return newNode
+            fun create(value: CrdtElement, positionCreatedAt: TimeTicket): Node {
+                return Node(value, positionCreatedAt)
+            }
+
+            fun createDummy(): Node {
+                val dummyValue = CrdtPrimitive(
+                    _value = 1,
+                    createdAt = InitialTimeTicket,
+                    removedAt = InitialTimeTicket,
+                )
+                return Node(dummyValue, InitialTimeTicket)
             }
         }
     }

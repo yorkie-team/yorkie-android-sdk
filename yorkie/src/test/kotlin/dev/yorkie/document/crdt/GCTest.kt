@@ -6,6 +6,7 @@ import dev.yorkie.Step
 import dev.yorkie.TestCase
 import dev.yorkie.TestOperation
 import dev.yorkie.document.Document
+import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
@@ -223,5 +224,28 @@ class GCTest {
             doc.garbageCollect(versionVector)
             assertEquals(0, doc.garbageLength)
         }
+    }
+
+    // #1227: an array move creates a dead position node that must be garbage-collected.
+    @Test
+    fun `should garbage collect the dead position node after an array move`() = runTest {
+        val doc = Document("")
+        doc.updateAsync { root, _ ->
+            root.setNewArray("arr").apply {
+                put(0)
+                put(1)
+                put(2)
+            }
+        }.await()
+        assertEquals(0, doc.garbageLength)
+
+        // move the element at index 2 after index 0 → its old position becomes a dead node
+        doc.updateAsync { root, _ ->
+            root.getAs<JsonArray>("arr").moveAfterByIndex(0, 2)
+        }.await()
+        assertEquals(1, doc.garbageLength)
+
+        doc.garbageCollect(maxVectorOf(listOf()))
+        assertEquals(0, doc.garbageLength)
     }
 }

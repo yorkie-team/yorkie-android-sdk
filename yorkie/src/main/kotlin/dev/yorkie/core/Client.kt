@@ -138,6 +138,13 @@ public class Client(
 
     private val attachments = ConcurrentHashMap<String, Attachment<out Attachable>>()
 
+    // Set immediately when deactivate is requested so the sync loop exits early and
+    // suppresses errors from in-flight RPCs. Volatile because the keepalive deactivate
+    // path runs on a different thread (GlobalScope + Dispatchers.IO).
+    @Volatile
+    @VisibleForTesting
+    internal var deactivating = false
+
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()
 
@@ -227,6 +234,7 @@ public class Client(
                 return@async Result.failure(it)
             }
             _status.emit(Status.Activated(activateResponse.clientId))
+            deactivating = false
             runSyncLoop()
             SUCCESS
         }
@@ -240,11 +248,16 @@ public class Client(
         conditions[ClientCondition.SYNC_LOOP] = true
         scope.launch(activationJob) {
             while (true) {
-                if (!isActive) {
+                if (!isActive || deactivating) {
                     conditions[ClientCondition.SYNC_LOOP] = false
                     return@launch
                 }
                 for ((_, attachment) in attachments) {
+                    // Stop syncing if the client is being deactivated.
+                    if (deactivating) {
+                        break
+                    }
+
                     val heartbeatInterval = options.channelHeartbeatInterval.inWholeMilliseconds
                     if (!attachment.needSync(heartbeatInterval)) {
                         continue
@@ -256,6 +269,11 @@ public class Client(
                     }
 
                     val (attachment, result) = syncInternal(attachment, attachment.syncMode)
+                    // Suppress sync errors from in-flight RPCs once deactivation started.
+                    if (deactivating) {
+                        conditions[ClientCondition.SYNC_LOOP] = false
+                        return@launch
+                    }
                     val isRetryAble = handleConnectException(
                         result.exceptionOrNull() as? ConnectException,
                     ) { connectException ->
@@ -1151,6 +1169,11 @@ public class Client(
             return CompletableDeferred(SUCCESS)
         }
 
+        // Mark as deactivating synchronously, before the task is dispatched, so an
+        // already-queued sync-loop iteration on the same dispatcher observes it and
+        // stops before sending another RPC.
+        deactivating = true
+
         val task = suspend {
             activationJob.cancelChildren()
             try {
@@ -1167,6 +1190,7 @@ public class Client(
                 deactivateInternal()
                 SUCCESS
             } catch (e: ConnectException) {
+                deactivating = false
                 handleConnectException(e) { exception ->
                     if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
                         shouldRefreshToken = true

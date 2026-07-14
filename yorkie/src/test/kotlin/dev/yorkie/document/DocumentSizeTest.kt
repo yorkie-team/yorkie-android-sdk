@@ -17,7 +17,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
-import org.junit.Ignore
 
 class DocumentSizeTest {
     private lateinit var document: Document
@@ -678,7 +677,6 @@ class DocumentSizeTest {
     }
 
     @Test
-    @Ignore("should be resolved after the JS SDK implementation")
     fun `test split tree node with attribute`() {
         val attributes = Rht().apply {
             set("bold", "true", TimeTicket.InitialTimeTicket)

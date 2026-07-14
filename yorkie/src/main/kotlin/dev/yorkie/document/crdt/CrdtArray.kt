@@ -50,14 +50,34 @@ internal data class CrdtArray(
     }
 
     /**
-     * Moves the given [createdAt] element after the [prevCreatedAt] element.
+     * Moves the given [createdAt] element after the [prevCreatedAt] element using an LWW
+     * position register. Returns the displaced dead position node the caller must register
+     * for GC, or `null` when the move lost the LWW race / was already processed.
      */
     fun moveAfter(
         prevCreatedAt: TimeTicket,
         createdAt: TimeTicket,
         executedAt: TimeTicket,
-    ) {
-        elements.moveAfter(prevCreatedAt, createdAt, executedAt)
+    ): RgaTreeList.Node? {
+        return elements.moveAfter(prevCreatedAt, createdAt, executedAt)
+    }
+
+    /**
+     * Returns the underlying [RgaTreeList], used as the [GCParent] when registering dead
+     * position nodes.
+     */
+    fun getRGATreeList(): RgaTreeList = elements
+
+    /**
+     * Returns all nodes in linked-list order, including dead position nodes.
+     */
+    fun getAllRGANodes(): List<RgaTreeList.Node> = elements.allNodes()
+
+    /**
+     * Returns the current position node key for the element identified by [elemCreatedAt].
+     */
+    fun posCreatedAt(elemCreatedAt: TimeTicket): TimeTicket {
+        return elements.posCreatedAt(elemCreatedAt)
     }
 
     /**
@@ -124,10 +144,35 @@ internal data class CrdtArray(
     }
 
     override fun deepCopy(): CrdtElement {
+        // Iterate ALL position nodes (including moved and dead ones) and reconstruct each
+        // with its position timestamps. Copying only live nodes would lose moved positions
+        // and dead slots, so a later move on the clone could anchor after a wrong position.
         return copy(
             elements = RgaTreeList().apply {
-                elements.forEach { node ->
-                    insertAfter(lastCreatedAt, node.value.deepCopy())
+                this@CrdtArray.elements.allNodes().forEach { node ->
+                    val entry = node.elementEntry
+                    val positionRemovedAt = node.positionRemovedAt
+                    when {
+                        entry != null -> {
+                            val posMovedAt = entry.posMovedAt
+                            if (posMovedAt != null) {
+                                addMovedElement(
+                                    value = entry.element.deepCopy(),
+                                    positionCreatedAt = node.positionCreatedAt,
+                                    positionMovedAt = posMovedAt,
+                                )
+                            } else {
+                                insertAfter(lastCreatedAt, entry.element.deepCopy())
+                            }
+                        }
+
+                        positionRemovedAt != null -> {
+                            addDeadPosition(
+                                positionCreatedAt = node.positionCreatedAt,
+                                positionRemovedAt = positionRemovedAt,
+                            )
+                        }
+                    }
                 }
             },
         )

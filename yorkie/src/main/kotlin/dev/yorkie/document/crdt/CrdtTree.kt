@@ -181,6 +181,49 @@ internal data class CrdtTree(
                         diff = addDataSizes(diff, curr.dataSize)
                     }
                 }
+
+                // Propagate style to unknown split siblings so that a style
+                // operation whose range was determined before the split also
+                // covers the right part of the split. Mirrors JS SDK PR #1224.
+                if (tokenType == TokenType.Start && versionVector != null) {
+                    var current = node
+                    while (true) {
+                        val nextID = current.insNextID ?: break
+                        val next = findFloorNode(nextID) ?: break
+                        if (next.isText) break
+                        if (isSplitSiblingKnown(next, versionVector)) break
+
+                        val siblingPairs = next.setAttributes(attributes, executedAt)
+                        val siblingAffectedAttrs =
+                            siblingPairs.fold(emptyMap<String, String>()) { acc, pair ->
+                                val curr = pair.new
+                                acc + curr?.let { mapOf(curr.key to curr.value) }.orEmpty()
+                            }
+                        if (siblingAffectedAttrs.isNotEmpty()) {
+                            val parentOfNext = requireNotNull(next.parent)
+                            val previousNext = next.prevSibling ?: parentOfNext
+                            TreeChange(
+                                type = TreeChangeType.Style,
+                                from = toIndex(parentOfNext, previousNext),
+                                to = toIndex(next, next),
+                                fromPath = toPath(parentOfNext, previousNext),
+                                toPath = toPath(next, next),
+                                actorID = executedAt.actorID,
+                                attributes = siblingAffectedAttrs,
+                            ).let(changes::add)
+                        }
+                        siblingPairs.forEach { (prev, _) ->
+                            prev?.let { gcPairs.add(GCPair(next, prev)) }
+                        }
+                        for ((key, _) in attributes) {
+                            // The RHT always retains an entry for a key that was just
+                            // set (the new node or the LWW-winning previous one).
+                            val curr = next.getAttrs().getNodeMapByKey().getValue(key)
+                            diff = addDataSizes(diff, curr.dataSize)
+                        }
+                        current = next
+                    }
+                }
             }
         }
         return TreeOperationResult(
@@ -686,11 +729,25 @@ internal data class CrdtTree(
         )
 
         val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
-        val (fromParent, fromLeft) = from
+        val (fromParent, fromLeftRaw) = from
         val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
-        val (toParent, toLeft) = to
+        val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
+
+        // Advance past split siblings the editor did not know about so range
+        // boundaries land after every unseen split product, matching style().
+        // Skip when leftRaw equals the parent (leftmost-child sentinel).
+        val fromLeft = if (fromLeftRaw === fromParent) {
+            fromLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector)
+        }
+        val toLeft = if (toLeftRaw === toParent) {
+            toLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
+        }
 
         val changes = mutableListOf<TreeChange>()
         val gcPairs = mutableListOf<GCPair<RhtNode>>()
@@ -740,6 +797,41 @@ internal data class CrdtTree(
                     actorID = executedAt.actorID,
                     attributesToRemove = attributeToRemove,
                 ).let(changes::add)
+
+                // Propagate remove-style to unknown split siblings so a
+                // remove-style whose range was determined before the split
+                // also covers the right part. Mirrors JS SDK PR #1224.
+                if (tokenType == TokenType.Start && versionVector != null) {
+                    var current = node
+                    while (true) {
+                        val nextID = current.insNextID ?: break
+                        val next = findFloorNode(nextID) ?: break
+                        if (next.isText) break
+                        if (isSplitSiblingKnown(next, versionVector)) break
+
+                        var removedAny = false
+                        attributeToRemove.forEach { key ->
+                            val removed = next.removeAttribute(key, executedAt)
+                            if (removed.isNotEmpty()) removedAny = true
+                            removed.map { rhtNode -> GCPair(next, rhtNode) }
+                                .let(gcPairs::addAll)
+                        }
+                        if (removedAny) {
+                            val parentOfNext = requireNotNull(next.parent)
+                            val previousNext = next.prevSibling ?: parentOfNext
+                            TreeChange(
+                                type = TreeChangeType.RemoveStyle,
+                                from = toIndex(parentOfNext, previousNext),
+                                to = toIndex(next, next),
+                                fromPath = toPath(parentOfNext, previousNext),
+                                toPath = toPath(next, next),
+                                actorID = executedAt.actorID,
+                                attributesToRemove = attributeToRemove,
+                            ).let(changes::add)
+                        }
+                        current = next
+                    }
+                }
             }
         }
         return TreeOperationResult(changes, gcPairs, diff, prevAttributes = prevAttributes)
@@ -891,6 +983,17 @@ internal data class CrdtTree(
 
             current = next
         }
+    }
+
+    /**
+     * Returns true when the creation of the split sibling [node] is known to
+     * the given [versionVector]. Mirrors JS SDK `ticketKnown`. Used to stop
+     * propagating a style/remove-style along the [CrdtTreeNode.insNextID] chain
+     * once a sibling the editor already knew about is reached.
+     */
+    private fun isSplitSiblingKnown(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
+        val knownLamport = versionVector.get(node.createdAt.actorID) ?: return false
+        return knownLamport >= node.createdAt.lamport
     }
 
     private fun hasUnknownSplitSibling(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
@@ -1286,6 +1389,10 @@ internal data class CrdtTreeNode(
         return copy(
             id = CrdtTreeNodeID(createdAt, offset),
             _value = null,
+            // Deep-copy attributes so a split node keeps its own styling and a
+            // concurrent style operation whose range was computed before the
+            // split also covers the right part of the split.
+            _attributes = _attributes.deepCopy(),
             childNodes = IndexTreeNodeList(mutableListOf()),
         ).apply {
             removedAt = this@CrdtTreeNode.removedAt

@@ -6,6 +6,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.issueTime
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
+import kotlin.test.assertFailsWith
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -577,6 +578,132 @@ class CrdtTreeTest {
 
         // then the attribute is removed from the moved sibling as well
         assertEquals("<root><p><b>a</b></p><p><b>b</b></p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating style at a dangling split sibling link`() {
+        // given a split tree whose sibling link points to an unregistered node
+        val tree = createSplitTree()
+        tree.root.children[0].insNextID = CrdtTreeNodeID(tick(99), 0)
+
+        // when styling the first <p>, unaware of the split
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops without styling the second sibling
+        assertEquals("""<root><p bold="true">a</p><p>b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating style at a text split sibling link`() {
+        // given a split tree whose sibling link points to a text node
+        val tree = createSplitTree()
+        tree.root.children[0].insNextID = tree.root.children[0].children[0].id
+
+        // when styling the first <p>, unaware of the split
+        tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops without styling the second sibling
+        assertEquals("""<root><p bold="true">a</p><p>b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating remove-style at a dangling split sibling link`() {
+        // given a styled split tree whose sibling link points to an unregistered node
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        tree.root.children[0].insNextID = CrdtTreeNodeID(tick(99), 0)
+
+        // when removing the style from the first <p>, unaware of the split
+        tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops and the second sibling keeps the attribute
+        assertEquals("""<root><p>a</p><p bold="true">b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should stop propagating remove-style at a text split sibling link`() {
+        // given a styled split tree whose sibling link points to a text node
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        tree.root.children[0].insNextID = tree.root.children[0].children[0].id
+
+        // when removing the style from the first <p>, unaware of the split
+        tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then propagation stops and the second sibling keeps the attribute
+        assertEquals("""<root><p>a</p><p bold="true">b</p></root>""", tree.toXml())
+    }
+
+    @Test
+    fun `should adjust remove-style range starting after a text node`() {
+        // given a styled split tree
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+
+        // when removing the style over a range that starts after the first text
+        // node, so the from-boundary has a real left sibling to advance from
+        tree.removeStyle(
+            tree.indexRangeToPosRange(2 to 6),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to SPLIT_LAMPORT)),
+        )
+
+        // then the attribute is removed from both siblings covered by the range
+        assertEquals("<root><p>a</p><p>b</p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `should require a parent when propagating style to a split sibling`() {
+        // given a split tree whose second sibling was physically removed from its parent
+        val tree = createSplitTree()
+        tree.root.removeChild(tree.root.children[1])
+
+        // when styling the first <p>, unaware of the split,
+        // then the parent invariant of the split sibling is enforced
+        assertFailsWith<IllegalArgumentException> {
+            tree.style(
+                tree.indexRangeToPosRange(0 to 2),
+                mapOf("bold" to "true"),
+                tick(6),
+                VersionVector(mapOf(ACTOR_A to 4L)),
+            )
+        }
+    }
+
+    @Test
+    fun `should require a parent when propagating remove-style to a split sibling`() {
+        // given a styled split tree whose second sibling was physically removed from its parent
+        val tree = createSplitTree(attributes = mapOf("bold" to "true"))
+        tree.root.removeChild(tree.root.children[1])
+
+        // when removing the style from the first <p>, unaware of the split,
+        // then the parent invariant of the split sibling is enforced
+        assertFailsWith<IllegalArgumentException> {
+            tree.removeStyle(
+                tree.indexRangeToPosRange(0 to 2),
+                listOf("bold"),
+                tick(6),
+                VersionVector(mapOf(ACTOR_A to 4L)),
+            )
+        }
     }
 
     @Test

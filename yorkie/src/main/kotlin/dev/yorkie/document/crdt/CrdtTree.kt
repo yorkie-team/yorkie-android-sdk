@@ -197,9 +197,7 @@ internal data class CrdtTree(
                         val siblingAffectedAttrs =
                             siblingPairs.fold(emptyMap<String, String>()) { acc, pair ->
                                 val curr = pair.new
-                                acc + curr?.let {
-                                    mapOf(curr.key to attributes[curr.key].orEmpty())
-                                }.orEmpty()
+                                acc + curr?.let { mapOf(curr.key to curr.value) }.orEmpty()
                             }
                         if (siblingAffectedAttrs.isNotEmpty()) {
                             val parentOfNext = requireNotNull(next.parent)
@@ -218,10 +216,10 @@ internal data class CrdtTree(
                             prev?.let { gcPairs.add(GCPair(next, prev)) }
                         }
                         for ((key, _) in attributes) {
-                            val curr = next.getAttrs().getNodeMapByKey()[key]
-                            if (curr != null) {
-                                diff = addDataSizes(diff, curr.dataSize)
-                            }
+                            // The RHT always retains an entry for a key that was just
+                            // set (the new node or the LWW-winning previous one).
+                            val curr = next.getAttrs().getNodeMapByKey().getValue(key)
+                            diff = addDataSizes(diff, curr.dataSize)
                         }
                         current = next
                     }

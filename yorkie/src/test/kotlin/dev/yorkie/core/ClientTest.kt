@@ -16,6 +16,7 @@ import dev.yorkie.api.v1.YorkieServiceClientInterface
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
+import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
@@ -48,6 +49,7 @@ import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.spyk
 import io.mockk.unmockkStatic
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -57,6 +59,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -174,6 +177,108 @@ class ClientTest {
             target.detachDocument(document).await()
             target.deactivateAsync().await()
             document.close()
+        }
+    }
+
+    @Test
+    fun `should stop sync loop when client status is not activated`() = runTest {
+        runBlocking {
+            // given an active client with a running sync loop
+            target.activateAsync().await()
+            assertTrue(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+            val activated = target.status.value
+
+            // when the status flips to deactivated while the loop is still alive
+            target.forceStatus(Client.Status.Deactivated)
+            delay(1_000)
+
+            // then the sync loop observes the status and stops
+            assertFalse(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            target.forceStatus(activated)
+            target.deactivateAsync().await()
+        }
+    }
+
+    @Test
+    fun `should suppress sync result when deactivation starts during sync`() = runTest {
+        runBlocking {
+            mockkStatic(Base64::class)
+            every { Base64.encodeToString(any(), any()) } returns "mockk"
+
+            // given an attached document whose sync RPC raises the deactivating flag
+            // mid-flight, as the keepalive deactivate path does from another thread
+            val armed = AtomicBoolean(false)
+            val document = Document(NORMAL_DOCUMENT_KEY)
+            target.activateAsync().await()
+            coEvery { service.pushPullChanges(any(), any()) } coAnswers {
+                if (armed.get()) {
+                    target.deactivating = true
+                }
+                callOriginal()
+            }
+            target.attachDocument(document).await()
+            assertTrue(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            // when a local change triggers a sync during which the flag is raised
+            armed.set(true)
+            document.updateAsync { root, _ ->
+                root.setNewText("text")
+            }.await()
+            delay(1_000)
+
+            // then the loop drops the in-flight result and stops
+            assertFalse(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            armed.set(false)
+            target.deactivating = false
+            target.detachDocument(document).await()
+            target.deactivateAsync().await()
+            document.close()
+
+            unmockkStatic(Base64::class)
+        }
+    }
+
+    @Test
+    fun `should stop iterating attachments when client is deactivating`() = runTest {
+        runBlocking {
+            // given two attached push-only documents that raise the deactivating flag
+            // from within the sync loop's own needSync check once armed, so the loop
+            // observes the flag between two attachments of a single iteration
+            val armed = AtomicBoolean(false)
+            val documents = listOf(
+                spyk(Document(NORMAL_DOCUMENT_KEY)),
+                spyk(Document(ATTACHMENT_LOOP_DOCUMENT_KEY)),
+            ).onEach { document ->
+                every { document.hasLocalChanges() } answers {
+                    if (armed.get()) {
+                        target.deactivating = true
+                    }
+                    false
+                }
+            }
+
+            target.activateAsync().await()
+            documents.forEach { document ->
+                target.attachDocument(document, syncMode = RealtimePushOnly).await()
+            }
+            assertTrue(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            // when the flag is raised mid-iteration
+            armed.set(true)
+            delay(1_000)
+
+            // then the loop breaks out of the attachment iteration and stops
+            assertFalse(target.conditions[Client.ClientCondition.SYNC_LOOP]!!)
+
+            armed.set(false)
+            target.deactivating = false
+            documents.forEach { document ->
+                target.detachDocument(document).await()
+            }
+            target.deactivateAsync().await()
+            documents.forEach(Document::close)
         }
     }
 
@@ -648,11 +753,24 @@ class ClientTest {
         assertEquals(TEST_ACTOR_ID, clientId)
     }
 
+    /**
+     * Forces the client's status without going through activation or deactivation,
+     * so tests can observe how running loops react to a status change alone.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun Client.forceStatus(status: Client.Status) {
+        val field = Client::class.java.getDeclaredField("_status")
+        field.isAccessible = true
+        (field.get(this) as MutableStateFlow<Client.Status>).value = status
+    }
+
     private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {
         assertEquals(initialChangePack, changePack.toChangePack())
     }
 
     companion object {
+        private const val ATTACHMENT_LOOP_DOCUMENT_KEY = "ATTACHMENT_LOOP_DOCUMENT_KEY"
+
         private fun createInitialChangePack(
             changesVersionVector: VersionVector = INITIAL_VERSION_VECTOR,
             changePackVersionVector: VersionVector = INITIAL_VERSION_VECTOR,

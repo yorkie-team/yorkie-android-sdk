@@ -2,6 +2,7 @@ package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.GCPair
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
@@ -34,7 +35,10 @@ internal data class MoveOperation(
         return if (parentObject is CrdtArray) {
             val prevCreatedAtBefore = parentObject.getPrevCreatedAt(createdAt)
             val previousIndex = parentObject.subPathOf(createdAt).toInt()
-            parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
+            val deadNode = parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
+            if (deadNode != null) {
+                root.registerGCPair(GCPair(parentObject.getRGATreeList(), deadNode))
+            }
             val index = parentObject.subPathOf(createdAt).toInt()
 
             val reverseOp = MoveOperation(

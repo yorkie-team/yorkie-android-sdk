@@ -66,6 +66,16 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             if (element is GCCrdtElement) {
                 element.gcPairs.forEach(::registerGCPair)
             }
+            // Register dead position nodes in a CrdtArray so they are collected once all
+            // peers have applied the winning move. Dead nodes have no element, so
+            // getDescendants never yields them — register them explicitly here.
+            if (element is CrdtArray) {
+                element.getAllRGANodes().forEach { node ->
+                    if (node.elementEntry == null && node.positionRemovedAt != null) {
+                        registerGCPair(GCPair(element.getRGATreeList(), node))
+                    }
+                }
+            }
             false
         }
     }

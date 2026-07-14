@@ -6,6 +6,7 @@ import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.helper.maxVectorOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -101,6 +102,29 @@ class CrdtRootTest {
         root.registerRemovedElement(obj["k1"])
         root.registerRemovedElement(obj["k2"])
         root.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
+    }
+
+    // #1227: dead position nodes inside an array (e.g. restored from a snapshot) are
+    // registered for GC when the root is constructed.
+    @Test
+    fun `should register dead position nodes of an array for gc on construction`() {
+        val actor = "A"
+        fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val array = CrdtArray(tick(1))
+        val a = CrdtPrimitive("a", tick(2))
+        val b = CrdtPrimitive("b", tick(3))
+        listOf(a, b).forEach { array.insertAfter(array.lastCreatedAt, it) }
+        // move a after b — a's old position becomes a dead node
+        array.moveAfter(b.createdAt, a.createdAt, tick(4))
+
+        val rootObject = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
+        rootObject.set("arr", array, tick(5))
+        val root = CrdtRoot(rootObject)
+
+        assertEquals(1, root.garbageLength)
+        assertEquals(1, root.garbageCollect(maxVectorOf(listOf(actor))))
+        assertEquals(0, root.garbageLength)
     }
 
     @Test

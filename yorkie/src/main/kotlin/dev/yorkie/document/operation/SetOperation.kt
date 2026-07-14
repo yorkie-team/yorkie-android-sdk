@@ -44,6 +44,12 @@ internal data class SetOperation(
             val removed = parentObject.set(key, copiedValue, executedAt)
             root.registerElement(copiedValue, parentObject)
             removed?.let(root::registerRemovedElement)
+            // When the new value already has a removedAt (i.e. it was the LWW-losing side
+            // of a concurrent set), register it as removed so GC can collect it once all
+            // peers have seen the winning value.
+            if (copiedValue.isRemoved) {
+                root.registerRemovedElement(copiedValue)
+            }
 
             val reverseOp = if (previousValue != null) {
                 SetOperation(key, previousValue.deepCopy(), parentCreatedAt, executedAt)

@@ -118,9 +118,9 @@ class DocumentTest {
                             "k4": 100,
                             "k5": 111.11,
                             "k6": "test string\n\n",
-                            "k7": "bytes",
-                            "k8": 1000,
-                            "k9": [true, 1, 100, 111.111, "test", "bytes", 10000, {"k1": 1}, [1, 2]],
+                            "k7": "Ynl0ZXM=",
+                            "k8": "1970-01-01T00:00:01.000Z",
+                            "k9": [true, 1, 100, 111.111, "test", "Ynl0ZXM=", "1970-01-01T00:00:10.000Z", {"k1": 1}, [1, 2]],
                             "int": 100,
                             "long": 100,
                             "text": [{"attrs":{"b":"1"},"val":"H"},{"val":"ello World"}]

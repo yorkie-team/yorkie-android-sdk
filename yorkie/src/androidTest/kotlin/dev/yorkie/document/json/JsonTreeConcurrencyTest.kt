@@ -680,19 +680,17 @@ class JsonTreeConcurrencyTest {
                 element("p") {
                     element("p") {
                         element("p") {
-                            element("p") {
-                                text { "abcd" }
-                                attrs { mapOf("italic" to "a") }
-                            }
-                            element("p") {
-                                text { "efgh" }
-                                attrs { mapOf("italic" to "a") }
-                            }
-                        }
-                        element("p") {
-                            text { "ijkl" }
+                            text { "abcd" }
                             attrs { mapOf("italic" to "a") }
                         }
+                        element("p") {
+                            text { "efgh" }
+                            attrs { mapOf("italic" to "a") }
+                        }
+                    }
+                    element("p") {
+                        text { "ijkl" }
+                        attrs { mapOf("italic" to "a") }
                     }
                 }
             }

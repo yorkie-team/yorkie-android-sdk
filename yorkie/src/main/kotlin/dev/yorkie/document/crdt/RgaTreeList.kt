@@ -4,7 +4,9 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.util.DataSize
-import dev.yorkie.util.SplayTreeSet
+import dev.yorkie.util.TreeList
+import dev.yorkie.util.TreeListNode
+import dev.yorkie.util.TreeListValue
 import dev.yorkie.util.YorkieException
 
 /**
@@ -22,11 +24,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
     var last: Node = dummyHead
         private set
 
-    private val nodeMapByIndex = SplayTreeSet<Node> {
-        if (it.elementEntry == null || it.value.isRemoved) 0 else 1
-    }.apply {
-        insert(dummyHead)
-    }
+    private val nodeMapByIndex = TreeList(dummyHead.indexNode)
 
     /**
      * Maps a position node's `positionCreatedAt` to the node itself.
@@ -51,6 +49,20 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
      */
     val lastCreatedAt
         get() = last.positionCreatedAt
+
+    /**
+     * Returns the value of the last live node, skipping bare position nodes
+     * (created by moveAfter/addDeadPosition) that have no element. Falls back
+     * to the dummy head's value on an empty list.
+     */
+    val lastElement: CrdtElement
+        get() {
+            var node = last
+            while (node.elementEntry == null && node != dummyHead) {
+                node = requireNotNull(node.prev)
+            }
+            return node.value
+        }
 
     /**
      * Adds a new node with [value] after the last node.
@@ -114,7 +126,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
             last = node
         }
 
-        nodeMapByIndex.insertAfter(anchor, node)
+        nodeMapByIndex.insertAfter(anchor.indexNode, node.indexNode)
         nodeMapByPositionCreatedAt[node.positionCreatedAt] = node
     }
 
@@ -126,7 +138,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         val node = Node.create(CrdtPrimitive(null, executedAt), executedAt)
         insertNodeIntoStructures(node, anchor)
         node.markDead(executedAt)
-        nodeMapByIndex.splay(node)
+        nodeMapByIndex.updateWeight(node.indexNode)
         return node
     }
 
@@ -178,10 +190,10 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
 
         insertNodeIntoStructures(newPositionNode, anchor)
 
-        // Kill the old position node but keep it splayed (length 0) until GC purges it:
-        // a later insert/append may still anchor after it (e.g. it was `last`).
+        // Kill the old position node but keep it in the index tree (weight 0) until GC
+        // purges it: a later insert/append may still anchor after it (e.g. it was `last`).
         oldPositionNode.markDead(executedAt)
-        nodeMapByIndex.splay(oldPositionNode)
+        nodeMapByIndex.updateWeight(oldPositionNode.indexNode)
 
         return oldPositionNode
     }
@@ -197,7 +209,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         prevNode.next = node
         node.prev = prevNode
         last = node
-        nodeMapByIndex.insertAfter(prevNode, node)
+        nodeMapByIndex.insertAfter(prevNode.indexNode, node.indexNode)
         nodeMapByPositionCreatedAt[positionCreatedAt] = node
     }
 
@@ -256,7 +268,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         val node = entry.positionNode
         val alreadyRemoved = node.isRemoved
         if (node.remove(editedAt) && !alreadyRemoved) {
-            nodeMapByIndex.splay(node)
+            nodeMapByIndex.updateWeight(node.indexNode)
         }
         return node.value
     }
@@ -266,7 +278,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
             last = requireNotNull(node.prev)
         }
         node.release()
-        nodeMapByIndex.delete(node)
+        nodeMapByIndex.delete(node.indexNode)
         nodeMapByPositionCreatedAt.remove(node.positionCreatedAt)
     }
 
@@ -283,7 +295,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
     fun subPathOf(createdAt: TimeTicket): String {
         val entry = elementMapByCreatedAt[createdAt]
             ?: throw NoSuchElementException("can't find the given node createdAt: $createdAt")
-        return nodeMapByIndex.indexOf(entry.positionNode).toString()
+        return nodeMapByIndex.indexOf(entry.positionNode.indexNode).toString()
     }
 
     /**
@@ -291,7 +303,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
      */
     fun getByIndex(index: Int): Node? {
         if (length <= index) return null
-        return nodeMapByIndex.findForArray(index)
+        return nodeMapByIndex.find(index).value
     }
 
     /**
@@ -304,7 +316,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         var node: Node? = entry.positionNode
         do {
             node = node?.prev
-        } while (dummyHead != node && node != null && (node.elementEntry == null || node.isRemoved))
+        } while (dummyHead != node && node != null && node.isRemoved)
         return (node ?: dummyHead).positionCreatedAt
     }
 
@@ -339,7 +351,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
     fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {
         val node = getByIndex(index) ?: return null
         if (node.remove(executedAt)) {
-            nodeMapByIndex.splay(node)
+            nodeMapByIndex.updateWeight(node.indexNode)
         }
         return node.value
     }
@@ -408,7 +420,12 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
     class Node private constructor(
         val value: CrdtElement,
         val positionCreatedAt: TimeTicket,
-    ) : GCChild {
+    ) : GCChild, TreeListValue {
+        /**
+         * The [TreeListNode] backing this node's slot in the index tree.
+         */
+        val indexNode = TreeListNode(this)
+
         var prev: Node? = null
         var next: Node? = null
 
@@ -426,8 +443,12 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         val positionedAt: TimeTicket
             get() = positionCreatedAt
 
-        val isRemoved
-            get() = value.isRemoved
+        /**
+         * A node is removed when it is a bare position slot (no element) or
+         * its element is tombstoned. Drives the index tree's live-node weight.
+         */
+        override val isRemoved: Boolean
+            get() = elementEntry == null || value.isRemoved
 
         override val removedAt: TimeTicket?
             get() = positionRemovedAt
@@ -439,6 +460,9 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
             )
 
         fun remove(removedAt: TimeTicket): Boolean {
+            if (elementEntry == null) {
+                return false
+            }
             return value.remove(removedAt)
         }
 

@@ -830,6 +830,140 @@ class CrdtTreeTest {
         assertEquals(mergeTicket, clonedText.mergedAt)
     }
 
+    @Test
+    fun `split re-parents an empty split sibling into the insNext parent`() {
+        // given a multi-level split tree where the first <b>'s insNext is the
+        // second <b> living in another parent
+        val tree = createMultiLevelSplitTree()
+        assertEquals("<root><p><b>a</b></p><p><b>b</b></p></root>", tree.toXml())
+
+        // when splitting the first <b> at its end, producing an empty split sibling
+        var delimiter = 0u
+        tree.editAt(3, null, tick(SPLIT_LAMPORT + 2, 99u), splitLevel = 1) {
+            tick(SPLIT_LAMPORT + 2, delimiter++)
+        }
+
+        // then the empty sibling is re-parented next to its insNext sibling (§7.4)
+        assertEquals("<root><p><b>a</b></p><p><b></b><b>b</b></p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `split loop advances parent when the left node lives in a split sibling parent`() {
+        // given a multi-level split tree where the first <b>'s unknown split
+        // sibling (the second <b>) was moved to another parent by the L2 split
+        val tree = createMultiLevelSplitTree()
+
+        // when an editor unaware of the split (vv lamport 4 < split lamport 6)
+        // splits right after the first <b>
+        var delimiter = 0u
+        val pos = tree.findPos(4)
+        tree.edit(
+            pos to pos,
+            null,
+            1,
+            tick(SPLIT_LAMPORT + 2, 99u, ACTOR_B),
+            { tick(SPLIT_LAMPORT + 2, delimiter++, ACTOR_B) },
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the advance crosses into the sibling's parent (§7.5) and the
+        // second <p> is split instead of the first
+        assertEquals(
+            "<root><p><b>a</b></p><p><b>b</b></p><p></p></root>",
+            tree.toXml(),
+        )
+    }
+
+    @Test
+    fun `split keeps an empty sibling local when its insNext sibling is tombstoned`() {
+        // given a multi-level split tree whose second <b> is deleted
+        val tree = createMultiLevelSplitTree()
+        tree.edit(
+            tree.findPos(6) to tree.findPos(9),
+            null,
+            0,
+            tick(SPLIT_LAMPORT + 2, 99u),
+        )
+        assertEquals("<root><p><b>a</b></p><p></p></root>", tree.toXml())
+
+        // when splitting the first <b> at its end
+        var delimiter = 0u
+        tree.editAt(3, null, tick(SPLIT_LAMPORT + 3, 99u), splitLevel = 1) {
+            tick(SPLIT_LAMPORT + 3, delimiter++)
+        }
+
+        // then the empty sibling is not re-parented next to the removed insNext (§7.4)
+        assertEquals("<root><p><b>a</b><b></b></p><p></p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `split skips re-parenting when the insNext sibling shares the parent`() {
+        // given <root><p>a</p><p>b</p></root> where both split siblings are
+        // children of the root
+        val tree = createSplitTree()
+
+        // when splitting the first <p> at its end
+        var delimiter = 0u
+        tree.editAt(2, null, tick(SPLIT_LAMPORT + 2, 99u), splitLevel = 1) {
+            tick(SPLIT_LAMPORT + 2, delimiter++)
+        }
+
+        // then the empty sibling stays in place (§7.4 needs a different parent)
+        assertEquals("<root><p>a</p><p></p><p>b</p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `split skips re-parenting when the new sibling has children`() {
+        // given a multi-level split tree
+        val tree = createMultiLevelSplitTree()
+
+        // when splitting the first <b> at its front so the new sibling takes the text
+        var delimiter = 0u
+        tree.editAt(2, null, tick(SPLIT_LAMPORT + 2, 99u), splitLevel = 1) {
+            tick(SPLIT_LAMPORT + 2, delimiter++)
+        }
+
+        // then the non-empty sibling stays in place (§7.4 only moves empty siblings)
+        assertEquals("<root><p><b></b><b>a</b></p><p><b>b</b></p></root>", tree.toXml())
+    }
+
+    @Test
+    fun `edit with splitLevel exceeding tree depth stops at the root`() {
+        //       0   1 2 3    4
+        // <root> <p> a b </p> </root>
+        target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+        target.edit(1 to 1, CrdtTreeText(issuePos(), "ab").toList())
+        assertEquals("<root><p>ab</p></root>", target.toXml())
+
+        // splitLevel 2 splits <p> and then the root itself; the loop stops when
+        // the root has no parent instead of re-splitting the same node
+        target.edit(3 to 3, null, 2)
+        assertEquals("<root><p>ab</p></root>", target.toXml())
+        assertEquals(4, target.size)
+    }
+
+    @Test
+    fun `boundary insert migration follows the editor version vector`() {
+        // given <root><p>ab</p></root> with the text created by actor A (lamport 3)
+
+        // when the editor knows the text's creation, it stays in the split sibling
+        var tree = createBoundaryMigrationTree()
+        splitAtFront(tree, VersionVector(mapOf(ACTOR_A to 5L)))
+        assertEquals("<root><p></p><p>ab</p></root>", tree.toXml())
+
+        // when the text's actor is missing from the version vector, it migrates
+        // back to the left node (§7.3)
+        tree = createBoundaryMigrationTree()
+        splitAtFront(tree, VersionVector(mapOf(ACTOR_B to 5L)))
+        assertEquals("<root><p>ab</p><p></p></root>", tree.toXml())
+
+        // when the editor's known lamport is older than the text's creation,
+        // it also migrates back to the left node
+        tree = createBoundaryMigrationTree()
+        splitAtFront(tree, VersionVector(mapOf(ACTOR_A to 2L)))
+        assertEquals("<root><p>ab</p><p></p></root>", tree.toXml())
+    }
+
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)
 
     private fun CrdtTreeNode.toList() = listOf(this)
@@ -908,6 +1042,35 @@ class CrdtTreeTest {
             tick(SPLIT_LAMPORT + 1, delimiter++)
         }
         return tree
+    }
+
+    /**
+     * Builds `<root><p>ab</p></root>` where the text is created by [ACTOR_A]
+     * at lamport 3, for §7.3 boundary-insert migration tests.
+     */
+    private fun createBoundaryMigrationTree(): CrdtTree {
+        val tree = CrdtTree(CrdtTreeElement(CrdtTreeNodeID(tick(1), 0), "root"), tick(1))
+        tree.editAt(0, CrdtTreeElement(CrdtTreeNodeID(tick(2), 0), "p").toList(), tick(2, 1u))
+        tree.editAt(1, CrdtTreeText(CrdtTreeNodeID(tick(3), 0), "ab").toList(), tick(3, 1u))
+        return tree
+    }
+
+    /**
+     * Splits the `<p>` of [tree] at its front (offset 0) as [ACTOR_B] with the
+     * given [versionVector], so all children land in the split sibling unless
+     * the §7.3 boundary-insert migration moves them back.
+     */
+    private fun splitAtFront(tree: CrdtTree, versionVector: VersionVector) {
+        var delimiter = 0u
+        val pos = tree.findPos(1)
+        tree.edit(
+            pos to pos,
+            null,
+            1,
+            tick(SPLIT_LAMPORT, 99u, ACTOR_B),
+            { tick(SPLIT_LAMPORT, delimiter++, ACTOR_B) },
+            versionVector,
+        )
     }
 
     companion object {

@@ -2,6 +2,7 @@ package dev.yorkie.presence
 
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
 
@@ -38,5 +39,24 @@ class ChannelTest {
     @Test
     fun `hasLocalChanges always returns false`() {
         assertFalse(Channel("key").hasLocalChanges())
+    }
+
+    @Test
+    fun `getSessionId returns null before any session id is set`() {
+        assertNull(Channel("key").getSessionId())
+    }
+
+    @Test
+    fun `setSessionId accepts null to clear a previously set session id`() {
+        // given
+        val channel = Channel("key")
+        channel.setSessionId("session-1")
+        assertEquals("session-1", channel.getSessionId())
+
+        // when
+        channel.setSessionId(null)
+
+        // then
+        assertNull(channel.getSessionId())
     }
 }

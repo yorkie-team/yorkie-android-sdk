@@ -32,6 +32,7 @@ import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.documentDescriptor
 import dev.yorkie.api.v1.getRevisionRequest
 import dev.yorkie.api.v1.listRevisionsRequest
+import dev.yorkie.api.v1.peekChannelRequest
 import dev.yorkie.api.v1.pushPullChangesRequest
 import dev.yorkie.api.v1.refreshChannelRequest
 import dev.yorkie.api.v1.removeDocumentRequest
@@ -413,7 +414,19 @@ public class Client(
                             request,
                             resource.getKey().attachmentBasedRequestHeader,
                         ).getOrThrow()
-                        resource.updateSessionCount(response.sessionCount, 0L)
+                        // Publish on value change, not on seq freshness like the watch
+                        // path: refresh pins seq=0 which is always accepted, so the
+                        // freshness check alone would fire on every refresh tick. #1247.
+                        val previousSessionCount = resource.getSessionCount()
+                        if (resource.updateSessionCount(response.sessionCount, 0L) &&
+                            resource.getSessionCount() != previousSessionCount
+                        ) {
+                            resource.publish(
+                                ChannelEvent.Changed(
+                                    sessionCount = resource.getSessionCount(),
+                                ),
+                            )
+                        }
                         attachment.updateHeartbeatTime()
                     }
                 }
@@ -1158,6 +1171,48 @@ public class Client(
             detachInternal(channelKey)
 
             SUCCESS
+        }
+    }
+
+    /**
+     * `peekChannel` reads the current session count of a channel without creating
+     * a session on the server. Use this when the caller only needs to display the
+     * count (e.g. "N people writing") without contributing to it and without
+     * receiving broadcasts.
+     *
+     * Unlike attaching, this does not occupy a session entry on the server, does
+     * not generate heartbeat RPCs, and does not subscribe to channel events.
+     * Polling is the caller's responsibility.
+     *
+     * @param channelKey The key of the channel to peek.
+     * @return The current online session count of the channel.
+     */
+    public fun peekChannel(channelKey: String): Deferred<Result<Long>> {
+        return scope.async {
+            checkYorkieError(
+                isActive,
+                YorkieException(ErrClientNotActivated, "client is not active"),
+            )
+
+            val request = peekChannelRequest {
+                this.channelKey = channelKey
+            }
+
+            val response = service.peekChannel(
+                request,
+                channelKey.attachmentBasedRequestHeader,
+            ).getOrElse {
+                ensureActive()
+                handleConnectException(it) { exception ->
+                    if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                        shouldRefreshToken = true
+                    }
+                    deactivateInternal()
+                }
+                return@async Result.failure(it)
+            }
+
+            Result.success(response.sessionCount)
         }
     }
 

@@ -760,4 +760,99 @@ class JsonTreeUndoTest {
             assertEquals(afterXml, d1.getRoot().getAs<JsonTree>("tree").toXml())
         }
     }
+
+    /**
+     * Undo of a cross-boundary merge (editByPath([0,2],[1,0])) must restore the
+     * two sibling paragraphs, not nest them. The merge moves children out of the
+     * second block before returning, so re-inserting the emptied shell would
+     * produce <p>AB<p></p>CD</p>; the reverse must be a split. JS SDK PR #1237.
+     */
+    @Test
+    fun test_undo_cross_boundary_merge_restores_siblings() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("doc") {
+                        element("p") { text { "AB" } }
+                        element("p") { text { "CD" } }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            val before = "<doc><p>AB</p><p>CD</p></doc>"
+            assertEquals(before, d1.getRoot().getAs<JsonTree>("t").toXml())
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(listOf(0, 2), listOf(1, 0))
+            }.await()
+            c1.syncAsync().await()
+            assertEquals("<doc><p>ABCD</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
+
+            assertTrue(d1.history.canUndo())
+            d1.history.undoAsync().await()
+            assertEquals(before, d1.getRoot().getAs<JsonTree>("t").toXml())
+
+            d1.history.redoAsync().await()
+            assertEquals("<doc><p>ABCD</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        }
+    }
+
+    /**
+     * The redo reverse-op must not accumulate pre-tombstoned descendants across
+     * undo->redo cycles. Typing then fully undoing (through a block-insert) and
+     * redoing must keep the tree stable and let subsequent typing land in the
+     * right place. JS SDK PR #1239.
+     */
+    @Test
+    fun test_reverseOp_stable_across_redo_cycles() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("doc") {
+                        element("p") { element("inline") {} }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            // Insert a sibling block: <doc><p><inline/></p><p><inline/></p></doc>
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(
+                    listOf(1),
+                    listOf(1),
+                    element("p") { element("inline") {} },
+                )
+            }.await()
+            c1.syncAsync().await()
+
+            val stableXml =
+                "<doc><p><inline></inline></p><p><inline></inline></p></doc>"
+
+            repeat(3) {
+                // Type "asdf" into the second block's inline.
+                listOf("a", "s", "d", "f").forEachIndexed { cur, ch ->
+                    d1.updateAsync { root, _ ->
+                        root.getAs<JsonTree>("t")
+                            .editByPath(listOf(1, 0, cur), listOf(1, 0, cur), text { ch })
+                    }.await()
+                }
+                // Undo each char, then undo the block-insert.
+                repeat(5) { d1.history.undoAsync().await() }
+                // Redo just the block-insert for the next cycle.
+                d1.history.redoAsync().await()
+                assertEquals(stableXml, d1.getRoot().getAs<JsonTree>("t").toXml())
+            }
+
+            // Typing after the cycles must land in the second block.
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(listOf(1, 0, 0), listOf(1, 0, 0), text { "z" })
+            }.await()
+            assertEquals(
+                "<doc><p><inline></inline></p><p><inline>z</inline></p></doc>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+        }
+    }
 }

@@ -152,6 +152,7 @@ internal data class TreeEditOperation(
                             fromIndex,
                             editContents,
                             result.removedNodes,
+                            result.mergeLevel,
                         )
                     } else {
                         null
@@ -181,6 +182,12 @@ internal data class TreeEditOperation(
      * Special case: if [redoSplitLevel] > 0, this op is a boundary-deletion
      * that undid a split. Its redo must regenerate a proper split at the
      * merge point rather than re-inserting raw tombstoned boundary nodes.
+     *
+     * Special case: if [mergeLevel] > 0, this op is a cross-boundary merge that
+     * deleted element boundaries and moved their children into the target,
+     * leaving empty shells in [removedNodes]. Re-inserting those shells would
+     * nest the elements; instead the reverse is a split of [mergeLevel] levels
+     * that re-creates the boundaries. Mirrors JS SDK PR #1237.
      */
     private fun toReverseOperation(
         tree: CrdtTree,
@@ -188,6 +195,7 @@ internal data class TreeEditOperation(
         fromIndex: Int,
         editContents: List<CrdtTreeNode>?,
         removedNodes: List<CrdtTreeNode>,
+        mergeLevel: Int = 0,
     ): TreeEditOperation {
         if (redoSplitLevel > 0) {
             val splitFromPos = tree.findPos(fromIndex)
@@ -197,6 +205,20 @@ internal data class TreeEditOperation(
                 toPos = splitFromPos,
                 contents = null,
                 splitLevel = redoSplitLevel,
+                executedAt = executedAt,
+                undoFromOffset = fromIndex,
+                undoToOffset = fromIndex,
+            )
+        }
+
+        if (mergeLevel > 0) {
+            val splitFromPos = tree.findPos(fromIndex)
+            return TreeEditOperation(
+                parentCreatedAt = parentCreatedAt,
+                fromPos = splitFromPos,
+                toPos = splitFromPos,
+                contents = null,
+                splitLevel = mergeLevel,
                 executedAt = executedAt,
                 undoFromOffset = fromIndex,
                 undoToOffset = fromIndex,

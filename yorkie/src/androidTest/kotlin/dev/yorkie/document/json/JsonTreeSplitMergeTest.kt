@@ -6,6 +6,8 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonTreeTest.Companion.rootTree
 import dev.yorkie.document.json.JsonTreeTest.Companion.updateAndSync
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import kotlin.test.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -827,6 +829,56 @@ class JsonTreeSplitMergeTest {
             }
 
             JsonTreeTest.assertTreesXmlEquals(d1.getRoot().rootTree().toXml(), d1, d2)
+        }
+    }
+
+    /**
+     * Split a block then merge it back via editByPath (wafflebase backspace).
+     * Phase 3 range narrowing must not suppress the merge when toLeft is the
+     * leftmost child (offset 0), which would leave the split in place. JS SDK
+     * PR #1237.
+     */
+    @Test
+    fun test_split_then_merge_blocks_using_editByPath() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("doc") {
+                        element("block") {
+                            element("inline") { text { "asdf" } }
+                        }
+                    },
+                )
+            }.await()
+            c1.syncAsync().await()
+            assertEquals(
+                "<doc><block><inline>asdf</inline></block></doc>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // Split at offset 2 with splitLevel = 2 (Enter after "as").
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>(
+                    "t",
+                ).editByPath(listOf(0, 0, 2), listOf(0, 0, 2), splitLevel = 2)
+            }.await()
+            c1.syncAsync().await()
+            assertEquals(
+                "<doc><block><inline>as</inline></block>" +
+                    "<block><inline>df</inline></block></doc>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+
+            // Merge via backspace at start of the second block.
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(listOf(0, 1), listOf(1, 0))
+            }.await()
+            c1.syncAsync().await()
+            assertEquals(
+                "<doc><block><inline>as</inline><inline>df</inline></block></doc>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
         }
     }
 }

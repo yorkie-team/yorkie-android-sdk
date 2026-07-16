@@ -109,11 +109,36 @@ class UndoRedoTest {
     }
 
     @Test
-    fun test_undo_empty_stack_throws() {
+    fun test_attach_clears_undo_history() {
+        // Pre-attach (offline) edits must not be reachable via undo after
+        // attach, so setup/initialRoot ops cannot be undone. JS SDK PR #1238.
+        withTwoClientsAndDocuments(
+            attachDocuments = false,
+            detachDocuments = false,
+            syncMode = Manual,
+        ) { c1, _, d1, _, _ ->
+            d1.updateAsync { root, _ ->
+                root["k1"] = "v1"
+            }.await()
+            assertTrue(d1.history.canUndo())
+
+            c1.attachDocument(d1, syncMode = Manual).await()
+            assertFalse(d1.history.canUndo())
+            assertFalse(d1.history.canRedo())
+
+            c1.detachDocument(d1).await()
+        }
+    }
+
+    @Test
+    fun test_undo_empty_stack_is_noop() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
             assertFalse(d1.history.canUndo())
-            val result = d1.history.undoAsync().await()
-            assertTrue(result.isFailure)
+            // Empty stack undo/redo is a silent no-op (JS SDK PR #1238).
+            assertTrue(d1.history.undoAsync().await().isSuccess)
+            assertTrue(d1.history.redoAsync().await().isSuccess)
+            assertFalse(d1.history.canUndo())
+            assertFalse(d1.history.canRedo())
         }
     }
 

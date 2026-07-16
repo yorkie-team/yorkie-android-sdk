@@ -241,6 +241,7 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
             result.add(current)
             current = current.next
         }
+        return result
     }
 
     /**

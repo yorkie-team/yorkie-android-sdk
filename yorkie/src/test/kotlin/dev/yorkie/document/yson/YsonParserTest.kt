@@ -299,6 +299,68 @@ class YsonParserTest {
         assertEquals(100L, (counter.value as YsonValue.YsonLong).value)
     }
 
+    // --- dedup counter (#1232) ---
+
+    @Test
+    fun `parse should decode DedupCounter with Int value and HLL registers`() {
+        val result = parse("{\"value\":DedupCounter(Int(15),\"AQIDBA==\")}") as YsonValue.YsonObject
+        val value = result.entries["value"]
+        assertTrue(isDedupCounter(value))
+        val dedup = value as YsonValue.YsonDedupCounter
+        assertTrue(isInt(dedup.value))
+        assertEquals(15, (dedup.value as YsonValue.YsonInt).value)
+        assertEquals("AQIDBA==", dedup.registers)
+    }
+
+    @Test
+    fun `parse should decode DedupCounter with zero value`() {
+        val result = parse("{\"value\":DedupCounter(Int(0),\"AAAA\")}") as YsonValue.YsonObject
+        val dedup = result.entries["value"] as YsonValue.YsonDedupCounter
+        assertEquals(0, (dedup.value as YsonValue.YsonInt).value)
+        assertEquals("AAAA", dedup.registers)
+    }
+
+    @Test
+    fun `parse should decode DedupCounter alongside Counter`() {
+        val result = parse(
+            "{\"counter\":Counter(Int(10)),\"dedup\":DedupCounter(Int(5),\"dGVzdA==\")}",
+        ) as YsonValue.YsonObject
+        assertTrue(isCounter(result.entries["counter"]))
+        assertTrue(isDedupCounter(result.entries["dedup"]))
+    }
+
+    @Test
+    fun `isDedupCounter and isCounter are mutually exclusive`() {
+        val counter = parse("Counter(Int(10))")
+        val dedup = parse("DedupCounter(Int(5),\"dGVzdA==\")")
+        assertTrue(isCounter(counter))
+        assertFalse(isDedupCounter(counter))
+        assertTrue(isDedupCounter(dedup))
+        assertFalse(isCounter(dedup))
+        assertFalse(isObject(dedup))
+    }
+
+    @Test
+    fun `YsonDedupCounter constructor should reject non integer value`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            YsonValue.YsonDedupCounter(YsonValue.YsonString("nope"), "AAAA")
+        }
+    }
+
+    @Test
+    fun `parse should reject DedupCounter with Long payload`() {
+        assertThrows(YorkieException::class.java) {
+            parse("{\"value\":DedupCounter(Long(5),\"AAAA\")}")
+        }
+    }
+
+    @Test
+    fun `parse should reject DedupCounter missing registers argument`() {
+        assertThrows(YorkieException::class.java) {
+            parse("{\"value\":DedupCounter(Int(5))}")
+        }
+    }
+
     // --- complex document ---
 
     @Test
@@ -314,6 +376,7 @@ class YsonParserTest {
               "bytes": BinData("AQID"),
               "date": Date("2025-01-02T15:04:05.058Z"),
               "counter": Counter(Int(10)),
+              "dedup": DedupCounter(Int(3),"AQID"),
               "text": Text([{"val":"Hello"}]),
               "tree": Tree({"type":"p","children":[{"type":"text","value":"Hello World"}]})
             }
@@ -329,6 +392,7 @@ class YsonParserTest {
         assertTrue(isBinData(result.entries["bytes"]))
         assertTrue(isDate(result.entries["date"]))
         assertTrue(isCounter(result.entries["counter"]))
+        assertTrue(isDedupCounter(result.entries["dedup"]))
         assertTrue(isText(result.entries["text"]))
         assertTrue(isTree(result.entries["tree"]))
     }

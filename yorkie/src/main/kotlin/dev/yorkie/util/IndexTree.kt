@@ -806,6 +806,39 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             child.parent = this as T
         }
 
+        // §7.3 Boundary Insert Migration: move concurrent inserts sitting at the
+        // split boundary back to the left node so a split whose range was decided
+        // before those inserts still covers them. Element split siblings are
+        // skipped (handled by §7.4 re-parenting) but scanning continues past them.
+        // Two-list (snapshot/classify/reassign) to avoid mutate-while-iterate.
+        if (versionVector != null && versionVector.size() > 0) {
+            val migrate = mutableListOf<T>()
+            val remaining = mutableListOf<T>()
+            var boundaryReached = false
+            for (child in clone.childNodes.toList()) {
+                if (!boundaryReached) {
+                    if (isSplitSiblingSkipForBoundaryMigration(child)) {
+                        remaining.add(child)
+                        continue
+                    }
+                    if (isUnknownToEditor(child, versionVector)) {
+                        migrate.add(child)
+                        continue
+                    }
+                }
+                boundaryReached = true
+                remaining.add(child)
+            }
+            if (migrate.isNotEmpty()) {
+                clone.childNodes.clear()
+                remaining.forEach { clone.childNodes.add(it) }
+                migrate.forEach { child ->
+                    childNodes.add(child)
+                    child.parent = this as T
+                }
+            }
+        }
+
         visibleSize = childNodes.fold(0) { acc, child ->
             acc + if (child.isRemoved) 0 else child.paddedSize(false)
         }
@@ -844,6 +877,19 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         versionVector: VersionVector?,
         allChildren: List<T>,
     ): Boolean = false
+
+    /**
+     * Returns true when [child] is an element split sibling that the §7.3
+     * boundary-insert migration must skip (not migrate) but keep scanning past.
+     * Subclasses override; the default returns false.
+     */
+    open fun isSplitSiblingSkipForBoundaryMigration(child: T): Boolean = false
+
+    /**
+     * Returns true when [child] was created by an operation the editor did not
+     * yet know about (per [versionVector]). Subclasses override; default false.
+     */
+    open fun isUnknownToEditor(child: T, versionVector: VersionVector): Boolean = false
 
     private fun insertAfterInternal(targetNode: T, newNode: T) {
         check(!isText) {

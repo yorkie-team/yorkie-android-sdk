@@ -330,14 +330,10 @@ internal data class CrdtTree(
                 val next = findFloorNode(nextID) ?: break
                 if (next.isText) break
                 if (next.parent === toParent) {
-                    // Skip narrowing when toLeft === toParent (leftmost child
-                    // position, offset 0). The narrowed collectFromLeft would
-                    // be a child at offset >= 1, producing a backwards range
-                    // that suppresses the intended merge.
-                    if (toLeft !== toParent) {
-                        collectFromLeft = next
-                        collectFromParent = toParent
-                    }
+                    // Narrow unconditionally once a split sibling is found in
+                    // toParent, matching JS #1233 §3 / iOS narrowedCollectRange.
+                    collectFromLeft = next
+                    collectFromParent = toParent
                     break
                 }
                 current = next
@@ -524,15 +520,40 @@ internal data class CrdtTree(
         if (splitLevel > 0 && issueTimeTicket != null) {
             var parent = fromParent
             var left = fromLeft
-            repeat(splitLevel) {
-                parent.split(
-                    this,
-                    parent.findOffset(left, includeRemoved = true) + 1,
-                    issueTimeTicket,
-                    versionVector,
-                )
-                left = parent
-                parent = parent.parent ?: return@repeat
+            // `run` so an exhausted ancestor chain terminates the whole loop
+            // (return@run), rather than re-splitting the same node.
+            run {
+                repeat(splitLevel) {
+                    // §7.5 per-iteration advance: skip past unknown element split
+                    // siblings at this ancestor level. skipActorID (§7.7) prevents
+                    // advancing past our own split products.
+                    if (left !== parent) {
+                        left = advancePastUnknownSplitSiblings(
+                            left,
+                            versionVector,
+                            relaxParentCheck = true,
+                            skipActorID = executedAt.actorID,
+                        )
+                        val leftParent = left.parent
+                        if (leftParent != null && leftParent !== parent) {
+                            parent = leftParent
+                        }
+                    }
+
+                    val splitOffset = if (left !== parent) {
+                        parent.findOffset(left, includeRemoved = true) + 1
+                    } else {
+                        0
+                    }
+                    parent.split(
+                        this,
+                        splitOffset,
+                        issueTimeTicket,
+                        versionVector,
+                    )
+                    left = parent
+                    parent = parent.parent ?: return@run
+                }
             }
             changes.add(
                 TreeChange(
@@ -966,6 +987,8 @@ internal data class CrdtTree(
     private fun advancePastUnknownSplitSiblings(
         node: CrdtTreeNode,
         versionVector: VersionVector?,
+        relaxParentCheck: Boolean = false,
+        skipActorID: String? = null,
     ): CrdtTreeNode {
         if (versionVector == null || versionVector.size() == 0) return node
 
@@ -974,9 +997,16 @@ internal data class CrdtTree(
             val nextID = current.insNextID ?: return current
             val next = findFloorNode(nextID) ?: return current
             if (next.isText) return current
-            if (next.parent !== current.parent) return current
+            // §7.5: skip the parent check at ancestor iterations of the split
+            // loop, where a concurrent recursive split may have moved the
+            // sibling to a different parent.
+            if (!relaxParentCheck && next.parent !== current.parent) return current
 
             val actorID = next.id.createdAt.actorID
+            // §7.7: stop at siblings created by the current operation's actor —
+            // they are our own split products, not concurrent ones.
+            if (skipActorID != null && actorID == skipActorID) return current
+
             val knownLamport = versionVector.get(actorID)
             val isUnknown = knownLamport == null || knownLamport < next.id.createdAt.lamport
             if (!isUnknown) return current
@@ -1414,9 +1444,32 @@ internal data class CrdtTreeNode(
         val node = this
         split?.apply {
             split.insPrevID = node.id
-            node.insNextID?.let {
-                tree.findFloorNode(it)?.insPrevID = split.id
-                split.insNextID = node.insNextID
+            node.insNextID?.let { insNextID ->
+                val insNext = tree.findFloorNode(insNextID)
+                split.insNextID = insNextID
+                if (insNext != null) {
+                    insNext.insPrevID = split.id
+
+                    // §7.4 Empty Sibling Re-Parenting: when the existing insNext
+                    // sibling lives in a different parent (from a prior parent-
+                    // level split), move the new empty split sibling into that
+                    // parent. Skip when insNext is tombstoned (e.g. by an undo
+                    // boundary deletion): re-parenting into a removed element
+                    // would make the new split sibling invisible.
+                    val insNextParent = insNext.parent
+                    if (!node.isText &&
+                        insNextParent != null &&
+                        !insNext.isRemoved &&
+                        insNextParent !== split.parent &&
+                        split.allChildren.isEmpty()
+                    ) {
+                        // No try/catch: `split` was just inserted by splitElement,
+                        // so detachChild cannot fail here. Let a throw surface a
+                        // real structural bug (matches JS invariant).
+                        split.parent?.detachChild(split)
+                        insNextParent.insertBefore(insNext, split)
+                    }
+                }
             }
             node.insNextID = split.id
             tree.registerNode(split)
@@ -1446,6 +1499,14 @@ internal data class CrdtTreeNode(
         val mergedFrom = child.mergedFrom ?: return false
         if (versionVector.afterOrEqual(mergedAt)) return false
         return allChildren.any { sibling -> sibling.id == mergedFrom }
+    }
+
+    override fun isSplitSiblingSkipForBoundaryMigration(child: CrdtTreeNode): Boolean =
+        child.insPrevID != null && !child.isText
+
+    override fun isUnknownToEditor(child: CrdtTreeNode, versionVector: VersionVector): Boolean {
+        val knownLamport = versionVector.get(child.id.createdAt.actorID)
+        return knownLamport == null || knownLamport < child.id.createdAt.lamport
     }
 
     fun setAttributes(

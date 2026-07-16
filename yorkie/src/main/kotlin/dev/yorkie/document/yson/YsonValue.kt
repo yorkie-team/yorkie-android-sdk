@@ -79,6 +79,24 @@ public sealed interface YsonValue {
     }
 
     /**
+     * [YsonDedupCounter] represents a DedupCounter CRDT that counts unique actors via
+     * HyperLogLog, serialized as `DedupCounter(Int(...),"base64")`.
+     *
+     * [value] is constrained at construction to be a [YsonInt] (dedup counters are always
+     * Int-valued); [registers] is the Base64-encoded HLL register state.
+     */
+    public data class YsonDedupCounter(
+        public val value: YsonValue,
+        public val registers: String,
+    ) : YsonValue {
+        init {
+            require(value is YsonInt) {
+                "DedupCounter must contain Int"
+            }
+        }
+    }
+
+    /**
      * [YsonText] represents a Text CRDT, serialized as `Text([...])`.
      */
     public data class YsonText(public val nodes: List<YsonTextNode>) : YsonValue
@@ -151,6 +169,11 @@ public fun isBinData(value: Any?): Boolean = value is YsonValue.YsonBinData
  * [isCounter] returns true when [value] is a [YsonValue.YsonCounter].
  */
 public fun isCounter(value: Any?): Boolean = value is YsonValue.YsonCounter
+
+/**
+ * [isDedupCounter] returns true when [value] is a [YsonValue.YsonDedupCounter].
+ */
+public fun isDedupCounter(value: Any?): Boolean = value is YsonValue.YsonDedupCounter
 
 /**
  * [isObject] returns true when [value] is a plain [YsonValue.YsonObject], not a CRDT or special type.

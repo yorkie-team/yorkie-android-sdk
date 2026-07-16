@@ -97,4 +97,11 @@ internal data class TreeOperationResult(
      * node.  The reverse op must remove them to restore the prior state.
      */
     val attributesToRemove: List<String> = emptyList(),
+    /**
+     * Number of element boundaries merged by this edit, counted before their
+     * children were moved.  A cross-boundary merge is reversed by a split of
+     * this many levels rather than by re-inserting the emptied shells.
+     * Mirrors JS SDK PR #1237.
+     */
+    val mergeLevel: Int = 0,
 )

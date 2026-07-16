@@ -330,10 +330,15 @@ internal data class CrdtTree(
                 val next = findFloorNode(nextID) ?: break
                 if (next.isText) break
                 if (next.parent === toParent) {
-                    // Narrow unconditionally once a split sibling is found in
-                    // toParent, matching JS #1233 §3 / iOS narrowedCollectRange.
-                    collectFromLeft = next
-                    collectFromParent = toParent
+                    // Narrow once a split sibling is found in toParent, matching
+                    // JS #1233 §3 / iOS narrowedCollectRange. Skip narrowing when
+                    // toLeft === toParent (leftmost child, offset 0): the narrowed
+                    // range would run backwards and suppress the intended merge
+                    // (JS #1237).
+                    if (toLeft !== toParent) {
+                        collectFromLeft = next
+                        collectFromParent = toParent
+                    }
                     break
                 }
                 current = next
@@ -619,7 +624,16 @@ internal data class CrdtTree(
                 }
             }
         }
-        return TreeOperationResult(changes, gcPairs, diff, removedNodes)
+        // Count merged boundaries before their children were moved (above), so
+        // the undo can regenerate them via split instead of re-inserting the
+        // emptied shells. Mirrors JS SDK PR #1237.
+        return TreeOperationResult(
+            changes,
+            gcPairs,
+            diff,
+            removedNodes,
+            mergeLevel = toBeMergedNodes.size,
+        )
     }
 
     /**

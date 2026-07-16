@@ -259,7 +259,8 @@ public class Client(
                     }
 
                     val heartbeatInterval = options.channelHeartbeatInterval.inWholeMilliseconds
-                    if (!attachment.needSync(heartbeatInterval)) {
+                    val pollInterval = options.documentPollInterval.inWholeMilliseconds
+                    if (!attachment.needSync(heartbeatInterval, pollInterval)) {
                         continue
                     }
 
@@ -350,6 +351,16 @@ public class Client(
                 if (resource is Document) {
                     resource.mutex.withLock {
                         val documentKey = resource.getKey()
+
+                        // Reset the poll timer up front so a Polling document
+                        // syncs once per interval, not on every sync-loop tick.
+                        // Done before the RPC so a failed push-pull does not
+                        // retry every 50ms and drain battery / hammer the
+                        // server during outages. #1243.
+                        if (attachment.syncMode == SyncMode.Polling) {
+                            attachment.updateHeartbeatTime()
+                        }
+
                         val request = pushPullChangesRequest {
                             clientId = requireClientId()
                             changePack = resource.createChangePack().toPBChangePack()
@@ -365,8 +376,10 @@ public class Client(
                         // PushPull, ignore the response when the syncMode is PushOnly.
                         val currentSyncMode = attachments[documentKey]?.syncMode
                         if (responsePack.hasChanges &&
-                            currentSyncMode == SyncMode.RealtimePushOnly ||
-                            currentSyncMode == SyncMode.RealtimeSyncOff
+                            (
+                                currentSyncMode == SyncMode.RealtimePushOnly ||
+                                    currentSyncMode == SyncMode.RealtimeSyncOff
+                                )
                         ) {
                             return@runCatching
                         }
@@ -925,6 +938,10 @@ public class Client(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
 
+                // Clear undo/redo stacks so that initialRoot setup operations
+                // are not reachable via undo. Mirrors JS SDK PR #1238.
+                document.clearHistory()
+
                 if (document.getStatus() == ResourceStatus.Removed) {
                     return@async SUCCESS
                 }
@@ -934,7 +951,9 @@ public class Client(
                     resourceId = response.documentId,
                     syncMode = syncMode,
                 )
-                if (syncMode != SyncMode.Manual) {
+                // Manual and Polling are stream-less modes; only realtime modes
+                // open a watch stream. Mirrors JS SDK PR #1243.
+                if (syncMode != SyncMode.Manual && syncMode != SyncMode.Polling) {
                     runWatchLoop(documentKey)
                 }
             }
@@ -1541,7 +1560,9 @@ public class Client(
 
         attachment.syncMode = syncMode
 
-        if (syncMode == SyncMode.Manual) {
+        // Manual and Polling are stream-less: no watch stream. The global sync
+        // loop still drives Polling push-pull. Mirrors JS SDK PR #1243.
+        if (syncMode == SyncMode.Manual || syncMode == SyncMode.Polling) {
             attachment.cancelWatchJob()
             return
         }
@@ -1550,7 +1571,8 @@ public class Client(
             attachment.changeEventReceived = true
         }
 
-        if (prevSyncMode == SyncMode.Manual) {
+        // Restart the watch stream only when leaving a stream-less mode.
+        if (prevSyncMode == SyncMode.Manual || prevSyncMode == SyncMode.Polling) {
             runWatchLoop(document.getKey())
         }
     }
@@ -1609,6 +1631,14 @@ public class Client(
         Realtime(true),
         RealtimePushOnly(true),
         RealtimeSyncOff(false),
+
+        /**
+         * [Polling] runs the sync loop without opening a watch stream: local
+         * changes are pushed and remote changes pulled on a fixed interval
+         * ([Options.documentPollInterval]). Suited to low-frequency updates;
+         * use [Realtime] for collaborative editing. Mirrors JS SDK PR #1243.
+         */
+        Polling(false),
         Manual(false),
     }
 
@@ -1654,6 +1684,12 @@ public class Client(
          * The default value is `30000`(ms).
          */
         public val channelHeartbeatInterval: Duration = 30_000.milliseconds,
+        /**
+         * `documentPollInterval` is the push-pull interval for documents attached
+         * with [SyncMode.Polling]. Unused in other sync modes.
+         * The default value is `3000`(ms). Mirrors JS SDK PR #1243.
+         */
+        public val documentPollInterval: Duration = 3_000.milliseconds,
     ) {
         @Deprecated(
             "Renamed to channelHeartbeatInterval",

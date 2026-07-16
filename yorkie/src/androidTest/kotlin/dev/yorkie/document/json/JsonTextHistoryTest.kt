@@ -116,10 +116,10 @@ class JsonTextHistoryTest {
             // Only the setNewText op was pushed — undo the set to get to empty undo stack
             d1.history.undoAsync().await()
 
-            // Now undo stack should be empty
+            // Now undo stack should be empty — undo is a silent no-op (JS SDK PR #1238)
             assertFalse(d1.history.canUndo())
             val result = d1.history.undoAsync().await()
-            assertTrue(result.isFailure)
+            assertTrue(result.isSuccess)
         }
     }
 

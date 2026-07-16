@@ -310,11 +310,9 @@ public class Document(
                 internalHistory.popRedo()
             }
             if (ops == null) {
-                return@async Result.failure(
-                    IllegalStateException(
-                        "There is no operation to be ${if (isUndo) "undone" else "redone"}",
-                    ),
-                )
+                // Empty stack is a no-op so callers need not always guard with
+                // canUndo()/canRedo(). Mirrors JS SDK PR #1238.
+                return@async Result.success(Unit)
             }
 
             val clone = ensureClone()
@@ -543,9 +541,18 @@ public class Document(
         changeID = changeID.setClocks(snapshotVector.maxLamport(), snapshotVector)
         clone = null
         removePushedLocalChanges(clientSeq)
+        clearHistory()
+        eventStream.emit(Event.Snapshot(snapshot))
+    }
+
+    /**
+     * Flushes both undo and redo stacks. Used after applying a snapshot or
+     * after attach so that setup operations are not reachable via undo.
+     * Mirrors JS SDK PR #1238.
+     */
+    internal fun clearHistory() {
         internalHistory.clearUndo()
         internalHistory.clearRedo()
-        eventStream.emit(Event.Snapshot(snapshot))
     }
 
     /**

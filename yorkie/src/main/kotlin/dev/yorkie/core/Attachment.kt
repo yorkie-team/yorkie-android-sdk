@@ -39,9 +39,14 @@ internal class Attachment<R : Attachable>(
      * `needSync` determines if the attachment needs sync.
      * This includes both document sync and presence heartbeat.
      */
-    fun needSync(heartbeatInterval: Long): Boolean {
+    fun needSync(heartbeatInterval: Long, documentPollInterval: Long): Boolean {
         // For Document: check if realtime sync is needed
         if (resource is Document) {
+            // Polling has no watch stream, so it pushes and pulls on a fixed
+            // interval regardless of local changes. Mirrors JS SDK PR #1243.
+            if (syncMode == Client.SyncMode.Polling) {
+                return System.currentTimeMillis() - lastHeartbeatTime >= documentPollInterval
+            }
             return needRealTimeSync()
         }
 

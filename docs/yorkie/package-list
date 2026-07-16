@@ -585,6 +585,7 @@ $dokka.location:dev.yorkie.document.yson////PointingToDeclaration/yorkie/dev.yo
 $dokka.location:dev.yorkie.document.yson//isBinData/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/is-bin-data.html
 $dokka.location:dev.yorkie.document.yson//isCounter/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/is-counter.html
 $dokka.location:dev.yorkie.document.yson//isDate/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/is-date.html
+$dokka.location:dev.yorkie.document.yson//isDedupCounter/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/is-dedup-counter.html
 $dokka.location:dev.yorkie.document.yson//isInt/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/is-int.html
 $dokka.location:dev.yorkie.document.yson//isLong/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/is-long.html
 $dokka.location:dev.yorkie.document.yson//isObject/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/is-object.html
@@ -619,6 +620,10 @@ $dokka.location:dev.yorkie.document.yson/YsonValue.YsonCounter/value/#/PointingT
 $dokka.location:dev.yorkie.document.yson/YsonValue.YsonDate///PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-date/index.html
 $dokka.location:dev.yorkie.document.yson/YsonValue.YsonDate/YsonDate/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-date/-yson-date.html
 $dokka.location:dev.yorkie.document.yson/YsonValue.YsonDate/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-date/value.html
+$dokka.location:dev.yorkie.document.yson/YsonValue.YsonDedupCounter///PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-dedup-counter/index.html
+$dokka.location:dev.yorkie.document.yson/YsonValue.YsonDedupCounter/YsonDedupCounter/#dev.yorkie.document.yson.YsonValue#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-dedup-counter/-yson-dedup-counter.html
+$dokka.location:dev.yorkie.document.yson/YsonValue.YsonDedupCounter/registers/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-dedup-counter/registers.html
+$dokka.location:dev.yorkie.document.yson/YsonValue.YsonDedupCounter/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-dedup-counter/value.html
 $dokka.location:dev.yorkie.document.yson/YsonValue.YsonInt///PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-int/index.html
 $dokka.location:dev.yorkie.document.yson/YsonValue.YsonInt/YsonInt/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-int/-yson-int.html
 $dokka.location:dev.yorkie.document.yson/YsonValue.YsonInt/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-int/value.html
@@ -851,7 +856,9 @@ $dokka.location:dev.yorkie.util/IndexTreeNode/insertAfter/#TypeParam(bounds=[dev
 $dokka.location:dev.yorkie.util/IndexTreeNode/insertAt/#kotlin.Int#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/insert-at.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/insertBefore/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/insert-before.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isRemoved/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-removed.html
+$dokka.location:dev.yorkie.util/IndexTreeNode/isSplitSiblingSkipForBoundaryMigration/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-split-sibling-skip-for-boundary-migration.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isText/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-text.html
+$dokka.location:dev.yorkie.util/IndexTreeNode/isUnknownToEditor/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-unknown-to-editor.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/nextSibling/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/next-sibling.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/onRemovedListener/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/on-removed-listener.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/paddedSize/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/padded-size.html

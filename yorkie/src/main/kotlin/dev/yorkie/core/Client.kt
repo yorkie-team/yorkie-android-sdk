@@ -351,6 +351,16 @@ public class Client(
                 if (resource is Document) {
                     resource.mutex.withLock {
                         val documentKey = resource.getKey()
+
+                        // Reset the poll timer up front so a Polling document
+                        // syncs once per interval, not on every sync-loop tick.
+                        // Done before the RPC so a failed push-pull does not
+                        // retry every 50ms and drain battery / hammer the
+                        // server during outages. #1243.
+                        if (attachment.syncMode == SyncMode.Polling) {
+                            attachment.updateHeartbeatTime()
+                        }
+
                         val request = pushPullChangesRequest {
                             clientId = requireClientId()
                             changePack = resource.createChangePack().toPBChangePack()
@@ -366,8 +376,10 @@ public class Client(
                         // PushPull, ignore the response when the syncMode is PushOnly.
                         val currentSyncMode = attachments[documentKey]?.syncMode
                         if (responsePack.hasChanges &&
-                            currentSyncMode == SyncMode.RealtimePushOnly ||
-                            currentSyncMode == SyncMode.RealtimeSyncOff
+                            (
+                                currentSyncMode == SyncMode.RealtimePushOnly ||
+                                    currentSyncMode == SyncMode.RealtimeSyncOff
+                                )
                         ) {
                             return@runCatching
                         }
@@ -375,12 +387,6 @@ public class Client(
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,
                         )
-
-                        // Reset the poll timer so a Polling document syncs once
-                        // per interval, not on every sync-loop tick. #1243.
-                        if (attachment.syncMode == SyncMode.Polling) {
-                            attachment.updateHeartbeatTime()
-                        }
 
                         // NOTE(chacha912): If a document has been removed, watchStream should
                         // be disconnected to not receive an event for that document.

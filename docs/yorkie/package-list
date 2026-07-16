@@ -28,9 +28,10 @@ $dokka.location:dev.yorkie.core/Client.DeactivateOptions/DeactivateOptions/#kotl
 $dokka.location:dev.yorkie.core/Client.DeactivateOptions/keepalive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-deactivate-options/keepalive.html
 $dokka.location:dev.yorkie.core/Client.DeactivateOptions/synchronous/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-deactivate-options/synchronous.html
 $dokka.location:dev.yorkie.core/Client.Options///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/index.html
-$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
+$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
 $dokka.location:dev.yorkie.core/Client.Options/apiKey/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/api-key.html
 $dokka.location:dev.yorkie.core/Client.Options/channelHeartbeatInterval/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/channel-heartbeat-interval.html
+$dokka.location:dev.yorkie.core/Client.Options/documentPollInterval/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/document-poll-interval.html
 $dokka.location:dev.yorkie.core/Client.Options/fetchAuthToken/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/fetch-auth-token.html
 $dokka.location:dev.yorkie.core/Client.Options/key/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/key.html
 $dokka.location:dev.yorkie.core/Client.Options/metadata/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/metadata.html
@@ -42,6 +43,7 @@ $dokka.location:dev.yorkie.core/Client.Status.Activated/clientId/#/PointingToDec
 $dokka.location:dev.yorkie.core/Client.Status.Deactivated///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-deactivated/index.html
 $dokka.location:dev.yorkie.core/Client.Status///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/index.html
 $dokka.location:dev.yorkie.core/Client.SyncMode.Manual///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-sync-mode/-manual/index.html
+$dokka.location:dev.yorkie.core/Client.SyncMode.Polling///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-sync-mode/-polling/index.html
 $dokka.location:dev.yorkie.core/Client.SyncMode.Realtime///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-sync-mode/-realtime/index.html
 $dokka.location:dev.yorkie.core/Client.SyncMode.RealtimePushOnly///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-sync-mode/-realtime-push-only/index.html
 $dokka.location:dev.yorkie.core/Client.SyncMode.RealtimeSyncOff///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-client/-sync-mode/-realtime-sync-off/index.html

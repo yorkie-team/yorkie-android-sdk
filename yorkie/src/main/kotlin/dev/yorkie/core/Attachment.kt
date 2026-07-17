@@ -8,12 +8,36 @@ import kotlinx.coroutines.Job
  */
 internal class Attachment<R : Attachable>(
     val resource: R,
-    val resourceId: String,
+    /**
+     * Document ID for documents. Channel session ID for channels: starts
+     * empty, populated by the first RefreshChannel response, cleared again
+     * when the session expires (ErrSessionNotFound recovery).
+     */
+    var resourceId: String = "",
     var syncMode: Client.SyncMode? = null,
+    /**
+     * Declares that this attachment will not produce or consume tombstones.
+     * The server skips minVV tracking and omits the response VersionVector
+     * for this client. Documents only; carried on every PushPullChanges.
+     */
+    val disableGC: Boolean = false,
 ) {
     var changeEventReceived: Boolean? = syncMode?.let { false }
     var cancelled: Boolean = false
-    private var lastHeartbeatTime: Long = System.currentTimeMillis()
+
+    /**
+     * Set before detaching so an in-flight refresh that resumes from its
+     * network await drops its side effects instead of resurrecting the
+     * session. The mutex alone cannot do this: it only delays new acquirers,
+     * it cannot alter an already-running critical section.
+     */
+    @Volatile
+    var detaching: Boolean = false
+
+    // Init 0 so the first sync-loop tick fires immediately: channel attach no
+    // longer performs an RPC, the first RefreshChannel must not wait a full
+    // heartbeat interval. Mirrors JS SDK v0.7.10.
+    private var lastHeartbeatTime: Long = 0L
     var watchJobHolder: WatchJobHolder? = null
 
     /**

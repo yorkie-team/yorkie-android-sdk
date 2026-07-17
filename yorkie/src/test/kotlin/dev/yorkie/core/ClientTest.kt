@@ -21,6 +21,7 @@ import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.EPOCH_MISMATCH_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.MOCK_SESSION_ID
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
@@ -326,6 +327,56 @@ class ClientTest {
         val detachmentChange =
             detachRequestCaptor.captured.changePack.toChangePack().changes.last()
         assertIs<PresenceChange.Clear>(detachmentChange.presenceChange)
+        target.deactivateAsync().await()
+    }
+
+    @Test
+    fun `attachDocument carries disableGc on attach and every push-pull`() = runTest {
+        // given
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        target.activateAsync().await()
+
+        // when
+        val attachRequestCaptor = slot<AttachDocumentRequest>()
+        target.attachDocument(document, syncMode = Manual, disableGC = true).await()
+
+        // then
+        coVerify {
+            service.attachDocument(capture(attachRequestCaptor), any())
+        }
+        assertTrue(attachRequestCaptor.captured.disableGc)
+
+        // when
+        val syncRequestCaptor = slot<PushPullChangesRequest>()
+        target.syncAsync().await()
+
+        // then
+        coVerify {
+            service.pushPullChanges(capture(syncRequestCaptor), any())
+        }
+        assertTrue(syncRequestCaptor.captured.disableGc)
+
+        target.detachDocument(document).await()
+        target.deactivateAsync().await()
+    }
+
+    @Test
+    fun `attachDocument sends disableGc false by default`() = runTest {
+        // given
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        target.activateAsync().await()
+
+        // when
+        val attachRequestCaptor = slot<AttachDocumentRequest>()
+        target.attachDocument(document, syncMode = Manual).await()
+
+        // then
+        coVerify {
+            service.attachDocument(capture(attachRequestCaptor), any())
+        }
+        assertFalse(attachRequestCaptor.captured.disableGc)
+
+        target.detachDocument(document).await()
         target.deactivateAsync().await()
     }
 
@@ -833,11 +884,240 @@ class ClientTest {
     }
 
     @Test
-    fun `peekChannel fails when client is not active`() = runTest {
-        val exception = assertFailsWith<YorkieException> {
-            target.peekChannel("test-channel").await()
+    fun `peekChannel succeeds without prior activation`() = runTest {
+        // given
+        val mockService = MockYorkieService().apply { peekChannelSessionCount = 7L }
+        val client = Client(
+            host = "0.0.0.0",
+            options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+        )
+        client.service = mockService
+
+        // when
+        val result = client.peekChannel("test-channel").await()
+
+        // then
+        assertEquals(7L, result.getOrNull())
+        client.close()
+    }
+
+    @Test
+    fun `channel attach without activate populates client id via first refresh`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            val channel = Channel("test-channel")
+
+            // when: attach registers locally only
+            client.attachChannel(channel, isRealtime = false).await()
+
+            // then: nothing on the server yet, client not activated
+            assertFalse(client.isActive)
+            assertEquals(null, channel.getSessionId())
+            assertFalse(channel.isAttached())
+
+            // when: the first refresh performs the first call
+            client.syncAsync(channel).await()
+
+            // then: lazy activation happened
+            assertTrue(client.isActive)
+            assertEquals(TEST_ACTOR_ID, client.requireClientId())
+            assertEquals(TEST_ACTOR_ID, channel.getActorID())
+            assertEquals(MOCK_SESSION_ID, channel.getSessionId())
+            assertTrue(channel.isAttached())
+            assertEquals(1, mockService.refreshChannelFirstCallCount)
+
+            client.detachChannel(channel).await()
+            client.deactivateAsync().await()
+            client.close()
         }
-        assertEquals(YorkieException.Code.ErrClientNotActivated, exception.code)
+    }
+
+    @Test
+    fun `channel attach and detach do not call attachChannel or detachChannel rpc`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val spiedService = spyk<YorkieServiceClientInterface>(mockService)
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = spiedService
+            client.activateAsync().await()
+            val channel = Channel("test-channel")
+
+            // when
+            client.attachChannel(channel, isRealtime = false).await()
+            client.syncAsync(channel).await()
+            client.detachChannel(channel).await()
+
+            // then
+            coVerify(exactly = 0) { spiedService.attachChannel(any(), any()) }
+            coVerify(exactly = 0) { spiedService.detachChannel(any(), any()) }
+            coVerify(atLeast = 1) { spiedService.refreshChannel(any(), any()) }
+
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
+    @Test
+    fun `session not found clears session id and re-attaches on next refresh`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            client.activateAsync().await()
+            val channel = Channel("test-channel")
+            client.attachChannel(channel, isRealtime = false).await()
+            client.syncAsync(channel).await()
+            assertEquals(MOCK_SESSION_ID, channel.getSessionId())
+
+            // when: the server reclaimed the session
+            mockService.refreshChannelSessionNotFoundOnce = true
+            val recoveryResult = client.syncAsync(channel).await()
+
+            // then: swallowed, ids cleared for transparent re-attach
+            assertTrue(recoveryResult.isSuccess)
+            assertEquals(null, channel.getSessionId())
+
+            // when: next refresh re-enters the first-call path
+            client.syncAsync(channel).await()
+
+            // then
+            assertEquals(MOCK_SESSION_ID, channel.getSessionId())
+            assertEquals(2, mockService.refreshChannelFirstCallCount)
+
+            client.detachChannel(channel).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
+    @Test
+    fun `channel refresh publishes sync error event on non-recoverable failure`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            client.activateAsync().await()
+            val channel = Channel("test-channel")
+            client.attachChannel(channel, isRealtime = false).await()
+
+            val events = mutableListOf<ChannelEvent.SyncError>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                channel.eventStream.filterIsInstance<ChannelEvent.SyncError>()
+                    .take(1)
+                    .toList(events)
+            }
+
+            // when
+            mockService.refreshChannelFails = true
+            val result = client.syncAsync(channel).await()
+
+            // then
+            assertTrue(result.isFailure)
+            withTimeout(3_000) { collectJob.join() }
+            assertIs<ConnectException>(events.single().cause)
+
+            client.close()
+        }
+    }
+
+    @Test
+    fun `detach during in-flight refresh does not resurrect session`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService().apply { refreshChannelDelayMs = 200L }
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            client.activateAsync().await()
+            val channel = Channel("test-channel")
+            client.attachChannel(channel, isRealtime = false).await()
+
+            // when: first refresh suspends in the RPC while detach runs
+            val syncDeferred = client.syncAsync(channel)
+            delay(50)
+            client.detachChannel(channel).await()
+            syncDeferred.await()
+
+            // then: the stale response was dropped
+            assertEquals(null, channel.getSessionId())
+            assertFalse(channel.isAttached())
+            assertFalse(client.has(channel.getKey()))
+
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
+    @Test
+    fun `deactivate tears down never-activated channel-only client`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            val channel = Channel("test-channel")
+            client.attachChannel(channel, isRealtime = false).await()
+
+            // when
+            client.deactivateAsync().await()
+
+            // then: local teardown removed the attachment
+            assertFalse(client.isActive)
+            assertFalse(client.has(channel.getKey()))
+            assertFalse(channel.isAttached())
+
+            client.close()
+        }
+    }
+
+    @Test
+    fun `activate after channel attach keeps channel syncing`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            val channel = Channel("test-channel")
+            client.attachChannel(channel, isRealtime = false).await()
+
+            // when: explicit activation lands after the lazy entry point
+            client.activateAsync().await()
+            client.syncAsync(channel).await()
+
+            // then
+            assertTrue(client.isActive)
+            assertEquals(MOCK_SESSION_ID, channel.getSessionId())
+
+            client.detachChannel(channel).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
     }
 
     @Test

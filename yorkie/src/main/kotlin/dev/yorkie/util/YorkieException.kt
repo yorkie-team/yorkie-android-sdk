@@ -62,6 +62,12 @@ public data class YorkieException(
         // ErrEpochMismatch is returned when the document has been compacted
         // and the client's epoch no longer matches the server's epoch.
         ErrEpochMismatch("ErrEpochMismatch"),
+
+        // ErrSessionNotFound is returned when the server no longer recognizes
+        // a channel session_id (e.g. reclaimed after TTL). Treated as
+        // "session expired": the next refresh retries as a first call
+        // (empty session_id).
+        ErrSessionNotFound("ErrSessionNotFound"),
     }
 }
 

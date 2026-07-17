@@ -70,6 +70,10 @@ message AttachDocumentRequest {
   string client_id = 1;
   ChangePack change_pack = 2;
   string schema_key = 3;
+  // disable_gc declares that this attachment will not produce or consume
+  // tombstones. The server skips minVV tracking and omits the response
+  // VersionVector for this client.
+  bool disable_gc = 4;
 }
 
 message AttachDocumentResponse {
@@ -171,6 +175,9 @@ message PushPullChangesRequest {
   string document_id = 2;
   ChangePack change_pack = 3;
   bool push_only = 4;
+  // disable_gc mirrors the attach-time option; the server reads it per
+  // request.
+  bool disable_gc = 5;
 }
 
 message PushPullChangesResponse {
@@ -201,10 +208,17 @@ message RefreshChannelRequest {
   string client_id = 1;
   string channel_key = 2;
   string session_id = 3;
+  // client_key/metadata are read only when session_id is empty (first call).
+  // The first call activates the client lazily and creates the session.
+  string client_key = 4;
+  map<string, string> metadata = 5;
 }
 
 message RefreshChannelResponse {
   int64 session_count = 1;
+  // client_id/session_id are populated only on the first-call response.
+  string client_id = 2;
+  string session_id = 3;
 }
 
 // PeekChannel reads the current session_count of a channel without creating

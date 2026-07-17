@@ -8,7 +8,6 @@ import dev.yorkie.core.toDocKey
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineStart
@@ -20,8 +19,23 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
 
+/**
+ * Detach is local-only since v0.7.10: the server reclaims a session via its
+ * ChannelSessionTTL (15s) once heartbeats stop, so remote counts drop only
+ * after the TTL. Polls asserting that decrease use this longer timeout.
+ */
+private const val SESSION_TTL_TIMEOUT = 40_000L
+
 @RunWith(AndroidJUnit4::class)
 class ChannelTest {
+
+    private suspend fun Channel.awaitSessionCount(count: Long, timeoutMs: Long = GENERAL_TIMEOUT) {
+        withTimeout(timeoutMs) {
+            while (getSessionCount() != count) {
+                delay(50)
+            }
+        }
+    }
 
     @Test
     fun test_single_client_channel_counter() {
@@ -39,13 +53,12 @@ class ChannelTest {
             assertFalse(channel.isAttached())
             assertEquals(0L, channel.getSessionCount())
 
-            // Attach channel counter
+            // Attach channel counter; the server session is created by the
+            // first heartbeat, so poll instead of asserting immediately
             c1.attachChannel(channel).await()
-
-            // Verify attached state
+            channel.awaitSessionCount(1L)
             assertEquals(ResourceStatus.Attached, channel.getStatus())
             assertTrue(channel.isAttached())
-            assertEquals(1L, channel.getSessionCount())
 
             // Detach channel counter
             c1.detachChannel(channel).await()
@@ -78,45 +91,28 @@ class ChannelTest {
 
             // First client attaches
             c1.attachChannel(channel1).await()
-            assertEquals(1L, channel1.getSessionCount())
+            channel1.awaitSessionCount(1L)
 
             // Second client attaches
             c2.attachChannel(channel2).await()
-            assertEquals(2L, channel2.getSessionCount())
+            channel2.awaitSessionCount(2L)
 
             // First client should receive the update
-            withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getSessionCount() != 2L) {
-                    delay(50)
-                }
-            }
-            assertEquals(2L, channel1.getSessionCount())
+            channel1.awaitSessionCount(2L)
 
             // Third client attaches
             c3.attachChannel(channel3).await()
-            assertEquals(3L, channel3.getSessionCount())
+            channel3.awaitSessionCount(3L)
 
             // Wait for all clients to sync
-            withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getSessionCount() != 3L || channel2.getSessionCount() != 3L) {
-                    delay(50)
-                }
-            }
-            assertEquals(3L, channel1.getSessionCount())
-            assertEquals(3L, channel2.getSessionCount())
+            channel1.awaitSessionCount(3L)
+            channel2.awaitSessionCount(3L)
 
-            // One client detaches
+            // One client detaches (local-only); other clients see the count
+            // decrease once the server reclaims the session via TTL
             c2.detachChannel(channel2).await()
-            assertEquals(2L, channel2.getSessionCount())
-
-            // Other clients should see the count decrease
-            withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getSessionCount() != 2L || channel3.getSessionCount() != 2L) {
-                    delay(50)
-                }
-            }
-            assertEquals(2L, channel1.getSessionCount())
-            assertEquals(2L, channel3.getSessionCount())
+            channel1.awaitSessionCount(2L, SESSION_TTL_TIMEOUT)
+            channel3.awaitSessionCount(2L, SESSION_TTL_TIMEOUT)
 
             // Cleanup
             c1.detachChannel(channel1).await()
@@ -142,7 +138,7 @@ class ChannelTest {
             val channelKey = "channel-peek-${UUID.randomUUID()}".toDocKey()
             val channel = Channel(channelKey)
             c1.attachChannel(channel).await()
-            assertEquals(1L, channel.getSessionCount())
+            channel.awaitSessionCount(1L)
 
             // Client B peeks without attaching
             val peeked = c2.peekChannel(channelKey).await().getOrThrow()
@@ -176,6 +172,43 @@ class ChannelTest {
     }
 
     @Test
+    fun test_peek_channel_without_activation() {
+        runBlocking {
+            // peekChannel no longer requires a prior activate()
+            val c1 = createClient()
+
+            val channelKey = "channel-peek-inactive-${UUID.randomUUID()}".toDocKey()
+            val peeked = c1.peekChannel(channelKey).await().getOrThrow()
+            assertEquals(0L, peeked)
+
+            c1.close()
+        }
+    }
+
+    @Test
+    fun test_channel_attach_without_activation_lazily_activates_client() {
+        runBlocking {
+            // A channel-only client never calls activateAsync(); the first
+            // RefreshChannel heartbeat activates it lazily
+            val c1 = createClient()
+            assertFalse(c1.isActive)
+
+            val channelKey = "channel-lazy-${UUID.randomUUID()}".toDocKey()
+            val channel = Channel(channelKey)
+            c1.attachChannel(channel).await()
+
+            channel.awaitSessionCount(1L)
+            assertTrue(c1.isActive)
+            assertTrue(channel.isAttached())
+            assertEquals(c1.requireClientId(), channel.getActorID())
+
+            c1.detachChannel(channel).await()
+            c1.deactivateAsync().await()
+            c1.close()
+        }
+    }
+
+    @Test
     fun test_channel_counter_event_subscription() {
         runBlocking {
             val c1 = createClient()
@@ -196,29 +229,29 @@ class ChannelTest {
                 }
             }
 
-            // First client attaches
+            // First client attaches. The first refresh may publish Changed(1)
+            // before the watch stream delivers Initialized, so wait for the
+            // Initialized event rather than asserting on event order.
             c1.attachChannel(channel1).await()
             withTimeout(GENERAL_TIMEOUT) {
-                while (events.isEmpty()) {
+                while (events.none { it is ChannelEvent.Initialized }) {
                     delay(50)
                 }
             }
-
-            // Should receive initialized event
-            assertIs<ChannelEvent.Initialized>(events[0])
-            assertEquals(1L, events[0].sessionCount)
+            assertEquals(
+                1L,
+                events.filterIsInstance<ChannelEvent.Initialized>().first().sessionCount,
+            )
 
             // Second client attaches
             c2.attachChannel(channel2).await()
             withTimeout(GENERAL_TIMEOUT) {
-                while (events.size < 2) {
+                while (
+                    events.none { it is ChannelEvent.Changed && it.sessionCount == 2L }
+                ) {
                     delay(50)
                 }
             }
-
-            // Should receive count-changed event
-            assertIs<ChannelEvent.Changed>(events.last())
-            assertEquals(2L, events.last().sessionCount)
 
             // Cleanup
             collectJob.cancel()
@@ -247,26 +280,13 @@ class ChannelTest {
             // Both attach
             c1.attachChannel(channel1).await()
             c2.attachChannel(channel2).await()
+            channel1.awaitSessionCount(2L)
+            channel2.awaitSessionCount(2L)
 
-            withTimeout(GENERAL_TIMEOUT) {
-                while (channel1.getSessionCount() != 2L || channel2.getSessionCount() != 2L) {
-                    delay(50)
-                }
-            }
-            assertEquals(2L, channel1.getSessionCount())
-            assertEquals(2L, channel2.getSessionCount())
-
-            // One detaches
+            // One detaches (local-only); the remaining channel sees the
+            // decrease once the server reclaims the session via TTL
             c1.detachChannel(channel1).await()
-            assertEquals(1L, channel1.getSessionCount())
-
-            // Other channel should also see the decrease
-            withTimeout(GENERAL_TIMEOUT) {
-                while (channel2.getSessionCount() != 1L) {
-                    delay(50)
-                }
-            }
-            assertEquals(1L, channel2.getSessionCount())
+            channel2.awaitSessionCount(1L, SESSION_TTL_TIMEOUT)
 
             // Cleanup
             c2.detachChannel(channel2).await()
@@ -293,7 +313,7 @@ class ChannelTest {
 
             // Attach channel counter
             c1.attachChannel(channel).await()
-            assertEquals(1L, channel.getSessionCount())
+            channel.awaitSessionCount(1L)
 
             // Wait for 3 heartbeat cycles (3 seconds)
             // The channel should still be active because heartbeat refreshes TTL
@@ -324,12 +344,17 @@ class ChannelTest {
             val p1 = Channel(channelKey)
             val p2 = Channel(channelKey)
 
-            // Attach client1 with manual sync mode (no watch stream)
+            // Attach client1 with manual sync mode (no watch stream). In
+            // manual mode nothing reaches the server until an explicit sync:
+            // the first syncAsync performs the first-call refresh.
             c1.attachChannel(p1, isRealtime = false).await()
+            assertEquals(0L, p1.getSessionCount())
+            c1.syncAsync(p1).await()
             assertEquals(1L, p1.getSessionCount())
 
             // Attach client2 with manual sync mode
             c2.attachChannel(p2, isRealtime = false).await()
+            c2.syncAsync(p2).await()
             assertEquals(2L, p2.getSessionCount())
 
             // In manual mode, p1's count doesn't update automatically
@@ -341,13 +366,19 @@ class ChannelTest {
             c1.syncAsync(p1).await()
             assertEquals(2L, p1.getSessionCount())
 
-            // Detach p2 and verify p1 doesn't auto-update
+            // Detach p2 (local-only) and verify p1 doesn't auto-update
             c2.detachChannel(p2).await()
             delay(500)
             assertEquals(2L, p1.getSessionCount())
 
-            // Sync to refresh TTL and fetch latest count after c2 detached
-            c1.syncAsync(p1).await()
+            // p2's server session dies by TTL; keep syncing p1 until the
+            // decrease becomes visible
+            withTimeout(SESSION_TTL_TIMEOUT) {
+                while (p1.getSessionCount() != 1L) {
+                    c1.syncAsync(p1).await()
+                    delay(500)
+                }
+            }
             assertEquals(1L, p1.getSessionCount())
 
             // Cleanup
@@ -377,34 +408,27 @@ class ChannelTest {
 
             // c1: Attach with realtime mode (default)
             c1.attachChannel(realtimeChannel).await()
-            assertEquals(1L, realtimeChannel.getSessionCount())
+            realtimeChannel.awaitSessionCount(1L)
 
-            // c2: Attach with manual mode
+            // c2: Attach with manual mode; needs an explicit sync to create
+            // the session
             c2.attachChannel(manualChannel, isRealtime = false).await()
+            c2.syncAsync(manualChannel).await()
             assertEquals(2L, manualChannel.getSessionCount())
 
             // c1's realtime channel should automatically receive the update
-            withTimeout(GENERAL_TIMEOUT) {
-                while (realtimeChannel.getSessionCount() != 2L) {
-                    delay(50)
-                }
-            }
-            assertEquals(2L, realtimeChannel.getSessionCount())
+            realtimeChannel.awaitSessionCount(2L)
 
             // c2's manual channel doesn't receive updates
             assertEquals(2L, manualChannel.getSessionCount())
 
             // c3: Attach another client
             c3.attachChannel(thirdChannel, isRealtime = false).await()
+            c3.syncAsync(thirdChannel).await()
             assertEquals(3L, thirdChannel.getSessionCount())
 
             // c1's realtime channel receives the update automatically
-            withTimeout(GENERAL_TIMEOUT) {
-                while (realtimeChannel.getSessionCount() != 3L) {
-                    delay(50)
-                }
-            }
-            assertEquals(3L, realtimeChannel.getSessionCount())
+            realtimeChannel.awaitSessionCount(3L)
 
             // c2's manual channel still doesn't update
             assertEquals(2L, manualChannel.getSessionCount())
@@ -500,7 +524,7 @@ class ChannelTest {
 
             c1.attachChannel(ch1).await()
             c2.attachDocument(d2).await()
-            delay(200)
+            ch1.awaitSessionCount(1L)
 
             val docBroadcastEvents =
                 mutableListOf<dev.yorkie.document.Document.Event.Broadcast>()

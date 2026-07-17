@@ -72,6 +72,13 @@ internal fun Project.configureProtocolBufferGeneration() {
         dependsOn("bufGenerate")
     }
 
+    // Ensure buf generation runs before kotlinter tasks — the generated sources
+    // are part of the main source set, so lint/format read bufGenerate's output.
+    tasks.matching { it.name.startsWith("lintKotlin") || it.name.startsWith("formatKotlin") }
+        .configureEach {
+            dependsOn("bufGenerate")
+        }
+
     // Ensure buf generation runs before source JAR creation
     tasks.withType<SourceJarTask>().configureEach {
         if (name == "sourceReleaseJar") {

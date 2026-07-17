@@ -131,6 +131,51 @@ class ChannelTest {
     }
 
     @Test
+    fun test_peek_channel_returns_count_without_creating_session() {
+        runBlocking {
+            val c1 = createClient()
+            val c2 = createClient()
+            c1.activateAsync().await()
+            c2.activateAsync().await()
+
+            // Client A attaches a channel (count = 1)
+            val channelKey = "channel-peek-${UUID.randomUUID()}".toDocKey()
+            val channel = Channel(channelKey)
+            c1.attachChannel(channel).await()
+            assertEquals(1L, channel.getSessionCount())
+
+            // Client B peeks without attaching
+            val peeked = c2.peekChannel(channelKey).await().getOrThrow()
+            assertEquals(1L, peeked)
+
+            // Peek created no session: A's refresh still sees count 1
+            c1.syncAsync(channel).await()
+            assertEquals(1L, channel.getSessionCount())
+
+            c1.detachChannel(channel).await()
+            c1.deactivateAsync().await()
+            c2.deactivateAsync().await()
+            c1.close()
+            c2.close()
+        }
+    }
+
+    @Test
+    fun test_peek_channel_on_unattached_channel_key_returns_zero() {
+        runBlocking {
+            val c1 = createClient()
+            c1.activateAsync().await()
+
+            val channelKey = "channel-peek-empty-${UUID.randomUUID()}".toDocKey()
+            val peeked = c1.peekChannel(channelKey).await().getOrThrow()
+            assertEquals(0L, peeked)
+
+            c1.deactivateAsync().await()
+            c1.close()
+        }
+    }
+
+    @Test
     fun test_channel_counter_event_subscription() {
         runBlocking {
             val c1 = createClient()

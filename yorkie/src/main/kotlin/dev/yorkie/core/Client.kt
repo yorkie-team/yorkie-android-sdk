@@ -1870,6 +1870,12 @@ public class Client(
          *
          * Set to `Duration.INFINITE` to disable fallback entirely (a silent watch
          * stream then starves pull forever, matching pre-fallback behavior).
+         *
+         * Note: the fallback targets HALF-OPEN silence (stream object alive but
+         * delivering nothing — the shape that never triggers the reconnect loop).
+         * It runs inside the client's own sync loop, so it cannot help with hard
+         * outages where that loop itself stops; those surface as RPC errors through
+         * the existing retry/backoff path instead.
          */
         public val watchFallbackDelay: Duration = 10_000.milliseconds,
     ) {

@@ -1,6 +1,7 @@
 package dev.yorkie.core
 
 import dev.yorkie.document.Document
+import dev.yorkie.util.Logger.Companion.logDebug
 import kotlinx.coroutines.Job
 
 /**
@@ -27,6 +28,21 @@ internal class Attachment<R : Attachable>(
      * contract is set on the attach request, not on PushPullChanges.
      */
     val disablePresence: Boolean = false,
+    /**
+     * Clock used for all liveness/throttle timing. Defaults to the real wall clock;
+     * tests inject a fake `var now` to drive [needSync] deterministically without
+     * real delays, since the client runs its sync loop on a real (non-virtualizable)
+     * dispatcher (see `AttachmentTest`).
+     */
+    private val nowProvider: () -> Long = System::currentTimeMillis,
+    /**
+     * How long (ms) a realtime document's watch stream may stay silent before this
+     * attachment starts pull-fallback (see `Client.Options.watchFallbackDelay`, whose
+     * value this is populated from — `Duration.INFINITE.inWholeMilliseconds ==
+     * Long.MAX_VALUE`, so that value alone disables fallback with no separate
+     * null/branch). Channels never read this (fallback is Document-realtime-only).
+     */
+    private val watchFallbackDelay: Long = Long.MAX_VALUE,
 ) {
     var changeEventReceived: Boolean? = syncMode?.let { false }
     var cancelled: Boolean = false
@@ -45,6 +61,45 @@ internal class Attachment<R : Attachable>(
     // heartbeat interval. Mirrors JS SDK v0.7.10.
     private var lastHeartbeatTime: Long = 0L
     var watchJobHolder: WatchJobHolder? = null
+
+    /**
+     * Wall-clock time (per [nowProvider]) of the last watch-stream frame received for
+     * this attachment (any event kind — see `Client.markWatchResponseReceived` call
+     * sites). Seeded at construction so a freshly attached document is not treated as
+     * "instantly silent" before its watch stream has had a chance to connect.
+     */
+    var lastWatchResponseTime: Long = nowProvider()
+        private set
+
+    /**
+     * `true` once pull fallback has engaged for this attachment (watch stream judged
+     * silent past a threshold — see `Client.Options.watchFallbackDelay`) — used to log
+     * the engage/disengage transition exactly once each way, not on every sync-loop
+     * tick.
+     */
+    var watchFallbackEngaged: Boolean = false
+        private set
+
+    /**
+     * Records that a watch-stream frame was just received for this attachment,
+     * resetting its silence clock. Called from every received frame (proves the
+     * stream is alive) and from stream (re)connection (the revival signal) — see
+     * `Client.kt`'s watch-loop call sites.
+     *
+     * If fallback was engaged, this is the disengage signal: logs the transition via
+     * `Logger` before resetting, so the silent failure mode #351 went undiagnosed
+     * under is now itself observable.
+     */
+    fun markWatchResponseReceived() {
+        if (watchFallbackEngaged) {
+            watchFallbackEngaged = false
+            logDebug(
+                "WF",
+                "pull fallback disengaged for ${resource.getKey()}: watch frame received",
+            )
+        }
+        lastWatchResponseTime = nowProvider()
+    }
 
     /**
      * `needRealtimeSync` returns whether the resource needs to be synced in real time.
@@ -66,6 +121,44 @@ internal class Attachment<R : Attachable>(
     }
 
     /**
+     * Pull-fallback decision for #351 phase 1: in full [Client.SyncMode.Realtime], PULL is
+     * normally gated by [needRealTimeSync] alone, which only flips true on a watch event
+     * ([changeEventReceived]) or a local edit. If the watch stream dies silently (no error,
+     * no reconnect — see issue #351), [changeEventReceived] never flips true again and PULL
+     * starves forever. This degrades the attachment toward [Client.SyncMode.Polling]
+     * semantics — pull on every tick — once the watch stream has been silent past
+     * [watchFallbackDelay], throttled to at most once per [documentPollInterval] (via
+     * [lastHeartbeatTime], reused exactly as the Polling branch above does — broadened by
+     * `Client.syncInternal` to also reset for realtime attachments with fallback engaged,
+     * so this clause has a moving baseline instead of firing every 50ms sync-loop tick).
+     *
+     * Only applies to a Document attachment with a genuinely open watch stream in full
+     * realtime mode: [Client.SyncMode.RealtimePushOnly]/[Client.SyncMode.RealtimeSyncOff]
+     * never open one, and neither does the brief window between attach and the watch job
+     * actually starting.
+     */
+    private fun watchStreamSilent(documentPollInterval: Long): Boolean {
+        if (syncMode != Client.SyncMode.Realtime || watchJobHolder == null) {
+            return false
+        }
+
+        val now = nowProvider()
+        val silent = now - lastWatchResponseTime >= watchFallbackDelay &&
+            now - lastHeartbeatTime >= documentPollInterval
+
+        if (silent && !watchFallbackEngaged) {
+            watchFallbackEngaged = true
+            logDebug(
+                "WF",
+                "pull fallback engaged for ${resource.getKey()}: " +
+                    "watch silent >= ${watchFallbackDelay}ms",
+            )
+        }
+
+        return silent
+    }
+
+    /**
      * `needSync` determines if the attachment needs sync.
      * This includes both document sync and presence heartbeat.
      */
@@ -75,9 +168,9 @@ internal class Attachment<R : Attachable>(
             // Polling has no watch stream, so it pushes and pulls on a fixed
             // interval regardless of local changes. Mirrors JS SDK PR #1243.
             if (syncMode == Client.SyncMode.Polling) {
-                return System.currentTimeMillis() - lastHeartbeatTime >= documentPollInterval
+                return nowProvider() - lastHeartbeatTime >= documentPollInterval
             }
-            return needRealTimeSync()
+            return needRealTimeSync() || watchStreamSilent(documentPollInterval)
         }
 
         // For Channel in Manual mode: never auto-sync
@@ -86,14 +179,14 @@ internal class Attachment<R : Attachable>(
         }
 
         // For Channel: check if heartbeat is needed
-        return System.currentTimeMillis() - lastHeartbeatTime >= heartbeatInterval
+        return nowProvider() - lastHeartbeatTime >= heartbeatInterval
     }
 
     /**
      * `updateHeartbeatTime` updates the last heartbeat time.
      */
     fun updateHeartbeatTime() {
-        lastHeartbeatTime = System.currentTimeMillis()
+        lastHeartbeatTime = nowProvider()
     }
 
     fun cancelWatchJob() {

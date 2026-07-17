@@ -56,7 +56,7 @@ $dokka.location:dev.yorkie.core/Client///PointingToDeclaration/yorkie/dev.yorki
 $dokka.location:dev.yorkie.core/Client/Client/#kotlin.String#dev.yorkie.core.Client.Options#okhttp3.OkHttpClient#okhttp3.OkHttpClient/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
 $dokka.location:dev.yorkie.core/Client/activateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/activate-async.html
 $dokka.location:dev.yorkie.core/Client/attachChannel/#dev.yorkie.presence.Channel#kotlin.Boolean?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-channel.html
-$dokka.location:dev.yorkie.core/Client/attachDocument/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-document.html
+$dokka.location:dev.yorkie.core/Client/attachDocument/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-document.html
 $dokka.location:dev.yorkie.core/Client/attachPresence/#dev.yorkie.presence.Channel#kotlin.Boolean?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-presence.html
 $dokka.location:dev.yorkie.core/Client/authToken/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/auth-token.html
 $dokka.location:dev.yorkie.core/Client/broadcast/#kotlin.String#kotlin.String#kotlin.String#dev.yorkie.document.Document.BroadcastOptions/PointingToDeclaration/yorkie/dev.yorkie.core/-client/broadcast.html
@@ -803,7 +803,7 @@ $dokka.location:dev.yorkie.presence/Channel/hasLocalChanges/#/PointingToDeclarat
 $dokka.location:dev.yorkie.presence/Channel/isAttached/#/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel/is-attached.html
 $dokka.location:dev.yorkie.presence/Channel/publish/#dev.yorkie.core.ResourceEvent/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel/publish.html
 $dokka.location:dev.yorkie.presence/Channel/setActor/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel/set-actor.html
-$dokka.location:dev.yorkie.presence/Channel/setSessionId/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel/set-session-id.html
+$dokka.location:dev.yorkie.presence/Channel/setSessionId/#kotlin.String?/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel/set-session-id.html
 $dokka.location:dev.yorkie.presence/Channel/updateCount/#kotlin.Long#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel/update-count.html
 $dokka.location:dev.yorkie.presence/Channel/updateSessionCount/#kotlin.Long#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel/update-session-count.html
 $dokka.location:dev.yorkie.presence/ChannelEvent.Broadcast///PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-broadcast/index.html
@@ -818,6 +818,10 @@ $dokka.location:dev.yorkie.presence/ChannelEvent.Changed/sessionCount/#/Pointing
 $dokka.location:dev.yorkie.presence/ChannelEvent.Initialized///PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-initialized/index.html
 $dokka.location:dev.yorkie.presence/ChannelEvent.Initialized/Initialized/#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-initialized/-initialized.html
 $dokka.location:dev.yorkie.presence/ChannelEvent.Initialized/sessionCount/#/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-initialized/session-count.html
+$dokka.location:dev.yorkie.presence/ChannelEvent.SyncError///PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-sync-error/index.html
+$dokka.location:dev.yorkie.presence/ChannelEvent.SyncError/SyncError/#kotlin.Throwable/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-sync-error/-sync-error.html
+$dokka.location:dev.yorkie.presence/ChannelEvent.SyncError/cause/#/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-sync-error/cause.html
+$dokka.location:dev.yorkie.presence/ChannelEvent.SyncError/sessionCount/#/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/-sync-error/session-count.html
 $dokka.location:dev.yorkie.presence/ChannelEvent///PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/index.html
 $dokka.location:dev.yorkie.presence/ChannelEvent/sessionCount/#/PointingToDeclaration/yorkie/dev.yorkie.presence/-channel-event/session-count.html
 $dokka.location:dev.yorkie.presence/Presence///PointingToDeclaration/yorkie/dev.yorkie.presence/-presence/index.html
@@ -917,6 +921,7 @@ $dokka.location:dev.yorkie.util/YorkieException.Code.ErrEpochMismatch///Pointing
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrInvalidArgument///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-invalid-argument/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrInvalidObjectKey///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-invalid-object-key/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrPermissionDenied///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-permission-denied/index.html
+$dokka.location:dev.yorkie.util/YorkieException.Code.ErrSessionNotFound///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-session-not-found/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrTooManyAttachments///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-too-many-attachments/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrTooManySubscribers///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-too-many-subscribers/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrUnauthenticated///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-unauthenticated/index.html

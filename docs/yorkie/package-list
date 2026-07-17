@@ -71,6 +71,7 @@ $dokka.location:dev.yorkie.core/Client/getRevision/#dev.yorkie.document.Document
 $dokka.location:dev.yorkie.core/Client/has/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/has.html
 $dokka.location:dev.yorkie.core/Client/isActive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/is-active.html
 $dokka.location:dev.yorkie.core/Client/listRevisions/#dev.yorkie.document.Document#kotlin.Int#kotlin.Int#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/list-revisions.html
+$dokka.location:dev.yorkie.core/Client/peekChannel/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/peek-channel.html
 $dokka.location:dev.yorkie.core/Client/removeDocument/#dev.yorkie.document.Document/PointingToDeclaration/yorkie/dev.yorkie.core/-client/remove-document.html
 $dokka.location:dev.yorkie.core/Client/requireClientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-client-id.html
 $dokka.location:dev.yorkie.core/Client/restoreRevision/#dev.yorkie.document.Document#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/restore-revision.html

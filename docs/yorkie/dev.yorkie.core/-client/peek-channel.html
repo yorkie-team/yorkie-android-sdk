@@ -2,7 +2,7 @@
 <html class="no-js">
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
-    <title>id</title>
+    <title>peekChannel</title>
     <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
     <script>var pathToRoot = "../../../";</script>
     <script>document.documentElement.classList.replace("no-js","js");</script>
@@ -61,12 +61,12 @@
                 <div class="sidebar--inner" id="sideMenu"></div>
             </div>
             <div id="main">
-<div class="main-content" data-page-type="member" id="content" pageIds="yorkie::dev.yorkie.document.crdt/RgaTreeSplitPos/id/#/PointingToDeclaration//-1590045667">
-  <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.document.crdt</a><span class="delimiter">/</span><a href="index.html">RgaTreeSplitPos</a><span class="delimiter">/</span><span class="current">id</span></div>
+<div class="main-content" data-page-type="member" id="content" pageIds="yorkie::dev.yorkie.core/Client/peekChannel/#kotlin.String/PointingToDeclaration//-1590045667">
+  <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.core</a><span class="delimiter">/</span><a href="index.html">Client</a><span class="delimiter">/</span><span class="current">peekChannel</span></div>
   <div class="cover ">
-    <h1 class="cover"><span><span>id</span></span></h1>
+    <h1 class="cover"><span>peek</span><wbr></wbr><span><span>Channel</span></span></h1>
   </div>
-  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">val </span><a href="id.html">id</a><span class="token operator">: </span><a href="../-rga-tree-split-node-i-d/index.html">RgaTreeSplitNodeID</a></div></div></div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="peek-channel.html"><span class="token function">peekChannel</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">channelKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-result/index.html">Result</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">&gt;</span><span class="token operator">&gt;</span></div><p class="paragraph"><code class="lang-kotlin">peekChannel</code> reads the current session count of a channel without creating a session on the server. Use this when the caller only needs to display the count (e.g. &quot;N people writing&quot;) without contributing to it and without receiving broadcasts.</p><p class="paragraph">Unlike attaching, this does not occupy a session entry on the server, does not generate heartbeat RPCs, and does not subscribe to channel events. Polling is the caller's responsibility.</p><span class="kdoc-tag"><h4 class="">Return</h4><p class="paragraph">The current online session count of the channel.</p></span><h4 class="">Parameters</h4><div class="table"><div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>channel</span><wbr></wbr><span><span>Key</span></span></u></div></span></div><div><div class="title"><p class="paragraph">The key of the channel to peek.</p></div></div></div></div></div></div></div>
 </div>
       <div class="footer">
         <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span

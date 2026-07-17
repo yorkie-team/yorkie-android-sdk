@@ -33,6 +33,8 @@ import dev.yorkie.api.v1.ListRevisionsRequest
 import dev.yorkie.api.v1.ListRevisionsResponse
 import dev.yorkie.api.v1.OperationKt.remove
 import dev.yorkie.api.v1.OperationKt.set
+import dev.yorkie.api.v1.PeekChannelRequest
+import dev.yorkie.api.v1.PeekChannelResponse
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.PushPullChangesResponse
 import dev.yorkie.api.v1.RefreshChannelRequest
@@ -66,6 +68,7 @@ import dev.yorkie.api.v1.getRevisionResponse
 import dev.yorkie.api.v1.jSONElementSimple
 import dev.yorkie.api.v1.listRevisionsResponse
 import dev.yorkie.api.v1.operation
+import dev.yorkie.api.v1.peekChannelResponse
 import dev.yorkie.api.v1.pushPullChangesResponse
 import dev.yorkie.api.v1.refreshChannelResponse
 import dev.yorkie.api.v1.removeDocumentResponse
@@ -101,6 +104,9 @@ import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
 class MockYorkieService(
     val customError: MutableMap<String, Code> = defaultError,
 ) : YorkieServiceClientInterface {
+
+    var refreshChannelSessionCount = 0L
+    var peekChannelSessionCount = 0L
 
     override suspend fun activateClient(
         request: ActivateClientRequest,
@@ -449,7 +455,39 @@ class MockYorkieService(
         headers: Headers,
     ): ResponseMessage<RefreshChannelResponse> {
         return ResponseMessage.Success(
-            message = refreshChannelResponse {},
+            message = refreshChannelResponse {
+                sessionCount = refreshChannelSessionCount
+            },
+            headers = emptyMap(),
+            trailers = emptyMap(),
+        )
+    }
+
+    override suspend fun peekChannel(
+        request: PeekChannelRequest,
+        headers: Headers,
+    ): ResponseMessage<PeekChannelResponse> {
+        if (request.channelKey == AUTH_ERROR_DOCUMENT_KEY) {
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", ErrUnauthenticated.codeString)
+                .build()
+
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns customError[AUTH_ERROR_DOCUMENT_KEY]!!
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        return ResponseMessage.Success(
+            message = peekChannelResponse {
+                sessionCount = peekChannelSessionCount
+            },
             headers = emptyMap(),
             trailers = emptyMap(),
         )

@@ -39,6 +39,8 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
+import dev.yorkie.presence.Channel
+import dev.yorkie.presence.ChannelEvent
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.handleConnectException
@@ -62,8 +64,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -747,6 +753,127 @@ class ClientTest {
         val result = target.restoreRevision(document, "test-revision-id").await()
 
         assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `channel refresh publishes changed event only when session count changes`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            client.activateAsync().await()
+
+            val channel = Channel("test-channel")
+            client.attachChannel(channel, isRealtime = false).await()
+
+            val events = mutableListOf<ChannelEvent.Changed>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                channel.eventStream.filterIsInstance<ChannelEvent.Changed>()
+                    .take(2)
+                    .toList(events)
+            }
+
+            // when
+            mockService.refreshChannelSessionCount = 2L
+            client.syncAsync(channel).await()
+            client.syncAsync(channel).await()
+            mockService.refreshChannelSessionCount = 3L
+            client.syncAsync(channel).await()
+
+            // then
+            withTimeout(3_000) { collectJob.join() }
+            assertEquals(listOf(2L, 3L), events.map { it.sessionCount })
+
+            client.detachChannel(channel).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
+    @Test
+    fun `channel refresh publishes changed event on count decrease`() = runTest {
+        runBlocking {
+            // given
+            val mockService = MockYorkieService()
+            val client = Client(
+                host = "0.0.0.0",
+                options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+            )
+            client.service = mockService
+            client.activateAsync().await()
+
+            val channel = Channel("test-channel")
+            client.attachChannel(channel, isRealtime = false).await()
+
+            val events = mutableListOf<ChannelEvent.Changed>()
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
+                channel.eventStream.filterIsInstance<ChannelEvent.Changed>()
+                    .take(2)
+                    .toList(events)
+            }
+
+            // when
+            mockService.refreshChannelSessionCount = 3L
+            client.syncAsync(channel).await()
+            mockService.refreshChannelSessionCount = 2L
+            client.syncAsync(channel).await()
+
+            // then
+            withTimeout(3_000) { collectJob.join() }
+            assertEquals(listOf(3L, 2L), events.map { it.sessionCount })
+
+            client.detachChannel(channel).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
+    @Test
+    fun `peekChannel fails when client is not active`() = runTest {
+        val exception = assertFailsWith<YorkieException> {
+            target.peekChannel("test-channel").await()
+        }
+        assertEquals(YorkieException.Code.ErrClientNotActivated, exception.code)
+    }
+
+    @Test
+    fun `peekChannel returns session count without creating an attachment`() = runTest {
+        // given
+        val mockService = MockYorkieService().apply { peekChannelSessionCount = 5L }
+        val spiedService = spyk<YorkieServiceClientInterface>(mockService)
+        val client = Client(
+            host = "0.0.0.0",
+            options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+        )
+        client.service = spiedService
+        client.activateAsync().await()
+
+        // when
+        val result = client.peekChannel("test-channel").await()
+
+        // then
+        assertEquals(5L, result.getOrNull())
+        coVerify(exactly = 0) { spiedService.attachChannel(any(), any()) }
+
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `peekChannel returns failure and refreshes token on auth error`() = runTest {
+        // given
+        target.activateAsync().await()
+
+        // when
+        val result = target.peekChannel(AUTH_ERROR_DOCUMENT_KEY).await()
+
+        // then
+        assertTrue(result.isFailure)
+        assertTrue(target.shouldRefreshToken)
     }
 
     private fun assertIsTestActorID(clientId: String) {

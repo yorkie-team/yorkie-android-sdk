@@ -21,13 +21,11 @@ import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchResponse
 import dev.yorkie.api.v1.YorkieServiceClient
 import dev.yorkie.api.v1.YorkieServiceClientInterface
-import dev.yorkie.api.v1.attachChannelRequest
 import dev.yorkie.api.v1.attachDocumentRequest
 import dev.yorkie.api.v1.broadcastRequest
 import dev.yorkie.api.v1.channelDescriptor
 import dev.yorkie.api.v1.createRevisionRequest
 import dev.yorkie.api.v1.deactivateClientRequest
-import dev.yorkie.api.v1.detachChannelRequest
 import dev.yorkie.api.v1.detachDocumentRequest
 import dev.yorkie.api.v1.documentDescriptor
 import dev.yorkie.api.v1.getRevisionRequest
@@ -63,6 +61,7 @@ import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
 import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
+import dev.yorkie.util.YorkieException.Code.ErrSessionNotFound
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
@@ -145,6 +144,7 @@ public class Client(
     @Volatile
     @VisibleForTesting
     internal var deactivating = false
+    private var syncLoopJob: Job? = null
 
     private val _status = MutableStateFlow<Status>(Status.Deactivated)
     public val status = _status.asStateFlow()
@@ -246,10 +246,19 @@ public class Client(
      * the server and pulls remote changes from the server.
      */
     private fun runSyncLoop() {
+        // Check-then-launch is race-free only because this is a non-suspending
+        // fun and both callers (activateAsync, attachChannel) run on the
+        // client's single-threaded dispatcher; keep it that way.
+        if (syncLoopJob?.isActive == true) {
+            return
+        }
         conditions[ClientCondition.SYNC_LOOP] = true
-        scope.launch(activationJob) {
+        syncLoopJob = scope.launch(activationJob) {
             while (true) {
-                if (!isActive || deactivating) {
+                // A channel-only client that has not activated yet keeps the
+                // loop alive as long as it has an attachment: the first
+                // RefreshChannel is what activates it.
+                if ((!isActive && attachments.isEmpty()) || deactivating) {
                     conditions[ClientCondition.SYNC_LOOP] = false
                     return@launch
                 }
@@ -302,8 +311,10 @@ public class Client(
      */
     public fun syncAsync(resource: Attachable? = null): Deferred<OperationResult> {
         return scope.async {
+            // Channels may sync pre-activation: the first RefreshChannel
+            // activates the client lazily. Documents still require activate.
             checkYorkieError(
-                isActive,
+                isActive || resource is Channel,
                 YorkieException(ErrClientNotActivated, "client is not active"),
             )
 
@@ -367,6 +378,7 @@ public class Client(
                             changePack = resource.createChangePack().toPBChangePack()
                             documentId = attachment.resourceId
                             pushOnly = syncMode == SyncMode.RealtimePushOnly
+                            disableGc = attachment.disableGC
                         }
                         val response = service.pushPullChanges(
                             request,
@@ -403,17 +415,68 @@ public class Client(
                     }
                 } else if (resource is Channel) {
                     resource.mutex.withLock {
+                        // Stale-attachment guard: detachInternal removes the per-key
+                        // mutex, so a loop iteration that already selected this
+                        // attachment could mint a fresh mutex and run against a
+                        // detached channel.
+                        if (attachment.cancelled || attachment.detaching ||
+                            attachments[resource.getKey()] !== attachment
+                        ) {
+                            return@runCatching
+                        }
+                        val isFirstCall = resource.getSessionId().isNullOrEmpty()
                         val request = refreshChannelRequest {
-                            clientId = requireClientId()
+                            clientId = if (isActive) requireClientId() else ""
                             channelKey = resource.getKey()
                             resource.getSessionId()?.let {
                                 sessionId = it
+                            }
+                            if (isFirstCall) {
+                                // The first call activates lazily: it carries the
+                                // client identity and receives the assigned ids.
+                                clientKey = options.key
+                                metadata.putAll(options.metadata)
                             }
                         }
                         val response = service.refreshChannel(
                             request,
                             resource.getKey().attachmentBasedRequestHeader,
-                        ).getOrThrow()
+                        ).getOrElse {
+                            if (!isFirstCall && it is ConnectException &&
+                                errorCodeOf(it) == ErrSessionNotFound.codeString
+                            ) {
+                                // Session reclaimed (TTL). Clear ids so the next
+                                // heartbeat tick re-enters the first-call path and
+                                // re-attaches transparently. Not applied on first
+                                // calls: recovery there would clear already-empty
+                                // ids and hot-retry on every loop tick.
+                                resource.setSessionId(null)
+                                attachment.resourceId = ""
+                                attachment.updateHeartbeatTime()
+                                return@runCatching
+                            }
+                            throw it
+                        }
+                        // Drop a stale response if the channel was detached while
+                        // the RPC was in flight; applying it would resurrect the
+                        // session the user just detached.
+                        if (attachment.detaching ||
+                            attachments[resource.getKey()] !== attachment
+                        ) {
+                            return@runCatching
+                        }
+                        if (response.clientId.isNotEmpty() && !isActive) {
+                            _status.emit(Status.Activated(response.clientId))
+                        }
+                        if (isActive) {
+                            resource.setActor(requireClientId())
+                        }
+                        if (response.sessionId.isNotEmpty()) {
+                            resource.setSessionId(response.sessionId)
+                            attachment.resourceId = response.sessionId
+                            // Attached only once a real server session exists.
+                            resource.applyStatus(ResourceStatus.Attached)
+                        }
                         // Publish on value change, not on seq freshness like the watch
                         // path: refresh pins seq=0 which is always accepted, so the
                         // freshness check alone would fire on every refresh tick. #1247.
@@ -428,10 +491,25 @@ public class Client(
                             )
                         }
                         attachment.updateHeartbeatTime()
+                        // Realtime watch stream is deferred to here: the Watch RPC
+                        // needs the client id, which the first refresh populates.
+                        if (isFirstCall && attachment.syncMode == SyncMode.Realtime &&
+                            attachment.watchJobHolder == null
+                        ) {
+                            runWatchLoop(resource.getKey())
+                        }
                     }
                 }
             }.onFailure {
                 coroutineContext.ensureActive()
+
+                // Suppressed during detach/deactivate teardown so callers do not
+                // see a spurious error flash on the way out.
+                if (resource is Channel && !attachment.detaching &&
+                    attachments[resource.getKey()] === attachment
+                ) {
+                    resource.publish(ChannelEvent.SyncError(cause = it))
+                }
 
                 if (resource is Document) {
                     resource.publish(
@@ -471,11 +549,12 @@ public class Client(
      */
     private fun runWatchLoop(key: String) {
         scope.launch(activationJob) {
-            val attachment = attachments[key]
-                ?: throw YorkieException(
-                    ErrDocumentNotAttached,
-                    "$key is not attached",
-                )
+            // Detached while this launch was pending; throwing here would
+            // crash the process from an unhandled coroutine exception.
+            val attachment = attachments[key] ?: run {
+                logDebug("WD", "watch loop skipped, $key is not attached")
+                return@launch
+            }
 
             conditions[ClientCondition.WATCH_LOOP] = true
 
@@ -898,12 +977,20 @@ public class Client(
      * @param initialPresence: is the initial presence of the client.
      * @param syncMode: defines the synchronization mode of the document.
      * @param schema: is the schema of the document. It is used to validate the document.
+     * @param disableGC: declares that this attachment will not produce or consume
+     * tombstones. The server skips minVV tracking and omits the response
+     * VersionVector for this client. Use only with Counter or primitive
+     * workloads where no client consumes tombstones; misuse on a document
+     * that uses Tree, Text, or Array deletions leads to undefined GC behavior
+     * on this client. Controls only the wire contract and is distinct from
+     * any local-only [Document] GC pass.
      */
     public fun attachDocument(
         document: Document,
         initialPresence: P = emptyMap(),
         syncMode: SyncMode = SyncMode.Realtime,
         schema: String? = null,
+        disableGC: Boolean = false,
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
@@ -930,6 +1017,7 @@ public class Client(
                     schema?.let {
                         schemaKey = it
                     }
+                    disableGc = disableGC
                 }
                 val response = service.attachDocument(
                     request = request,
@@ -969,6 +1057,7 @@ public class Client(
                     resource = document,
                     resourceId = response.documentId,
                     syncMode = syncMode,
+                    disableGC = disableGC,
                 )
                 // Manual and Polling are stream-less modes; only realtime modes
                 // open a watch stream. Mirrors JS SDK PR #1243.
@@ -1053,7 +1142,14 @@ public class Client(
 
     /**
      * `attachChannel` attaches the given channel counter to this client.
-     * It tells the server that this client will track the channel count.
+     * It registers the channel locally; the server is notified by the first
+     * RefreshChannel heartbeat, which creates the session and — for a client
+     * that never called [activateAsync] — activates the client lazily.
+     *
+     * The returned [Deferred] completing only means local registration.
+     * Server-side attach finishes asynchronously: observe
+     * [ChannelEvent.Initialized]/[ChannelEvent.Changed] or [Channel.getSessionId]
+     * for server state. Requires a Yorkie server >= 0.7.10.
      *
      * @param channel The channel counter to attach.
      * @param isRealtime If true (default), starts watching for channel changes in realtime.
@@ -1065,110 +1161,66 @@ public class Client(
         isRealtime: Boolean? = null,
     ): Deferred<OperationResult> {
         return scope.async {
+            val channelKey = channel.getKey()
+            // Status stays Detached until the first refresh returns a real
+            // session id, so the attachments map is the double-attach guard.
             checkYorkieError(
-                isActive,
-                YorkieException(ErrClientNotActivated, "client is not active"),
+                channel.getStatus() == ResourceStatus.Detached &&
+                    !attachments.containsKey(channelKey),
+                YorkieException(ErrDocumentNotDetached, "$channelKey is not detached"),
             )
 
-            checkYorkieError(
-                channel.getStatus() == ResourceStatus.Detached,
-                YorkieException(ErrDocumentNotDetached, "${channel.getKey()} is not detached"),
-            )
-
-            channel.setActor(requireClientId())
+            if (isActive) {
+                channel.setActor(requireClientId())
+            }
 
             channel.mutex.withLock {
-                val channelKey = channel.getKey()
-                val request = attachChannelRequest {
-                    clientId = requireClientId()
-                    this.channelKey = channelKey
-                }
-
-                val response = service.attachChannel(
-                    request,
-                    channelKey.attachmentBasedRequestHeader,
-                ).getOrElse {
-                    ensureActive()
-                    handleConnectException(it) { exception ->
-                        if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
-                            shouldRefreshToken = true
-                        }
-                        deactivateInternal()
-                    }
-                    return@async Result.failure(it)
-                }
-
-                channel.setSessionId(response.sessionId)
-                channel.updateSessionCount(response.sessionCount, 0L)
-                channel.applyStatus(ResourceStatus.Attached)
-
-                val syncMode = if (isRealtime != false) {
-                    SyncMode.Realtime
-                } else {
-                    SyncMode.Manual
-                }
-
                 attachments[channelKey] = Attachment(
                     resource = channel,
-                    resourceId = response.sessionId,
-                    syncMode = syncMode,
+                    resourceId = "",
+                    syncMode = if (isRealtime != false) {
+                        SyncMode.Realtime
+                    } else {
+                        SyncMode.Manual
+                    },
                 )
-
-                // Only start watch loop for realtime mode
-                if (syncMode == SyncMode.Realtime) {
-                    runWatchLoop(channelKey)
-                }
             }
+            // Lazy activation entry point: the loop's first tick performs the
+            // first-call RefreshChannel. The watch loop is deferred to that
+            // tick as well, because the Watch RPC needs the client id.
+            runSyncLoop()
             SUCCESS
         }
     }
 
     /**
      * `detachChannel` detaches the given channel counter from this client.
-     * It tells the server that this client will no longer track the channel count.
+     * Cleanup is local-only: heartbeats stop and the server reclaims the
+     * session via TTL. No RPC is sent.
      */
     public fun detachChannel(channel: Channel): Deferred<OperationResult> {
         return scope.async {
-            checkYorkieError(
-                isActive,
-                YorkieException(ErrClientNotActivated, "client is not active"),
-            )
-
-            attachments[channel.getKey()]
+            val channelKey = channel.getKey()
+            val attachment = attachments[channelKey]
                 ?: throw YorkieException(
                     ErrDocumentNotAttached,
-                    "${channel.getKey()} is not attached",
+                    "$channelKey is not attached",
                 )
 
-            val channelKey = channel.getKey()
+            // Set before taking the mutex so an in-flight refresh resuming
+            // from its network await drops its side effects instead of
+            // resurrecting the session.
+            attachment.detaching = true
 
-            val request = detachChannelRequest {
-                clientId = requireClientId()
-                this.channelKey = channelKey
-                channel.getSessionId()?.let {
-                    sessionId = it
-                }
+            channel.mutex.withLock {
+                // Clear the session id: the server-side session dies by TTL,
+                // and a stale id on re-attach would force a guaranteed
+                // ErrSessionNotFound round trip before recovery.
+                channel.setSessionId(null)
+                channel.applyStatus(ResourceStatus.Detached)
+                channel.close()
+                detachInternal(channelKey)
             }
-
-            val response = service.detachChannel(
-                request,
-                channelKey.attachmentBasedRequestHeader,
-            ).getOrElse {
-                ensureActive()
-                handleConnectException(it) { exception ->
-                    if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
-                        shouldRefreshToken = true
-                    }
-                    deactivateInternal()
-                }
-                return@async Result.failure(it)
-            }
-
-            channel.updateSessionCount(response.sessionCount, 0L)
-            channel.applyStatus(ResourceStatus.Detached)
-            channel.close()
-
-            detachInternal(channelKey)
 
             SUCCESS
         }
@@ -1189,11 +1241,6 @@ public class Client(
      */
     public fun peekChannel(channelKey: String): Deferred<Result<Long>> {
         return scope.async {
-            checkYorkieError(
-                isActive,
-                YorkieException(ErrClientNotActivated, "client is not active"),
-            )
-
             val request = peekChannelRequest {
                 this.channelKey = channelKey
             }
@@ -1246,6 +1293,17 @@ public class Client(
         deactivateOptions: DeactivateOptions = DeactivateOptions(),
     ): Deferred<OperationResult> {
         if (!isActive) {
+            // A channel-only client that never activated may still have a
+            // running sync loop and attachments; tear them down locally so a
+            // pending first-call refresh cannot activate the client after
+            // deactivation. No RPC: the client has no server identity yet.
+            if (attachments.isNotEmpty() || syncLoopJob?.isActive == true) {
+                activationJob.cancelChildren()
+                return scope.async {
+                    deactivateInternal()
+                    SUCCESS
+                }
+            }
             return CompletableDeferred(SUCCESS)
         }
 
@@ -1742,9 +1800,11 @@ public class Client(
         /**
          * `channelHeartbeatInterval` is the interval of the channel heartbeat.
          * The client sends a heartbeat to the server to refresh the channel TTL.
-         * The default value is `30000`(ms).
+         * Applies to both Realtime and Manual/Polling channels.
+         * The default value is `5000`(ms) — TTL/3 for the server's 15s
+         * ChannelSessionTTL. Mirrors JS SDK v0.7.10.
          */
-        public val channelHeartbeatInterval: Duration = 30_000.milliseconds,
+        public val channelHeartbeatInterval: Duration = 5_000.milliseconds,
         /**
          * `documentPollInterval` is the push-pull interval for documents attached
          * with [SyncMode.Polling]. Unused in other sync modes.

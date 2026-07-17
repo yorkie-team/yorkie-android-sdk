@@ -36,6 +36,17 @@ sealed interface ChannelEvent : ResourceEvent {
     ) : ChannelEvent {
         override val sessionCount: Long = 0L
     }
+
+    /**
+     * Published when a RefreshChannel heartbeat fails non-recoverably.
+     * Recoverable session expiry (ErrSessionNotFound) is handled internally
+     * by a transparent re-attach and does not emit this event.
+     */
+    data class SyncError(
+        val cause: Throwable,
+    ) : ChannelEvent {
+        override val sessionCount: Long = 0L
+    }
 }
 
 class Channel(
@@ -89,9 +100,10 @@ class Channel(
     }
 
     /**
-     * `setSessionId` sets the session ID from the server.
+     * `setSessionId` sets the session ID from the server, or clears it with
+     * null so the next refresh runs as a first call. SDK-internal use.
      */
-    fun setSessionId(sessionId: String) {
+    fun setSessionId(sessionId: String?) {
         this.sessionId = sessionId
     }
 

@@ -85,6 +85,7 @@ import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrSessionNotFound
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 import io.mockk.every
 import io.mockk.mockk
@@ -107,6 +108,18 @@ class MockYorkieService(
 
     var refreshChannelSessionCount = 0L
     var peekChannelSessionCount = 0L
+
+    /** Fails the next non-first-call refresh with ErrSessionNotFound once. */
+    var refreshChannelSessionNotFoundOnce = false
+
+    /** Fails every refresh with a non-retryable generic error while true. */
+    var refreshChannelFails = false
+
+    /** Number of refreshChannel calls that carried an empty session_id. */
+    var refreshChannelFirstCallCount = 0
+
+    /** Suspends each refresh for this long, to simulate an in-flight RPC. */
+    var refreshChannelDelayMs = 0L
 
     override suspend fun activateClient(
         request: ActivateClientRequest,
@@ -454,9 +467,45 @@ class MockYorkieService(
         request: RefreshChannelRequest,
         headers: Headers,
     ): ResponseMessage<RefreshChannelResponse> {
+        if (refreshChannelDelayMs > 0L) {
+            delay(refreshChannelDelayMs)
+        }
+        if (refreshChannelFails) {
+            return ResponseMessage.Failure(
+                cause = ConnectException(Code.FAILED_PRECONDITION),
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (refreshChannelSessionNotFoundOnce && request.sessionId.isNotEmpty()) {
+            refreshChannelSessionNotFoundOnce = false
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", ErrSessionNotFound.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        val isFirstCall = request.sessionId.isEmpty()
+        if (isFirstCall) {
+            refreshChannelFirstCallCount++
+        }
         return ResponseMessage.Success(
             message = refreshChannelResponse {
                 sessionCount = refreshChannelSessionCount
+                // The server assigns ids only on the first call.
+                if (isFirstCall) {
+                    clientId = TEST_ACTOR_ID
+                    sessionId = MOCK_SESSION_ID
+                }
             },
             headers = emptyMap(),
             trailers = emptyMap(),
@@ -596,6 +645,7 @@ class MockYorkieService(
         internal const val AUTH_ERROR_DOCUMENT_KEY = "AUTH_ERROR_DOCUMENT_KEY"
         internal const val EPOCH_MISMATCH_DOCUMENT_KEY = "EPOCH_MISMATCH_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = "0000000000ffff0000000000"
+        internal const val MOCK_SESSION_ID = "mock-session-id"
         internal const val TEST_USER_ID = "TEST_USER_ID"
 
         internal val defaultError: MutableMap<String, Code> = mutableMapOf(

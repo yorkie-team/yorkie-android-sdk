@@ -793,7 +793,12 @@ public class Client(
         if (document.getStatus() == ResourceStatus.Attached && status.value is Status.Activated) {
             document.publishEvent(Initialized(document.presences.value))
             document.setOnlineClients(emptySet())
-            document.publishEvent(StreamConnectionChanged.Disconnected)
+            // Fire-and-forget: this runs on the watch reader coroutine for every
+            // stream failure/close/timeout. An inline publishEvent here is an
+            // unbuffered-flow emit that a stalled events collector can park
+            // forever, wedging the reader so streamJob.join() never returns and
+            // the watch loop never reconnects (#351 follow-up).
+            document.publish(StreamConnectionChanged.Disconnected)
         }
     }
 

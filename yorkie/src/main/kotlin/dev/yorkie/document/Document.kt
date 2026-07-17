@@ -121,7 +121,14 @@ public class Document(
 
     private var presenceDropWarned = false
 
-    private val eventStream = MutableSharedFlow<Event>()
+    // Buffered so emitters (notably applyChangePack, which the Client sync loop calls
+    // while holding the per-document mutex, and the watch-stream reader) are not
+    // rendezvous-coupled to every collector: with zero capacity a single stalled
+    // collector suspends emit() forever, freezing sync push+pull and watch reconnect
+    // while the client still reports itself Connected (#351 follow-up). SUSPEND on
+    // overflow is kept deliberately — events must not be silently dropped; the buffer
+    // only decouples transient consumer latency from the document's critical sections.
+    private val eventStream = MutableSharedFlow<Event>(extraBufferCapacity = 4096)
     public val events = eventStream.asSharedFlow()
 
     @Volatile

@@ -110,6 +110,17 @@ public class Document(
     @Volatile
     private var disableGC = false
 
+    /**
+     * Declares that this document does not produce, consume, or store presence.
+     * Seeded from [Options.disablePresence] and overwritten with the
+     * server-fixated value on attach. When true, presence changes from
+     * [updateAsync] are silently dropped.
+     */
+    @Volatile
+    private var disablePresence = options.disablePresence
+
+    private var presenceDropWarned = false
+
     private val eventStream = MutableSharedFlow<Event>()
     public val events = eventStream.asSharedFlow()
 
@@ -233,6 +244,21 @@ public class Document(
             }
             if (result.isFailure) {
                 return@async result
+            }
+
+            // Drop presence changes on presence-free documents. Document
+            // operations in the same update still persist; a presence-only
+            // change becomes a no-op and is never enqueued. Mirrors JS SDK
+            // PR #1285.
+            if (disablePresence && context.presenceChange != null) {
+                context.presenceChange = null
+                if (!presenceDropWarned) {
+                    presenceDropWarned = true
+                    logDebug("Document.updateAsync") {
+                        "\"$key\" was attached with disablePresence=true; " +
+                            "presence updates from updateAsync are silently dropped"
+                    }
+                }
             }
 
             val rules = schemaRules
@@ -902,6 +928,22 @@ public class Document(
     }
 
     /**
+     * `setDisablePresence` records the server-fixated presence-free state. The
+     * client calls this on attach so subsequent [updateAsync] calls drop
+     * presence changes.
+     */
+    internal fun setDisablePresence(disablePresence: Boolean) {
+        this.disablePresence = disablePresence
+    }
+
+    /**
+     * `isPresenceDisabled` returns whether this document is presence-free.
+     */
+    internal fun isPresenceDisabled(): Boolean {
+        return disablePresence
+    }
+
+    /**
      * `setMaxSizePerDocument` sets the maximum size of this document.
      */
     fun setMaxSizePerDocument(size: Int) {
@@ -1080,6 +1122,11 @@ public class Document(
          * Disables garbage collection if true.
          */
         public val disableGC: Boolean = false,
+        /**
+         * Seeds the presence-free state before attach. The server-fixated
+         * value from the attach response takes precedence once attached.
+         */
+        public val disablePresence: Boolean = false,
     )
 
     /**

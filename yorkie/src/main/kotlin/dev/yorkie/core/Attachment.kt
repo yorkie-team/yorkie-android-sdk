@@ -21,6 +21,12 @@ internal class Attachment<R : Attachable>(
      * for this client. Documents only; carried on every PushPullChanges.
      */
     val disableGC: Boolean = false,
+    /**
+     * Server-fixated value declaring that this document does not produce,
+     * consume, or store presence. Carried for visibility only; the wire
+     * contract is set on the attach request, not on PushPullChanges.
+     */
+    val disablePresence: Boolean = false,
 ) {
     var changeEventReceived: Boolean? = syncMode?.let { false }
     var cancelled: Boolean = false

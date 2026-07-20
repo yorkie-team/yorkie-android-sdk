@@ -412,6 +412,67 @@ class RgaTreeListTest {
         assertEquals(TimeTicket.TIME_TICKET_SIZE * 2, dead.dataSize.meta)
     }
 
+    // Ported from yorkie-js-sdk v0.7.11 (#1272): the last-element accessor must skip
+    // bare position nodes left behind by moves.
+    @Test
+    fun `lastElement should skip bare position node left after moving the last element`() {
+        // given — list [A, B, C]
+        val list = RgaTreeList()
+        val a = CrdtPrimitive("A", tick(1))
+        val b = CrdtPrimitive("B", tick(2))
+        val c = CrdtPrimitive("C", tick(3))
+        listOf(a, b, c).forEach(list::insert)
+
+        // when — move the current last element (C) after A; its old tail slot
+        // becomes a bare node and `last` keeps pointing at it
+        list.moveAfter(a.createdAt, c.createdAt, tick(5))
+
+        // then — lastElement resolves the last live element (B), not the stale slot
+        assertEquals("B", (list.lastElement as CrdtPrimitive).value)
+    }
+
+    @Test
+    fun `lastElement should skip consecutive trailing bare position nodes`() {
+        // given — list [A, B, C]
+        val list = RgaTreeList()
+        val a = CrdtPrimitive("A", tick(1))
+        val b = CrdtPrimitive("B", tick(2))
+        val c = CrdtPrimitive("C", tick(3))
+        listOf(a, b, c).forEach(list::insert)
+
+        // when — two moves leave two consecutive bare nodes at the tail
+        list.moveAfter(a.createdAt, c.createdAt, tick(5))
+        list.moveAfter(a.createdAt, b.createdAt, tick(6))
+
+        // then
+        assertEquals("C", (list.lastElement as CrdtPrimitive).value)
+    }
+
+    @Test
+    fun `lastElement should fall back to dummy head on empty list`() {
+        val list = RgaTreeList()
+
+        assertEquals(list.head, list.lastElement)
+    }
+
+    // TreeList.indexOf returns -1 for tombstones — deliberate JS-parity behavior change
+    // from the SplayTreeSet migration (v0.7.11 #1269).
+    @Test
+    fun `subPathOf should return -1 for a removed element`() {
+        // given — list [A, B]
+        val list = RgaTreeList()
+        val a = CrdtPrimitive("A", tick(1))
+        val b = CrdtPrimitive("B", tick(2))
+        listOf(a, b).forEach(list::insert)
+
+        // when — tombstone B (not purged yet)
+        list.delete(b.createdAt, tick(3))
+
+        // then
+        assertEquals("0", list.subPathOf(a.createdAt))
+        assertEquals("-1", list.subPathOf(b.createdAt))
+    }
+
     private fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, "x")
 
     private fun valueAt(list: RgaTreeList, index: Int): Any? =

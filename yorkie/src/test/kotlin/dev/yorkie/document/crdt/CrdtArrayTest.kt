@@ -107,6 +107,24 @@ class CrdtArrayTest {
         assertEquals(crdtElements.size, target.length)
     }
 
+    // Ported from yorkie-js-sdk v0.7.11 (#1272): `last` must skip the bare position node
+    // left at the tail after moving the last element, including through deepCopy.
+    @Test
+    fun `last should skip bare position nodes and survive deepCopy`() {
+        // given
+        crdtElements.forEach { target.insertAfter(target.last.createdAt, it) }
+
+        // when — move the current last element (G) after A; its old tail slot becomes bare
+        target.moveAfter(timeTickets[0], timeTickets[6], createTimeTicket())
+
+        // then — last resolves to F, the last live element
+        assertEquals(timeTickets[5], target.last.createdAt)
+
+        // and the reconstructed clone (which restores the bare tail node) agrees
+        val copied = target.deepCopy() as CrdtArray
+        assertEquals(timeTickets[5], copied.last.createdAt)
+    }
+
     @Test
     fun `should handle concurrent insertAfter operations`() {
         val sampleTarget1 = createSampleCrdtArray().apply {

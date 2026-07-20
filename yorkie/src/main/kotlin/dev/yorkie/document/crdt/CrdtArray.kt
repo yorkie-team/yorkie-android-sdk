@@ -15,8 +15,12 @@ internal data class CrdtArray(
     val head
         get() = elements.head
 
+    /**
+     * The value of the last live element, skipping bare position nodes left by
+     * moves. Not anchor-safe: use [lastCreatedAt] for anchoring inserts.
+     */
     val last
-        get() = elements.last.value
+        get() = elements.lastElement
 
     val length
         get() = elements.length

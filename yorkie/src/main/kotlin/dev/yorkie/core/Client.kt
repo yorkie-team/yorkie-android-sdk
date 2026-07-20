@@ -984,6 +984,11 @@ public class Client(
      * that uses Tree, Text, or Array deletions leads to undefined GC behavior
      * on this client. Controls only the wire contract and is distinct from
      * any local-only [Document] GC pass.
+     * @param disablePresence: declares that this document does not produce,
+     * consume, or store presence. When true, the initial presence is not
+     * pushed and presence updates from [Document.updateAsync] are dropped.
+     * Honored on first attach only; the server persists the value and
+     * returns it on subsequent attaches.
      */
     public fun attachDocument(
         document: Document,
@@ -991,6 +996,7 @@ public class Client(
         syncMode: SyncMode = SyncMode.Realtime,
         schema: String? = null,
         disableGC: Boolean = false,
+        disablePresence: Boolean = false,
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
@@ -1007,9 +1013,15 @@ public class Client(
             document.mutex.withLock {
                 val clientID = requireClientId()
                 document.setActor(clientID)
-                document.updateAsync { _, presence ->
-                    presence.put(initialPresence)
-                }.await()
+                // The local option wins; absent that, the document's seeded
+                // value is used. The server is authoritative and overwrites
+                // this via the attach response. Mirrors JS SDK PR #1285.
+                val resolvedDisablePresence = disablePresence || document.isPresenceDisabled()
+                if (!resolvedDisablePresence) {
+                    document.updateAsync { _, presence ->
+                        presence.put(initialPresence)
+                    }.await()
+                }
 
                 val request = attachDocumentRequest {
                     clientId = clientID
@@ -1018,6 +1030,7 @@ public class Client(
                         schemaKey = it
                     }
                     disableGc = disableGC
+                    this.disablePresence = resolvedDisablePresence
                 }
                 val response = service.attachDocument(
                     request = request,
@@ -1047,6 +1060,7 @@ public class Client(
                 // so the first applyChangePack already routes remote changes
                 // through the lamport-only sync path.
                 document.setDisableGC(disableGC)
+                document.setDisablePresence(response.disablePresence)
                 document.applyChangePack(pack)
 
                 // Clear undo/redo stacks so that initialRoot setup operations
@@ -1062,6 +1076,7 @@ public class Client(
                     resourceId = response.documentId,
                     syncMode = syncMode,
                     disableGC = disableGC,
+                    disablePresence = response.disablePresence,
                 )
                 // Manual and Polling are stream-less modes; only realtime modes
                 // open a watch stream. Mirrors JS SDK PR #1243.

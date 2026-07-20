@@ -60,16 +60,13 @@ class DisablePresenceTest {
             // First attach fixates disablePresence=true on the server.
             c1.attachDocument(d1, disablePresence = true).await()
 
-            // Second attach requests presence but the server-fixated value wins,
-            // so presence stays dropped for this document.
-            c2.attachDocument(
-                d2,
-                initialPresence = mapOf("cursor" to "1"),
-                disablePresence = false,
-            ).await()
+            // A later client attaches without opting out. The server returns
+            // the fixated value, so this client also becomes presence-free and
+            // its presence updates are dropped.
+            c2.attachDocument(d2, disablePresence = false).await()
 
             d2.updateAsync { _, presence ->
-                presence.put(mapOf("cursor" to "2"))
+                presence.put(mapOf("cursor" to "1"))
             }.await()
             c2.syncAsync(d2).await()
 

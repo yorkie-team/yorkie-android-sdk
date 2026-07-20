@@ -47,11 +47,33 @@ public data class ChangeID(
      *
      * {@link https://en.wikipedia.org/wiki/Lamport_timestamps#Algorithm}
      */
+    @Deprecated("Use syncLamport(other: ChangeID)", ReplaceWith("syncLamport(other)"))
     fun syncLamport(otherLamport: Long): ChangeID {
         if (otherLamport > lamport) {
             return copy(lamport = otherLamport)
         }
         return copy(lamport = lamport + 1)
+    }
+
+    /**
+     * Advances the lamport clock against the given ID without merging its
+     * version vector into the receiver's. It is the counterpart of
+     * [syncClocks] for attachments that have opted out of GC participation:
+     * the receiver does not need other actors' entries in its version vector
+     * because it never produces or consumes tombstones, and dropping them
+     * keeps each subsequent local Change's version vector at O(1) instead of
+     * O(num_actors). Lamport must still advance so that TimeTickets produced
+     * locally remain ordered against remote operations.
+     */
+    fun syncLamport(other: ChangeID): ChangeID {
+        if (!other.hasClocks()) {
+            return this
+        }
+
+        val newLamport = if (other.lamport > lamport) other.lamport + 1 else lamport + 1
+        val vector = versionVector.deepCopy()
+        vector.set(actor, newLamport)
+        return copy(lamport = newLamport, versionVector = vector)
     }
 
     private fun hasClocks(): Boolean {

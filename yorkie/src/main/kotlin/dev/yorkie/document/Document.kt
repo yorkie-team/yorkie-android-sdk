@@ -100,6 +100,16 @@ public class Document(
     @Volatile
     private var schemaRules: List<Rule> = emptyList()
 
+    /**
+     * Declares that this document does not produce or consume tombstones.
+     * Set by the client on attach and consumed by applyChanges to skip merging
+     * remote actors' version vectors into [changeID], keeping each subsequent
+     * local Change's version vector at O(1) for high-fan-out Counter workloads.
+     * Distinct from [Options.disableGC], which gates the local GC pass.
+     */
+    @Volatile
+    private var disableGC = false
+
     private val eventStream = MutableSharedFlow<Event>()
     public val events = eventStream.asSharedFlow()
 
@@ -673,7 +683,11 @@ public class Document(
             newPresences?.let {
                 emitPresences(it, presenceEvent)
             }
-            changeID = changeID.syncClocks(change.id)
+            changeID = if (disableGC) {
+                changeID.syncLamport(change.id)
+            } else {
+                changeID.syncClocks(change.id)
+            }
         }
     }
 
@@ -876,6 +890,15 @@ public class Document(
 
     public fun toJson(): String {
         return root.toJson()
+    }
+
+    /**
+     * `setDisableGC` records whether this document participates in GC. The
+     * client calls this on attach so subsequent applyChanges runs use the
+     * lamport-only sync path.
+     */
+    internal fun setDisableGC(disableGC: Boolean) {
+        this.disableGC = disableGC
     }
 
     /**

@@ -1043,6 +1043,10 @@ public class Client(
                 }
 
                 val pack = response.changePack.toChangePack()
+                // Record the opt-out decision before applying the attach response
+                // so the first applyChangePack already routes remote changes
+                // through the lamport-only sync path.
+                document.setDisableGC(disableGC)
                 document.applyChangePack(pack)
 
                 // Clear undo/redo stacks so that initialRoot setup operations

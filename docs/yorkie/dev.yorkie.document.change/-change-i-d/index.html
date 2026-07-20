@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.10            </div>
+0.7.11            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -294,17 +294,17 @@
               </div>
             </div>
           </div>
-<a data-name="-329374612%2FFunctions%2F-1590045667" anchor-label="syncLamport" id="-329374612%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+<a data-name="187328451%2FFunctions%2F-1590045667" anchor-label="syncLamport" id="187328451%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
                   <div><a href="sync-lamport.html"><span>sync</span><wbr></wbr><span><span>Lamport</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-329374612%2FFunctions%2F-1590045667"></span>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="187328451%2FFunctions%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="sync-lamport.html"><span class="token function">syncLamport</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">otherLamport<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">ChangeID</a></div><div class="brief "><p class="paragraph">Syncs lamport timestamp with the given ID.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="sync-lamport.html"><span class="token function">syncLamport</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">other<span class="token operator">: </span><a href="index.html">ChangeID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">ChangeID</a></div><div class="brief "><p class="paragraph">Advances the lamport clock against the given ID without merging its version vector into the receiver's. It is the counterpart of <a href="sync-clocks.html">syncClocks</a> for attachments that have opted out of GC participation: the receiver does not need other actors' entries in its version vector because it never produces or consumes tombstones, and dropping them keeps each subsequent local Change's version vector at O(1) instead of O(num_actors). Lamport must still advance so that TimeTickets produced locally remain ordered against remote operations.</p></div><div class="symbol monospace"><span class="token keyword">fun </span><a href="sync-lamport.html"><span class="token function"><strike>syncLamport</strike></span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">otherLamport<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">ChangeID</a></div><div class="brief "><p class="paragraph">Syncs lamport timestamp with the given ID.</p></div></div></div>
                 </div>
               </div>
             </div>

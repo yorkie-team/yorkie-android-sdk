@@ -115,6 +115,7 @@ $dokka.location:dev.yorkie.document.change/ChangeID/setClocks/#kotlin.Long#dev.y
 $dokka.location:dev.yorkie.document.change/ChangeID/setLamport/#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/set-lamport.html
 $dokka.location:dev.yorkie.document.change/ChangeID/setVersionVector/#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/set-version-vector.html
 $dokka.location:dev.yorkie.document.change/ChangeID/syncClocks/#dev.yorkie.document.change.ChangeID/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/sync-clocks.html
+$dokka.location:dev.yorkie.document.change/ChangeID/syncLamport/#dev.yorkie.document.change.ChangeID/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/sync-lamport.html
 $dokka.location:dev.yorkie.document.change/ChangeID/syncLamport/#kotlin.Long/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/sync-lamport.html
 $dokka.location:dev.yorkie.document.change/ChangeID/versionVector/#/PointingToDeclaration/yorkie/dev.yorkie.document.change/-change-i-d/version-vector.html
 $dokka.location:dev.yorkie.document.crdt////PointingToDeclaration/yorkie/dev.yorkie.document.crdt/index.html

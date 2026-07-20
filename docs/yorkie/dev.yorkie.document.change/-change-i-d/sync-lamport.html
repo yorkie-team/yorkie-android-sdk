@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.10            </div>
+0.7.11            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -61,12 +61,12 @@
                 <div class="sidebar--inner" id="sideMenu"></div>
             </div>
             <div id="main">
-<div class="main-content" data-page-type="member" id="content" pageIds="yorkie::dev.yorkie.document.change/ChangeID/syncLamport/#kotlin.Long/PointingToDeclaration//-1590045667">
+<div class="main-content" data-page-type="member" id="content" pageIds="yorkie::dev.yorkie.document.change/ChangeID/syncLamport/#dev.yorkie.document.change.ChangeID/PointingToDeclaration//-1590045667">
   <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.document.change</a><span class="delimiter">/</span><a href="index.html">ChangeID</a><span class="delimiter">/</span><span class="current">syncLamport</span></div>
   <div class="cover ">
     <h1 class="cover"><span>sync</span><wbr></wbr><span><span>Lamport</span></span></h1>
   </div>
-  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="sync-lamport.html"><span class="token function">syncLamport</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">otherLamport<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">ChangeID</a></div><p class="paragraph">Syncs lamport timestamp with the given ID.</p><p class="paragraph">{@link https://en.wikipedia.org/wiki/Lamport_timestamps#Algorithm}</p></div></div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="sync-lamport.html"><span class="token function">syncLamport</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">other<span class="token operator">: </span><a href="index.html">ChangeID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">ChangeID</a></div><p class="paragraph">Advances the lamport clock against the given ID without merging its version vector into the receiver's. It is the counterpart of <a href="sync-clocks.html">syncClocks</a> for attachments that have opted out of GC participation: the receiver does not need other actors' entries in its version vector because it never produces or consumes tombstones, and dropping them keeps each subsequent local Change's version vector at O(1) instead of O(num_actors). Lamport must still advance so that TimeTickets produced locally remain ordered against remote operations.</p><hr><div class="symbol monospace"><span class="token keyword">fun </span><a href="sync-lamport.html"><span class="token function"><strike>syncLamport</strike></span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">otherLamport<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">ChangeID</a></div><div class="deprecation-content"><h3 class="">Deprecated</h3><p class="paragraph">Use syncLamport(other: ChangeID)</p><h4 class="">Replace with</h4><div class="sample-container"><pre><code class="monospace block lang-kotlin" theme="idea">syncLamport(other)</code></pre><span class="top-right-position"><span class="copy-icon"></span><div class="copy-popup-wrapper popup-to-left"><span class="copy-popup-icon"></span><span>Content copied to clipboard</span></div></span></div></div><p class="paragraph">Syncs lamport timestamp with the given ID.</p><p class="paragraph">{@link https://en.wikipedia.org/wiki/Lamport_timestamps#Algorithm}</p></div></div>
 </div>
       <div class="footer">
         <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span

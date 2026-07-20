@@ -24,6 +24,7 @@ import dev.yorkie.core.MockYorkieService.Companion.EPOCH_MISMATCH_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.MOCK_SESSION_ID
 import dev.yorkie.core.MockYorkieService.Companion.NORMAL_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.REMOVE_ERROR_DOCUMENT_KEY
+import dev.yorkie.core.MockYorkieService.Companion.SILENT_WATCH_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_USER_ID
@@ -136,6 +137,32 @@ class ClientTest {
         assertFalse(target.isActive)
         assertIs<Client.Status.Deactivated>(target.status.value)
     }
+
+    // ========== Y2: Options.watchFallbackDelay (pull fallback on watch silence, #351) ==========
+
+    @Test
+    fun `watchFallbackDelay default is 10 seconds`() {
+        assertEquals(10_000.milliseconds, Client.Options().watchFallbackDelay)
+    }
+
+    @Test
+    fun `document attached with default options carries the watchFallbackDelay threshold`() =
+        runTest {
+            runBlocking {
+                val document = Document(NORMAL_DOCUMENT_KEY)
+                target.activateAsync().await()
+                target.attachDocument(document).await()
+
+                assertEquals(
+                    10_000.milliseconds.inWholeMilliseconds,
+                    target.attachmentWatchFallbackDelay(NORMAL_DOCUMENT_KEY),
+                )
+
+                target.detachDocument(document).await()
+                target.deactivateAsync().await()
+                document.close()
+            }
+        }
 
     @Test
     fun `should keep client active when deactivate fails with connect exception`() = runTest {
@@ -401,6 +428,53 @@ class ClientTest {
         target.detachDocument(document).await()
         target.deactivateAsync().await()
     }
+
+    // ========== Y4: Client liveness wiring (pull fallback engage, #351 phase 1) ==========
+    //
+    // Loop-level, real-delay integration test reinforcing that markWatchResponseReceived()'s
+    // wiring at the two Client.kt call sites actually produces real fallback pulls end-to-end —
+    // the disengage-on-revival decision itself (AC2) is already conclusively proven by
+    // AttachmentTest's fake-clock unit tests; this test focuses on the engage side, the part
+    // only a real Client + real sync loop can exercise. Short custom Options keep it fast; a
+    // separate Client (not the class-level `target`) is used so the class-level tests' default
+    // (slow) watchFallbackDelay is untouched.
+
+    @Test
+    fun `Y4 - pull fallback produces real pushPullChanges calls once watch stream goes silent`() =
+        runTest {
+            runBlocking {
+                val fallbackClient = Client(
+                    host = "0.0.0.0",
+                    options = Client.Options(
+                        key = TEST_KEY,
+                        apiKey = TEST_KEY,
+                        syncLoopDuration = 50.milliseconds,
+                        documentPollInterval = 100.milliseconds,
+                        watchFallbackDelay = 200.milliseconds,
+                    ),
+                )
+                fallbackClient.service = service
+                val document = Document(SILENT_WATCH_DOCUMENT_KEY)
+
+                fallbackClient.activateAsync().await()
+                fallbackClient.attachDocument(document).await() // syncMode defaults to Realtime
+
+                // SILENT_WATCH_DOCUMENT_KEY's watch stream sends only its init frame, then
+                // never another — past watchFallbackDelay + documentPollInterval, fallback
+                // must start pulling on its own, repeatedly, without any local edit or
+                // DOCUMENT_CHANGED event ever arriving.
+                delay(600)
+
+                coVerify(atLeast = 2) {
+                    service.pushPullChanges(any(), any())
+                }
+
+                fallbackClient.detachDocument(document).await()
+                fallbackClient.deactivateAsync().await()
+                fallbackClient.close()
+                document.close()
+            }
+        }
 
     @Test
     fun `should emit according event when watch stream fails`() = runTest {
@@ -1169,6 +1243,23 @@ class ClientTest {
         val field = Client::class.java.getDeclaredField("_status")
         field.isAccessible = true
         (field.get(this) as MutableStateFlow<Client.Status>).value = status
+    }
+
+    /**
+     * Reads a resource's [Attachment] out of the client's private `attachments` map,
+     * then reads a private field off it — same reflection technique as [forceStatus] —
+     * so a test can confirm an `Options` value was actually plumbed through to the
+     * `Attachment` the client constructed, without exposing that field publicly.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun Client.attachmentWatchFallbackDelay(documentKey: String): Long {
+        val attachmentsField = Client::class.java.getDeclaredField("attachments")
+        attachmentsField.isAccessible = true
+        val attachments = attachmentsField.get(this) as Map<String, Attachment<out Attachable>>
+        val attachment = attachments.getValue(documentKey)
+        val delayField = Attachment::class.java.getDeclaredField("watchFallbackDelay")
+        delayField.isAccessible = true
+        return delayField.get(attachment) as Long
     }
 
     private fun assertIsInitialChangePack(initialChangePack: ChangePack, changePack: PBChangePack) {

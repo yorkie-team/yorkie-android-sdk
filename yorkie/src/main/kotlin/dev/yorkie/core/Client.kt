@@ -369,7 +369,16 @@ public class Client(
                         // Done before the RPC so a failed push-pull does not
                         // retry every 50ms and drain battery / hammer the
                         // server during outages. #1243.
-                        if (attachment.syncMode == SyncMode.Polling) {
+                        // Also reset for Realtime: gives the watch-silence pull
+                        // fallback's own throttle a moving baseline (#351 phase
+                        // 1) — otherwise lastHeartbeatTime stays 0 for realtime
+                        // documents and the throttle is inert, i.e. a fallback
+                        // pull storm every sync-loop tick once engaged. Harmless
+                        // no-op for realtime documents with fallback disabled
+                        // (their throttle clause never engages regardless).
+                        if (attachment.syncMode == SyncMode.Polling ||
+                            attachment.syncMode == SyncMode.Realtime
+                        ) {
                             attachment.updateHeartbeatTime()
                         }
 
@@ -403,7 +412,12 @@ public class Client(
 
                         // Reset the poll timer so a Polling document syncs once
                         // per interval, not on every sync-loop tick. #1243.
-                        if (attachment.syncMode == SyncMode.Polling) {
+                        // Also reset for Realtime — see the matching comment above
+                        // this method's first updateHeartbeatTime() call (#351
+                        // phase 1 throttle baseline).
+                        if (attachment.syncMode == SyncMode.Polling ||
+                            attachment.syncMode == SyncMode.Realtime
+                        ) {
                             attachment.updateHeartbeatTime()
                         }
 
@@ -594,6 +608,10 @@ public class Client(
                         withTimeoutOrNull(streamTimeout) {
                             val receiveResult = responseChannel.receiveCatching()
                             receiveResult.onSuccess {
+                                // Every frame of any kind proves the watch stream is alive —
+                                // resets this attachment's silence clock, disengaging pull
+                                // fallback if it had engaged (#351 phase 1).
+                                attachment.markWatchResponseReceived()
                                 handleWatchDocumentResponse(
                                     documentKey = documentKey,
                                     response = it,
@@ -646,6 +664,9 @@ public class Client(
                 if (attachment.changeEventReceived != null) {
                     attachment.changeEventReceived = true
                 }
+                // Stream (re)connection is itself a liveness/revival signal — resets the
+                // silence clock the same as any received frame would (#351 phase 1).
+                attachment.markWatchResponseReceived()
 
                 streamJob.join()
             }
@@ -772,7 +793,12 @@ public class Client(
         if (document.getStatus() == ResourceStatus.Attached && status.value is Status.Activated) {
             document.publishEvent(Initialized(document.presences.value))
             document.setOnlineClients(emptySet())
-            document.publishEvent(StreamConnectionChanged.Disconnected)
+            // Fire-and-forget: this runs on the watch reader coroutine for every
+            // stream failure/close/timeout. An inline publishEvent here is an
+            // unbuffered-flow emit that a stalled events collector can park
+            // forever, wedging the reader so streamJob.join() never returns and
+            // the watch loop never reconnects (#351 follow-up).
+            document.publish(StreamConnectionChanged.Disconnected)
         }
     }
 
@@ -984,6 +1010,11 @@ public class Client(
      * that uses Tree, Text, or Array deletions leads to undefined GC behavior
      * on this client. Controls only the wire contract and is distinct from
      * any local-only [Document] GC pass.
+     * @param disablePresence: declares that this document does not produce,
+     * consume, or store presence. When true, the initial presence is not
+     * pushed and presence updates from [Document.updateAsync] are dropped.
+     * Honored on first attach only; the server persists the value and
+     * returns it on subsequent attaches.
      */
     public fun attachDocument(
         document: Document,
@@ -991,6 +1022,7 @@ public class Client(
         syncMode: SyncMode = SyncMode.Realtime,
         schema: String? = null,
         disableGC: Boolean = false,
+        disablePresence: Boolean = false,
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
@@ -1007,9 +1039,15 @@ public class Client(
             document.mutex.withLock {
                 val clientID = requireClientId()
                 document.setActor(clientID)
-                document.updateAsync { _, presence ->
-                    presence.put(initialPresence)
-                }.await()
+                // The local option wins; absent that, the document's seeded
+                // value is used. The server is authoritative and overwrites
+                // this via the attach response. Mirrors JS SDK PR #1285.
+                val resolvedDisablePresence = disablePresence || document.isPresenceDisabled()
+                if (!resolvedDisablePresence) {
+                    document.updateAsync { _, presence ->
+                        presence.put(initialPresence)
+                    }.await()
+                }
 
                 val request = attachDocumentRequest {
                     clientId = clientID
@@ -1018,6 +1056,7 @@ public class Client(
                         schemaKey = it
                     }
                     disableGc = disableGC
+                    this.disablePresence = resolvedDisablePresence
                 }
                 val response = service.attachDocument(
                     request = request,
@@ -1047,6 +1086,7 @@ public class Client(
                 // so the first applyChangePack already routes remote changes
                 // through the lamport-only sync path.
                 document.setDisableGC(disableGC)
+                document.setDisablePresence(response.disablePresence)
                 document.applyChangePack(pack)
 
                 // Clear undo/redo stacks so that initialRoot setup operations
@@ -1062,6 +1102,8 @@ public class Client(
                     resourceId = response.documentId,
                     syncMode = syncMode,
                     disableGC = disableGC,
+                    disablePresence = response.disablePresence,
+                    watchFallbackDelay = options.watchFallbackDelay.inWholeMilliseconds,
                 )
                 // Manual and Polling are stream-less modes; only realtime modes
                 // open a watch stream. Mirrors JS SDK PR #1243.
@@ -1815,6 +1857,32 @@ public class Client(
          * The default value is `3000`(ms). Mirrors JS SDK PR #1243.
          */
         public val documentPollInterval: Duration = 3_000.milliseconds,
+        /**
+         * `watchFallbackDelay` is how long a realtime document's watch stream may stay
+         * silent (no frame of any kind received) before that attachment starts pulling
+         * on every sync-loop tick (throttled to [documentPollInterval]) as if it were
+         * `Polling` — i.e. degrades toward polling semantics per-attachment until a
+         * watch frame arrives again. This bounds staleness instead of the permanent
+         * pull starvation a silently-dead watch stream otherwise causes (a dead watch
+         * stream never flips `changeEventReceived`, so pull would never re-engage on
+         * its own — see #351).
+         *
+         * Default is `10000`(ms), ON: healthy realtime streams deliver far more often
+         * than every 10s, so this default avoids false engagement on a healthy-but-quiet
+         * stream while bounding staleness to roughly `watchFallbackDelay +
+         * documentPollInterval`; 10s is also comfortably under the server's 15s
+         * ChannelSessionTTL, keeping recovery within a single session lifetime.
+         *
+         * Set to `Duration.INFINITE` to disable fallback entirely (a silent watch
+         * stream then starves pull forever, matching pre-fallback behavior).
+         *
+         * Note: the fallback targets HALF-OPEN silence (stream object alive but
+         * delivering nothing — the shape that never triggers the reconnect loop).
+         * It runs inside the client's own sync loop, so it cannot help with hard
+         * outages where that loop itself stops; those surface as RPC errors through
+         * the existing retry/backoff path instead.
+         */
+        public val watchFallbackDelay: Duration = 10_000.milliseconds,
     ) {
         @Deprecated(
             "Renamed to channelHeartbeatInterval",

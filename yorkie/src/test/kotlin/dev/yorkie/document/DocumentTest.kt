@@ -181,6 +181,60 @@ class DocumentTest {
     }
 
     @Test
+    fun `presence-only update produces no change on a presence-free document`() = runTest {
+        // given
+        val doc = Document("", Document.Options(disablePresence = true))
+
+        // when
+        val result = doc.updateAsync { _, presence ->
+            presence.put(mapOf("cursor" to "1"))
+        }.await()
+
+        // then
+        assertTrue(result.isSuccess)
+        assertFalse(doc.hasLocalChanges())
+        doc.close()
+    }
+
+    @Test
+    fun `operations persist when presence is dropped on a presence-free document`() = runTest {
+        // given
+        val doc = Document("", Document.Options(disablePresence = true))
+        val events = mutableListOf<Document.Event>()
+        val collectJob = launch(UnconfinedTestDispatcher()) {
+            doc.events.collect(events::add)
+        }
+
+        // when
+        doc.updateAsync { root, presence ->
+            root["k1"] = 1
+            presence.put(mapOf("cursor" to "1"))
+        }.await()
+
+        // then
+        assertEquals("""{"k1":1}""", doc.toJson())
+        assertTrue(doc.hasLocalChanges())
+        assertEquals(1, events.size)
+        assertIs<Document.Event.LocalChange>(events.first())
+
+        collectJob.cancel()
+        doc.close()
+    }
+
+    @Test
+    fun `presence-only update produces a change when presence is enabled`() = runTest {
+        // given a document without disablePresence
+
+        // when
+        target.updateAsync { _, presence ->
+            presence.put(mapOf("cursor" to "1"))
+        }.await()
+
+        // then
+        assertTrue(target.hasLocalChanges())
+    }
+
+    @Test
     fun `should clear clone when error occurs on update`() = runTest {
         target.updateAsync { root, _ ->
             root["k1"] = 1

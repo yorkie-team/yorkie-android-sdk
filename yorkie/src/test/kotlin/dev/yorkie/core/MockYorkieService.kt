@@ -352,6 +352,13 @@ class MockYorkieService(
                     )
                     return
                 }
+                if (documentId == SILENT_WATCH_DOCUMENT_KEY) {
+                    // Init frame only, then silence forever (no error, no close, no more
+                    // frames) — simulates #351's half-open watch stream for the pull
+                    // fallback loop-level test, without waiting out NORMAL_DOCUMENT_KEY's
+                    // full CHANGED/WATCHED/UNWATCHED script first.
+                    return
+                }
                 responseChannel.trySend(
                     watchResponse {
                         event = watchEvent {
@@ -638,6 +645,7 @@ class MockYorkieService(
     companion object {
         internal const val TEST_KEY = "TEST"
         internal const val NORMAL_DOCUMENT_KEY = "NORMAL_DOCUMENT_KEY"
+        internal const val SILENT_WATCH_DOCUMENT_KEY = "SILENT_WATCH_DOCUMENT_KEY"
         internal const val WATCH_SYNC_ERROR_DOCUMENT_KEY = "WATCH_SYNC_ERROR_DOCUMENT_KEY"
         internal const val ATTACH_ERROR_DOCUMENT_KEY = "ATTACH_ERROR_DOCUMENT_KEY"
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"

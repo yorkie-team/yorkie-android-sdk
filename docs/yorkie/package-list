@@ -28,7 +28,7 @@ $dokka.location:dev.yorkie.core/Client.DeactivateOptions/DeactivateOptions/#kotl
 $dokka.location:dev.yorkie.core/Client.DeactivateOptions/keepalive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-deactivate-options/keepalive.html
 $dokka.location:dev.yorkie.core/Client.DeactivateOptions/synchronous/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-deactivate-options/synchronous.html
 $dokka.location:dev.yorkie.core/Client.Options///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/index.html
-$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
+$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
 $dokka.location:dev.yorkie.core/Client.Options/apiKey/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/api-key.html
 $dokka.location:dev.yorkie.core/Client.Options/channelHeartbeatInterval/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/channel-heartbeat-interval.html
 $dokka.location:dev.yorkie.core/Client.Options/documentPollInterval/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/document-poll-interval.html
@@ -38,6 +38,7 @@ $dokka.location:dev.yorkie.core/Client.Options/metadata/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.core/Client.Options/presenceHeartbeatInterval/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/presence-heartbeat-interval.html
 $dokka.location:dev.yorkie.core/Client.Options/reconnectStreamDelay/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/reconnect-stream-delay.html
 $dokka.location:dev.yorkie.core/Client.Options/syncLoopDuration/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/sync-loop-duration.html
+$dokka.location:dev.yorkie.core/Client.Options/watchFallbackDelay/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/watch-fallback-delay.html
 $dokka.location:dev.yorkie.core/Client.Status.Activated///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/index.html
 $dokka.location:dev.yorkie.core/Client.Status.Activated/clientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/client-id.html
 $dokka.location:dev.yorkie.core/Client.Status.Deactivated///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-deactivated/index.html
@@ -56,7 +57,7 @@ $dokka.location:dev.yorkie.core/Client///PointingToDeclaration/yorkie/dev.yorki
 $dokka.location:dev.yorkie.core/Client/Client/#kotlin.String#dev.yorkie.core.Client.Options#okhttp3.OkHttpClient#okhttp3.OkHttpClient/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
 $dokka.location:dev.yorkie.core/Client/activateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/activate-async.html
 $dokka.location:dev.yorkie.core/Client/attachChannel/#dev.yorkie.presence.Channel#kotlin.Boolean?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-channel.html
-$dokka.location:dev.yorkie.core/Client/attachDocument/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-document.html
+$dokka.location:dev.yorkie.core/Client/attachDocument/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?#kotlin.Boolean#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-document.html
 $dokka.location:dev.yorkie.core/Client/attachPresence/#dev.yorkie.presence.Channel#kotlin.Boolean?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-presence.html
 $dokka.location:dev.yorkie.core/Client/authToken/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/auth-token.html
 $dokka.location:dev.yorkie.core/Client/broadcast/#kotlin.String#kotlin.String#kotlin.String#dev.yorkie.document.Document.BroadcastOptions/PointingToDeclaration/yorkie/dev.yorkie.core/-client/broadcast.html
@@ -742,8 +743,9 @@ $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged.Synced///Po
 $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-sync-status-changed/index.html
 $dokka.location:dev.yorkie.document/Document.Event///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/index.html
 $dokka.location:dev.yorkie.document/Document.Options///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/index.html
-$dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
+$dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
 $dokka.location:dev.yorkie.document/Document.Options/disableGC/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/disable-g-c.html
+$dokka.location:dev.yorkie.document/Document.Options/disablePresence/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/disable-presence.html
 $dokka.location:dev.yorkie.document/Document///PointingToDeclaration/yorkie/dev.yorkie.document/-document/index.html
 $dokka.location:dev.yorkie.document/Document/Document/#kotlin.String#dev.yorkie.document.Document.Options/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
 $dokka.location:dev.yorkie.document/Document/applyStatus/#dev.yorkie.core.ResourceStatus/PointingToDeclaration/yorkie/dev.yorkie.document/-document/apply-status.html

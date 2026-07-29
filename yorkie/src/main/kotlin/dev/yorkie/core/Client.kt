@@ -45,6 +45,7 @@ import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
+import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.presence.Presences.Companion.asPresences
@@ -110,6 +111,16 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
+
+/**
+ * Initializers for missing root keys when attaching a [Document].
+ *
+ * Each map key is authoritative: its initializer receives that key and is invoked only when the
+ * server-provided root does not contain it. Initial values become ordinary Yorkie changes but are
+ * removed from undo history before attachment completes. Concurrent first attachments may both
+ * initialize a missing key and converge through normal CRDT conflict resolution.
+ */
+public typealias InitialRoot = Map<String, suspend JsonObject.(key: String) -> Unit>
 
 /**
  * Client that can communicate with the server.
@@ -1023,6 +1034,40 @@ public class Client(
         schema: String? = null,
         disableGC: Boolean = false,
         disablePresence: Boolean = false,
+    ): Deferred<OperationResult> = attachDocument(
+        document = document,
+        initialPresence = initialPresence,
+        syncMode = syncMode,
+        schema = schema,
+        disableGC = disableGC,
+        disablePresence = disablePresence,
+        initialRoot = emptyMap(),
+    )
+
+    /**
+     * Attaches the given [Document] to this [Client] and initializes missing root keys.
+     *
+     * The authoritative server response is applied first. Each [initialRoot] initializer is then
+     * invoked only if its map key is absent, and receives that key as its argument. All invoked
+     * initializers form one atomic local change. This change synchronizes normally, but is removed
+     * from undo history before the attached event. Concurrent first attachments are not globally
+     * serialized; their ordinary CRDT changes converge through normal conflict resolution.
+     *
+     * @param initialPresence The initial presence of the client.
+     * @param syncMode The synchronization mode of the document.
+     * @param schema The schema used to validate the document.
+     * @param disableGC Whether this attachment opts out of tombstone garbage collection.
+     * @param disablePresence Whether this attachment opts out of presence.
+     * @param initialRoot Initializers for root keys absent from the authoritative server response.
+     */
+    public fun attachDocument(
+        document: Document,
+        initialPresence: P = emptyMap(),
+        syncMode: SyncMode = SyncMode.Realtime,
+        schema: String? = null,
+        disableGC: Boolean = false,
+        disablePresence: Boolean = false,
+        initialRoot: InitialRoot,
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
@@ -1089,13 +1134,31 @@ public class Client(
                 document.setDisablePresence(response.disablePresence)
                 document.applyChangePack(pack)
 
+                if (document.getStatus() == ResourceStatus.Removed) {
+                    document.clearHistory()
+                    return@async SUCCESS
+                }
+
+                val initialRootResult = try {
+                    document.updateAsync { root, _ ->
+                        initialRoot.forEach { (key, initializer) ->
+                            if (root.getOrNull(key) == null) {
+                                initializer(root, key)
+                            }
+                        }
+                    }.await()
+                } catch (t: Throwable) {
+                    ensureActive()
+                    Result.failure(t)
+                }
+                if (initialRootResult.isFailure) {
+                    return@async initialRootResult
+                }
+
                 // Clear undo/redo stacks so that initialRoot setup operations
                 // are not reachable via undo. Mirrors JS SDK PR #1238.
                 document.clearHistory()
 
-                if (document.getStatus() == ResourceStatus.Removed) {
-                    return@async SUCCESS
-                }
                 document.applyStatus(ResourceStatus.Attached)
                 attachments[documentKey] = Attachment(
                     resource = document,

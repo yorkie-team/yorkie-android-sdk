@@ -13,7 +13,10 @@ import dev.yorkie.api.v1.DetachDocumentRequest
 import dev.yorkie.api.v1.PushPullChangesRequest
 import dev.yorkie.api.v1.RemoveDocumentRequest
 import dev.yorkie.api.v1.YorkieServiceClientInterface
+import dev.yorkie.api.v1.attachDocumentResponse
+import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.deactivateClientResponse
+import dev.yorkie.api.v1.rule
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
@@ -37,7 +40,15 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.json.JsonArray
+import dev.yorkie.document.json.JsonCounter
+import dev.yorkie.document.json.JsonDedupCounter
+import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.json.JsonText
+import dev.yorkie.document.json.JsonTree
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
@@ -53,11 +64,13 @@ import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.spyk
 import io.mockk.unmockkStatic
+import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineStart
@@ -355,6 +368,250 @@ class ClientTest {
             detachRequestCaptor.captured.changePack.toChangePack().changes.last()
         assertIs<PresenceChange.Clear>(detachmentChange.presenceChange)
         target.deactivateAsync().await()
+    }
+
+    @Test
+    fun `attachDocument initializes every missing root type after the server response`() = runTest {
+        // given
+        mockkStatic(Base64::class)
+        every { Base64.encodeToString(any(), any()) } returns "mockk"
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        val events = mutableListOf<Document.Event>()
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            document.events.collect(events::add)
+        }
+        var existingInitializerCalled = false
+        target.activateAsync().await()
+
+        // when
+        val result = target.attachDocument(
+            document = document,
+            syncMode = Manual,
+            initialRoot = linkedMapOf(
+                "k1" to { key ->
+                    existingInitializerCalled = true
+                    this[key] = 5
+                },
+                "null" to { key -> set(key, null as JsonPrimitive?) },
+                "boolean" to { key -> this[key] = true },
+                "integer" to { key -> this[key] = 1 },
+                "long" to { key -> this[key] = 2L },
+                "double" to { key -> this[key] = 3.5 },
+                "string" to { key -> this[key] = "value" },
+                "bytes" to { key -> this[key] = byteArrayOf(1, 2) },
+                "date" to { key -> this[key] = Date(1_000) },
+                "object" to { key -> setNewObject(key)["nested"] = "value" },
+                "array" to { key -> setNewArray(key).put("value") },
+                "text" to { key -> setNewText(key).edit(0, 0, "value") },
+                "counterInt" to { key -> setNewCounter(key, 1) },
+                "counterLong" to { key -> setNewCounter(key, 2L) },
+                "dedupCounter" to { key -> setNewDedupCounter(key).add("actor") },
+                "tree" to { key ->
+                    setNewTree(
+                        key,
+                        element("doc") {
+                            element("p") { text { "value" } }
+                        },
+                    )
+                },
+            ),
+        ).await()
+        withTimeout(1_000) {
+            while (events.none {
+                    it is Document.Event.DocumentStatusChanged &&
+                        it.docStatus == ResourceStatus.Attached
+                }
+            ) {
+                delay(1)
+            }
+        }
+
+        // then
+        assertTrue(result.isSuccess)
+        assertFalse(existingInitializerCalled)
+        val root = document.getRoot()
+        assertEquals(4, root.getAs<JsonPrimitive>("k1").value)
+        assertEquals(JsonPrimitive.Type.Null, root.getAs<JsonPrimitive>("null").type)
+        assertEquals(JsonPrimitive.Type.Boolean, root.getAs<JsonPrimitive>("boolean").type)
+        assertEquals(JsonPrimitive.Type.Integer, root.getAs<JsonPrimitive>("integer").type)
+        assertEquals(JsonPrimitive.Type.Long, root.getAs<JsonPrimitive>("long").type)
+        assertEquals(JsonPrimitive.Type.Double, root.getAs<JsonPrimitive>("double").type)
+        assertEquals(JsonPrimitive.Type.String, root.getAs<JsonPrimitive>("string").type)
+        assertEquals(JsonPrimitive.Type.Bytes, root.getAs<JsonPrimitive>("bytes").type)
+        assertEquals(JsonPrimitive.Type.Date, root.getAs<JsonPrimitive>("date").type)
+        assertEquals("value", root.getAs<JsonObject>("object").getAs<JsonPrimitive>("nested").value)
+        assertEquals("value", root.getAs<JsonArray>("array").getAs<JsonPrimitive>(0)?.value)
+        assertEquals("value", root.getAs<JsonText>("text").values.single().text)
+        assertEquals(1, root.getAs<JsonCounter>("counterInt").value)
+        assertEquals(2L, root.getAs<JsonCounter>("counterLong").value)
+        assertEquals(1, root.getAs<JsonDedupCounter>("dedupCounter").value)
+        assertEquals("<doc><p>value</p></doc>", root.getAs<JsonTree>("tree").toXml())
+        assertEquals(1, events.count { it is Document.Event.LocalChange })
+        val lifecycleEvents = events.filter {
+            it is Document.Event.LocalChange ||
+                it is Document.Event.DocumentStatusChanged
+        }
+        assertIs<Document.Event.LocalChange>(lifecycleEvents.first())
+        assertEquals(
+            ResourceStatus.Attached,
+            assertIs<Document.Event.DocumentStatusChanged>(lifecycleEvents.last()).docStatus,
+        )
+        assertFalse(document.history.canUndo())
+        assertFalse(document.history.canRedo())
+
+        collector.cancel()
+        target.detachDocument(document).await()
+        target.deactivateAsync().await()
+        document.close()
+        unmockkStatic(Base64::class)
+    }
+
+    @Test
+    fun `attachDocument rolls back all initial root entries when an initializer fails`() = runTest {
+        // given
+        val document = Document(NORMAL_DOCUMENT_KEY)
+        val statuses = mutableListOf<Document.Event.DocumentStatusChanged>()
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<Document.Event.DocumentStatusChanged>()
+                .collect(statuses::add)
+        }
+        target.activateAsync().await()
+
+        // when
+        val result = target.attachDocument(
+            document = document,
+            syncMode = Manual,
+            initialRoot = linkedMapOf(
+                "first" to { key -> this[key] = 1 },
+                "second" to { error("initializer failed") },
+            ),
+        ).await()
+        delay(10)
+
+        // then
+        assertTrue(result.isFailure)
+        assertNull(document.getRoot().getOrNull("first"))
+        assertEquals(ResourceStatus.Detached, document.getStatus())
+        assertFalse(target.has(NORMAL_DOCUMENT_KEY))
+        assertTrue(statuses.none { it.docStatus == ResourceStatus.Attached })
+
+        collector.cancel()
+        target.deactivateAsync().await()
+        document.close()
+    }
+
+    @Test
+    fun `attachDocument rolls back initial root entries on schema and size validation failures`() =
+        runTest {
+            // given
+            val schemaKey = "SCHEMA_INITIAL_ROOT"
+            val sizeKey = "SIZE_INITIAL_ROOT"
+            coEvery {
+                service.attachDocument(
+                    match { it.changePack.documentKey == schemaKey },
+                    any(),
+                )
+            } returns ResponseMessage.Success(
+                attachDocumentResponse {
+                    documentId = schemaKey
+                    changePack = changePack { documentKey = schemaKey }
+                    schemaRules.add(
+                        rule {
+                            path = "\$.value"
+                            type = "integer"
+                        },
+                    )
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+            coEvery {
+                service.attachDocument(
+                    match { it.changePack.documentKey == sizeKey },
+                    any(),
+                )
+            } returns ResponseMessage.Success(
+                attachDocumentResponse {
+                    documentId = sizeKey
+                    changePack = changePack { documentKey = sizeKey }
+                    maxSizePerDocument = 1
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+            val schemaDocument = Document(schemaKey)
+            val sizeDocument = Document(sizeKey)
+            target.activateAsync().await()
+
+            // when
+            val schemaResult = target.attachDocument(
+                document = schemaDocument,
+                syncMode = Manual,
+                initialRoot = mapOf("value" to { key -> this[key] = "invalid" }),
+            ).await()
+            val sizeResult = target.attachDocument(
+                document = sizeDocument,
+                syncMode = Manual,
+                initialRoot = mapOf("value" to { key -> this[key] = "too large" }),
+            ).await()
+
+            // then
+            assertTrue(schemaResult.isFailure)
+            assertTrue(sizeResult.isFailure)
+            listOf(schemaDocument, sizeDocument).forEach { document ->
+                assertNull(document.getRoot().getOrNull("value"))
+                assertEquals(ResourceStatus.Detached, document.getStatus())
+                assertFalse(target.has(document.getKey()))
+                document.close()
+            }
+
+            target.deactivateAsync().await()
+        }
+
+    @Test
+    fun `attachDocument skips initial root when the server returns a removed document`() = runTest {
+        // given
+        val documentKey = "REMOVED_INITIAL_ROOT"
+        coEvery {
+            service.attachDocument(
+                match { it.changePack.documentKey == documentKey },
+                any(),
+            )
+        } returns ResponseMessage.Success(
+            attachDocumentResponse {
+                documentId = documentKey
+                changePack = changePack {
+                    this.documentKey = documentKey
+                    isRemoved = true
+                }
+            },
+            emptyMap(),
+            emptyMap(),
+        )
+        val document = Document(documentKey)
+        var initializerCalled = false
+        target.activateAsync().await()
+
+        // when
+        val result = target.attachDocument(
+            document = document,
+            syncMode = Manual,
+            initialRoot = mapOf(
+                "value" to { key ->
+                    initializerCalled = true
+                    this[key] = "unexpected"
+                },
+            ),
+        ).await()
+
+        // then
+        assertTrue(result.isSuccess)
+        assertFalse(initializerCalled)
+        assertEquals(ResourceStatus.Removed, document.getStatus())
+        assertFalse(target.has(documentKey))
+
+        target.deactivateAsync().await()
+        document.close()
     }
 
     @Test

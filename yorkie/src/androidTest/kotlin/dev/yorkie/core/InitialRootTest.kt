@@ -22,7 +22,7 @@ class InitialRootTest {
     val retryRule = RetryRule(retryCount = 2)
 
     @Test
-    fun `initial tree syncs without replacement and remains outside undo history`() {
+    fun initialTreeSyncsWithoutReplacementAndRemainsOutsideUndoHistory() {
         withTwoClientsAndDocuments(
             attachDocuments = false,
             detachDocuments = false,
@@ -93,7 +93,7 @@ class InitialRootTest {
     }
 
     @Test
-    fun `simultaneous initial roots converge through normal synchronization`() {
+    fun simultaneousInitialRootsConvergeThroughNormalSynchronization() {
         withTwoClientsAndDocuments(
             attachDocuments = false,
             detachDocuments = false,

@@ -21,9 +21,9 @@ import dev.yorkie.util.Logger.Companion.logError
  */
 internal data class TreeEditOperation(
     override var parentCreatedAt: TimeTicket,
-    val fromPos: CrdtTreePos,
-    val toPos: CrdtTreePos,
-    val contents: List<CrdtTreeNode>?,
+    var fromPos: CrdtTreePos,
+    var toPos: CrdtTreePos,
+    var contents: List<CrdtTreeNode>?,
     val splitLevel: Int,
     override var executedAt: TimeTicket,
     /**
@@ -104,6 +104,12 @@ internal data class TreeEditOperation(
                 else -> contents?.map(CrdtTreeNode::deepCopy)
             }
 
+        if (isUndoOp) {
+            fromPos = actualFrom
+            toPos = actualTo
+            contents = editContents?.map(CrdtTreeNode::deepCopy)
+        }
+
         val editedAt = executedAt
         val result =
             tree.edit(
@@ -134,7 +140,9 @@ internal data class TreeEditOperation(
 
         // Reverse ops are only generated for local and undo/redo operations.
         val reverseOps =
-            if (source == OpSource.Local || source == OpSource.UndoRedo) {
+            if (opInfos.isNotEmpty() &&
+                (source == OpSource.Local || source == OpSource.UndoRedo)
+            ) {
                 val fromIndex =
                     opInfos
                         .filterIsInstance<OperationInfo.TreeEditOpInfo>()
@@ -355,9 +363,7 @@ internal data class TreeEditOperation(
 
     private fun issueTimeTicket(executedAt: TimeTicket): () -> TimeTicket {
         var delimiter = executedAt.delimiter
-        if (contents != null) {
-            delimiter += contents.size.toUInt()
-        }
+        contents?.let { delimiter += it.size.toUInt() }
         return { TimeTicket(executedAt.lamport, ++delimiter, executedAt.actorID) }
     }
 

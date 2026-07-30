@@ -131,6 +131,49 @@ class TreeEditOperationReverseTest {
         assertEquals("p", snapshot.type)
     }
 
+    @Test
+    fun `history edit retains the range and rebuilt contents it applies`() {
+        // given: <root><p>123 456</p></root>, with "3" inserted by a separate change
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        makeTreeEditOp(tree, 0, 0, listOf(pNode), 3).execute(root, OpSource.Local, null)
+        val prefix = CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "12")
+        makeTreeEditOp(tree, 1, 1, listOf(prefix), 4).execute(root, OpSource.Local, null)
+        val three = CrdtTreeText(CrdtTreeNodeID(makeTicket(5), 0), "3")
+        val insertResult =
+            makeTreeEditOp(tree, 3, 3, listOf(three), 5).execute(root, OpSource.Local, null)
+        val suffix = CrdtTreeText(CrdtTreeNodeID(makeTicket(6), 0), " 456")
+        makeTreeEditOp(tree, 4, 4, listOf(suffix), 6).execute(root, OpSource.Remote, null)
+
+        // when: the history deletion executes from its reconciled integer range
+        val delete = insertResult.reverseOps.single() as TreeEditOperation
+        val expectedDeleteRange = tree.indexRangeToPosRange(3 to 4)
+        delete.executedAt = makeTicket(7)
+        val deleteResult = delete.execute(root, OpSource.UndoRedo, null)
+
+        // then: its wire-visible range is the non-zero range applied to the tree
+        assertTrue(deleteResult.opInfos.isNotEmpty())
+        assertEquals(expectedDeleteRange.first, delete.fromPos)
+        assertEquals(expectedDeleteRange.second, delete.toPos)
+        assertFalse(delete.fromPos == delete.toPos)
+        assertEquals("<root><p>12 456</p></root>", tree.toXml())
+
+        // and: a history restoration retains the fresh node IDs applied locally
+        val removeResult = makeTreeEditOp(tree, 1, 3, null, 8).execute(root, OpSource.Local, null)
+        val restore = removeResult.reverseOps.single() as TreeEditOperation
+        val expectedRestorePos = tree.indexRangeToPosRange(1 to 1).first
+        restore.executedAt = makeTicket(9)
+        restore.execute(root, OpSource.UndoRedo, null)
+
+        val restored = restore.contents.orEmpty().single()
+        assertEquals(expectedRestorePos, restore.fromPos)
+        assertEquals(expectedRestorePos, restore.toPos)
+        assertEquals(makeTicket(9).copy(delimiter = 1u), restored.id.createdAt)
+        assertEquals(restored.id, tree.findFloorNode(restored.id)?.id)
+        assertFalse(restored === tree.findFloorNode(restored.id))
+        assertEquals("<root><p>12 456</p></root>", tree.toXml())
+    }
+
     // #1234: pure splits at any level > 0 produce a boundary-deletion reverse op tagged
     // with redoSplitLevel so redo re-splits (was only splitLevel == 1 before).
 
@@ -300,6 +343,31 @@ class TreeEditOperationReverseTest {
         // collapses to point at remoteFrom + remoteContentSize
         assertEquals(3, op.undoFromOffset)
         assertEquals(3, op.undoToOffset)
+    }
+
+    @Test
+    fun `collapsed history edit emits no change or reverse operation`() {
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        makeTreeEditOp(tree, 0, 0, listOf(pNode), 3).execute(root, OpSource.Local, null)
+        val pos = tree.indexRangeToPosRange(1 to 1).first
+        val op =
+            TreeEditOperation(
+                parentCreatedAt = treeTicket,
+                fromPos = pos,
+                toPos = pos,
+                contents = null,
+                splitLevel = 0,
+                executedAt = makeTicket(4),
+                undoFromOffset = 1,
+                undoToOffset = 1,
+            )
+
+        val result = op.execute(root, OpSource.UndoRedo, null)
+
+        assertTrue(result.opInfos.isEmpty())
+        assertTrue(result.reverseOps.isEmpty())
+        assertEquals("<root><p></p></root>", tree.toXml())
     }
 
     @Test

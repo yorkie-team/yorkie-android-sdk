@@ -51,6 +51,7 @@ import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import java.util.Date
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -314,6 +315,67 @@ class ConverterTest {
         assertEquals(styleOperation, converted[7])
         assertEquals(treeEditOperation, converted[8])
         assertEquals(treeStyleOperation, converted[9])
+    }
+
+    @Test
+    fun `should round trip the effective history tree edit payload`() {
+        fun ticket(lamport: Long) = TimeTicket(lamport, 0u, ActorID.INITIAL_ACTOR_ID)
+
+        val treeTicket = ticket(1)
+        val rootNode = CrdtTreeElement(CrdtTreeNodeID(treeTicket, 0), DEFAULT_ROOT_TYPE)
+        val paragraph = CrdtTreeElement(CrdtTreeNodeID(ticket(2), 0), "p")
+        paragraph.append(CrdtTreeText(CrdtTreeNodeID(ticket(3), 0), "12"))
+        rootNode.append(paragraph)
+        val tree = CrdtTree(rootNode, treeTicket)
+        val root = CrdtRoot(CrdtObject(InitialTimeTicket, memberNodes = ElementRht()))
+        root.rootObject.set("tree", tree, treeTicket)
+        root.registerElement(tree, root.rootObject)
+
+        val three = CrdtTreeText(CrdtTreeNodeID(ticket(4), 0), "3")
+        val (insertFrom, insertTo) = tree.indexRangeToPosRange(3 to 3)
+        val insert =
+            TreeEditOperation(treeTicket, insertFrom, insertTo, listOf(three), 0, ticket(4))
+        val delete = insert.execute(root, OpSource.Local, null).reverseOps.single()
+            as TreeEditOperation
+
+        delete.executedAt = ticket(5)
+        val deleteResult = delete.execute(root, OpSource.UndoRedo, null)
+        val decodedDelete = listOf(delete.toPBOperation()).toOperations().single()
+            as TreeEditOperation
+
+        assertFalse(decodedDelete.fromPos == decodedDelete.toPos)
+        assertEquals(delete.fromPos, decodedDelete.fromPos)
+        assertEquals(delete.toPos, decodedDelete.toPos)
+        assertEquals(delete.splitLevel, decodedDelete.splitLevel)
+
+        val restore = deleteResult.reverseOps.single() as TreeEditOperation
+        restore.executedAt = ticket(6)
+        restore.execute(root, OpSource.UndoRedo, null)
+        val decodedRestore = listOf(restore.toPBOperation()).toOperations().single()
+            as TreeEditOperation
+
+        assertEquals(restore.fromPos, decodedRestore.fromPos)
+        assertEquals(restore.toPos, decodedRestore.toPos)
+        assertEquals(restore.contents?.map { it.id }, decodedRestore.contents?.map { it.id })
+        assertEquals("<root><p>123</p></root>", tree.toXml())
+
+        val splitPos = tree.indexRangeToPosRange(2 to 2).first
+        val split =
+            TreeEditOperation(
+                treeTicket,
+                splitPos,
+                splitPos,
+                null,
+                1,
+                ticket(7),
+                undoFromOffset = 2,
+                undoToOffset = 2,
+            )
+        split.execute(root, OpSource.UndoRedo, null)
+        val decodedSplit = listOf(split.toPBOperation()).toOperations().single()
+            as TreeEditOperation
+
+        assertEquals(1, decodedSplit.splitLevel)
     }
 
     @Test

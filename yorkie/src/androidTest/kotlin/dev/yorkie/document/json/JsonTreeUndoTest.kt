@@ -61,7 +61,7 @@ class JsonTreeUndoTest {
      */
     @Test
     fun test_undo_and_redo_text_delete() {
-        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "tree",
@@ -71,26 +71,36 @@ class JsonTreeUndoTest {
                 )
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
 
             d1.updateAsync { root, _ ->
                 root.getAs<JsonTree>("tree").edit(2, 4)
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(
                 "<root><p>hlo</p></root>",
                 d1.getRoot().getAs<JsonTree>("tree").toXml(),
             )
 
             d1.history.undoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(
                 "<root><p>hello</p></root>",
                 d1.getRoot().getAs<JsonTree>("tree").toXml(),
             )
+            assertEquals(
+                "<root><p>hello</p></root>",
+                d2.getRoot().getAs<JsonTree>("tree").toXml(),
+            )
 
             d1.history.redoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(
                 "<root><p>hlo</p></root>",
-                d1.getRoot().getAs<JsonTree>("tree").toXml(),
+                d2.getRoot().getAs<JsonTree>("tree").toXml(),
             )
         }
     }
@@ -100,7 +110,7 @@ class JsonTreeUndoTest {
      */
     @Test
     fun test_undo_and_redo_text_replace() {
-        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "tree",
@@ -110,6 +120,7 @@ class JsonTreeUndoTest {
                 )
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
 
             // edit(2, 4, "ELL") deletes [2, 4) = "el" and inserts "ELL",
             // producing "hELLlo".
@@ -117,21 +128,26 @@ class JsonTreeUndoTest {
                 root.getAs<JsonTree>("tree").edit(2, 4, text { "ELL" })
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(
                 "<root><p>hELLlo</p></root>",
                 d1.getRoot().getAs<JsonTree>("tree").toXml(),
             )
 
             d1.history.undoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(
                 "<root><p>hello</p></root>",
-                d1.getRoot().getAs<JsonTree>("tree").toXml(),
+                d2.getRoot().getAs<JsonTree>("tree").toXml(),
             )
 
             d1.history.redoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(
                 "<root><p>hELLlo</p></root>",
-                d1.getRoot().getAs<JsonTree>("tree").toXml(),
+                d2.getRoot().getAs<JsonTree>("tree").toXml(),
             )
         }
     }
@@ -708,7 +724,7 @@ class JsonTreeUndoTest {
     }
 
     private fun runSplitUndoRedoCase(splitIdx: Int, afterXml: String) {
-        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "tree",
@@ -718,24 +734,32 @@ class JsonTreeUndoTest {
                 )
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             val before = d1.getRoot().getAs<JsonTree>("tree").toXml()
 
             d1.updateAsync { root, _ ->
                 root.getAs<JsonTree>("tree").edit(splitIdx, splitIdx, 1)
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(afterXml, d1.getRoot().getAs<JsonTree>("tree").toXml())
 
             d1.history.undoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(before, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            assertEquals(before, d2.getRoot().getAs<JsonTree>("tree").toXml())
 
             d1.history.redoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(afterXml, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            assertEquals(afterXml, d2.getRoot().getAs<JsonTree>("tree").toXml())
         }
     }
 
     private fun runL2SplitUndoRedoCase(splitIdx: Int, afterXml: String) {
-        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "tree",
@@ -745,19 +769,27 @@ class JsonTreeUndoTest {
                 )
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             val before = d1.getRoot().getAs<JsonTree>("tree").toXml()
 
             d1.updateAsync { root, _ ->
                 root.getAs<JsonTree>("tree").edit(splitIdx, splitIdx, 2)
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(afterXml, d1.getRoot().getAs<JsonTree>("tree").toXml())
 
             d1.history.undoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(before, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            assertEquals(before, d2.getRoot().getAs<JsonTree>("tree").toXml())
 
             d1.history.redoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(afterXml, d1.getRoot().getAs<JsonTree>("tree").toXml())
+            assertEquals(afterXml, d2.getRoot().getAs<JsonTree>("tree").toXml())
         }
     }
 
@@ -769,7 +801,7 @@ class JsonTreeUndoTest {
      */
     @Test
     fun test_undo_cross_boundary_merge_restores_siblings() {
-        withTwoClientsAndDocuments(syncMode = Manual) { c1, _, d1, _, _ ->
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree(
                     "t",
@@ -780,6 +812,7 @@ class JsonTreeUndoTest {
                 )
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             val before = "<doc><p>AB</p><p>CD</p></doc>"
             assertEquals(before, d1.getRoot().getAs<JsonTree>("t").toXml())
 
@@ -787,14 +820,21 @@ class JsonTreeUndoTest {
                 root.getAs<JsonTree>("t").editByPath(listOf(0, 2), listOf(1, 0))
             }.await()
             c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals("<doc><p>ABCD</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
 
             assertTrue(d1.history.canUndo())
             d1.history.undoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals(before, d1.getRoot().getAs<JsonTree>("t").toXml())
+            assertEquals(before, d2.getRoot().getAs<JsonTree>("t").toXml())
 
             d1.history.redoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
             assertEquals("<doc><p>ABCD</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
+            assertEquals("<doc><p>ABCD</p></doc>", d2.getRoot().getAs<JsonTree>("t").toXml())
         }
     }
 

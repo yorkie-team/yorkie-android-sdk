@@ -5,6 +5,9 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
+import dev.yorkie.document.json.JsonTree
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -226,6 +229,98 @@ class UndoRedoTest {
             // Both should see the original value
             assertEquals("original", d1.getRoot().getAs<JsonPrimitive>("k1").value)
             assertEquals("original", d2.getRoot().getAs<JsonPrimitive>("k1").value)
+        }
+    }
+
+    @Test
+    fun `tree undo and redo converge after a concurrent append`() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewTree("tree", element("root") { element("p") {} })
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            listOf("1", "2", "3").forEachIndexed { index, value ->
+                d1.updateAsync { root, _ ->
+                    root.getAs<JsonTree>("tree").edit(index + 1, index + 1, text { value })
+                }.await()
+            }
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertFalse(d2.history.canUndo())
+
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(4, 4, text { " 456" })
+            }.await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            d1.history.undoAsync().await()
+            assertEquals("<root><p>12 456</p></root>", d1.getRoot().getAs<JsonTree>("tree").toXml())
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals("<root><p>12 456</p></root>", d2.getRoot().getAs<JsonTree>("tree").toXml())
+
+            d1.history.redoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+            assertEquals(
+                "<root><p>123 456</p></root>",
+                d1.getRoot().getAs<JsonTree>("tree").toXml(),
+            )
+            assertEquals(
+                "<root><p>123 456</p></root>",
+                d2.getRoot().getAs<JsonTree>("tree").toXml(),
+            )
+
+            // Remote history changes stay outside B's history; B still undoes its own append.
+            d2.history.undoAsync().await()
+            assertEquals("<root><p>123</p></root>", d2.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    @Test
+    fun `tree undo consumes a change whose target vanished remotely`() {
+        withTwoClientsAndDocuments(
+            attachDocuments = false,
+            syncMode = Manual,
+        ) { c1, c2, d1, d2, _ ->
+            c1.attachDocument(
+                document = d1,
+                syncMode = Manual,
+                initialRoot = mapOf(
+                    "tree" to { key ->
+                        setNewTree(
+                            key,
+                            element("root") { element("p") { text { "x" } } },
+                        )
+                    },
+                ),
+            ).await()
+            c2.attachDocument(d2, syncMode = Manual).await()
+            assertFalse(d1.history.canUndo())
+
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(2, 2, text { "y" })
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(2, 3)
+            }.await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+            assertFalse(d1.hasLocalChanges())
+            assertTrue(d1.history.canUndo())
+
+            assertTrue(d1.history.undoAsync().await().isSuccess)
+
+            assertEquals("<root><p>x</p></root>", d1.getRoot().getAs<JsonTree>("tree").toXml())
+            assertFalse(d1.hasLocalChanges())
+            assertFalse(d1.history.canUndo())
+            assertFalse(d1.history.canRedo())
         }
     }
 }

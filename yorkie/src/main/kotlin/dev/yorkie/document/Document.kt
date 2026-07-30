@@ -182,7 +182,8 @@ public class Document(
             .orEmpty()
 
     /**
-     * Provides undo/redo operations for this document.
+     * Provides undo/redo operations for local user changes in this document.
+     * The resulting document changes are synchronized normally.
      */
     public val history: DocumentHistory = object : DocumentHistory {
         override fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating

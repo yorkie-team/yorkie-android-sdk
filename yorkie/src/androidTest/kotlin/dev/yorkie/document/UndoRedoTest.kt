@@ -233,7 +233,7 @@ class UndoRedoTest {
     }
 
     @Test
-    fun `tree undo and redo converge after a concurrent append`() {
+    fun test_tree_undo_and_redo_converge_after_a_concurrent_append() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             d1.updateAsync { root, _ ->
                 root.setNewTree("tree", element("root") { element("p") {} })
@@ -281,7 +281,7 @@ class UndoRedoTest {
     }
 
     @Test
-    fun `tree undo consumes a change whose target vanished remotely`() {
+    fun test_tree_undo_consumes_a_change_whose_target_vanished_remotely() {
         withTwoClientsAndDocuments(
             attachDocuments = false,
             syncMode = Manual,

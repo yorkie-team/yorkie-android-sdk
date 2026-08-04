@@ -222,9 +222,16 @@ public class Document(
 
     /**
      * Executes the given [updater] to update this document.
+     *
+     * @param skipHistory Skips recording this change on the undo/redo history
+     * stacks when true. The change still mutates the document, emits events,
+     * and syncs normally; only the undo entry and redo-stack clearing are
+     * skipped, mirroring how remote changes bypass local history. Defaults
+     * to false, which preserves existing history behavior.
      */
     public fun updateAsync(
         message: String? = null,
+        skipHistory: Boolean = false,
         updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
     ): Deferred<OperationResult> {
         return scope.async {
@@ -316,12 +323,14 @@ public class Document(
             changeID = context.getNextId()
 
             // Push reverse ops for undo
-            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
-            if (reverseHistoryOps.isNotEmpty()) {
-                internalHistory.pushUndo(reverseHistoryOps)
-            }
-            if (operationInfos.isNotEmpty()) {
-                internalHistory.clearRedo()
+            if (!skipHistory) {
+                val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+                if (reverseHistoryOps.isNotEmpty()) {
+                    internalHistory.pushUndo(reverseHistoryOps)
+                }
+                if (operationInfos.isNotEmpty()) {
+                    internalHistory.clearRedo()
+                }
             }
 
             if (change.hasOperations) {

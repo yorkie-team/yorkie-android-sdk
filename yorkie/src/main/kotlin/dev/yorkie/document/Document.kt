@@ -223,6 +223,12 @@ public class Document(
 
     /**
      * Executes the given [updater] to update this document.
+     *
+     * @param skipHistory Skips recording this change on the undo/redo history
+     * stacks when true. The change still mutates the document, emits events,
+     * and syncs normally; only the undo entry and redo-stack clearing are
+     * skipped, mirroring how remote changes bypass local history. Defaults
+     * to false, which preserves existing history behavior.
      */
     public fun updateAsync(
         message: String? = null,

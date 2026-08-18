@@ -83,8 +83,20 @@ internal data class EditOperation(
             // so that reconcile adjustments are honoured.  For all other operations
             // (including deserialized undo ops whose offsets have been lost) use the
             // stored positions directly — they are always valid node-relative positions.
+            //
+            // Restore/retombstone execution mutates content by identity rather than by
+            // this op's own index range, so a chained undo/redo can leave undoFromOffset/
+            // undoToOffset pointing past the live length (e.g. redoing an insert while the
+            // doc is still shrunk from this same op's prior undo). Clamp both offsets to
+            // the current length before resolving: actualTo is never read past this
+            // resolution for a restore op, and actualFrom is only ever a last-resort
+            // fallback anchor (DEC-5), so a clamped value is always safe.
             val (actualFrom, actualTo) = if (isUndoOp) {
-                parentObject.indexRangeToPosRange(undoFromOffset, undoToOffset)
+                val length = parentObject.length
+                parentObject.indexRangeToPosRange(
+                    undoFromOffset.coerceIn(0, length),
+                    undoToOffset.coerceIn(0, length),
+                )
             } else {
                 fromPos to toPos
             }

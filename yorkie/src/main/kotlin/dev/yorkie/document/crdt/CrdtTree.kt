@@ -424,7 +424,11 @@ internal data class CrdtTree(
                 }
                 if (nodeCreationKnown) {
                     toBeMergedNodes.add(node)
-                    toBeMovedToFromParents.addAll(node.children)
+                    // Include removed children (allChildren) so tombstones move
+                    // with the merge and survive as RGA anchors; a concurrent
+                    // insert referencing one then resolves in the merge target
+                    // and orders via the RGA tie-break (port c5d5c851).
+                    toBeMovedToFromParents.addAll(node.allChildren)
                 }
             }
 
@@ -519,23 +523,20 @@ internal data class CrdtTree(
             }
         }
 
-        // 03. Merge: move the nodes that are marked as moved.
-        toBeMovedToFromParents.filter { it.removedAt == null }.forEach { node ->
-            val oldParent = node.parent
-            if (oldParent != null) {
-                // Record source parent for split-skip check (Fix 8).
-                node.mergedFrom = oldParent.id
-                node.mergedAt = executedAt
-                // Detach from old parent to prevent ghost references. Swallow
-                // NoSuchElementException: a cascade delete of a split sibling
-                // may have already detached the child.
-                try {
-                    oldParent.detachChild(node)
-                } catch (_: NoSuchElementException) {
-                    // Child already detached, skip.
-                }
-            }
-            fromParent.append(node)
+        // 03. Merge: move the nodes that are marked as moved. A moved child
+        // must have a source parent to record; skip otherwise rather than
+        // move an untracked node (Fix 8). Tombstoned children are moved too
+        // (kept removed): they stay as RGA anchors so a concurrent insert
+        // referencing one resolves in the merge target and orders via the
+        // RGA tie-break, converging with the replica that inserted before
+        // the merge. moveChild keeps the size accounting correct for both
+        // live and tombstoned children (visible-neutral for the latter), so
+        // index positions stay correct (port c5d5c851).
+        toBeMovedToFromParents.forEach { node ->
+            val oldParent = node.parent ?: return@forEach
+            node.mergedFrom = oldParent.id
+            node.mergedAt = executedAt
+            fromParent.moveChild(node)
         }
         // Set forwarding pointer on merge-source nodes so future insertions
         // that land on the tombstoned parent redirect to the merge target.

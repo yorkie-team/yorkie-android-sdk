@@ -113,6 +113,27 @@ internal data class TextEditResult(
     val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
     val dataSize: DataSize,
     val removedValues: List<TextValue> = emptyList(),
+    val removedSpans: List<RestoreSpan<TextValue>> = emptyList(),
+)
+
+/**
+ * Result of [CrdtText.restore].
+ */
+internal data class TextRestoreResult(
+    val untombstoned: List<RgaTreeSplitNode<TextValue>>,
+    val recreated: List<RgaTreeSplitNode<TextValue>>,
+    val textChanges: List<TextChange>,
+    val dataSize: DataSize,
+    val pendingGcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
+)
+
+/**
+ * Result of [CrdtText.retombstone].
+ */
+internal data class TextRetombstoneResult(
+    val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
+    val textChanges: List<TextChange>,
+    val dataSize: DataSize,
 )
 
 internal data class TextStyleResult(

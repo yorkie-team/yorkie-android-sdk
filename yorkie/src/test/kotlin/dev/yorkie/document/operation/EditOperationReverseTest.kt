@@ -10,6 +10,7 @@ import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.time.TimeTicket
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
 
@@ -68,7 +69,7 @@ class EditOperationReverseTest {
     }
 
     @Test
-    fun `reverse of pure delete is a pure insert`() {
+    fun `reverse of pure delete restores the removed content by identity`() {
         // given: text is "Hello"
         val (text, root) = buildTextRoot()
         text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
@@ -77,15 +78,20 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 2, 4, "", 4)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse op should insert "ll" at position 2
+        // then: reverse op restores "ll" by identity (restoreSpans), not by
+        // copy-reinsert — spec 004 Stage C / DEC-7. Content stays empty; the
+        // removed run travels in restoreSpans instead.
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ll", reverseOp.content)
+        assertEquals("", reverseOp.content)
         assertTrue(reverseOp.isUndoOp)
+        assertEquals(RestoreMode.Restore, reverseOp.restoreMode)
+        assertEquals("ll", reverseOp.restoreSpans?.joinToString("") { it.value.content })
+        assertNull(reverseOp.retombstoneSpans)
     }
 
     @Test
-    fun `reverse of replace deletes new and inserts old`() {
+    fun `reverse of replace restores old by identity and retombstones new`() {
         // given: text is "Hello"
         val (text, root) = buildTextRoot()
         text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
@@ -94,11 +100,15 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 2, 4, "NEW", 4)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse op should delete "NEW" and insert "ll"
+        // then: reverse op restores "ll" (removed) and retombstones "NEW"
+        // (inserted), both by identity.
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ll", reverseOp.content)
+        assertEquals("", reverseOp.content)
         assertTrue(reverseOp.isUndoOp)
+        assertEquals(RestoreMode.Restore, reverseOp.restoreMode)
+        assertEquals("ll", reverseOp.restoreSpans?.joinToString("") { it.value.content })
+        assertEquals("NEW", reverseOp.retombstoneSpans?.joinToString("") { it.value.content })
         // undo range is [2, 2+"NEW".length) = [2, 5)
         assertEquals(2, reverseOp.undoFromOffset)
         assertEquals(2 + "NEW".length, reverseOp.undoToOffset)
@@ -119,15 +129,16 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 2, 4, "", 4)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse content is "ll" and attributes are preserved (single-segment removal)
+        // then: the restored span carries its own attributes (single-segment removal)
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ll", reverseOp.content)
-        assertEquals(mapOf("bold" to "true"), reverseOp.attributes)
+        val restoredSpan = reverseOp.restoreSpans?.single()
+        assertEquals("ll", restoredSpan?.value?.content)
+        assertEquals(mapOf("bold" to "true"), restoredSpan?.value?.attributes)
     }
 
     @Test
-    fun `reverse drops attributes when multi-segment`() {
+    fun `reverse restores per-span attributes when multi-segment`() {
         // given: two styled nodes "He" (bold) and "llo" (italic)
         val (text, root) = buildTextRoot()
         text.edit(text.indexRangeToPosRange(0, 0), "He", makeTicket(3), mapOf("bold" to "true"))
@@ -137,11 +148,18 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 1, 4, "", 5)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse attributes are empty for multi-segment removals
+        // then: identity-preserving restore keeps each segment's own
+        // attributes — no more dropping attributes on a multi-segment undo,
+        // since each span now carries its own value+attributes rather than
+        // being flattened into one content+attributes pair.
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ell", reverseOp.content)
-        assertTrue(reverseOp.attributes.isEmpty())
+        assertEquals("", reverseOp.content)
+        assertEquals("ell", reverseOp.restoreSpans?.joinToString("") { it.value.content })
+        assertEquals(
+            listOf(mapOf("bold" to "true"), mapOf("italic" to "true")),
+            reverseOp.restoreSpans?.map { it.value.attributes },
+        )
     }
 
     @Test

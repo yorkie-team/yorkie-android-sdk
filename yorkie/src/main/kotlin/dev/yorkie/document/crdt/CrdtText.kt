@@ -86,9 +86,61 @@ internal data class CrdtText(
             textValue,
             versionVector,
         )
-        val (caretPos, contentChanges, gcPairs, dataSize, removedValues) = editResult
+        val (caretPos, contentChanges, gcPairs, dataSize, removedValues, removedSpans) = editResult
 
-        val changes = contentChanges.map {
+        val changes = toTextChanges(contentChanges).toMutableList()
+
+        if (value.isNotEmpty() && attributes != null) {
+            changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
+        }
+        return TextEditResult(
+            changes,
+            caretPos to caretPos,
+            gcPairs,
+            dataSize,
+            removedValues,
+            removedSpans,
+        )
+    }
+
+    /**
+     * Re-establishes removed characters under their original identities
+     * (identity-preserving undo of a deletion). Delegates to
+     * [RgaTreeSplit.restore].
+     */
+    fun restore(
+        spans: List<RestoreSpan<TextValue>>,
+        executedAt: TimeTicket,
+        fallbackAnchor: RgaTreeSplitPos? = null,
+    ): TextRestoreResult {
+        val result = rgaTreeSplit.restore(spans, executedAt, fallbackAnchor)
+        return TextRestoreResult(
+            result.untombstoned,
+            result.recreated,
+            toTextChanges(result.changes),
+            result.liveDiff,
+            result.pendingGcPairs,
+        )
+    }
+
+    /**
+     * Re-deletes previously restored characters (redo). Delegates to
+     * [RgaTreeSplit.retombstone].
+     */
+    fun retombstone(
+        spans: List<RestoreSpan<TextValue>>,
+        executedAt: TimeTicket,
+    ): TextRetombstoneResult {
+        val result = rgaTreeSplit.retombstone(spans, executedAt)
+        return TextRetombstoneResult(result.gcPairs, toTextChanges(result.changes), result.dataSize)
+    }
+
+    /**
+     * Wraps raw [RgaTreeSplit.ContentChange]s into [TextChange]s, mirroring
+     * the mapping [edit] has always used.
+     */
+    private fun toTextChanges(changes: List<RgaTreeSplit.ContentChange>): List<TextChange> {
+        return changes.map {
             TextChange(
                 TextChangeType.Content,
                 it.actorID,
@@ -96,12 +148,7 @@ internal data class CrdtText(
                 it.to,
                 it.content,
             )
-        }.toMutableList()
-
-        if (value.isNotEmpty() && attributes != null) {
-            changes[changes.lastIndex] = changes.last().copy(attributes = attributes)
         }
-        return TextEditResult(changes, caretPos to caretPos, gcPairs, dataSize, removedValues)
     }
 
     /**

@@ -191,6 +191,40 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         )
     }
 
+    /**
+     * Removes the given [pair] from the hash table. Called when a
+     * tombstoned node is revived (un-tombstoned) by an identity-preserving
+     * undo, so that a later re-registration (redo) is not swallowed by the
+     * toggle in [registerGCPair].
+     *
+     * Must be called AFTER the node's `removedAt` has been cleared, so
+     * [GCChild.dataSize] no longer includes the tombstone ticket.
+     */
+    fun unregisterGCPair(pair: GCPair<*>) {
+        gcPairMap[pair.child] ?: return
+        gcPairMap.remove(pair.child)
+        docSize = unregisterAccounting(pair)
+    }
+
+    /**
+     * Mirrors [registerGCPair]'s accounting in reverse: moves the child's
+     * size back from gc to live, and drops the tombstone ticket counted at
+     * register time. Callers that must not touch [gcPairMap] directly (e.g.
+     * an in-progress [MutableMap.values] iterator in [garbageCollect]) apply
+     * this separately from the map removal.
+     */
+    private fun unregisterAccounting(pair: GCPair<*>): DocSize {
+        val size = pair.child.dataSize
+        val newLive = addDataSizes(docSize.live, size)
+        val gcAfterSize = subDataSize(docSize.gc, size)
+        val newGc = if (pair.child is RhtNode) {
+            gcAfterSize
+        } else {
+            gcAfterSize.copy(meta = gcAfterSize.meta - TimeTicket.TIME_TICKET_SIZE)
+        }
+        return docSize.copy(live = newLive, gc = newGc)
+    }
+
     private fun getGarbageElementSetSize(): Int {
         val seen = mutableSetOf<TimeTicket>()
         gcElementSetByCreatedAt.forEach { createdAt ->
@@ -241,7 +275,18 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         while (iterator.hasNext()) {
             val pair = iterator.next()
             val removedAt = pair.child.removedAt
-            if (removedAt != null && minSyncedVersionVector.afterOrEqual(removedAt)) {
+            if (removedAt == null) {
+                // Node was revived but its pair was not unregistered. Reverse
+                // the GC accounting (gc -> live) and drop the stale entry via
+                // this iterator (not unregisterGCPair's own gcPairMap.remove,
+                // which would invalidate this iterator) so the registerGCPair
+                // toggle can't be tripped later and docSize.gc/live stay
+                // consistent.
+                docSize = unregisterAccounting(pair)
+                iterator.remove()
+                continue
+            }
+            if (minSyncedVersionVector.afterOrEqual(removedAt)) {
                 pair.parent.deleteChild(pair.child)
                 docSize = DocSize(
                     live = docSize.live,

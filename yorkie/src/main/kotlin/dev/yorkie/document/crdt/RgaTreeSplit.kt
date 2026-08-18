@@ -9,12 +9,26 @@ import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
+import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.SplayTreeSet
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.subDataSize
 import java.util.TreeMap
 
 internal typealias RgaTreeSplitPosRange = Pair<RgaTreeSplitPos, RgaTreeSplitPos>
+
+/**
+ * [RestoreSpan] identifies a run of characters from a single original
+ * insertion: the absolute-offset interval [[start], [end]) of the insertion
+ * created at [createdAt]. [value] is a deep copy of the removed content,
+ * carried so that purged nodes can be recreated (GC-safe).
+ */
+internal data class RestoreSpan<T : RgaTreeSplitValue<T>>(
+    val createdAt: TimeTicket,
+    val start: Int,
+    val end: Int,
+    val value: T,
+)
 
 /**
  * [RgaTreeSplit] is a block-based list with improved index-based lookup in RGA.
@@ -128,8 +142,322 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         }.toMutableList()
         gcPairs.addAll(drainPendingGcPairs())
         val removedValues = removedNodes.map { (_, node) -> node.value }
+        // Capture split-invariant character identities so an identity-
+        // preserving undo can restore this exact content later. value.deepCopy()
+        // deep-copies the value so a later split of the tombstone cannot
+        // mutate the captured content.
+        val removedSpans = removedNodes.map { (_, node) ->
+            RestoreSpan(
+                createdAt = node.createdAt,
+                start = node.id.offset,
+                end = node.id.offset + node.contentLength,
+                value = node.value.deepCopy(),
+            )
+        }
 
-        return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff, removedValues)
+        return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff, removedValues, removedSpans)
+    }
+
+    /**
+     * Re-establishes the characters described by [spans] under their
+     * ORIGINAL identities. For each span, per overlapping region:
+     * - live piece exists -> skip (idempotent; another undo already restored it)
+     * - tombstoned piece exists -> clear removedAt (un-tombstone)
+     * - no piece exists (GC'd) -> recreate a node with the original ID
+     *
+     * The caller must, in order: (1) register every pair in
+     * [RgaTreeSplitRestoreResult.pendingGcPairs] — these are fragments
+     * [splitNode] buffered while isolating a target range out of a larger
+     * tombstoned piece; (2) unregister GC pairs for
+     * [RgaTreeSplitRestoreResult.untombstoned]. Registering first is required
+     * for entries whose node was itself one of those split-born fragments (a
+     * target isolated from the interior of a tombstone) — such a node was
+     * never registered under its own id, so step (1) creates the entry that
+     * step (2) then correctly walks from gc back to live; entries that remain
+     * tombstoned (siblings of the restored target) simply stay registered.
+     * Finally, the caller must accumulate
+     * [RgaTreeSplitRestoreResult.liveDiff], which accounts the size of any
+     * nodes recreated from scratch (the GC'd-away case) — [splitNode]'s
+     * buffering does not cover this.
+     *
+     * [RgaTreeSplitRestoreResult.changes] describes the revived content as
+     * insertions in ascending index order, so sequential application (e.g. by
+     * editor bindings) keeps indices valid.
+     */
+    fun restore(
+        spans: List<RestoreSpan<T>>,
+        executedAt: TimeTicket,
+        fallbackAnchor: RgaTreeSplitPos? = null,
+    ): RgaTreeSplitRestoreResult<T> {
+        val untombstoned = mutableListOf<RgaTreeSplitNode<T>>()
+        val recreated = mutableListOf<RgaTreeSplitNode<T>>()
+        var liveDiff = DataSize(data = 0, meta = 0)
+
+        for (span in spans) {
+            val pieces = findPiecesOverlapping(span.createdAt, span.start, span.end)
+
+            var cursor = span.start
+            var pieceIndex = 0
+            while (cursor < span.end) {
+                val piece = pieces.getOrNull(pieceIndex)
+                val pieceStart = piece?.id?.offset ?: Int.MAX_VALUE
+                val pieceEnd = if (piece != null) {
+                    pieceStart + piece.contentLength
+                } else {
+                    Int.MAX_VALUE
+                }
+
+                if (piece != null && pieceStart <= cursor) {
+                    // Covered by an existing piece.
+                    val overlapEnd = minOf(pieceEnd, span.end)
+                    if (piece.isRemoved) {
+                        val (target, _) = isolateRange(piece, cursor, overlapEnd)
+                        target.setRemovedAt(null)
+                        // Repair splay weights on the path to root (length 0 -> len).
+                        treeByIndex.splay(target)
+                        untombstoned.add(target)
+                    }
+                    cursor = overlapEnd
+                    if (overlapEnd >= pieceEnd) {
+                        pieceIndex++
+                    }
+                } else {
+                    // Gap: recreate [cursor, gapEnd) with its original ID.
+                    val gapEnd = minOf(pieceStart, span.end)
+
+                    @Suppress("UNCHECKED_CAST")
+                    val value = span.value.subSequence(
+                        cursor - span.start,
+                        gapEnd - span.start,
+                    ) as T
+                    val newNode =
+                        RgaTreeSplitNode(RgaTreeSplitNodeID(span.createdAt, cursor), value)
+                    liveDiff = addDataSizes(liveDiff, newNode.dataSize)
+                    val prev =
+                        findRestoreAnchor(
+                            span.createdAt,
+                            cursor,
+                            gapEnd,
+                            executedAt,
+                            fallbackAnchor,
+                        )
+                    insertAfter(prev, newNode)
+                    recreated.add(newNode)
+                    cursor = gapEnd
+                }
+            }
+        }
+
+        val pendingGcPairs = drainPendingGcPairs()
+
+        // Revived nodes are now live; report each as an insertion at its
+        // final index. Ascending order keeps the indices valid when applied
+        // in sequence (each earlier insertion is already present).
+        val changes = (untombstoned + recreated)
+            .map { node ->
+                val (from, _) = findIndexesFromRange(node.createPosRange())
+                ContentChange(executedAt.actorID, from, from, node.value.toString())
+            }
+            .sortedBy { it.from }
+            .toMutableList()
+
+        return RgaTreeSplitRestoreResult(untombstoned, recreated, changes, liveDiff, pendingGcPairs)
+    }
+
+    /**
+     * Re-deletes the characters described by [spans] (redo of an identity-
+     * preserving undo). Only live pieces are affected; already removed or
+     * purged regions are skipped (idempotent).
+     *
+     * Returns GC pairs for the newly tombstoned nodes, the removed regions as
+     * deletions, and the metadata-size overhead from splitting the (live)
+     * pieces to isolate the target range. The caller must accumulate
+     * [RgaTreeSplitRetombstoneResult.dataSize] before registering
+     * [RgaTreeSplitRetombstoneResult.gcPairs], mirroring how a normal edit's
+     * boundary splits are accounted before its resulting tombstones are
+     * registered. Indices are captured before each removal, so applying the
+     * changes in emission order stays consistent.
+     */
+    fun retombstone(
+        spans: List<RestoreSpan<T>>,
+        executedAt: TimeTicket,
+    ): RgaTreeSplitRetombstoneResult<T> {
+        val gcPairs = mutableListOf<GCPair<RgaTreeSplitNode<T>>>()
+        val changes = mutableListOf<ContentChange>()
+        var diff = DataSize(data = 0, meta = 0)
+
+        for (span in spans) {
+            val pieces = findPiecesOverlapping(span.createdAt, span.start, span.end)
+            for (piece in pieces) {
+                if (piece.isRemoved) continue
+
+                val pieceStart = piece.id.offset
+                val pieceEnd = pieceStart + piece.contentLength
+                val (target, splitDiff) = isolateRange(
+                    piece,
+                    maxOf(pieceStart, span.start),
+                    minOf(pieceEnd, span.end),
+                )
+                // `piece` was live, so the split overhead belongs to the live
+                // bucket, same as a normal edit's boundary splits.
+                diff = addDataSizes(diff, splitDiff)
+                // Capture the visible range while `target` is still live.
+                val (from, to) = findIndexesFromRange(target.createPosRange())
+                target.remove(executedAt)
+                treeByIndex.splay(target)
+                gcPairs.add(GCPair(this, target))
+                if (from < to) {
+                    changes.add(ContentChange(executedAt.actorID, from, to))
+                }
+            }
+        }
+
+        // Defensive: retombstone only ever isolates live pieces, so
+        // splitNode never buffers anything here — drain anyway to stay
+        // consistent with every other caller of isolateRange/splitNode.
+        gcPairs.addAll(drainPendingGcPairs())
+
+        return RgaTreeSplitRetombstoneResult(gcPairs, changes, diff)
+    }
+
+    /**
+     * Collects existing nodes (live or tombstoned) belonging to the insertion
+     * [createdAt] that overlap the absolute-offset interval [[start], [end]),
+     * in ascending offset order. Works by descending floorEntry probes over
+     * [treeByID].
+     */
+    private fun findPiecesOverlapping(
+        createdAt: TimeTicket,
+        start: Int,
+        end: Int,
+    ): List<RgaTreeSplitNode<T>> {
+        val pieces = mutableListOf<RgaTreeSplitNode<T>>()
+        var probe = end - 1
+
+        while (probe >= 0) {
+            val key = RgaTreeSplitNodeID(createdAt, probe)
+            val entry = treeByID.floorEntry(key) ?: break
+            if (!entry.key.hasSameCreatedAt(key)) break
+
+            val node = entry.value
+            val nodeStart = node.id.offset
+            val nodeEnd = nodeStart + node.contentLength
+            if (nodeEnd <= start) break
+            if (nodeStart < end && nodeEnd > start) {
+                pieces.add(node)
+            }
+            if (nodeStart <= start) break
+            probe = nodeStart - 1
+        }
+
+        return pieces.reversed()
+    }
+
+    /**
+     * Returns the node of insertion [createdAt] whose absolute-offset range
+     * covers [offset], if present.
+     */
+    private fun findPieceCovering(createdAt: TimeTicket, offset: Int): RgaTreeSplitNode<T>? {
+        val key = RgaTreeSplitNodeID(createdAt, offset)
+        val entry = treeByID.floorEntry(key) ?: return null
+        if (!entry.key.hasSameCreatedAt(key)) return null
+
+        val node = entry.value
+        val nodeStart = node.id.offset
+        val nodeEnd = nodeStart + node.contentLength
+        return node.takeIf { nodeStart <= offset && offset < nodeEnd }
+    }
+
+    /**
+     * Returns the physical node to insert a recreated fragment
+     * [[gapStart], [gapEnd]) of insertion [createdAt] AFTER.
+     *
+     * Resolution ladder (all rules key on op-carried data + ID lookups only):
+     *  (a) a piece covering [gapEnd] exists -> directly before it
+     *      (originally-adjacent successor; exact original slot)
+     *  (b) nearest surviving piece of the same insertion left of [gapStart]
+     *      -> directly after it
+     *  (c) rightmost surviving piece of the same insertion (must be right of
+     *      the gap) -> directly before it
+     *  (d) [fallbackAnchor], resolved via [findNodeWithSplit] (DEC-5: Android
+     *      has no refinePos/normalizePos; the caller already reconciles
+     *      [fallbackAnchor] from undo integer offsets, mirroring JS's
+     *      fromPos-doubles-as-fallback-anchor interplay)
+     *  (e) [head] (deterministic last resort)
+     */
+    private fun findRestoreAnchor(
+        createdAt: TimeTicket,
+        gapStart: Int,
+        gapEnd: Int,
+        executedAt: TimeTicket,
+        fallbackAnchor: RgaTreeSplitPos?,
+    ): RgaTreeSplitNode<T> {
+        findPieceCovering(createdAt, gapEnd)?.let { successor ->
+            return requireNotNull(successor.prev)
+        }
+
+        if (gapStart > 0) {
+            val key = RgaTreeSplitNodeID(createdAt, gapStart - 1)
+            val entry = treeByID.floorEntry(key)
+            if (entry != null && entry.key.hasSameCreatedAt(key)) {
+                return entry.value
+            }
+        }
+
+        val rightmostKey = RgaTreeSplitNodeID(createdAt, Int.MAX_VALUE)
+        val rightmost = treeByID.floorEntry(rightmostKey)
+        if (rightmost != null &&
+            rightmost.key.hasSameCreatedAt(rightmostKey) &&
+            rightmost.value.id.offset >= gapEnd
+        ) {
+            return requireNotNull(rightmost.value.prev)
+        }
+
+        if (fallbackAnchor != null) {
+            try {
+                return findNodeWithSplit(fallbackAnchor, executedAt).first
+            } catch (e: RuntimeException) {
+                // Anchor fully purged — fall through to (e).
+            }
+        }
+
+        logDebug(TAG, "restore anchor exhausted; falling back to head")
+        return head
+    }
+
+    /**
+     * Splits [piece] so that a node exactly covering the absolute-offset
+     * interval [[from], [to]) exists, and returns it along with the net
+     * metadata-size overhead the split(s) introduced.
+     *
+     * When [piece] is live, this overhead is a normal live-bucket cost (same
+     * as any other boundary split) and the caller should accumulate it into
+     * `docSize.live`. When [piece] is tombstoned, [splitNode] itself buffers
+     * the overhead of any born-removed fragment via [pendingGcPairs] (see
+     * [drainPendingGcPairs]), so the returned diff is zero in that case — the
+     * caller must still drain and register those pairs.
+     *
+     * Requires: pieceStart <= [from] < [to] <= pieceEnd.
+     */
+    private fun isolateRange(
+        piece: RgaTreeSplitNode<T>,
+        from: Int,
+        to: Int,
+    ): Pair<RgaTreeSplitNode<T>, DataSize> {
+        var diff = DataSize(data = 0, meta = 0)
+        var node = piece
+        val nodeStart = node.id.offset
+        if (from > nodeStart) {
+            val (right, splitDiff) = splitNode(node, from - nodeStart)
+            diff = addDataSizes(diff, splitDiff)
+            node = requireNotNull(right)
+        }
+        val newStart = node.id.offset
+        if (to < newStart + node.contentLength) {
+            val (_, splitDiff) = splitNode(node, to - newStart)
+            diff = addDataSizes(diff, splitDiff)
+        }
+        return node to diff
     }
 
     /**
@@ -482,6 +810,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     )
 
     companion object {
+        private const val TAG = "RgaTreeSplit"
+
         private val InitialNodeID = RgaTreeSplitNodeID(InitialTimeTicket, 0)
 
         object InitialNodeValue : RgaTreeSplitValue<InitialNodeValue> {

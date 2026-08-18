@@ -11,6 +11,8 @@ import dev.yorkie.api.v1.OperationKt.style
 import dev.yorkie.api.v1.OperationKt.treeEdit
 import dev.yorkie.api.v1.OperationKt.treeStyle
 import dev.yorkie.api.v1.operation
+import dev.yorkie.document.crdt.RestoreSpan
+import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
@@ -18,12 +20,17 @@ import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.RestoreMode
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
+import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
+import dev.yorkie.api.v1.RestoreMode as PbRestoreMode
+import dev.yorkie.api.v1.RestoreSpan as PbRestoreSpan
+import dev.yorkie.api.v1.restoreSpan as pbRestoreSpan
 
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
 
@@ -64,15 +71,39 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 actor = it.increase.actor,
             )
 
-            it.hasEdit() -> EditOperation(
-                fromPos = it.edit.from.toRgaTreeSplitNodePos(),
-                toPos = it.edit.to.toRgaTreeSplitNodePos(),
-                parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
-                executedAt = it.edit.executedAt.toTimeTicket(),
-                content = it.edit.content,
-                attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() }
-                    ?: mapOf(),
-            )
+            it.hasEdit() -> {
+                val executedAt = it.edit.executedAt.toTimeTicket()
+                val hasRestorePayload = it.edit.restoreSpansList.isNotEmpty() ||
+                    it.edit.retombstoneSpansList.isNotEmpty()
+                val restoreSpans = it.edit.restoreSpansList.takeIf { hasRestorePayload }
+                    ?.map { span -> span.toRestoreSpan(executedAt) }
+                val retombstoneSpans = it.edit.retombstoneSpansList.takeIf { hasRestorePayload }
+                    ?.map { span -> span.toRestoreSpan(executedAt) }
+                val restoreMode = if (hasRestorePayload) {
+                    if (it.edit.restoreMode == PbRestoreMode.RESTORE_MODE_RETOMBSTONE) {
+                        RestoreMode.Retombstone
+                    } else {
+                        RestoreMode.Restore
+                    }
+                } else {
+                    null
+                }
+                EditOperation(
+                    fromPos = it.edit.from.toRgaTreeSplitNodePos(),
+                    toPos = it.edit.to.toRgaTreeSplitNodePos(),
+                    parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
+                    executedAt = executedAt,
+                    content = it.edit.content,
+                    attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() }
+                        ?: mapOf(),
+                    // undoFromOffset/undoToOffset stay at their NOT_AN_UNDO_OP
+                    // default: a decoded remote restore op applies by
+                    // identity and is not reconciled locally.
+                    restoreSpans = restoreSpans,
+                    restoreMode = restoreMode,
+                    retombstoneSpans = retombstoneSpans,
+                )
+            }
 
             it.hasStyle() -> StyleOperation(
                 fromPos = it.style.from.toRgaTreeSplitNodePos(),
@@ -178,6 +209,19 @@ internal fun Operation.toPBOperation(): PBOperation {
                     content = operation.content
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
+                    // Ordinary edits set none of these — the wire payload stays
+                    // byte-identical to before this field was added.
+                    if (operation.restoreSpans != null || operation.retombstoneSpans != null) {
+                        restoreSpans.addAll(operation.restoreSpans.orEmpty().map { it.toPbSpan() })
+                        retombstoneSpans.addAll(
+                            operation.retombstoneSpans.orEmpty().map { it.toPbSpan() },
+                        )
+                        restoreMode = if (operation.restoreMode == RestoreMode.Retombstone) {
+                            PbRestoreMode.RESTORE_MODE_RETOMBSTONE
+                        } else {
+                            PbRestoreMode.RESTORE_MODE_RESTORE
+                        }
+                    }
                 }
             }
         }
@@ -239,3 +283,31 @@ internal fun Operation.toPBOperation(): PBOperation {
 }
 
 internal fun List<Operation>.toPBOperations(): List<PBOperation> = map(Operation::toPBOperation)
+
+/**
+ * Converts a domain [RestoreSpan] to its protobuf representation.
+ */
+private fun RestoreSpan<TextValue>.toPbSpan(): PbRestoreSpan {
+    val span = this
+    return pbRestoreSpan {
+        createdAt = span.createdAt.toPBTimeTicket()
+        start = span.start
+        end = span.end
+        content = span.value.content
+        span.value.attributes.forEach { attributes[it.key] = it.value }
+    }
+}
+
+/**
+ * Converts a protobuf [PbRestoreSpan] to its domain representation. Restores
+ * the span's attributes onto the decoded [TextValue] via [executedAt] — the
+ * decoded value's own attribute-RHT tickets are otherwise unobservable
+ * (identity is carried by the span's [PbRestoreSpan.createdAt]/offsets, not
+ * by the value's internal attribute tickets).
+ */
+private fun PbRestoreSpan.toRestoreSpan(executedAt: TimeTicket): RestoreSpan<TextValue> {
+    val value = TextValue(content).apply {
+        attributesMap.forEach { (key, attrValue) -> setAttribute(key, attrValue, executedAt) }
+    }
+    return RestoreSpan(createdAt.toTimeTicket(), start, end, value)
+}

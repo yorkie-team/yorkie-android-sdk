@@ -40,6 +40,26 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         get() = treeByIndex.length
 
     /**
+     * Buffers GC pairs for nodes created already-tombstoned by splitting a
+     * removed node. Such pieces inherit `removedAt` without ever passing
+     * through [RgaTreeSplitNode.remove], so they would otherwise never be
+     * registered for GC. Callers that split nodes ([edit], [CrdtText.style],
+     * [CrdtText.removeStyle], [restore], [retombstone]) drain this buffer via
+     * [drainPendingGcPairs] into their returned GC pairs.
+     */
+    private var pendingGcPairs = mutableListOf<GCPair<RgaTreeSplitNode<T>>>()
+
+    /**
+     * Returns the GC pairs buffered for born-tombstoned split pieces and
+     * clears the buffer.
+     */
+    fun drainPendingGcPairs(): List<GCPair<RgaTreeSplitNode<T>>> {
+        val pairs = pendingGcPairs
+        pendingGcPairs = mutableListOf()
+        return pairs
+    }
+
+    /**
      * Does following stpes.
      * 1. Split nodes with the given [range].
      * 2. Delete between the given [range].
@@ -64,7 +84,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
         // 2. Delete between from and to.
         val nodesToDelete = findBetween(fromRight, toRight)
-        val (changes, removedNodes) = deleteNodes(
+        val (changes, removedNodes, alreadyRemovedIDs) = deleteNodes(
             nodesToDelete,
             executedAt,
             versionVector,
@@ -99,8 +119,14 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             caretPos = RgaTreeSplitPos(inserted.id, inserted.contentLength)
         }
 
-        // 4. Add removed nodes.
-        val gcPairs = removedNodes.map { (_, node) -> GCPair(this, node) }
+        // 4. Add removed nodes. Nodes that were already tombstoned (concurrent
+        // LWW overwrite of an existing tombstone) keep their existing GC pair;
+        // re-registering would toggle CrdtRoot.registerGCPair's pair off and
+        // leak the node.
+        val gcPairs = removedNodes.mapNotNull { (id, node) ->
+            if (id in alreadyRemovedIDs) null else GCPair(this, node)
+        }.toMutableList()
+        gcPairs.addAll(drainPendingGcPairs())
         val removedValues = removedNodes.map { (_, node) -> node.value }
 
         return RgaTreeSplitEditResult(caretPos, changes, gcPairs, diff, removedValues)
@@ -173,6 +199,18 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         diff = addDataSizes(diff, node.dataSize, splitNode.dataSize)
         diff = subDataSize(diff, prevSize)
 
+        // A piece split off an already-tombstoned node inherits removedAt
+        // without going through remove(), so no GC pair is created for it in
+        // the normal deletion path. Buffer one here so it can be purged;
+        // otherwise it stays in the list forever. The piece was never live,
+        // so the net-new size created by the split goes straight to
+        // docSize.gc when the pair is registered; report a zero diff to the
+        // caller (which accounts diffs to docSize.live).
+        if (splitNode.isRemoved) {
+            pendingGcPairs.add(GCPair(this, splitNode, gcOnlySize = diff))
+            return Pair(splitNode, DataSize(data = 0, meta = 0))
+        }
+
         return Pair(splitNode, diff)
     }
 
@@ -212,9 +250,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         candidates: List<RgaTreeSplitNode<T>>,
         editedAt: TimeTicket,
         vector: VersionVector?,
-    ): Pair<MutableList<ContentChange>, Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>> {
+    ): Triple<
+        MutableList<ContentChange>,
+        Map<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>,
+        Set<RgaTreeSplitNodeID>,
+        > {
         if (candidates.isEmpty()) {
-            return Pair(mutableListOf(), emptyMap())
+            return Triple(mutableListOf(), emptyMap(), emptySet())
         }
 
         // Treat missing or empty VersionVector as local operation.
@@ -258,16 +300,23 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         // 02. Create value changes with previous indexes before deletion.
         val changes = makeChanges(nodesToKeep, editedAt)
 
-        // 03. Mark tombstones for removal.
+        // 03. Mark tombstones for removal. Nodes that were already removed
+        // (concurrent LWW overwrite of an existing tombstone) are tracked
+        // separately: they already have a registered GC pair, and
+        // registering a second one would toggle-unregister the first.
         val removedNodes = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<T>>()
+        val alreadyRemovedIDs = mutableSetOf<RgaTreeSplitNodeID>()
         for (node in nodesToRemove) {
+            if (node.isRemoved) {
+                alreadyRemovedIDs.add(node.id)
+            }
             removedNodes[node.id] = node
             node.remove(removedAt = editedAt)
         }
 
         // 04. Clear the index tree of the given deletion boundaries.
         deleteIndexNodes(nodesToKeep)
-        return Pair(changes, removedNodes)
+        return Triple(changes, removedNodes, alreadyRemovedIDs)
     }
 
     /**

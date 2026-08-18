@@ -165,6 +165,16 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         }
         gcPairMap[pair.child] = pair
 
+        pair.gcOnlySize?.let { size ->
+            // The child's size was never counted in docSize.live (it was born
+            // already-removed, or it was registered by the snapshot-load scan
+            // where live only counts visible nodes), so there is nothing to
+            // move out of live. Only the given size is added to gc; purge
+            // subtracts the child's size from gc as usual.
+            docSize = docSize.copy(gc = addDataSizes(docSize.gc, size))
+            return
+        }
+
         val size = pair.child.dataSize
         val docSizeLive = if (pair.child is RhtNode) {
             subDataSize(docSize.live, size)

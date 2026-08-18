@@ -314,7 +314,9 @@ internal fun PBTreeNodeID.toCrdtTreeNodeID(): CrdtTreeNodeID {
     return CrdtTreeNodeID(createdAt.toTimeTicket(), offset)
 }
 
-private fun Iterable<RhtNode>.toPBRht(): Map<String, NodeAttr> {
+// internal (not private): reused by OperationConverter.kt for
+// TreeRestoreSpan.attributes (port fa6cc513).
+internal fun Iterable<RhtNode>.toPBRht(): Map<String, NodeAttr> {
     return associate { node ->
         node.key to nodeAttr {
             value = node.value
@@ -324,7 +326,7 @@ private fun Iterable<RhtNode>.toPBRht(): Map<String, NodeAttr> {
     }
 }
 
-private fun Map<String, NodeAttr>.toRht(): Rht {
+internal fun Map<String, NodeAttr>.toRht(): Rht {
     return Rht().apply {
         entries.forEach { (key, node) ->
             setInternal(key, node.value, node.updatedAt.toTimeTicket(), node.isRemoved)

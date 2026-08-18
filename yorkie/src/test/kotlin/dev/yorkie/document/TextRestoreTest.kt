@@ -6,6 +6,7 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.helper.maxVectorOf
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -142,5 +143,56 @@ class TextRestoreTest {
         assertEquals("", redoOp.value.text)
 
         collectJob.cancel()
+    }
+
+    // Regression (round-3 fix, addendum R-1 / round-2 MEDIUM-1): undo of a
+    // pure insert retombstones the inserted span by identity, which can
+    // shrink the document below this SAME op's own undoFromOffset/
+    // undoToOffset — captured once at insert time and never re-derived
+    // across a restore/retombstone flip. Redo used to re-resolve those
+    // stale offsets against the now-shrunk document in EditOperation.execute
+    // and throw IndexOutOfBoundsException before ever reaching executeRestore.
+
+    @Test
+    fun `redo after undoing an insert that emptied the document restores content`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "0123456789")
+        }.await()
+        assertEquals("0123456789", document.getRoot().getAs<JsonText>("text").toString())
+        assertTrue(document.history.canUndo())
+
+        document.history.undoAsync().await()
+        assertEquals("", document.getRoot().getAs<JsonText>("text").toString())
+
+        document.history.redoAsync().await()
+        assertEquals("0123456789", document.getRoot().getAs<JsonText>("text").toString())
+
+        // Cycle again — the fix must hold on repeat toggles, not just once.
+        document.history.undoAsync().await()
+        assertEquals("", document.getRoot().getAs<JsonText>("text").toString())
+    }
+
+    @Test
+    fun `redo after undoing a second insert that only partially shrinks the document`() = runTest {
+        // Exact shape of the failing instrumented test
+        // (JsonTextHistoryTest#test_undo_and_redo_insert): undo of the
+        // SECOND insert shrinks the doc but does not empty it, still
+        // leaving undoToOffset (captured at the grown length) stale against
+        // the shrunk length redo must resolve against.
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "hello")
+        }.await()
+        document.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").edit(5, 5, " world")
+        }.await()
+        assertEquals("hello world", document.getRoot().getAs<JsonText>("text").toString())
+
+        document.history.undoAsync().await()
+        assertEquals("hello", document.getRoot().getAs<JsonText>("text").toString())
+
+        document.history.redoAsync().await()
+        assertEquals("hello world", document.getRoot().getAs<JsonText>("text").toString())
     }
 }

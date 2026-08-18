@@ -16,6 +16,7 @@ import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
+import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
@@ -561,6 +562,18 @@ internal data class CrdtTree(
                         parent.findOffset(left, includeRemoved = true) + 1
                     } else {
                         0
+                    }
+                    if (parent.parent == null) {
+                        // The walk reached the tree root: stop before splitting it so
+                        // the root is never split and its clone never orphaned. JS
+                        // SDK 2ef3260b throws here instead; Android logs and stops
+                        // the walk early (partial split), applying the edit's
+                        // insertion normally — approved divergence.
+                        logDebug(
+                            TAG,
+                            "splitLevel walk reached tree root; stopping before splitting root",
+                        )
+                        return@run
                     }
                     parent.split(
                         this,
@@ -1301,6 +1314,10 @@ internal data class CrdtTree(
         return versionVector?.let {
             versionVector.get(actorID) ?: 0L
         } ?: MAX_LAMPORT
+    }
+
+    companion object {
+        private const val TAG = "CrdtTree"
     }
 }
 

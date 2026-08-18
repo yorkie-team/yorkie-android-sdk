@@ -104,4 +104,18 @@ internal data class TreeOperationResult(
      * Mirrors JS SDK PR #1237.
      */
     val mergeLevel: Int = 0,
+    /**
+     * Identity spans of the nodes this edit transitioned visible ->
+     * tombstoned, for identity-preserving Tree undo. Empty unless the edit
+     * was merge/split-free (see [CrdtTree.edit]'s `spansComplete` guard).
+     * Style and removeStyle returns keep the default (they never delete
+     * nodes).
+     */
+    val removedSpans: List<TreeRestoreSpan> = emptyList(),
+    /**
+     * Identity spans of the nodes this edit inserted, parent-before-child,
+     * for identity-preserving Tree undo of an insertion. Empty unless the
+     * edit was merge/split-free, mirroring [removedSpans].
+     */
+    val insertedSpans: List<TreeRestoreSpan> = emptyList(),
 )

@@ -154,4 +154,23 @@ data class IndexTreeNodeList<E : IndexTreeNode<E>>(
             it.onRemovedListener = null
         }
     }
+
+    /**
+     * Re-integrates [element] into the active-children cache after it
+     * transitions from removed back to live (identity-preserving restore,
+     * e.g. [dev.yorkie.document.crdt.CrdtTreeNode.unremove]). [onRemoved]
+     * only ever wires the forward (live -> removed) transition, so a
+     * cached, already-computed [activeChildren] list would otherwise keep
+     * excluding [element] forever once it is un-tombstoned.
+     *
+     * Invalidates the cache outright rather than splicing [element] into a
+     * potentially stale ordering (the next access recomputes it from
+     * [delegate] in true child order), and re-installs the eviction
+     * listener so a later re-removal of [element] (e.g. redo) evicts it
+     * correctly again.
+     */
+    internal fun onUnremoved(element: E) {
+        _activeChildren = null
+        element.setRemovedListener()
+    }
 }

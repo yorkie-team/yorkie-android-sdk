@@ -40,6 +40,35 @@ internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
  */
 internal enum class Boundary { Insert, Range }
 
+/**
+ * [TreeRestoreSpan] identifies a node this edit transitioned
+ * visible -> tombstoned (or inserted), for identity-preserving Tree
+ * undo/redo. Parallel to Text's [RestoreSpan], not shared: a tree span
+ * carries the node's structure and its position anchors instead of a flat
+ * offset interval, because id order is not sibling order in a tree.
+ *
+ * For a text node the span addresses the absolute-offset interval
+ * `[id.offset, id.offset + length)` of the original insertion
+ * (split-invariant); for an element node it is the whole node (`length` is
+ * 0). [value]/[attrs] are deep copies so a GC-purged node can be recreated.
+ * [leftSiblingID]/[rightSiblingID] are the deleted run's external boundary
+ * anchors captured at tombstone time — redundant on purpose: since a run's
+ * spans are carried together, [CrdtTree.restore] can rebuild the run's
+ * internal order from the op itself and needs only ONE surviving boundary
+ * to place it.
+ */
+internal data class TreeRestoreSpan(
+    val id: CrdtTreeNodeID,
+    val nodeType: String,
+    val isText: Boolean,
+    val length: Int,
+    val value: String? = null,
+    val attrs: Rht? = null,
+    val parentID: CrdtTreeNodeID? = null,
+    val leftSiblingID: CrdtTreeNodeID? = null,
+    val rightSiblingID: CrdtTreeNodeID? = null,
+)
+
 @SuppressLint("VisibleForTests")
 internal data class CrdtTree(
     val root: CrdtTreeNode,
@@ -518,11 +547,30 @@ internal data class CrdtTree(
 
         // 02. Delete: delete the nodes that are marked as removed.
         val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+        // Identity-preserving undo: capture one span per node THIS edit
+        // transitions visible -> tombstoned. node.remove() returning true is
+        // exactly that transition, so pre-tombstoned nodes and LWW
+        // overwrites are excluded automatically (AC11). nodesToBeRemoved is
+        // in traversal order -> parents precede children, which restore()
+        // relies on when recreating purged subtrees.
+        val removedSpans = mutableListOf<TreeRestoreSpan>()
+        // Captured in the insert phase below: identity spans of the nodes
+        // this edit inserts, so an undo re-removes them by identity (not by
+        // index, which would clobber concurrently-restored content) and a
+        // redo revives them.
+        val insertedSpans = mutableListOf<TreeRestoreSpan>()
         nodesToBeRemoved.forEach { node ->
             if (node.remove(executedAt)) {
                 gcPairs.add(GCPair(this, node))
+                removedSpans.add(captureRestoreSpan(node))
             }
         }
+        // Snapshot the GC-pair count right after the plain-delete loop: if
+        // the merge phases below (03/03-1) or the born-dead split pieces
+        // drained afterward add more pairs, this edit involved merge-child
+        // propagation and removedSpans/insertedSpans are NOT a complete
+        // description of the deletion (spansComplete guard, below).
+        val deletePairCount = gcPairs.size
 
         // §6.3 Chained-Merge Flattening (Fix 20, port b2e66114): a merge
         // chain P->Q->R is kept flat so runtime state matches what
@@ -690,6 +738,9 @@ internal data class CrdtTree(
                         diff = addDataSizes(diff, node.dataSize)
                     }
                     nodeMapByID[node.id] = node
+                    // Capture this inserted node's identity span for
+                    // identity-preserving insert undo/redo.
+                    insertedSpans.add(captureRestoreSpan(node))
                 }
                 if (!content.isRemoved) {
                     aliveContents.add(content)
@@ -722,6 +773,14 @@ internal data class CrdtTree(
         // unregistered for GC.
         gcPairs.addAll(drainPendingGcPairs())
 
+        // Identity-preserving restore only covers plain deletions. If this
+        // edit merged nodes (mergeLevel > 0) or its merge propagation (03-1)
+        // or a born-dead split piece (drainPendingGcPairs, above) added GC
+        // pairs beyond the plain-delete loop, the captured spans don't fully
+        // describe the deletion -> emit empty spans so the op layer keeps
+        // the copy-reinsert reverse.
+        val spansComplete = toBeMergedNodes.isEmpty() && gcPairs.size == deletePairCount
+
         // Count merged boundaries before their children were moved (above), so
         // the undo can regenerate them via split instead of re-inserting the
         // emptied shells. Mirrors JS SDK PR #1237.
@@ -731,6 +790,12 @@ internal data class CrdtTree(
             diff,
             removedNodes,
             mergeLevel = toBeMergedNodes.size,
+            removedSpans = if (spansComplete) removedSpans else emptyList(),
+            // traverseAll is postorder (children before parent), so reverse
+            // to get parent-before-child — the order restore() needs to
+            // recreate a purged subtree top-down (a child's recreate
+            // resolves its parent by identity).
+            insertedSpans = if (spansComplete) insertedSpans.asReversed() else emptyList(),
         )
     }
 
@@ -1239,6 +1304,269 @@ internal data class CrdtTree(
     }
 
     /**
+     * Builds the [TreeRestoreSpan] for [node] at the point it is deleted or
+     * inserted: its structure/value/attributes plus the external boundary
+     * anchors ([TreeRestoreSpan.leftSiblingID]/[TreeRestoreSpan.rightSiblingID])
+     * captured from its CURRENT physical siblings. Shared by [edit]'s delete
+     * and insert phases (port fa6cc513).
+     */
+    private fun captureRestoreSpan(node: CrdtTreeNode): TreeRestoreSpan {
+        val parent = node.parent
+        val siblings = parent?.allChildren
+        val index = siblings?.indexOf(node) ?: -1
+        val leftSiblingID = siblings?.takeIf { index > 0 }?.get(index - 1)?.let(::leftAnchorID)
+        val rightSiblingID = siblings
+            ?.takeIf { index in 0 until siblings.size - 1 }
+            ?.get(index + 1)
+            ?.id
+        return TreeRestoreSpan(
+            id = node.id,
+            nodeType = node.type,
+            isText = node.isText,
+            length = if (node.isText) node.value.length else 0,
+            value = if (node.isText) node.value else null,
+            attrs = node.getAttrs().deepCopy(),
+            parentID = parent?.id,
+            leftSiblingID = leftSiblingID,
+            rightSiblingID = rightSiblingID,
+        )
+    }
+
+    /**
+     * Re-establishes the nodes described by [spans] under their ORIGINAL
+     * identities (identity-preserving Tree undo): live -> skip (idempotent),
+     * tombstoned -> [CrdtTreeNode.unremove] in place, purged ->
+     * [recreateFromSpan]. [spans] must be in parent-before-child order
+     * ([edit] captures them that way). Returns `(untombstoned, recreated)`;
+     * the caller unregisters GC pairs for the untombstoned nodes.
+     *
+     * Unlike [CrdtText]'s restore, there is no pending-pair pre-registration
+     * step here: Tree restore never splits or isolates a range out of a
+     * larger tombstone the way Text's does, so [drainPendingGcPairs] never
+     * buffers anything on this path.
+     */
+    fun restore(spans: List<TreeRestoreSpan>): Pair<List<CrdtTreeNode>, List<CrdtTreeNode>> {
+        val untombstoned = mutableListOf<CrdtTreeNode>()
+        val recreated = mutableListOf<CrdtTreeNode>()
+
+        for (span in spans) {
+            if (!span.isText) {
+                val node = findFloorNode(span.id)
+                if (node != null && node.id == span.id) {
+                    if (node.isRemoved) {
+                        node.unremove()
+                        untombstoned.add(node)
+                    }
+                    continue
+                }
+                recreateFromSpan(span, span.id.offset, span.length)?.let(recreated::add)
+                continue
+            }
+
+            // Text: surviving pieces may be split finer than the span.
+            val start = span.id.offset
+            val end = start + span.length
+            val pieces = findPiecesOverlapping(span.id.createdAt, start, end)
+
+            var cursor = start
+            var pieceIndex = 0
+            while (cursor < end) {
+                val piece = pieces.getOrNull(pieceIndex)
+                val pieceStart = piece?.id?.offset ?: Int.MAX_VALUE
+                val pieceEnd = if (piece != null) pieceStart + piece.value.length else Int.MAX_VALUE
+
+                if (piece != null && pieceStart <= cursor) {
+                    if (pieceStart < start || pieceEnd > end) {
+                        // Piece straddles a span boundary. Under causal
+                        // delivery the forward delete split at span
+                        // boundaries on every replica before its undo could
+                        // arrive, so this is not expected; skip
+                        // conservatively rather than un-tombstone beyond the
+                        // span. Mirrors the guard in retombstone().
+                        break
+                    }
+                    if (piece.isRemoved) {
+                        piece.unremove()
+                        untombstoned.add(piece)
+                    }
+                    cursor = minOf(pieceEnd, end)
+                    if (cursor >= pieceEnd) pieceIndex++
+                } else {
+                    val gapEnd = minOf(pieceStart, end)
+                    recreateFromSpan(span, cursor, gapEnd - cursor)?.let(recreated::add)
+                    cursor = gapEnd
+                }
+            }
+        }
+        return untombstoned to recreated
+    }
+
+    /**
+     * Re-deletes the nodes described by [spans] (redo of an
+     * identity-preserving undo). Live pieces only; idempotent. Returns GC
+     * pairs for the newly tombstoned nodes.
+     */
+    fun retombstone(
+        spans: List<TreeRestoreSpan>,
+        executedAt: TimeTicket,
+    ): List<GCPair<CrdtTreeNode>> {
+        val pairs = mutableListOf<GCPair<CrdtTreeNode>>()
+        for (span in spans) {
+            val start = span.id.offset
+            val end = start + maxOf(span.length, 1)
+            val pieces = if (span.isText) {
+                findPiecesOverlapping(span.id.createdAt, start, end)
+            } else {
+                listOfNotNull(findFloorNode(span.id)?.takeIf { it.id == span.id })
+            }
+            for (piece in pieces) {
+                if (piece.isRemoved) continue
+                if (piece.isText &&
+                    (piece.id.offset < start || piece.id.offset + piece.value.length > end)
+                ) {
+                    // Piece straddles a span boundary (same clamped `end` as
+                    // findPiecesOverlapping); skip so we never re-tombstone
+                    // content outside the span. Mirrors the guard in restore().
+                    continue
+                }
+                if (piece.remove(executedAt)) {
+                    pairs.add(GCPair(this, piece))
+                }
+            }
+        }
+        return pairs
+    }
+
+    /**
+     * Collects surviving pieces (live or tombstoned) of the text insertion
+     * [createdAt] overlapping `[start, end)`, in ascending offset order, via
+     * descending floor probes.
+     */
+    private fun findPiecesOverlapping(
+        createdAt: TimeTicket,
+        start: Int,
+        end: Int,
+    ): List<CrdtTreeNode> {
+        val pieces = mutableListOf<CrdtTreeNode>()
+        var probe = end - 1
+        while (probe >= 0) {
+            val node = findFloorNode(CrdtTreeNodeID(createdAt, probe)) ?: break
+            if (!node.isText) break
+            val nodeStart = node.id.offset
+            val nodeEnd = nodeStart + node.value.length
+            if (nodeEnd <= start) break
+            if (nodeStart < end && nodeEnd > start) pieces.add(node)
+            if (nodeStart <= start) break
+            probe = nodeStart - 1
+        }
+        return pieces.reversed()
+    }
+
+    /**
+     * Rebuilds a purged node (or purged text sub-range) under its original
+     * identity and attaches it. Anchor ladder, each rung a floor-lookup +
+     * parent-identity check:
+     *  (a) same-insertion successor/predecessor piece (text) -> exact slot;
+     *  (b) captured [TreeRestoreSpan.leftSiblingID], still parented under
+     *      this parent -> after it;
+     *  (c) captured [TreeRestoreSpan.rightSiblingID], still parented under
+     *      this parent -> before it;
+     *  (d) deterministic id-order slot: first index in the parent's current
+     *      children whose id compares greater than the node's id (pure
+     *      function of ids -> identical on every replica).
+     * Parent genuinely absent (purged, and not part of this undo's spans)
+     * -> returns null: the node stays unplaced/invisible; convergent,
+     * because every replica resolves parent-absent identically.
+     */
+    private fun recreateFromSpan(
+        span: TreeRestoreSpan,
+        offset: Int,
+        length: Int,
+    ): CrdtTreeNode? {
+        val parent = span.parentID?.let(::findFloorNode)
+        if (parent == null || parent.id != span.parentID) {
+            return null
+        }
+
+        val node = if (span.isText) {
+            val spanValue = requireNotNull(span.value)
+            val relativeOffset = offset - span.id.offset
+            CrdtTreeNode.CrdtTreeText(
+                CrdtTreeNodeID(span.id.createdAt, offset),
+                spanValue.substring(relativeOffset, relativeOffset + length),
+            )
+        } else {
+            CrdtTreeNode.CrdtTreeElement(
+                span.id,
+                span.nodeType,
+                attributes = span.attrs?.deepCopy() ?: Rht(),
+            )
+        }
+
+        val siblings = parent.allChildren
+
+        // (a) same-insertion successor / predecessor piece (text): exact slot.
+        if (span.isText) {
+            val succ = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset + length))
+            if (succ != null &&
+                succ.isText &&
+                succ.parent === parent &&
+                succ.id.offset == offset + length
+            ) {
+                parent.insertAt(siblings.indexOf(succ), node)
+                nodeMapByID[node.id] = node
+                return node
+            }
+            if (offset > span.id.offset || offset > 0) {
+                val pred = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset - 1))
+                if (pred != null && pred.isText && pred.parent === parent) {
+                    parent.insertAfter(pred, node)
+                    nodeMapByID[node.id] = node
+                    return node
+                }
+            }
+        }
+
+        // (b) captured left boundary sibling, if it still exists under this parent.
+        val left = span.leftSiblingID?.let(::findFloorNode)
+        if (left != null && left.parent === parent) {
+            parent.insertAfter(left, node)
+            nodeMapByID[node.id] = node
+            return node
+        }
+
+        // (c) captured right boundary sibling (redundant anchor): insert before it.
+        val right = span.rightSiblingID?.let(::findFloorNode)
+        if (right != null && right.parent === parent) {
+            parent.insertAt(siblings.indexOf(right), node)
+            nodeMapByID[node.id] = node
+            return node
+        }
+
+        // (d) deterministic id-order fallback: first slot whose child id > node id.
+        val insertIndex = siblings.indexOfFirst { it.id > node.id }
+            .let { if (it == -1) siblings.size else it }
+        parent.insertAt(insertIndex, node)
+        nodeMapByID[node.id] = node
+        return node
+    }
+
+    /**
+     * Returns the id to store as a restore span's left-sibling anchor. For a
+     * text node the anchor is its LAST character's offset, not its start: a
+     * concurrent delete may later split the left neighbor, and only the
+     * last-char offset floor-resolves to the rightmost surviving fragment
+     * (the true left neighbor of the restored node). For elements (never
+     * split by offset) the node's own id is exact. Right-sibling anchors
+     * always use the start offset, which floor-resolves to the leftmost
+     * fragment — the true right neighbor.
+     */
+    private fun leftAnchorID(sibling: CrdtTreeNode): CrdtTreeNodeID {
+        if (!sibling.isText) return sibling.id
+        return CrdtTreeNodeID(sibling.id.createdAt, sibling.id.offset + sibling.value.length - 1)
+    }
+
+    /**
      * Finds the position of the given [index] in the tree.
      */
     fun findPos(index: Int, preferText: Boolean = true): CrdtTreePos {
@@ -1714,6 +2042,24 @@ internal data class CrdtTreeNode(
             updateAncestorSize(-paddedSize())
         }
         return alived
+    }
+
+    /**
+     * Clears the tombstone of this node (identity-preserving restore).
+     * Mirrors [remove]'s ancestor-size bookkeeping so the node becomes
+     * visible again in place. No-op when the node is not removed.
+     *
+     * [IndexTreeNode.onRemovedListener] only ever wires the forward
+     * (live -> removed) transition — see [IndexTreeNodeList.onUnremoved] —
+     * so the parent's cached active-children list is refreshed explicitly
+     * here via the CURRENT [parent] reference (never a stale one: a prior
+     * [moveChild] already updated [parent] before this can run).
+     */
+    fun unremove() {
+        if (removedAt == null) return
+        removedAt = null
+        updateAncestorSize(paddedSize())
+        parent?.childNodes?.onUnremoved(this)
     }
 
     /**

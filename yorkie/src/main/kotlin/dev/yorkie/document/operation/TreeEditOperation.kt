@@ -270,7 +270,10 @@ internal data class TreeEditOperation(
 
         // Reverse ops are only generated for local and undo/redo operations,
         // mirroring the ordinary edit path. Keeps the same span sets and
-        // undo offsets; flips only the mode.
+        // undo offsets; flips only the mode. fromPos/toPos (via copy) stay
+        // whatever this op already carries — unused on this identity-
+        // addressed restore path, same as JS, which also keeps the
+        // original fromPos/toPos on its reverse.
         val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
             val flippedMode = if (isRetombstone) RestoreMode.Restore else RestoreMode.Retombstone
             listOf(copy(restoreMode = flippedMode))

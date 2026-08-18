@@ -26,7 +26,7 @@ import dev.yorkie.api.v1.TreeRestoreSpan as PbTreeRestoreSpan
  * Ports `tree_restore_converter_test.ts` (JS SDK fa6cc513) as JVM unit
  * tests (AC12): converter round-trips element/text restore spans with
  * anchors and attributes, a pure-insert reverse, and the redo direction;
- * an ordinary tree edit carries no restore payload; 5 malformed spans throw
+ * an ordinary tree edit carries no restore payload; 6 malformed spans throw
  * at decode.
  */
 class TreeRestoreConverterTest {
@@ -160,7 +160,8 @@ class TreeRestoreConverterTest {
         assertNull(restored.restoreMode)
     }
 
-    // --- Malformed spans: each blanks exactly one required timestamp. ---
+    // --- Malformed spans: each blanks a required timestamp, or (the last
+    // case) corrupts a text span's length/value invariant. ---
 
     private fun validSpanBuilder(): PbTreeRestoreSpan.Builder =
         PbTreeRestoreSpan.newBuilder().apply {
@@ -228,6 +229,20 @@ class TreeRestoreConverterTest {
     fun `throws when an attribute has no updatedAt`() {
         val span = validSpanBuilder().apply {
             putAttributes("bold", nodeAttr { value = "true" }) // no updatedAt
+        }.build()
+        assertMalformed(span)
+    }
+
+    @Test
+    fun `throws when a text span's length does not match its value length`() {
+        // A valid text restore span first (isText, value/length agree), then
+        // corrupt only the length on the encoded pb — mirrors a hostile or
+        // corrupt remote payload rather than an SDK-produced one.
+        val span = validSpanBuilder().apply {
+            isText = true
+            nodeType = "text"
+            value = "ab"
+            length = 3 // corrupted: value has only 2 chars
         }.build()
         assertMalformed(span)
     }

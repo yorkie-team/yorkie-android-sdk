@@ -246,4 +246,40 @@ class TreeRestoreConverterTest {
         }.build()
         assertMalformed(span)
     }
+
+    @Test
+    fun `throws when a text span's length is zero but its value is nonempty`() {
+        val span = validSpanBuilder().apply {
+            isText = true
+            nodeType = "text"
+            value = "ab"
+            length = 0 // corrupted: capture always sets length = value.length
+        }.build()
+        assertMalformed(span)
+    }
+
+    @Test
+    fun `throws when a text span's length is negative`() {
+        val span = validSpanBuilder().apply {
+            isText = true
+            nodeType = "text"
+            value = "ab"
+            length = -1
+        }.build()
+        assertMalformed(span)
+    }
+
+    @Test
+    fun `tolerates a nonzero length on an element span`() {
+        // Parity pin: JS validates no span length at all; length is a dead field
+        // on every element path, so element spans stay unvalidated by design.
+        val span = validSpanBuilder().apply {
+            length = 7
+        }.build()
+
+        val operations = decode(span)
+
+        assertEquals(1, operations.size)
+        assertEquals(7, (operations.single() as TreeEditOperation).restoreSpans?.single()?.length)
+    }
 }

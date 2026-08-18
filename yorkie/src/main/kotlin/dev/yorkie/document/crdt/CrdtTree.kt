@@ -511,6 +511,17 @@ internal data class CrdtTree(
             }
         }
 
+        // §6.3 Chained-Merge Flattening (Fix 20, port b2e66114): a merge
+        // chain P->Q->R is kept flat so runtime state matches what
+        // rebuildMergeState derives from a snapshot (which can only ever
+        // represent the compressed chain, because it records one mergedFrom
+        // pointer per child and reads the child's current physical parent).
+        // The destination is resolved through resolveMergeTarget, so
+        // children merged into an already-merged-away parent forward to the
+        // final live target instead of piling up under the removed
+        // intermediate.
+        val dest = resolveMergeTarget(fromParent)
+
         // 03. Merge: move the nodes that are marked as moved. A moved child
         // must have a source parent to record; skip otherwise rather than
         // move an untracked node (Fix 8). Tombstoned children are moved too
@@ -522,23 +533,39 @@ internal data class CrdtTree(
         // index positions stay correct (port c5d5c851).
         toBeMovedToFromParents.forEach { node ->
             val oldParent = node.parent ?: return@forEach
-            node.mergedFrom = oldParent.id
-            node.mergedAt = executedAt
-            fromParent.moveChild(node)
+            // mergedFrom/mergedAt are stamped only on the first move, so a
+            // child carried through a chained merge keeps its original
+            // source and the original merge ticket (Fix 20).
+            if (node.mergedFrom == null) {
+                node.mergedFrom = oldParent.id
+                node.mergedAt = executedAt
+            }
+            dest.moveChild(node)
+            // Point this child's original source at the resolved
+            // destination, path-compressing a transitive source (a prior
+            // merge whose children were just relocated again) from the
+            // now-removed intermediate to the final target. mergedInto is
+            // derived solely from a moved child (never from the
+            // merge-source list directly), mirroring rebuildMergeState so
+            // runtime and snapshot agree: a source with no moved child of
+            // its own (an intermediate that only relayed another source's
+            // children) is left unset on both paths.
+            node.mergedFrom?.let(::findFloorNode)?.let { src -> src.mergedInto = dest.id }
         }
-        // Set forwarding pointer on merge-source nodes so future insertions
-        // that land on the tombstoned parent redirect to the merge target.
-        toBeMergedNodes.forEach { src -> src.mergedInto = fromParent.id }
 
         // 03-1. Propagate deletes to children moved by prior merges. When a
         // merge-source node is fully deleted (not itself a merge boundary),
         // its former children in the merge target should also be deleted.
-        // Skip when mergedInto points to fromParent (concurrent merge).
+        // Skip when mergedInto points to the merge destination (concurrent
+        // merge). Compare against the resolved dest, not fromParent: the
+        // forwarding pointers above point at the flattened target (§6.3), so
+        // a chained merge (dest !== fromParent) must recognize a
+        // concurrent-merge boundary by dest.
         nodesToBeRemoved.forEach { node ->
             val mergedInto = node.mergedInto
             if (mergedInto != null &&
                 node !in toBeMergedNodes &&
-                mergedInto != fromParent.id
+                mergedInto != dest.id
             ) {
                 val mergeTarget = findFloorNode(mergedInto) ?: return@forEach
                 mergeTarget.allChildren
@@ -1042,6 +1069,30 @@ internal data class CrdtTree(
     fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
         val (key, value) = nodeMapByID.floorEntry(id) ?: return null
         return value.takeIf { key.createdAt == id.createdAt }
+    }
+
+    /**
+     * Follows the [CrdtTreeNode.mergedInto] forwarding chain from [node]
+     * while the current node is a merge-away tombstone, returning the final
+     * live target. When a merge lands on a parent that a prior concurrent
+     * merge already merged away (a chained merge P->Q->R, applied Q->R
+     * before this P->Q), the children must flow to that parent's final
+     * destination so the merge chain stays flat (P->R, not P->Q) and both
+     * replicas converge. The `seen` set guards against a cycle from a
+     * concurrent mutual merge (port b2e66114).
+     */
+    private fun resolveMergeTarget(node: CrdtTreeNode): CrdtTreeNode {
+        var target = node
+        val seen = mutableSetOf(target)
+        while (true) {
+            if (!target.isRemoved) break
+            val mergedInto = target.mergedInto ?: break
+            val next = findFloorNode(mergedInto) ?: break
+            if (next in seen) break
+            seen.add(next)
+            target = next
+        }
+        return target
     }
 
     /**

@@ -30,6 +30,16 @@ internal typealias CrdtTreeToken = TreeToken<CrdtTreeNode>
 
 internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
 
+/**
+ * [Boundary] selects how [CrdtTree.findNodesAndSplitText] resolves a
+ * position inside a parent tombstoned by a merge. [Insert] places it at the
+ * insertion boundary in the merge target (before the first moved child, so
+ * RGA ordering breaks ties). [Range] places it right after the
+ * merge-source tombstone itself, so a style/removeStyle range neither grows
+ * over nor shrinks past nodes concurrently inserted at that anchor.
+ */
+internal enum class Boundary { Insert, Range }
+
 @SuppressLint("VisibleForTests")
 internal data class CrdtTree(
     val root: CrdtTreeNode,
@@ -125,9 +135,12 @@ internal data class CrdtTree(
             meta = 0,
         )
 
-        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
+        // Boundary.Range (port 5c158690): a style range must never cross a
+        // concurrent merge anchor, so both endpoints resolve right after the
+        // merge-source tombstone rather than the insertion boundary.
+        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
         val (fromParent, fromLeftRaw) = from
-        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
+        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
         val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
@@ -860,9 +873,10 @@ internal data class CrdtTree(
             meta = 0,
         )
 
-        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
+        // Boundary.Range (port 5c158690): see the matching comment in style().
+        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
         val (fromParent, fromLeftRaw) = from
-        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
+        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
         val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
@@ -1004,10 +1018,14 @@ internal data class CrdtTree(
      *
      * If [executedAt] is given, then it is used to find the appropriate left node
      * for concurrent insertion.
+     *
+     * [boundary] selects how a position inside a merged-away parent resolves
+     * — see [Boundary].
      */
     fun findNodesAndSplitText(
         pos: CrdtTreePos,
         executedAt: TimeTicket? = null,
+        boundary: Boundary = Boundary.Insert,
     ): Pair<TreeNodePair, DataSize> {
         var diff = DataSize(
             data = 0,
@@ -1028,6 +1046,20 @@ internal data class CrdtTree(
         // merge destination using the forwarding pointer.
         val mergedIntoID = realParent.mergedInto
         if (realParent.isRemoved && isLeftMost && mergedIntoID != null) {
+            // §9.3 Range Boundary at Merged-Away Anchors (port 5c158690): a
+            // range boundary resolves to the position right after the
+            // merge-source tombstone, not the insertion boundary below. The
+            // insertion boundary sits before the first moved child, so it
+            // would extend a style range over nodes concurrently inserted
+            // between the tombstone and the moved children — nodes the
+            // styling client saw outside its range (after the then-live
+            // parent).
+            if (boundary == Boundary.Range && realParent.parent != null) {
+                return Pair(
+                    first = Pair(realParent.parent!!, realParent),
+                    second = diff,
+                )
+            }
             val mergeTarget = findFloorNode(mergedIntoID)
             if (mergeTarget != null && !mergeTarget.isRemoved) {
                 val allCh = mergeTarget.allChildren

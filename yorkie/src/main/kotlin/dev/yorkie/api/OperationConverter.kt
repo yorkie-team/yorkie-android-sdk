@@ -386,6 +386,11 @@ private fun TreeRestoreSpan.toPbTreeSpan(): PbTreeRestoreSpan {
  * is malformed without an `updated_at` per entry — both are rejected here,
  * at the decode boundary, rather than letting an undefined-equivalent
  * timestamp fail deep inside [dev.yorkie.document.crdt.CrdtTree.restore].
+ * A text span is additionally malformed when [length] disagrees with
+ * [value]'s length — capture always sets them equal, so a mismatch signals
+ * a corrupt or hostile payload that would otherwise throw
+ * [StringIndexOutOfBoundsException] out of
+ * [dev.yorkie.document.crdt.CrdtTree]'s substring call in `recreateFromSpan`.
  */
 private fun PbTreeRestoreSpan.toTreeRestoreSpan(): TreeRestoreSpan {
     val anchors = listOf(
@@ -395,9 +400,13 @@ private fun PbTreeRestoreSpan.toTreeRestoreSpan(): TreeRestoreSpan {
     )
     val malformed = !hasId() || !id.hasCreatedAt() ||
         anchors.any { (present, anchor) -> present && !anchor.hasCreatedAt() } ||
-        attributesMap.values.any { !it.hasUpdatedAt() }
+        attributesMap.values.any { !it.hasUpdatedAt() } ||
+        (isText && (length < 0 || value.length != length))
     if (malformed) {
-        throw YorkieException(ErrInvalidArgument, "malformed tree restore span: missing timestamp")
+        throw YorkieException(
+            ErrInvalidArgument,
+            "malformed tree restore span: missing timestamp or inconsistent text length",
+        )
     }
     return TreeRestoreSpan(
         id = id.toCrdtTreeNodeID(),

@@ -117,7 +117,9 @@ internal data class TextEditResult(
 
 internal data class TextStyleResult(
     val textChanges: List<TextChange>,
-    val gcPairs: List<GCPair<RhtNode>>,
+    // GCPair<*>: this result mixes attribute pairs (GCPair<RhtNode>) with
+    // pairs drained from born-dead split pieces (GCPair<RgaTreeSplitNode<TextValue>>).
+    val gcPairs: List<GCPair<*>>,
     val dataSize: DataSize,
     val prevAttributes: Map<String, String> = emptyMap(),
     val attributesToRemove: List<String> = emptyList(),

@@ -603,10 +603,10 @@ internal data class CrdtTree(
                     }
                     if (parent.parent == null) {
                         // The walk reached the tree root: stop before splitting it so
-                        // the root is never split and its clone never orphaned. JS
-                        // SDK 2ef3260b throws here instead; Android logs and stops
-                        // the walk early (partial split), applying the edit's
-                        // insertion normally — approved divergence.
+                        // the root is never split and its clone never orphaned.
+                        // Mirrors JS SDK 2ef3260b, which breaks out of the walk
+                        // here and applies the edit's insertion normally after a
+                        // partial split; Android additionally logs.
                         logDebug(
                             TAG,
                             "splitLevel walk reached tree root; stopping before splitting root",

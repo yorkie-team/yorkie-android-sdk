@@ -19,8 +19,8 @@ import org.junit.Test
  * Before the fix, the splitLevel ancestor walk in [CrdtTree.edit] split a
  * node before checking whether it had a parent, so reaching the tree root
  * split the root itself and orphaned the clone. The fix stops the walk one
- * step earlier and logs via the project logger (approved divergence: JS
- * throws instead).
+ * step earlier and applies the insertion normally, matching JS's `break`;
+ * Android additionally logs via the project logger.
  */
 class CrdtTreeSplitLevelTest {
 

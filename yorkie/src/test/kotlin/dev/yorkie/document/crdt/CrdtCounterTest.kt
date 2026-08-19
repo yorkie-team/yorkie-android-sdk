@@ -106,6 +106,28 @@ class CrdtCounterTest {
         assertEquals(Int.MIN_VALUE - 1, minInt.value)
     }
 
+    // Port of JS SDK bb3c73dc unit test (v0.7.15, JS #1312): an Int counter's
+    // Long-delta increase wraps the RESULT like Go's int32 arithmetic, not
+    // just the delta. Kotlin `Int + Int` already wraps two's-complement and
+    // `Long.toInt()` keeps the low 32 bits, so `CrdtCounter.increase`
+    // (`value.toInt() + primitiveValue.toInt()`) is congruent to the fixed
+    // JS by mod-2^32 arithmetic without any production change (spec 006
+    // Stage B no-code determination).
+    @Test
+    fun `verify Int counter wraps when increased by an out-of-int32 Long`() {
+        val counter = CrdtCounter(0, InitialTimeTicket)
+        val outOfInt32 = CrdtPrimitive(2147483648L, InitialTimeTicket) // 2^31
+        counter.increase(outOfInt32)
+        assertEquals(Int.MIN_VALUE, counter.value)
+    }
+
+    @Test
+    fun `verify Int counter wraps to Int MAX_VALUE from a nonzero base`() {
+        val counter = CrdtCounter(-1, InitialTimeTicket)
+        counter.increase(CrdtPrimitive(2147483648L, InitialTimeTicket)) // 2^31
+        assertEquals(Int.MAX_VALUE, counter.value)
+    }
+
     @Test
     fun `should use same instance for value on deepCopy`() {
         val counter = CrdtCounter(4, InitialTimeTicket)

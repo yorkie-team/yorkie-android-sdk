@@ -219,17 +219,20 @@ internal data class TreeEditOperation(
      * preserved across chained undo/redo (mirrors [EditOperation], the Text
      * twin, spec 004).
      *
-     * Order is load-bearing: (1) retombstone first — register its GC pairs;
-     * (2) restore — unregister GC pairs for the untombstoned nodes and
-     * accumulate each recreated node's size into the live diff (a recreated
-     * node never physically existed, so there is no GC pair to unregister
-     * for it — only [CrdtRoot.acc] applies); (3) accumulate the total diff.
+     * Order is load-bearing: (1) retombstone first — accumulate its
+     * live-split diff and register its GC pairs; (2) restore — register its
+     * pending GC pairs (born-removed remainders split off a removed
+     * straddler) BEFORE unregistering the untombstoned nodes' GC pairs, so a
+     * target that was itself split-born is walked gc->live correctly
+     * (mirrors [EditOperation.executeRestore], the Text twin); (3)
+     * accumulate restore's live-split diff plus each recreated node's size
+     * (a recreated node never physically existed, so there is no GC pair to
+     * unregister for it — only [CrdtRoot.acc] applies); (4) `acc` the total
+     * diff once.
      *
      * Unlike [EditOperation.executeRestore] (the Text twin), there is no
-     * pending-pair pre-registration step and no fallback-anchor parameter:
-     * Tree restore never splits or isolates a range out of a larger
-     * tombstone the way Text's does, and [recreateFromSpan]'s id-order rung
-     * needs no externally tracked anchor.
+     * fallback-anchor parameter: [recreateFromSpan]'s id-order rung needs no
+     * externally tracked anchor.
      */
     private fun executeRestore(
         root: CrdtRoot,
@@ -242,12 +245,20 @@ internal data class TreeEditOperation(
 
         var diff = DataSize(data = 0, meta = 0)
 
-        // 1. Re-remove (retombstone) by identity.
-        tree.retombstone(toRetombstone, executedAt).forEach(root::registerGCPair)
+        // 1. Re-remove (retombstone) by identity. Isolating a straddling
+        // piece splits it (live-split overhead accounted to diff).
+        val (retombstonePairs, retombstoneDiff) = tree.retombstone(toRetombstone, executedAt)
+        diff = addDataSizes(diff, retombstoneDiff)
+        retombstonePairs.forEach(root::registerGCPair)
 
-        // 2. Revive (restore) by identity.
-        val (untombstoned, recreated) = tree.restore(toRestore)
+        // 2. Revive (restore) by identity. Isolating a range out of a
+        // straddling piece can split off born-removed remainders as pending
+        // GC pairs; register them FIRST so a split-born untombstoned target
+        // is walked gc->live correctly by the unregister below.
+        val (untombstoned, recreated, restorePairs, restoreDiff) = tree.restore(toRestore)
+        restorePairs.forEach(root::registerGCPair)
         untombstoned.forEach { node -> root.unregisterGCPair(GCPair(tree, node)) }
+        diff = addDataSizes(diff, restoreDiff)
         recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
         root.acc(diff)
 

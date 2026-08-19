@@ -1484,6 +1484,10 @@ internal data class CrdtTree(
         var diff = DataSize(data = 0, meta = 0)
         for (span in spans) {
             val start = span.id.offset
+            // Upstream-inherited quirk (JS Math.max(span.length, 1)): a
+            // zero-length text span would isolate and re-remove one character
+            // past the span. Kept byte-parallel with JS 7b2ab7a4; such spans
+            // are not capturable by edit() today.
             val end = start + maxOf(span.length, 1)
             val pieces = if (span.isText) {
                 findPiecesOverlapping(span.id.createdAt, start, end)

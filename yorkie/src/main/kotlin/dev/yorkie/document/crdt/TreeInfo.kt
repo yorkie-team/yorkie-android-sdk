@@ -118,4 +118,12 @@ internal data class TreeOperationResult(
      * edit was merge/split-free, mirroring [removedSpans].
      */
     val insertedSpans: List<TreeRestoreSpan> = emptyList(),
+    /**
+     * Sum of the accepted contents' `paddedSize`, measured while still
+     * detached (before insertion can tombstone them under a removed
+     * parent). A dropped copy ([CrdtTree.dropDuplicateContents]) contributes
+     * nothing, so a reverse operation sized from this value never widens
+     * past what was actually inserted. Port 2ed28322.
+     */
+    val insertedContentSize: Int = 0,
 )

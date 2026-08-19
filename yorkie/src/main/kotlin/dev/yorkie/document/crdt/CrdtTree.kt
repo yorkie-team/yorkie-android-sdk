@@ -143,8 +143,18 @@ internal data class CrdtTree(
         get() = indexTree.root.toTreeNode()
 
     init {
+        // Plain put on the fast path; a document whose history carries a
+        // duplicate CrdtTreeNodeID (a pre-v0.7.16 copy-reinsert undo) leaves
+        // nodeMapByID smaller than the traversed node count, so re-register
+        // every node through registerNode to resolve the winner (port
+        // 2ed28322). Correct trees pay only the size-vs-count comparison.
+        var nodeCount = 0
         indexTree.traverseAll { node, _ ->
             nodeMapByID[node.id] = node
+            nodeCount++
+        }
+        if (nodeMapByID.size != nodeCount) {
+            indexTree.traverseAll { node, _ -> registerNode(node) }
         }
         rebuildMergeState()
     }
@@ -729,12 +739,21 @@ internal data class CrdtTree(
             )
         }
 
-        // 05. insert the given node at the given position.
-        if (contents?.isNotEmpty() == true) {
+        // 05. insert the given node at the given position. Cross-change ID
+        // reuse (an earlier change, another actor, or an ID this same edit's
+        // own split is about to create) is dropped as a whole subtree here —
+        // AFTER step 01's range resolution, which can itself split text and
+        // create the very ID a content node carries (port 2ed28322).
+        // insertedContentSize is measured on the still-detached content, so
+        // it reflects the accepted-content span even if the insert loop
+        // below tombstones the content under a removed fromParent.
+        val acceptedContents = contents?.let { dropDuplicateContents(it, executedAt) }
+        val insertedContentSize = acceptedContents?.sumOf { it.paddedSize } ?: 0
+        if (acceptedContents?.isNotEmpty() == true) {
             val aliveContents = mutableListOf<CrdtTreeNode>()
             var leftInChildren = fromLeft
 
-            contents.forEach { content ->
+            acceptedContents.forEach { content ->
                 // 03-1. insert the content nodes to the list.
                 if (leftInChildren == fromParent) {
                     // 03-1-1. when there's no leftSibling, then insert content into very front of parent's children List
@@ -754,7 +773,7 @@ internal data class CrdtTree(
                     } else {
                         diff = addDataSizes(diff, node.dataSize)
                     }
-                    nodeMapByID[node.id] = node
+                    registerNode(node)
                     // Capture this inserted node's identity span for
                     // identity-preserving insert undo/redo.
                     insertedSpans.add(captureRestoreSpan(node))
@@ -813,6 +832,7 @@ internal data class CrdtTree(
             // recreate a purged subtree top-down (a child's recreate
             // resolves its parent by identity).
             insertedSpans = if (spansComplete) insertedSpans.asReversed() else emptyList(),
+            insertedContentSize = insertedContentSize,
         )
     }
 
@@ -1076,8 +1096,58 @@ internal data class CrdtTree(
         indexTree.tokensBetween(fromIndex, toIndex, callback, includeRemoved)
     }
 
+    /**
+     * Registers [node] under its [CrdtTreeNode.id] in [nodeMapByID], keeping
+     * a live node over a tombstone when two nodes claim the same ID (a
+     * document whose history re-inserted a deleted copy under its original
+     * ID, port 2ed28322). A refused node stays reachable via tree traversal,
+     * just not via lookup. Same-state pairs (both live or both removed)
+     * stay last-registered-wins — element-split delimiter IDs legitimately
+     * collide.
+     */
     fun registerNode(node: CrdtTreeNode) {
+        val entry = nodeMapByID.floorEntry(node.id)
+        if (entry != null &&
+            entry.value !== node &&
+            entry.key == node.id &&
+            node.isRemoved &&
+            !entry.value.isRemoved
+        ) {
+            return
+        }
         nodeMapByID[node.id] = node
+    }
+
+    /**
+     * Filters [contents] before they are spliced into the tree at
+     * [editedAt]: a content subtree whose ID was already claimed by a
+     * DIFFERENT change (an earlier change, another actor, or an ID this
+     * same edit's own split is about to create) is dropped as a whole
+     * subtree — silently, never throwing, since such a change may already
+     * be part of a stored history. A subtree whose reused ID belongs to
+     * THIS SAME change/actor is kept: element-split delimiter IDs are
+     * simulated (not carried on the wire pre-field-11), so they
+     * legitimately collide with this edit's own content. Port 2ed28322.
+     */
+    fun dropDuplicateContents(
+        contents: List<CrdtTreeNode>,
+        editedAt: TimeTicket,
+    ): List<CrdtTreeNode> {
+        return contents.filterNot { content ->
+            var reused = false
+            traverseAll(content) { node, _ ->
+                if (node.id.createdAt.lamport == editedAt.lamport &&
+                    node.id.createdAt.actorID == editedAt.actorID
+                ) {
+                    return@traverseAll
+                }
+                val entry = nodeMapByID.floorEntry(node.id)
+                if (entry != null && entry.key == node.id) {
+                    reused = true
+                }
+            }
+            reused
+        }
     }
 
     /**
@@ -1302,7 +1372,13 @@ internal data class CrdtTree(
      */
     override fun delete(node: CrdtTreeNode) {
         node.parent?.removeChild(node)
-        nodeMapByID.remove(node.id)
+        // Guarded purge (port 2ed28322): only remove the map entry [node]
+        // actually holds — an unconditional remove would unregister a
+        // different live node sharing this ID.
+        val entry = nodeMapByID.floorEntry(node.id)
+        if (entry != null && entry.value === node && entry.key == node.id) {
+            nodeMapByID.remove(node.id)
+        }
 
         val insPrevID = node.insPrevID
         val insNextID = node.insNextID
@@ -1589,14 +1665,14 @@ internal data class CrdtTree(
                 succ.id.offset == offset + length
             ) {
                 parent.insertAt(siblings.indexOf(succ), node)
-                nodeMapByID[node.id] = node
+                registerNode(node)
                 return node
             }
             if (offset > span.id.offset || offset > 0) {
                 val pred = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset - 1))
                 if (pred != null && pred.isText && pred.parent === parent) {
                     parent.insertAfter(pred, node)
-                    nodeMapByID[node.id] = node
+                    registerNode(node)
                     return node
                 }
             }
@@ -1606,7 +1682,7 @@ internal data class CrdtTree(
         val left = span.leftSiblingID?.let(::findFloorNode)
         if (left != null && left.parent === parent) {
             parent.insertAfter(left, node)
-            nodeMapByID[node.id] = node
+            registerNode(node)
             return node
         }
 
@@ -1614,7 +1690,7 @@ internal data class CrdtTree(
         val right = span.rightSiblingID?.let(::findFloorNode)
         if (right != null && right.parent === parent) {
             parent.insertAt(siblings.indexOf(right), node)
-            nodeMapByID[node.id] = node
+            registerNode(node)
             return node
         }
 
@@ -1622,7 +1698,7 @@ internal data class CrdtTree(
         val insertIndex = siblings.indexOfFirst { it.id > node.id }
             .let { if (it == -1) siblings.size else it }
         parent.insertAt(insertIndex, node)
-        nodeMapByID[node.id] = node
+        registerNode(node)
         return node
     }
 

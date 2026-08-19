@@ -771,6 +771,17 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
             )
         }
 
+        // Controlled refusal for an out-of-range split offset (port
+        // 2ed28322): a remote position naming an offset past this node's
+        // visible size would otherwise fall through to `substring` below and
+        // surface as a raw, uncontrolled StringIndexOutOfBoundsException.
+        if (offset < 0 || offset > visibleSize) {
+            throw YorkieException(
+                YorkieException.Code.ErrInvalidArgument,
+                "split at $offset of $visibleSize: offset out of range",
+            )
+        }
+
         val leftValue = value.substring(0, offset)
         val rightValue = value.substring(offset).ifEmpty {
             return Pair(

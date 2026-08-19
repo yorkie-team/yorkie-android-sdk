@@ -20,7 +20,11 @@ import org.junit.Test
  * order or snapshot rebuild, a guarded purge must not unregister a live
  * twin, [CrdtTree.dropDuplicateContents] must drop only genuine cross-change
  * reuse, and accepted-size threading must keep a dropped copy's reverse
- * operation from widening past what was truly inserted.
+ * operation from widening past what was truly inserted. Also pins the two
+ * ordering-sensitive twins (cross-judge round-2 conditions): the drop check
+ * runs AFTER step-01 range resolution (a split can create the very ID a
+ * content carries), and an edit anchored through a duplicated ID lands
+ * identically on a live tree and on one rebuilt by the constructor.
  *
  * Uses explicit [TimeTicket]s (not the shared [issueTime] helper) wherever a
  * case needs a genuinely different lamport or actor: [issueTime] draws from
@@ -174,6 +178,86 @@ class CrdtTreeDuplicateIdTest {
         val accepted = tree.dropDuplicateContents(listOf(element), editedAt)
 
         assertTrue(accepted.isEmpty())
+    }
+
+    // AC3 (ordering pin): the drop check runs AFTER step-01 range
+    // resolution. Nothing carries (textID, 5) until resolving the insert
+    // position splits the run there — moments before the copy is inserted
+    // under that very ID. Hoisting dropDuplicateContents above
+    // findNodesAndSplitText would keep (and insert) the copy, changing the
+    // XML. Ports `drops content whose id this edit is about to create by
+    // splitting`.
+    @Test
+    fun `dropDuplicateContents drops content whose id this edit is about to create by splitting`() {
+        val treeTicket = ticket(1)
+        val textID = CrdtTreeNodeID(ticket(2), 0)
+        val root = CrdtTreeElement(CrdtTreeNodeID(treeTicket, 0), DEFAULT_ROOT_TYPE)
+        root.append(CrdtTreeText(textID, "0123456789"))
+        val tree = CrdtTree(root, treeTicket)
+        assertEquals("<root>0123456789</root>", tree.toXml())
+
+        val editedAt = ticket(3)
+        val copy = CrdtTreeText(CrdtTreeNodeID(ticket(2), 5), "5")
+        val pos = tree.findPos(5)
+        val result = tree.edit(
+            pos to pos,
+            listOf(copy),
+            0,
+            editedAt,
+            issueTimeTicket = { editedAt },
+        )
+
+        assertEquals("the copy is not inserted", "<root>0123456789</root>", tree.toXml())
+        assertEquals(0, result.insertedContentSize)
+    }
+
+    // AC2 (anchored-edit pin): a position anchored through a duplicated ID
+    // must land identically on a live tree (operation-order registration)
+    // and on one rebuilt by the constructor from the same structure — the
+    // original divergence bug was exactly a position resolving to a
+    // different twin per registration order. Ports `applies an edit
+    // anchored at a duplicated id after a rebuild`.
+    @Test
+    fun `an edit anchored at a duplicated id lands identically live and after a rebuild`() {
+        val treeTicket = ticket(1)
+        val textCreatedAt = ticket(2)
+
+        fun liveText() = CrdtTreeText(CrdtTreeNodeID(textCreatedAt, 0), "0123456789")
+
+        fun deadTwin() = CrdtTreeText(CrdtTreeNodeID(textCreatedAt, 0), "0123456789")
+            .also { it.remove(ticket(3)) }
+
+        // Operation-order tree: the live node is registered at construction;
+        // the duplicated tombstone arrives later as an operation would
+        // deliver it (the copy-reinsert-undo shape) — structure [live, dead].
+        val opOrderRoot = CrdtTreeElement(CrdtTreeNodeID(treeTicket, 0), DEFAULT_ROOT_TYPE)
+        opOrderRoot.append(liveText())
+        val opOrderTree = CrdtTree(opOrderRoot, treeTicket)
+        val lateDead = deadTwin()
+        opOrderRoot.append(lateDead)
+        opOrderTree.registerNode(lateDead)
+
+        // Rebuilt tree: the SAME structure [live, dead] registered in
+        // document order by the constructor (plain puts would leave the
+        // tombstone as the map winner without the re-register pass).
+        val rebuiltRoot = CrdtTreeElement(CrdtTreeNodeID(treeTicket, 0), DEFAULT_ROOT_TYPE)
+        rebuiltRoot.append(liveText())
+        rebuiltRoot.append(deadTwin())
+        val rebuiltTree = CrdtTree(rebuiltRoot, treeTicket)
+
+        fun deleteAnchoredAtDuplicate(tree: CrdtTree, editedAt: TimeTicket): String {
+            val parentID = CrdtTreeNodeID(treeTicket, 0)
+            val from = CrdtTreePos(parentID, CrdtTreeNodeID(textCreatedAt, 5))
+            val to = CrdtTreePos(parentID, CrdtTreeNodeID(textCreatedAt, 6))
+            tree.edit(from to to, null, 0, editedAt, issueTimeTicket = { editedAt })
+            return tree.toXml()
+        }
+
+        val liveXml = deleteAnchoredAtDuplicate(opOrderTree, ticket(4))
+        val rebuiltXml = deleteAnchoredAtDuplicate(rebuiltTree, ticket(4))
+
+        assertEquals("<root>012346789</root>", liveXml)
+        assertEquals("anchored edit must land identically", liveXml, rebuiltXml)
     }
 
     // AC4: a dropped copy's edit inserts nothing, and the accepted-size

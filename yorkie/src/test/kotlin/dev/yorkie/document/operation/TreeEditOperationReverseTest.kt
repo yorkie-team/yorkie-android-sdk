@@ -403,4 +403,41 @@ class TreeEditOperationReverseTest {
         // then: no reverse ops for remote operations
         assertTrue(result.reverseOps.isEmpty())
     }
+
+    // spec 006 AC4, at the operation level: restoring a sub-range of a
+    // tombstoned run splits off born-removed remainders, and executeRestore
+    // must register those pending pairs BEFORE unregistering the
+    // untombstoned target — the target IS one of the freshly split nodes.
+    // CrdtRoot.registerGCPair toggles on a re-registered key and
+    // unregisterGCPair no-ops on a missing one, so the flipped order leaves
+    // the LIVE target keyed in gcPairMap, visible here as phantom garbage.
+    @Test
+    fun `restore of a sub-range leaves exactly the split remainders as garbage`() {
+        // given: <root>0123456789</root> with [3,9) deleted as one run
+        val (tree, root) = buildTreeRoot()
+        val textNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(3), 0), "0123456789")
+        makeTreeEditOp(tree, 0, 0, listOf(textNode), 3).execute(root, OpSource.Local, null)
+        val deleteResult = makeTreeEditOp(tree, 3, 9, null, 4).execute(root, OpSource.Local, null)
+        assertEquals(1, root.garbageLength, "the deleted run is one GC pair")
+
+        // when: undo only [5,7) of it — the reverse op with its span narrowed
+        val restore = deleteResult.reverseOps.single() as TreeEditOperation
+        val span = requireNotNull(restore.restoreSpans).single()
+        val narrowed = span.copy(
+            id = span.id.copy(offset = 5),
+            length = 2,
+            value = span.value?.substring(2, 4),
+        )
+        restore.copy(restoreSpans = listOf(narrowed), executedAt = makeTicket(5))
+            .execute(root, OpSource.UndoRedo, null)
+
+        // then: "56" is live and out of the gc map; the [3,5) and [7,9)
+        // remainders are the only garbage
+        assertEquals("<root>012569</root>", tree.toXml())
+        assertEquals(
+            2,
+            root.garbageLength,
+            "exactly the two born-removed remainders may stay garbage",
+        )
+    }
 }

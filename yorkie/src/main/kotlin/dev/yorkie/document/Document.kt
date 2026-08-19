@@ -18,6 +18,7 @@ import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.countNodes
 import dev.yorkie.document.history.History
 import dev.yorkie.document.history.HistoryOperation
 import dev.yorkie.document.json.JsonArray
@@ -392,6 +393,20 @@ public class Document(
                             op.value.createdAt = ticket
                             internalHistory.reconcileCreatedAt(prev, ticket)
                             reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                        } else if (op is TreeEditOperation && op.removedNodeSnapshots != null) {
+                            // Copy-reinsert undo (port 4ec66cc0): buildFreshNodes
+                            // mints one fresh ticket per node in every snapshot
+                            // subtree, starting right after `ticket`'s delimiter,
+                            // but those tickets were never reserved in this
+                            // context — a later op in the same undo/redo batch
+                            // would otherwise repeat one via its own
+                            // issueTimeTicket() call. Reserve exactly that many
+                            // so the next op resumes after the range
+                            // buildFreshNodes will consume. Restore-mode
+                            // reverses (removedNodeSnapshots == null) never call
+                            // buildFreshNodes and need no reservation.
+                            val ticketCount = op.removedNodeSnapshots.sumOf { it.countNodes() }
+                            repeat(ticketCount) { context.issueTimeTicket() }
                         }
 
                         context.push(op)

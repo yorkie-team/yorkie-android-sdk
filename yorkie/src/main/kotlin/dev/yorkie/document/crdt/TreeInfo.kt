@@ -58,6 +58,18 @@ internal value class TreeTextNode(override val value: String = "") : TreeNode, J
     }
 }
 
+/**
+ * Counts every node in this subtree, text and element alike — matching
+ * one ticket per node in [dev.yorkie.document.operation.TreeEditOperation]
+ * `.Companion.buildFreshNodes`, so the copy-reinsert undo path can reserve
+ * the exact ticket range that function will consume at execute time
+ * (port 4ec66cc0).
+ */
+internal fun TreeNode.countNodes(): Int = when (this) {
+    is TreeTextNode -> 1
+    is TreeElementNode -> 1 + childNodes.sumOf { it.countNodes() }
+}
+
 data class TreeChange(
     val actorID: String,
     val type: TreeChangeType,

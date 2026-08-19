@@ -7,6 +7,7 @@ import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
+import dev.yorkie.util.DataSize
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -117,6 +118,17 @@ class TreeRestoreConcurrentTest {
         d2.history.redoAsync().await()
         crossSync(d1, d2)
     }
+
+    // (label, d1 range, d2 range) — the same six relations as the
+    // per-relation matrix below, for the order/interleaving variants.
+    private val overlapRelations = listOf(
+        Triple("contained_by", 5 to 7, 3 to 9),
+        Triple("contains", 3 to 9, 5 to 7),
+        Triple("overlap_start", 5 to 9, 3 to 7),
+        Triple("overlap_end", 3 to 7, 5 to 9),
+        Triple("identical", 3 to 7, 3 to 7),
+        Triple("adjacent", 3 to 5, 5 to 7),
+    )
 
     /**
      * Both undos revive both deleted runs by identity, restoring the
@@ -233,6 +245,90 @@ class TreeRestoreConcurrentTest {
     @Test
     fun `converges on undo redo of overlapping deletes adjacent`() = runTest {
         assertUndoRedoConvergesToPostDelete(3 to 5, 5 to 7)
+    }
+
+    // The convergence-exactness cases above only check the fully-drained end
+    // state (after redo + GC), where a transiently mis-toggled gcPairMap can
+    // self-cancel. This stops right after undo: every piece of the purged
+    // runs is either untombstoned or recreated live, so a stray
+    // register/unregister in executeRestore surfaces as phantom garbage or a
+    // docSize mismatch here.
+    @Test
+    fun `undo alone leaves zero garbage and identical docSize on both replicas`() = runTest {
+        val (d1, d2) = seed()
+        val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
+        deleteOverlapping(d1, d2, 5 to 7, 3 to 9)
+
+        undoBoth(d1, d2)
+
+        assertConverged(d1, d2, "after undo")
+        assertEquals(initial, d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(0, d1.garbageLength, "no tombstone may survive undo of both deletes")
+        assertEquals(0, d2.garbageLength, "no tombstone may survive undo of both deletes")
+        assertEquals(DataSize(0, 0), d1.getDocSize().gc)
+        assertEquals(DataSize(0, 0), d2.getDocSize().gc)
+        assertEquals(
+            d1.getDocSize(),
+            d2.getDocSize(),
+            "recreated and split-born pieces must account identically on both replicas",
+        )
+    }
+
+    // undoBoth always undoes d1 first; the restore path must not depend on
+    // that. Each relation converges under the reverse order too, and both
+    // orders land on the same final node segmentation.
+    @Test
+    fun `converges on undo of overlapping deletes regardless of undo order`() = runTest {
+        for ((label, r1, r2) in overlapRelations) {
+            val (d1, d2) = seed()
+            val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
+            deleteOverlapping(d1, d2, r1, r2)
+
+            d2.history.undoAsync().await()
+            d1.history.undoAsync().await()
+            crossSync(d1, d2)
+
+            assertConverged(d1, d2, "$label: after reverse-order undo")
+            assertEquals(
+                initial,
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                "$label: undo must restore the initial visible content",
+            )
+
+            val (e1, e2) = seed()
+            deleteOverlapping(e1, e2, r1, r2)
+            undoBoth(e1, e2)
+            assertEquals(
+                identitySequence(e1.crdtTree()),
+                identitySequence(d1.crdtTree()),
+                "$label: undo order must not change the final segmentation",
+            )
+        }
+    }
+
+    // The matrix batches both undos before a single sync. Here d1's undo is
+    // synced first, so d2's own restore runs against d1's already-restored
+    // segmentation (live pieces inside its span) instead of a fully purged
+    // run — the mixed recreate-around-live path.
+    @Test
+    fun `converges when one replica syncs its undo before the other undoes`() = runTest {
+        for ((label, r1, r2) in overlapRelations) {
+            val (d1, d2) = seed()
+            val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
+            deleteOverlapping(d1, d2, r1, r2)
+
+            d1.history.undoAsync().await()
+            crossSync(d1, d2)
+            d2.history.undoAsync().await()
+            crossSync(d1, d2)
+
+            assertConverged(d1, d2, "$label: after interleaved undo")
+            assertEquals(
+                initial,
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                "$label: undo must restore the initial visible content",
+            )
+        }
     }
 
     // KNOWN LIMITATION (tracked, skipped): when a whole element is deleted

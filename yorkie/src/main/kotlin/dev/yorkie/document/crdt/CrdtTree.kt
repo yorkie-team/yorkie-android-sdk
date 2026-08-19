@@ -2169,7 +2169,9 @@ internal data class CrdtTreeNode(
     }
 
     /**
-     * Clones this text node with the given [offset].
+     * Clones this text node with the given [offset], carrying [mergedFrom] and
+     * [mergedAt] so the split product keeps the merge stamp of the moved node
+     * it came from.
      */
     override fun cloneText(offset: Int): CrdtTreeNode {
         return clone(offset, id.createdAt).apply {
@@ -2180,6 +2182,8 @@ internal data class CrdtTreeNode(
 
     /**
      * Clones this element node with the given [issueTimeTicket] function.
+     * The split product holds the other half of the same moved node, so it
+     * carries the same merge stamp (as [cloneText] does).
      */
     override fun cloneElement(issueTimeTicket: () -> TimeTicket): CrdtTreeNode {
         return clone(0, issueTimeTicket()).apply {

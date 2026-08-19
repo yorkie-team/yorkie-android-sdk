@@ -19,7 +19,10 @@ import org.junit.Test
 
 /**
  * Ports the GC-symmetry and DocSize-exactness cases from `history_tree_test.ts`
- * (JS SDK fa6cc513) as JVM unit tests (AC9).
+ * (JS SDK fa6cc513, spec 005 AC9) as JVM unit tests, plus the split-aware
+ * restore/retombstone isolate cases (JS SDK 7b2ab7a4, spec 006 AC1-AC4):
+ * isolate boundary mechanics, in-span-only restore/retombstone on straddling
+ * pieces, and pending-pair ordering with DocSize/GC exactness.
  */
 class TreeRestoreConvergenceTest {
 

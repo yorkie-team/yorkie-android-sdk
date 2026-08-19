@@ -135,6 +135,13 @@ message Operation {
     repeated TreeRestoreSpan restore_spans = 8; // identity-preserving undo/redo
     RestoreMode restore_mode = 9;
     repeated TreeRestoreSpan retombstone_spans = 10;
+    // split_tickets carries the tickets an element split issued, in issue
+    // order, so the applying replica consumes them instead of
+    // reconstructing them from executed_at + contents.length (which
+    // under-counts once a content has descendants). Empty for changes
+    // written before this field existed; such changes fall back to the
+    // reconstruction, replaying byte-identically.
+    repeated TimeTicket split_tickets = 11;
   }
   message TreeStyle {
     TimeTicket parent_created_at = 1;

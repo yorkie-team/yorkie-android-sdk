@@ -14,6 +14,7 @@ import dev.yorkie.document.crdt.TreeTextNode
 import dev.yorkie.document.crdt.toTreeNode
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
+import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 import dev.yorkie.util.TreePos
@@ -477,12 +478,18 @@ public class JsonTree internal constructor(
         } else {
             contents.map { createCrdtTreeNode(context, it) }
         }
+        // Records every ticket this edit's split step issues, in issue
+        // order, so the pushed op carries them on the wire (port 4ec66cc0)
+        // instead of leaving the applying replica to reconstruct them from
+        // executedAt + contents.size, which under-counts once a content
+        // has descendants.
+        val splitTickets = mutableListOf<TimeTicket>()
         val (_, gcPairs, diff) = target.edit(
             fromPos to toPos,
             crdtNodes.map(CrdtTreeNode::deepCopy).ifEmpty { null },
             splitLevel,
             ticket,
-            context::issueTimeTicket,
+            { context.issueTimeTicket().also(splitTickets::add) },
         )
 
         this.context.acc(diff)
@@ -497,6 +504,7 @@ public class JsonTree internal constructor(
                 crdtNodes.ifEmpty { null },
                 splitLevel,
                 ticket,
+                splitTickets = splitTickets,
             ),
         )
     }

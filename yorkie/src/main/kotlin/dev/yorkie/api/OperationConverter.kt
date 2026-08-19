@@ -142,6 +142,11 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                     contents = it.treeEdit.contentsList.toCrdtTreeNodesWhenEdit(),
                     executedAt = it.treeEdit.executedAt.toTimeTicket(),
                     splitLevel = it.treeEdit.splitLevel,
+                    // Empty for a change written before this field existed;
+                    // issueTimeTicket falls back to the reconstruction then.
+                    splitTickets = it.treeEdit.splitTicketsList.map { ticket ->
+                        ticket.toTimeTicket()
+                    },
                     // undoFromOffset/undoToOffset stay at their NotAnUndoOp
                     // default: a decoded remote restore op applies by
                     // identity and is not reconciled locally (mirrors the
@@ -277,6 +282,10 @@ internal fun Operation.toPBOperation(): PBOperation {
                     executedAt = operation.executedAt.toPBTimeTicket()
                     contents.addAll(operation.contents?.toPBTreeNodesWhenEdit().orEmpty())
                     splitLevel = operation.splitLevel
+                    // Ordinary (non-splitting) tree edits carry an empty
+                    // list — the wire payload stays byte-identical to
+                    // before this field was added.
+                    splitTickets.addAll(operation.splitTickets.map { it.toPBTimeTicket() })
                     // Ordinary tree edits set none of these — the wire payload
                     // stays byte-identical to before this field was added.
                     if (operation.restoreSpans != null || operation.retombstoneSpans != null) {

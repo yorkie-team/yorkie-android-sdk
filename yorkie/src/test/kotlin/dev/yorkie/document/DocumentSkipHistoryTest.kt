@@ -181,4 +181,16 @@ class DocumentSkipHistoryTest {
             target.getRoot().getAs<JsonTree>("tree").toXml(),
         )
     }
+
+    @Test
+    fun `pre-skipHistory two-parameter updateAsync stays on the JVM binary surface`() {
+        // given: callers compiled before skipHistory existed link against
+        // updateAsync(message, updater) — kept via a hidden bridge overload.
+        val bridges = Document::class.java.methods.filter {
+            it.name == "updateAsync" && it.parameterCount == 2
+        }
+
+        // then
+        assertEquals(1, bridges.size)
+    }
 }

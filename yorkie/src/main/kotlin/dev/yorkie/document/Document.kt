@@ -221,6 +221,16 @@ public class Document(
     }
 
     /**
+     * Kept for binary compatibility with code compiled against SDK versions
+     * where [updateAsync] lacked the skipHistory parameter.
+     */
+    @Deprecated(level = DeprecationLevel.HIDDEN, message = "Binary compatibility.")
+    public fun updateAsync(
+        message: String? = null,
+        updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
+    ): Deferred<OperationResult> = updateAsync(message, skipHistory = false, updater = updater)
+
+    /**
      * Executes the given [updater] to update this document.
      *
      * @param skipHistory Skips recording this change on the undo/redo history

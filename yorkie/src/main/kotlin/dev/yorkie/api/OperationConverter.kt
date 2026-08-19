@@ -27,6 +27,7 @@ import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import dev.yorkie.api.v1.RestoreMode as PbRestoreMode
 import dev.yorkie.api.v1.RestoreSpan as PbRestoreSpan
@@ -304,8 +305,24 @@ private fun RestoreSpan<TextValue>.toPbSpan(): PbRestoreSpan {
  * decoded value's own attribute-RHT tickets are otherwise unobservable
  * (identity is carried by the span's [PbRestoreSpan.createdAt]/offsets, not
  * by the value's internal attribute tickets).
+ *
+ * A span addresses content by insertion identity, so it is malformed without
+ * a `created_at`, with negative or inverted offsets, or when [content]
+ * disagrees with the span width — capture always sets them equal, so a
+ * mismatch signals a corrupt or hostile payload that would otherwise throw
+ * [StringIndexOutOfBoundsException] out of
+ * [dev.yorkie.document.crdt.RgaTreeSplit]'s substring calls in `restore`.
+ * Rejected here, at the decode boundary.
  */
 private fun PbRestoreSpan.toRestoreSpan(executedAt: TimeTicket): RestoreSpan<TextValue> {
+    val malformed = !hasCreatedAt() || start < 0 || end < start ||
+        content.length != end - start
+    if (malformed) {
+        throw YorkieException(
+            ErrInvalidArgument,
+            "malformed restore span: missing timestamp or inconsistent offsets",
+        )
+    }
     val value = TextValue(content).apply {
         attributesMap.forEach { (key, attrValue) -> setAttribute(key, attrValue, executedAt) }
     }

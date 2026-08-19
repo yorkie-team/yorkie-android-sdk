@@ -256,7 +256,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val changes = (untombstoned + recreated)
             .map { node ->
                 val (from, _) = findIndexesFromRange(node.createPosRange())
-                ContentChange(executedAt.actorID, from, from, node.value.toString())
+                ContentChange(executedAt.actorID, from, from, node.value.toString(), node.value)
             }
             .sortedBy { it.from }
             .toMutableList()
@@ -807,6 +807,10 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val from: Int,
         val to: Int,
         val content: String? = null,
+        // Full node value for revived nodes (JS ValueChange.value): restored
+        // pieces carry per-node attributes that the flat `content` string
+        // cannot express.
+        val value: RgaTreeSplitValue<*>? = null,
     )
 
     companion object {

@@ -145,6 +145,33 @@ class TextRestoreTest {
         collectJob.cancel()
     }
 
+    @Test
+    fun `undo of a styled-text deletion reports the original attributes in opInfo`() = runTest {
+        // JS parity (5d5cac63): ValueChange carries the full node value, so
+        // toTextChanges reports the revived node's attributes. The opInfo for
+        // an undo of a styled deletion must carry those attributes, not an
+        // empty map, or attribute-aware subscribers render unstyled text.
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "bold", mapOf("bold" to "true"))
+        }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 4, "") }.await()
+        assertEquals("", document.getRoot().getAs<JsonText>("text").toString())
+
+        val events = mutableListOf<Document.Event>()
+        val collectJob = launch(UnconfinedTestDispatcher()) {
+            document.events.collect(events::add)
+        }
+
+        document.history.undoAsync().await()
+        val undoOp = (events.last() as Document.Event.LocalChange).changeInfo.operations
+            .single() as OperationInfo.EditOpInfo
+        assertEquals("bold", undoOp.value.text)
+        assertEquals(mapOf("bold" to "true"), undoOp.value.attributes)
+
+        collectJob.cancel()
+    }
+
     // Regression (round-3 fix, addendum R-1 / round-2 MEDIUM-1): undo of a
     // pure insert retombstones the inserted span by identity, which can
     // shrink the document below this SAME op's own undoFromOffset/

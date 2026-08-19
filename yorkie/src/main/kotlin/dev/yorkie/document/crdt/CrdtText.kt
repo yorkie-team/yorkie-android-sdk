@@ -147,6 +147,7 @@ internal data class CrdtText(
                 it.from,
                 it.to,
                 it.content,
+                (it.value as? TextValue)?.attributes,
             )
         }
     }

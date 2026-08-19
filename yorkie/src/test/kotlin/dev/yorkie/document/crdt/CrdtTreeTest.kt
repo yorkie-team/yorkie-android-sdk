@@ -969,6 +969,69 @@ class CrdtTreeTest {
         assertEquals("<root><p>ab</p><p></p></root>", tree.toXml())
     }
 
+    // AC6 (port 1c033ff5 tree_test.ts addition): splitElement's clone
+    // carries the original's mergedFrom/mergedAt stamps, mirroring
+    // cloneText — order-independent for the interloper judgment.
+    @Test
+    fun `splitElement preserves the merge stamps on the cloned sibling`() {
+        val tree = CrdtTree(CrdtTreeElement(CrdtTreeNodeID(tick(1), 0), "root"), tick(1))
+        tree.editAt(0, CrdtTreeElement(CrdtTreeNodeID(tick(2), 0), "p").toList(), tick(2, 1u))
+        tree.editAt(1, CrdtTreeText(CrdtTreeNodeID(tick(3), 0), "ab").toList(), tick(3, 1u))
+        val p = tree.root.children[0]
+        val mergedFromID = CrdtTreeNodeID(tick(9), 0)
+        val mergedAtTicket = tick(10)
+        p.mergedFrom = mergedFromID
+        p.mergedAt = mergedAtTicket
+
+        var delimiter = 0u
+        tree.editAt(1, null, tick(SPLIT_LAMPORT, 99u), splitLevel = 1) {
+            tick(SPLIT_LAMPORT, delimiter++)
+        }
+
+        val split = tree.root.children[1]
+        assertEquals(mergedFromID, split.mergedFrom)
+        assertEquals(mergedAtTicket, split.mergedAt)
+    }
+
+    // AC6 (port 1c033ff5): an insert declared inside a parent a concurrent
+    // merge tombstoned is stamped mergedFrom = the declared (now removed)
+    // parent, mergedAt from a merge-moved sibling (falls back to the
+    // parent's removedAt when no sibling carries the stamp yet).
+    @Test
+    fun `insert declared inside a merged-away parent is stamped with mergedFrom and mergedAt`() {
+        // <root><p>ab</p><p>cd</p></root>
+        //        0   1 2 3    4   5 6 7     8
+        val tree = CrdtTree(CrdtTreeElement(CrdtTreeNodeID(tick(1), 0), "root"), tick(1))
+        tree.editAt(0, CrdtTreeElement(CrdtTreeNodeID(tick(2), 0), "p").toList(), tick(2, 1u))
+        tree.editAt(1, CrdtTreeText(CrdtTreeNodeID(tick(3), 0), "ab").toList(), tick(3, 1u))
+        tree.editAt(4, CrdtTreeElement(CrdtTreeNodeID(tick(4), 0), "p").toList(), tick(4, 1u))
+        tree.editAt(5, CrdtTreeText(CrdtTreeNodeID(tick(5), 0), "cd").toList(), tick(5, 1u))
+        assertEquals("<root><p>ab</p><p>cd</p></root>", tree.toXml())
+
+        // Capture the leftmost position of the second paragraph BEFORE the
+        // merge — an insert "declared" there, as a remote op would carry.
+        val declaredPos = tree.findPos(5)
+        val p2 = tree.root.children[1]
+
+        // Merge the second paragraph into the first: "<root><p>abcd</p></root>".
+        // executedAt must out-rank every existing node's lamport (tick(6) >
+        // tick(5)) so step 04's "find appropriate left node" RGA walk does
+        // not mistake "cd" (tick(5)) for a concurrent insert relative to
+        // this op and advance the merge's toLeft past it.
+        tree.edit(tree.findPos(3) to tree.findPos(5), null, 0, tick(6), ::issueTime)
+        assertEquals("<root><p>abcd</p></root>", tree.toXml())
+        assertEquals(p2.mergedInto, tree.root.children[0].id)
+
+        // Apply the insert at the stale declared position (Boundary.Insert,
+        // the default for an ordinary edit).
+        val insertedAt = tick(7)
+        val content = CrdtTreeElement(CrdtTreeNodeID(insertedAt, 0), "x")
+        tree.edit(declaredPos to declaredPos, listOf(content), 0, insertedAt, ::issueTime)
+
+        assertEquals(p2.id, content.mergedFrom)
+        assertEquals(p2.removedAt, content.mergedAt)
+    }
+
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)
 
     private fun CrdtTreeNode.toList() = listOf(this)

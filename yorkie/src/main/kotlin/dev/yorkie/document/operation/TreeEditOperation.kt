@@ -229,16 +229,21 @@ internal data class TreeEditOperation(
      * preserved across chained undo/redo (mirrors [EditOperation], the Text
      * twin, spec 004).
      *
-     * Order is load-bearing: (1) retombstone first — register its GC pairs;
-     * (2) restore — unregister GC pairs for the untombstoned nodes (Text-twin
-     * order) and accumulate each recreated node's size into the live diff (no
-     * GC pair exists for a recreated node — only [CrdtRoot.acc] applies);
-     * (3) accumulate the total diff. Same shape as JS v0.7.14, including its
-     * known F2/F4 defects (see [CrdtTree.restore]).
+     * Order is load-bearing: (1) retombstone first — accumulate its
+     * live-split diff and register its GC pairs; (2) restore — register its
+     * pending GC pairs (born-removed remainders split off a removed
+     * straddler) BEFORE unregistering the untombstoned nodes' GC pairs, so a
+     * target that was itself split-born is walked gc->live correctly
+     * (mirrors [EditOperation.executeRestore], the Text twin); (3)
+     * accumulate restore's live-split diff plus each recreated node's size
+     * (a recreated node never physically existed, so there is no GC pair to
+     * unregister for it — only [CrdtRoot.acc] applies); (4) `acc` the total
+     * diff once.
+     * Carries the upstream F2/F4 known defects unchanged (see [CrdtTree.restore]).
      *
      * Unlike [EditOperation.executeRestore] (the Text twin), there is no
-     * fallback-anchor parameter: [CrdtTree.recreateFromSpan]'s id-order rung
-     * needs no externally tracked anchor.
+     * fallback-anchor parameter: [recreateFromSpan]'s id-order rung needs no
+     * externally tracked anchor.
      */
     private fun executeRestore(
         root: CrdtRoot,
@@ -251,15 +256,20 @@ internal data class TreeEditOperation(
 
         var diff = DataSize(data = 0, meta = 0)
 
-        // 1. Re-remove (retombstone) by identity.
-        val retombstonePairs = tree.retombstone(toRetombstone, executedAt)
+        // 1. Re-remove (retombstone) by identity. Isolating a straddling
+        // piece splits it (live-split overhead accounted to diff).
+        val (retombstonePairs, retombstoneDiff) = tree.retombstone(toRetombstone, executedAt)
+        diff = addDataSizes(diff, retombstoneDiff)
         retombstonePairs.forEach(root::registerGCPair)
 
-        // 2. Revive (restore) by identity: un-tombstoned nodes move gc -> live
-        // via unregisterGCPair; recreated nodes are brand new, so add their
-        // size to live.
-        val (untombstoned, recreated) = tree.restore(toRestore)
+        // 2. Revive (restore) by identity. Isolating a range out of a
+        // straddling piece can split off born-removed remainders as pending
+        // GC pairs; register them FIRST so a split-born untombstoned target
+        // is walked gc->live correctly by the unregister below.
+        val (untombstoned, recreated, restorePairs, restoreDiff) = tree.restore(toRestore)
+        restorePairs.forEach(root::registerGCPair)
         untombstoned.forEach { node -> root.unregisterGCPair(GCPair(tree, node)) }
+        diff = addDataSizes(diff, restoreDiff)
         recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
         root.acc(diff)
 
@@ -272,9 +282,16 @@ internal data class TreeEditOperation(
         // change (spec 002 AC6, UndoRedoTest vanished-target case). Diverges
         // from JS, which emits the opInfo unconditionally; matches the Text
         // twin, whose opInfos come from the actual textChanges.
+        //
+        // A split-only isolate still counts as a change: the targets were
+        // already in the requested state, but a straddling piece was split at
+        // the span boundary (non-zero live-split diff). Peers must replay it
+        // or text-node segmentation diverges (spec 006,
+        // TreeRestoreConcurrentTest interleaved-undo case).
         val changed = retombstonePairs.isNotEmpty() ||
             untombstoned.isNotEmpty() ||
-            recreated.isNotEmpty()
+            recreated.isNotEmpty() ||
+            diff != DataSize(data = 0, meta = 0)
 
         // TODO(RTCOLLABPLATFORM-754): paths/values are empty and, for a remote
         //  restore, fromIdx/toIdx are both 0 — a subscriber driving an editor

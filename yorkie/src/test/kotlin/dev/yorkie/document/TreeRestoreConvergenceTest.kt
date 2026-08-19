@@ -173,4 +173,82 @@ class TreeRestoreConvergenceTest {
             "the revived docSize is bit-identical across cycles, including meta",
         )
     }
+
+    /**
+     * Builds two replicas holding `<root><p>hello</p></root>` where d1
+     * deletes the whole `<p>` and d2 concurrently inserts "X" inside
+     * "hello". The remote insert splits the tombstoned text under the
+     * already-registered `<p>`, mutating its child list between
+     * registerGCPair and the undo-side unregisterGCPair.
+     */
+    private suspend fun buildDeleteWithConcurrentSplit(): Pair<Document, Document> {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree("t", element("root") { element("p") { text { "hello" } } })
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 7) }.await()
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(3, 3, text { "X" }) }.await()
+        crossSync(d1, d2)
+        return d1 to d2
+    }
+
+    // Regression: gcPairMap must find a registered tree node even after a
+    // concurrent remote edit mutated its children — keying by structural
+    // (data-class) hash makes the unregister lookup miss and leaves a
+    // stale entry behind.
+    @Test
+    fun `undo unregisters GC pairs for a revived element mutated by a concurrent split`() =
+        runTest {
+            // given: the delete registered 4 pairs (p, "he", "llo", X — the
+            // concurrent X also converges to tombstoned)
+            val (d1, _) = buildDeleteWithConcurrentSplit()
+            assertEquals(4, d1.garbageLength)
+
+            // when
+            d1.history.undoAsync().await()
+
+            // then: p, "he" and "llo" are revived and unregistered; only the
+            // still-tombstoned X remains registered
+            assertEquals(
+                "<root><p>hello</p></root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+            )
+            assertEquals(
+                1,
+                d1.garbageLength,
+                "revive must unregister every pair of the revived nodes",
+            )
+        }
+
+    // Regression: a stale gcPairMap entry surviving undo makes redo add a
+    // duplicate pair for the same node — the next GC then purges that node
+    // twice and docSize.live permanently loses the size the missed
+    // unregister never credited back.
+    @Test
+    fun `redo after a concurrent split purges each node exactly once`() = runTest {
+        // given
+        val (d1, d2) = buildDeleteWithConcurrentSplit()
+        d1.history.undoAsync().await()
+        d1.history.redoAsync().await()
+
+        // when: d2 never undid, so it purges each of the 4 pairs exactly once
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        val purged1 = d1.garbageCollect(vector)
+        val purged2 = d2.garbageCollect(vector)
+
+        // then
+        assertEquals(purged2, purged1, "undo/redo must not duplicate GC pairs")
+        assertEquals(0, d1.garbageLength)
+        assertEquals(
+            DataSize(0, 0),
+            d1.getDocSize().gc,
+            "each purged node must leave docSize.gc exactly once",
+        )
+    }
 }

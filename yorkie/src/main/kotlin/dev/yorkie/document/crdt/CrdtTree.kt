@@ -2147,6 +2147,15 @@ internal data class CrdtTreeNode(
         _attributes.delete(node)
     }
 
+    // The data-class hash covers mutable state (childNodes, attributes), so
+    // hash-keyed registrations (e.g. CrdtRoot's gcPairMap) would silently
+    // miss after a concurrent edit mutates a registered node. Hashing the
+    // immutable id keeps buckets stable; structural equals stays consistent
+    // with it (equal nodes share the id).
+    override fun hashCode(): Int {
+        return id.hashCode()
+    }
+
     @Suppress("FunctionName")
     companion object {
 

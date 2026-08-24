@@ -1,5 +1,6 @@
 package dev.yorkie.document.operation
 
+import dev.yorkie.document.Document
 import dev.yorkie.document.change.ChangeContext
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
@@ -11,8 +12,13 @@ import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.TreeElementNode
+import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.crdt.TreeTextNode
 import dev.yorkie.document.crdt.countNodes
+import dev.yorkie.document.history.History
+import dev.yorkie.document.history.HistoryOperation
+import dev.yorkie.document.json.JsonTree
+import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.traverseAll
@@ -21,6 +27,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
@@ -123,6 +130,54 @@ class TreeUndoContentIdentityTest {
 
         assertFalse(mintedIds.any { it.createdAt == laterTicket })
     }
+
+    // AC10: the real Document.executeUndoRedo reservation branch, exercised
+    // through history.undoAsync(). A copy-reinsert reverse is unreachable
+    // via purely local edits (a merge source always tombstones inside the
+    // deleted ancestor's subtree, so local spans stay complete), so the
+    // undo stack is seeded directly — undoAsync still runs the branch under
+    // test. Two snapshot ops in one batch: without the reservation, the
+    // second op's executedAt lands inside the first op's minted delimiter
+    // range and buildFreshNodes repeats an id.
+    @Test
+    fun `undoAsync reserves minted tickets so a second snapshot op in the batch cannot collide`() =
+        runTest {
+            val document = Document("test-doc")
+            document.updateAsync { root, _ -> root.setNewTree("t", element("root")) }.await()
+            val tree = document.getRootObject()["t"] as CrdtTree
+
+            fun snapshotOp(snapshot: TreeNode) = TreeEditOperation(
+                parentCreatedAt = tree.createdAt,
+                fromPos = tree.findPos(0),
+                toPos = tree.findPos(0),
+                contents = null,
+                splitLevel = 0,
+                executedAt = TimeTicket.InitialTimeTicket,
+                undoFromOffset = 0,
+                undoToOffset = 0,
+                removedNodeSnapshots = listOf(snapshot),
+            )
+
+            val first = snapshotOp(
+                TreeElementNode(type = "p", childNodes = listOf(TreeTextNode("ab"))),
+            )
+            val second = snapshotOp(TreeTextNode("z"))
+
+            val history = Document::class.java.getDeclaredField("internalHistory")
+                .apply { isAccessible = true }
+                .get(document) as History
+            history.pushUndo(listOf(HistoryOperation.Op(first), HistoryOperation.Op(second)))
+
+            val result = document.history.undoAsync().await()
+            assertTrue(result.isSuccess, "undo must apply cleanly: $result")
+
+            // Both restored subtrees are live and no node id repeats.
+            val xml = document.getRoot().getAs<JsonTree>("t").toXml()
+            assertTrue("ab" in xml && "z" in xml, "both snapshots must be restored: $xml")
+            val ids = mutableListOf<CrdtTreeNodeID>()
+            tree.indexTree.traverseAll { node, _ -> ids.add(node.id) }
+            assertEquals(ids.size, ids.toSet().size, "minted node ids must be unique: $ids")
+        }
 
     // AC10 (undo_copy_path_test.ts): a copy-reinsert reverse restores
     // content under an id distinct from the still-tombstoned original —

@@ -222,10 +222,8 @@ public class Document(
     }
 
     /**
-     * Kept for binary compatibility with code compiled against SDK versions
-     * where [updateAsync] lacked the skipHistory parameter.
+     * Executes the given [updater] to update this document.
      */
-    @Deprecated(level = DeprecationLevel.HIDDEN, message = "Binary compatibility.")
     public fun updateAsync(
         message: String? = null,
         updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
@@ -234,15 +232,19 @@ public class Document(
     /**
      * Executes the given [updater] to update this document.
      *
+     * A `skipHistory` write is treated exactly like a remote client's write for history
+     * purposes: pending undo/redo entries are index-reconciled against it, but an entry
+     * whose target element it overwrites or removes is not retargeted and undoes/redoes
+     * as a no-op or replay, as with remote changes.
+     *
      * @param skipHistory Skips recording this change on the undo/redo history
      * stacks when true. The change still mutates the document, emits events,
      * and syncs normally; only the undo entry and redo-stack clearing are
-     * skipped, mirroring how remote changes bypass local history. Defaults
-     * to false, which preserves existing history behavior.
+     * skipped, mirroring how remote changes bypass local history.
      */
     public fun updateAsync(
         message: String? = null,
-        skipHistory: Boolean = false,
+        skipHistory: Boolean,
         updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
     ): Deferred<OperationResult> {
         return scope.async {

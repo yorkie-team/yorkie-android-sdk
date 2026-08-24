@@ -17,6 +17,7 @@ import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
 import dev.yorkie.util.Logger.Companion.logDebug
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
@@ -1165,7 +1166,7 @@ internal data class CrdtTree(
         editedAt: TimeTicket,
     ): List<CrdtTreeNode> {
         return contents.filterNot { content ->
-            var reused = false
+            var reusedID: CrdtTreeNodeID? = null
             traverseAll(content) { node, _ ->
                 if (node.id.createdAt.lamport == editedAt.lamport &&
                     node.id.createdAt.actorID == editedAt.actorID
@@ -1174,10 +1175,16 @@ internal data class CrdtTree(
                 }
                 val entry = nodeMapByID.floorEntry(node.id)
                 if (entry != null && entry.key == node.id) {
-                    reused = true
+                    reusedID = node.id
                 }
             }
-            reused
+            reusedID?.let { id ->
+                logError(TAG) {
+                    "dropping content subtree rooted at ${content.id}: " +
+                        "$id is already registered by another change"
+                }
+            }
+            reusedID != null
         }
     }
 

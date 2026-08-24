@@ -404,6 +404,10 @@ public class JsonTree internal constructor(
 
     /**
      * Edits this tree with the given node and path.
+     *
+     * @throws YorkieException with ErrInvalidArgument if an edit boundary
+     * resolves to an out-of-range text split offset (a document whose
+     * history carries a duplicate tree node ID).
      */
     public fun editByPath(
         fromPath: List<Int>,
@@ -425,6 +429,10 @@ public class JsonTree internal constructor(
 
     /**
      * Edits this tree with the given node.
+     *
+     * @throws YorkieException with ErrInvalidArgument if an edit boundary
+     * resolves to an out-of-range text split offset (a document whose
+     * history carries a duplicate tree node ID).
      */
     public fun edit(
         fromIndex: Int,
@@ -436,6 +444,10 @@ public class JsonTree internal constructor(
 
     /**
      * Edits this tree with the given node.
+     *
+     * @throws YorkieException with ErrInvalidArgument if an edit boundary
+     * resolves to an out-of-range text split offset (a document whose
+     * history carries a duplicate tree node ID).
      */
     public fun edit(
         fromIndex: Int,

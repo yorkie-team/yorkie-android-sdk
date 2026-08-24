@@ -58,7 +58,7 @@ internal data class StyleOperation(
                 reverseAttrsToRemove.addAll(result.attributesToRemove)
             }
 
-            val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
+            val reverseOps = if (source.producesReverseOps) {
                 buildReverseOps(reversePrevAttributes, reverseAttrsToRemove)
             } else {
                 emptyList()

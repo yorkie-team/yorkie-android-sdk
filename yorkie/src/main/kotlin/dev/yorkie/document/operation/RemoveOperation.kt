@@ -47,30 +47,34 @@ internal data class RemoveOperation(
             root.registerRemovedElement(element)
             val index = if (parentObject is CrdtArray) key?.toInt() else null
 
-            val reverseOps = when (parentObject) {
-                is CrdtArray -> {
-                    val elementCopy = element.deepCopy()
-                    val addOp = AddOperation(
-                        prevCreatedAt = prevCreatedAtForArray!!,
-                        value = stripChildren(elementCopy),
-                        parentCreatedAt = parentCreatedAt,
-                        executedAt = executedAt,
-                    )
-                    listOf(addOp) + childSetOps(element, element.createdAt, executedAt)
-                }
-
-                is CrdtObject -> {
-                    listOf(
-                        SetOperation(
-                            key = key ?: "",
-                            value = element.deepCopy(),
+            val reverseOps = if (source.producesReverseOps) {
+                when (parentObject) {
+                    is CrdtArray -> {
+                        val elementCopy = element.deepCopy()
+                        val addOp = AddOperation(
+                            prevCreatedAt = prevCreatedAtForArray!!,
+                            value = stripChildren(elementCopy),
                             parentCreatedAt = parentCreatedAt,
                             executedAt = executedAt,
-                        ),
-                    )
-                }
+                        )
+                        listOf(addOp) + childSetOps(element, element.createdAt, executedAt)
+                    }
 
-                else -> emptyList()
+                    is CrdtObject -> {
+                        listOf(
+                            SetOperation(
+                                key = key ?: "",
+                                value = element.deepCopy(),
+                                parentCreatedAt = parentCreatedAt,
+                                executedAt = executedAt,
+                            ),
+                        )
+                    }
+
+                    else -> emptyList()
+                }
+            } else {
+                emptyList()
             }
 
             ExecutionResult(

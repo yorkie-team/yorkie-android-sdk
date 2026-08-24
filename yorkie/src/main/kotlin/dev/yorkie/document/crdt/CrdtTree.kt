@@ -284,6 +284,13 @@ internal data class CrdtTree(
         executedAt: TimeTicket,
         issueTimeTicket: (() -> TimeTicket)? = null,
         versionVector: VersionVector? = null,
+        /**
+         * Whether to capture deep-copy snapshots of removed top-level nodes for reverse
+         * (undo) operation generation. Defaults to true. Callers that will never produce a
+         * reverse operation for this edit (e.g. a history-exempt `skipHistory` change, or
+         * remote application) can pass false to skip the allocation.
+         */
+        captureRemovedNodes: Boolean = true,
     ): TreeOperationResult {
         var diff = DataSize(
             data = 0,
@@ -456,9 +463,14 @@ internal data class CrdtTree(
         // tombstoned, so that a reverse TreeEditOperation can convert them to plain
         // TreeNode snapshots for undo re-insertion. Only root-level removed nodes are
         // captured; their children are already included in each node's subtree via deepCopy().
-        val removedNodes = nodesToBeRemoved
-            .filter { it.parent !in nodesToBeRemoved }
-            .map(CrdtTreeNode::deepCopy)
+        // Skipped entirely when the caller will never produce a reverse op (F2).
+        val removedNodes = if (captureRemovedNodes) {
+            nodesToBeRemoved
+                .filter { it.parent !in nodesToBeRemoved }
+                .map(CrdtTreeNode::deepCopy)
+        } else {
+            emptyList()
+        }
 
         // 02. Delete: delete the nodes that are marked as removed.
         val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()

@@ -65,16 +65,22 @@ internal data class IncreaseOperation(
                     copiedValue.value as Long
                 }
 
-                val negatedValue = if (copiedValue.type == Type.Integer) {
-                    CrdtPrimitive(-(copiedValue.value as Int), copiedValue.createdAt)
+                val reverseOps = if (source.producesReverseOps) {
+                    val negatedValue = if (copiedValue.type == Type.Integer) {
+                        CrdtPrimitive(-(copiedValue.value as Int), copiedValue.createdAt)
+                    } else {
+                        CrdtPrimitive(-(copiedValue.value as Long), copiedValue.createdAt)
+                    }
+                    listOf(
+                        IncreaseOperation(
+                            value = negatedValue,
+                            parentCreatedAt = parentCreatedAt,
+                            executedAt = executedAt,
+                        ),
+                    )
                 } else {
-                    CrdtPrimitive(-(copiedValue.value as Long), copiedValue.createdAt)
+                    emptyList()
                 }
-                val reverseOp = IncreaseOperation(
-                    value = negatedValue,
-                    parentCreatedAt = parentCreatedAt,
-                    executedAt = executedAt,
-                )
 
                 ExecutionResult(
                     opInfos = listOf(
@@ -83,7 +89,7 @@ internal data class IncreaseOperation(
                             root.createPath(parentCreatedAt),
                         ),
                     ),
-                    reverseOps = listOf(reverseOp),
+                    reverseOps = reverseOps,
                 )
             }
         } else {

@@ -119,6 +119,7 @@ internal data class TreeEditOperation(
                 editedAt,
                 issueTimeTicket(editedAt),
                 versionVector,
+                captureRemovedNodes = source.producesReverseOps,
             )
 
         root.acc(result.dataSize)
@@ -140,9 +141,7 @@ internal data class TreeEditOperation(
 
         // Reverse ops are only generated for local and undo/redo operations.
         val reverseOps =
-            if (opInfos.isNotEmpty() &&
-                (source == OpSource.Local || source == OpSource.UndoRedo)
-            ) {
+            if (opInfos.isNotEmpty() && source.producesReverseOps) {
                 val fromIndex =
                     opInfos
                         .filterIsInstance<OperationInfo.TreeEditOpInfo>()

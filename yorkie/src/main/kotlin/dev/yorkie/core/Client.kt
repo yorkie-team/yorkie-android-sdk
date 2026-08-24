@@ -1064,10 +1064,10 @@ public class Client(
      * The document is marked [ResourceStatus.Attached] and registered with this client BEFORE the
      * [initialRoot] initializers run, so a throwing initializer leaves the document attached and
      * detachable rather than rolled back; the returned deferred still resolves to failure, and
-     * history is already cleared. A user edit made after the `Attached` event while an
-     * initializer is still running keeps its undo entry, index-reconciled against the
+     * history is already cleared. A user edit made after the [ResourceStatus.Attached] event
+     * while an initializer is still running keeps its undo entry, index-reconciled against the
      * initializer change. Document events emitted by the initializer change are always preceded
-     * by the `Attached` [Document.Event.DocumentStatusChanged] event.
+     * by the [ResourceStatus.Attached] [Document.Event.DocumentStatusChanged] event.
      *
      * @param initialPresence The initial presence of the client.
      * @param syncMode The synchronization mode of the document.
@@ -1159,21 +1159,22 @@ public class Client(
                 // Ordering (spec 009 — closes the PR #358 clearHistory window; JS SDK v0.7.16
                 // reference at packages/sdk/src/client/client.ts:665-793 @ 28a5a42e admits no
                 // interleaving because that block is synchronous, so no JS-observable case
-                // changes): Removed early-return → single clearHistory() (wipes pre-attach/offline
-                // entries) → applyStatus(Attached) → attachment registration → runWatchLoop →
+                // changes): single clearHistory() (wipes pre-attach/offline entries; runs before
+                // the Removed check for develop parity, so a reused Document instance whose
+                // server-side copy was removed cannot undo into an unsyncable state) → Removed
+                // early-return → applyStatus(Attached) → attachment registration → runWatchLoop →
                 // initialRoot updateAsync(skipHistory = true) (never enters history, so it needs
                 // no trailing cleanup) → return. History is already cleared before the initializer
                 // runs, so a user edit made after the Attached event while the initializer is
                 // still suspended keeps its undo entry instead of being silently wiped. On an
                 // initializer throw the document still stays Attached and registered (detachable,
                 // matching JS's no-rollback behavior), and history is already cleared.
+                // Mirrors JS SDK PR #1238 for the history flush itself.
+                document.clearHistory()
+
                 if (document.getStatus() == ResourceStatus.Removed) {
                     return@async SUCCESS
                 }
-
-                // Clear undo/redo stacks so that pre-attach/offline entries and the upcoming
-                // initialRoot setup are not reachable via undo. Mirrors JS SDK PR #1238.
-                document.clearHistory()
 
                 document.applyStatus(ResourceStatus.Attached)
                 attachments[documentKey] = Attachment(

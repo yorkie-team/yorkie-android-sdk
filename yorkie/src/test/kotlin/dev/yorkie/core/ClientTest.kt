@@ -616,6 +616,15 @@ class ClientTest {
         )
         val document = Document(documentKey)
         var initializerCalled = false
+        // A pre-attach offline edit on the Detached document: proves an undo entry exists
+        // for the Removed path to clear — the attach-path clearHistory runs BEFORE the
+        // Removed early-return (develop parity, spec 009 / PR #358 r3841896627), so a reused
+        // Document instance whose server-side copy was removed cannot undo into an
+        // unsyncable state.
+        mockkStatic(Base64::class)
+        every { Base64.encodeToString(any(), any()) } returns "mockk"
+        document.updateAsync { root, _ -> root["pre"] = 1 }.await()
+        assertTrue(document.history.canUndo())
         target.activateAsync().await()
 
         // when
@@ -635,9 +644,12 @@ class ClientTest {
         assertFalse(initializerCalled)
         assertEquals(ResourceStatus.Removed, document.getStatus())
         assertFalse(target.has(documentKey))
+        assertFalse(document.history.canUndo())
+        assertFalse(document.history.canRedo())
 
         target.deactivateAsync().await()
         document.close()
+        unmockkStatic(Base64::class)
     }
 
     @Test

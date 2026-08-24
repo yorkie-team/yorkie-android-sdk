@@ -152,6 +152,53 @@ class EditOperationReverseTest {
         assertFalse(op.isUndoOp)
     }
 
+    @Test
+    fun `undo op mutates fromPos and toPos to the reconciled range before serialization`() {
+        // given: text is "Hello"
+        val (text, root) = buildTextRoot()
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
+
+        // The op is constructed with stale/mismatched fromPos-toPos (a sentinel position
+        // unrelated to the real reconciled range) plus undoFromOffset/undoToOffset [1,3) —
+        // simulating a reverse op whose offsets were shifted by reconcileOperation after
+        // construction. execute() must derive the actual range from the offsets and write
+        // it back into fromPos/toPos so the wire-serialized range matches (F10).
+        val expectedRange = text.indexRangeToPosRange(1, 3)
+        val staleNodeId = RgaTreeSplitNodeID(makeTicket(99), 0)
+        val op = EditOperation(
+            fromPos = RgaTreeSplitPos(staleNodeId, 0),
+            toPos = RgaTreeSplitPos(staleNodeId, 0),
+            content = "",
+            parentCreatedAt = textTicket,
+            executedAt = makeTicket(4),
+            attributes = emptyMap(),
+            undoFromOffset = 1,
+            undoToOffset = 3,
+        )
+
+        // when
+        op.execute(root, OpSource.UndoRedo, null)
+
+        // then
+        assertEquals(expectedRange.first, op.fromPos)
+        assertEquals(expectedRange.second, op.toPos)
+    }
+
+    @Test
+    fun `zero-effect edit with empty opInfos returns no reverse op`() {
+        // given: text is "Hello"
+        val (text, root) = buildTextRoot()
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
+
+        // when: a point range with no content changes nothing
+        val op = makeEditOp(text, 2, 2, "", 4)
+        val result = op.execute(root, OpSource.Local, null)
+
+        // then
+        assertTrue(result.opInfos.isEmpty())
+        assertTrue(result.reverseOps.isEmpty())
+    }
+
     // --- reconcileOperation cases ---
     // reconcileOperation adjusts the undoFromOffset / undoToOffset of an undo op.
 

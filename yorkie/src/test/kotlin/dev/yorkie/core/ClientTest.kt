@@ -451,11 +451,13 @@ class ClientTest {
             it is Document.Event.LocalChange ||
                 it is Document.Event.DocumentStatusChanged
         }
-        assertIs<Document.Event.LocalChange>(lifecycleEvents.first())
+        // JS ordering (F3/F4): the document is marked Attached before the initialRoot
+        // update runs, so its DocumentStatusChanged event precedes the LocalChange event.
         assertEquals(
             ResourceStatus.Attached,
-            assertIs<Document.Event.DocumentStatusChanged>(lifecycleEvents.last()).docStatus,
+            assertIs<Document.Event.DocumentStatusChanged>(lifecycleEvents.first()).docStatus,
         )
+        assertIs<Document.Event.LocalChange>(lifecycleEvents.last())
         assertFalse(document.history.canUndo())
         assertFalse(document.history.canRedo())
 
@@ -467,41 +469,49 @@ class ClientTest {
     }
 
     @Test
-    fun `attachDocument rolls back all initial root entries when an initializer fails`() = runTest {
-        // given
-        val document = Document(NORMAL_DOCUMENT_KEY)
-        val statuses = mutableListOf<Document.Event.DocumentStatusChanged>()
-        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
-            document.events.filterIsInstance<Document.Event.DocumentStatusChanged>()
-                .collect(statuses::add)
+    fun `attachDocument leaves the document attached and detachable when an initializer fails`() =
+        runTest {
+            // given
+            val document = Document(NORMAL_DOCUMENT_KEY)
+            val statuses = mutableListOf<Document.Event.DocumentStatusChanged>()
+            val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<Document.Event.DocumentStatusChanged>()
+                    .collect(statuses::add)
+            }
+            target.activateAsync().await()
+
+            // when
+            val result = target.attachDocument(
+                document = document,
+                syncMode = Manual,
+                initialRoot = linkedMapOf(
+                    "first" to { key -> this[key] = 1 },
+                    "second" to { error("initializer failed") },
+                ),
+            ).await()
+            delay(10)
+
+            // then: JS ordering (F3) — the document is registered as Attached BEFORE the
+            // initialRoot update runs, so a throwing initializer does not roll anything
+            // back; the attach deferred still resolves to failure, but the document stays
+            // attached and detachable rather than left in limbo.
+            assertTrue(result.isFailure)
+            // The throwing updater's change is never committed to root, so "first" is
+            // never observable even though its own write inside the same change succeeded
+            // before the throw.
+            assertNull(document.getRoot().getOrNull("first"))
+            assertEquals(ResourceStatus.Attached, document.getStatus())
+            assertTrue(target.has(NORMAL_DOCUMENT_KEY))
+            assertTrue(statuses.any { it.docStatus == ResourceStatus.Attached })
+
+            collector.cancel()
+            target.detachDocument(document).await()
+            target.deactivateAsync().await()
+            document.close()
         }
-        target.activateAsync().await()
-
-        // when
-        val result = target.attachDocument(
-            document = document,
-            syncMode = Manual,
-            initialRoot = linkedMapOf(
-                "first" to { key -> this[key] = 1 },
-                "second" to { error("initializer failed") },
-            ),
-        ).await()
-        delay(10)
-
-        // then
-        assertTrue(result.isFailure)
-        assertNull(document.getRoot().getOrNull("first"))
-        assertEquals(ResourceStatus.Detached, document.getStatus())
-        assertFalse(target.has(NORMAL_DOCUMENT_KEY))
-        assertTrue(statuses.none { it.docStatus == ResourceStatus.Attached })
-
-        collector.cancel()
-        target.deactivateAsync().await()
-        document.close()
-    }
 
     @Test
-    fun `attachDocument rolls back initial root entries on schema and size validation failures`() =
+    fun `attachDocument leaves the document attached on schema and size validation failures`() =
         runTest {
             // given
             val schemaKey = "SCHEMA_INITIAL_ROOT"
@@ -555,13 +565,16 @@ class ClientTest {
                 initialRoot = mapOf("value" to { key -> this[key] = "too large" }),
             ).await()
 
-            // then
+            // then: reorder consequence (F3) — schema/size validation now throws inside the
+            // post-registration initialRoot update, so both documents stay Attached and
+            // detachable rather than rolling back to Detached.
             assertTrue(schemaResult.isFailure)
             assertTrue(sizeResult.isFailure)
             listOf(schemaDocument, sizeDocument).forEach { document ->
                 assertNull(document.getRoot().getOrNull("value"))
-                assertEquals(ResourceStatus.Detached, document.getStatus())
-                assertFalse(target.has(document.getKey()))
+                assertEquals(ResourceStatus.Attached, document.getStatus())
+                assertTrue(target.has(document.getKey()))
+                target.detachDocument(document).await()
                 document.close()
             }
 

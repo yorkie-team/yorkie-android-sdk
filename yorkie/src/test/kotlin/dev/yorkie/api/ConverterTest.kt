@@ -356,6 +356,9 @@ class ConverterTest {
 
         assertEquals(restore.fromPos, decodedRestore.fromPos)
         assertEquals(restore.toPos, decodedRestore.toPos)
+        // F15: restore.contents must be non-empty — otherwise the id comparison below
+        // would pass vacuously on a reverted `contents` rebuild (null == null).
+        assertFalse(restore.contents.isNullOrEmpty())
         assertEquals(restore.contents?.map { it.id }, decodedRestore.contents?.map { it.id })
         assertEquals("<root><p>123</p></root>", tree.toXml())
 
@@ -376,6 +379,53 @@ class ConverterTest {
             as TreeEditOperation
 
         assertEquals(1, decodedSplit.splitLevel)
+    }
+
+    @Test
+    fun `should round trip the effective history text edit payload`() {
+        fun ticket(lamport: Long) = TimeTicket(lamport, 0u, ActorID.INITIAL_ACTOR_ID)
+
+        val textTicket = ticket(1)
+        val text = CrdtText(RgaTreeSplit(), textTicket)
+        val root = CrdtRoot(CrdtObject(InitialTimeTicket, memberNodes = ElementRht()))
+        root.rootObject.set("text", text, textTicket)
+        root.registerElement(text, root.rootObject)
+
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", ticket(2))
+
+        val (insertFrom, insertTo) = text.indexRangeToPosRange(2, 2)
+        val insert = EditOperation(
+            fromPos = insertFrom,
+            toPos = insertTo,
+            content = "XYZ",
+            parentCreatedAt = textTicket,
+            executedAt = ticket(3),
+            attributes = emptyMap(),
+        )
+        val delete = insert.execute(root, OpSource.Local, null).reverseOps.single()
+            as EditOperation
+
+        delete.executedAt = ticket(4)
+        val deleteResult = delete.execute(root, OpSource.UndoRedo, null)
+        val decodedDelete = listOf(delete.toPBOperation()).toOperations().single()
+            as EditOperation
+
+        // F10: the reconciled range (assigned back onto fromPos/toPos by execute()) is
+        // what gets serialized — not the stale capture-time positions.
+        assertEquals(delete.fromPos, decodedDelete.fromPos)
+        assertEquals(delete.toPos, decodedDelete.toPos)
+
+        val restore = deleteResult.reverseOps.single() as EditOperation
+        restore.executedAt = ticket(5)
+        restore.execute(root, OpSource.UndoRedo, null)
+        val decodedRestore = listOf(restore.toPBOperation()).toOperations().single()
+            as EditOperation
+
+        assertEquals(restore.fromPos, decodedRestore.fromPos)
+        assertEquals(restore.toPos, decodedRestore.toPos)
+        // Net effect of insert -> undo(delete) -> undo-the-undo(restore) is the original
+        // insert persisting, mirroring the tree round-trip test's "123" end state above.
+        assertEquals("HeXYZllo", text.toString())
     }
 
     @Test

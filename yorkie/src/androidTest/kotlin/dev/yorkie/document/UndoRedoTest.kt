@@ -5,6 +5,7 @@ import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonPrimitive
+import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
@@ -277,6 +278,41 @@ class UndoRedoTest {
             // Remote history changes stay outside B's history; B still undoes its own append.
             d2.history.undoAsync().await()
             assertEquals("<root><p>123</p></root>", d2.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+    }
+
+    @Test
+    fun test_text_undo_and_redo_converge_after_a_concurrent_overlapping_edit() {
+        // F10 scenario 2: c1 edits and holds the undo; c2 commits a remote edit
+        // overlapping the END of c1's pending undo range; c1 undoes — both replicas
+        // must converge (the reconciled local range must equal the serialized wire
+        // range, or the two replicas diverge).
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            d1.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, "abcde")
+            }.await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            // c1 makes an edit to be undone later: delete [1,4) -> "ae".
+            d1.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").edit(1, 4, "")
+            }.await()
+
+            // c2 concurrently replaces [3,5) — overlaps the END of c1's pending undo range.
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").edit(3, 5, "Z")
+            }.await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            d1.history.undoAsync().await()
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            val text1 = d1.getRoot().getAs<JsonText>("text").toString()
+            val text2 = d2.getRoot().getAs<JsonText>("text").toString()
+            assertEquals(text1, text2)
         }
     }
 

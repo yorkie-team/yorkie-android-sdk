@@ -1,18 +1,20 @@
 package dev.yorkie.document
 
+import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonPrimitive
+import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.presence.DocPresence
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.After
-import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.junit.Assert.assertTrue as jAssertTrue
 
 /**
  * Covers `updateAsync(skipHistory = true, ...)`: history-exempt local
@@ -40,7 +42,7 @@ class DocumentSkipHistoryTest {
             root["k1"] = "1"
         }.await()
         val canUndoAfterE1 = target.history.canUndo()
-        jAssertTrue(canUndoAfterE1)
+        assertTrue(canUndoAfterE1)
 
         // E2 - skipHistory, must not add an undo entry
         target.updateAsync(skipHistory = true) { root, _ ->
@@ -105,12 +107,12 @@ class DocumentSkipHistoryTest {
         }.await()
 
         target.history.undoAsync().await()
-        jAssertTrue(target.history.canRedo())
+        assertTrue(target.history.canRedo())
 
         target.updateAsync(skipHistory = true) { root, _ ->
             root["k"] = "bookkeeping"
         }.await()
-        jAssertTrue(target.history.canRedo())
+        assertTrue(target.history.canRedo())
 
         target.history.redoAsync().await()
         assertEquals("1", target.getRoot().getAs<JsonPrimitive>("k").value)
@@ -183,14 +185,143 @@ class DocumentSkipHistoryTest {
     }
 
     @Test
-    fun `pre-skipHistory two-parameter updateAsync stays on the JVM binary surface`() {
-        // given: callers compiled before skipHistory existed link against
-        // updateAsync(message, updater) — kept via a hidden bridge overload.
-        val bridges = Document::class.java.methods.filter {
-            it.name == "updateAsync" && it.parameterCount == 2
+    fun `skipHistory tree deletion produces no undo entry and its mutation persists`() = runTest {
+        // given: <doc><p>AB</p></doc>
+        target.updateAsync { root, _ ->
+            root.setNewTree("tree", element("doc") { element("p") { text { "AB" } } })
+        }.await()
+
+        // Ordinary deletion: removes "A"; restores on undo (contrast case, AC8).
+        target.updateAsync { root, _ ->
+            root.getAs<JsonTree>("tree").edit(1, 2)
+        }.await()
+        assertEquals("<doc><p>B</p></doc>", target.getRoot().getAs<JsonTree>("tree").toXml())
+        target.history.undoAsync().await()
+        assertEquals("<doc><p>AB</p></doc>", target.getRoot().getAs<JsonTree>("tree").toXml())
+        target.history.redoAsync().await()
+        assertEquals("<doc><p>B</p></doc>", target.getRoot().getAs<JsonTree>("tree").toXml())
+        val canUndoAfterOrdinary = target.history.canUndo()
+        assertTrue(canUndoAfterOrdinary)
+
+        // skipHistory deletion: removes "B"; produces zero reverse ops (AC8) — no new
+        // undo entry is pushed, and the deletion is permanent (not reachable via undo).
+        target.updateAsync(skipHistory = true) { root, _ ->
+            root.getAs<JsonTree>("tree").edit(1, 2)
+        }.await()
+        assertEquals("<doc><p></p></doc>", target.getRoot().getAs<JsonTree>("tree").toXml())
+        assertEquals(canUndoAfterOrdinary, target.history.canUndo())
+
+        // The one available undo entry is still the ordinary deletion above, not the
+        // skipHistory one. Its reverse op re-inserts "A" at the reconciled point (the
+        // skipHistory deletion shifted/collapsed that point when it removed "B"); "B"
+        // itself never comes back since the skipHistory deletion produced no reverse op.
+        target.history.undoAsync().await()
+        assertEquals("<doc><p>A</p></doc>", target.getRoot().getAs<JsonTree>("tree").toXml())
+    }
+
+    @Test
+    fun `skipHistory overwrite of an ordinary key undoes as a no-op and redoes by LWW`() = runTest {
+        // E1 - ordinary: k = "1"
+        target.updateAsync { root, _ ->
+            root["k"] = "1"
+        }.await()
+        assertEquals("1", target.getRoot().getAs<JsonPrimitive>("k").value)
+
+        // E2 - skipHistory overwrite: k = "bookkeeping"
+        target.updateAsync(skipHistory = true) { root, _ ->
+            root["k"] = "bookkeeping"
+        }.await()
+        assertEquals("bookkeeping", target.getRoot().getAs<JsonPrimitive>("k").value)
+
+        // Undo direction: E1's reverse op is a Remove targeting the specific "1"
+        // element, which the skipHistory write already tombstoned (superseded by
+        // "bookkeeping"). Removing an already-superseded element is a no-op on the
+        // active value — remote-like semantics mean createdAt is not retargeted —
+        // so "bookkeeping" is what survives, not "1".
+        target.history.undoAsync().await()
+        assertEquals("bookkeeping", target.getRoot().getAs<JsonPrimitive>("k").value)
+
+        // Redo direction: replaying E1 is an ordinary Set of "1" with a freshly
+        // issued (newer) ticket, so it wins LWW over "bookkeeping" exactly as any
+        // genuinely remote write with a newer ticket would — this is the same
+        // remote-like contract, not a special-cased no-op.
+        target.history.redoAsync().await()
+        assertEquals("1", target.getRoot().getAs<JsonPrimitive>("k").value)
+    }
+
+    @Test
+    fun `skipHistory reconciles a pending tree undo entry across index shift`() = runTest {
+        // given: <root><p></p></root>
+        target.updateAsync { root, _ ->
+            root.setNewTree("tree", element("root") { element("p") {} })
+        }.await()
+
+        // E1 - ordinary insert "A" at index 1
+        target.updateAsync { root, _ ->
+            root.getAs<JsonTree>("tree").edit(1, 1, text { "A" })
+        }.await()
+        assertEquals("<root><p>A</p></root>", target.getRoot().getAs<JsonTree>("tree").toXml())
+
+        // E2 - skipHistory insert "X" before "A", shifting E1's undo range right by one.
+        target.updateAsync(skipHistory = true) { root, _ ->
+            root.getAs<JsonTree>("tree").edit(1, 1, text { "X" })
+        }.await()
+        assertEquals("<root><p>XA</p></root>", target.getRoot().getAs<JsonTree>("tree").toXml())
+
+        // Undo E1: reconciliation must have shifted the undo range past "X" so only
+        // "A" (the user's edit) is removed; "X" (bookkeeping) survives.
+        target.history.undoAsync().await()
+        assertEquals("<root><p>X</p></root>", target.getRoot().getAs<JsonTree>("tree").toXml())
+
+        // Redo replays symmetrically.
+        target.history.redoAsync().await()
+        assertEquals("<root><p>XA</p></root>", target.getRoot().getAs<JsonTree>("tree").toXml())
+    }
+
+    @Test
+    fun `skipHistory reconciles a pending text undo entry across index shift`() = runTest {
+        // given: setNewText, ordinary insert "A"
+        target.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "A")
+        }.await()
+        assertEquals("A", target.getRoot().getAs<JsonText>("text").toString())
+
+        // skipHistory insert "X" before "A", shifting the pending undo range right.
+        target.updateAsync(skipHistory = true) { root, _ ->
+            root.getAs<JsonText>("text").edit(0, 0, "X")
+        }.await()
+        assertEquals("XA", target.getRoot().getAs<JsonText>("text").toString())
+
+        // Undo the ordinary insert: only "A" is removed, "X" survives.
+        target.history.undoAsync().await()
+        assertEquals("X", target.getRoot().getAs<JsonText>("text").toString())
+
+        // Redo replays symmetrically.
+        target.history.redoAsync().await()
+        assertEquals("XA", target.getRoot().getAs<JsonText>("text").toString())
+    }
+
+    @Test
+    fun `positional two-parameter updateAsync call compiles and runs`() = runTest {
+        val updater: suspend (JsonObject, DocPresence) -> Unit =
+            { root, _ -> root["k"] = "positional" }
+
+        target.updateAsync("msg", updater).await()
+
+        assertEquals("positional", target.getRoot().getAs<JsonPrimitive>("k").value)
+    }
+
+    @Test
+    fun `pre-skipHistory two-parameter updateAsync binary surface is preserved`() {
+        // The original pre-skipHistory updateAsync(message, updater) overload must keep
+        // its exact `$default` synthetic (receiver + message + updater + mask + marker =
+        // 5 params) so bytecode compiled against the old signature still links. The
+        // 3-param overload's own `$default` synthetic has 6 params (skipHistory added),
+        // so filtering on `== 5` isolates only the preserved original.
+        val defaults = Document::class.java.declaredMethods.filter {
+            it.name == "updateAsync\$default" && it.parameterCount == 5
         }
 
-        // then
-        assertEquals(1, bridges.size)
+        assertEquals(1, defaults.size)
     }
 }

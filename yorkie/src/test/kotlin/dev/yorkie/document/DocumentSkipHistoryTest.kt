@@ -302,6 +302,43 @@ class DocumentSkipHistoryTest {
     }
 
     @Test
+    fun `a user edit in the attach clearHistory-to-skipHistory window keeps its undo entry`() =
+        runTest {
+            // Reproduces the fixed attach ordering sequentially (spec 009 AC1): the racy
+            // gated-concurrent variant is unsafe — see the discovery note in the round build
+            // report — so this pins the identical observable window guarantee deterministically.
+
+            // 1. Attach-path clearHistory, moved up ahead of applyStatus(Attached). Wipes any
+            // prior/offline entries.
+            target.clearHistory()
+
+            // 2. A user edit lands in the window between that clearHistory and the initialRoot
+            // update completing.
+            target.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, "user")
+            }.await()
+            assertTrue(target.history.canUndo())
+
+            // 3. The initialRoot update itself, run with skipHistory = true so it never enters
+            // history.
+            target.updateAsync(skipHistory = true) { root, _ ->
+                if ("seed" !in root.keys) {
+                    root["seed"] = 42
+                }
+            }.await()
+
+            // No trailing clearHistory wipes the user edit's entry, and the skipHistory update
+            // added no entry of its own.
+            assertTrue(target.history.canUndo())
+
+            // Undo reverts only the user edit; the initialRoot value stays intact.
+            target.history.undoAsync().await()
+            assertEquals("", target.getRoot().getAs<JsonText>("text").toString())
+            assertEquals(42, target.getRoot().getAs<JsonPrimitive>("seed").value)
+            assertTrue(target.history.canRedo())
+        }
+
+    @Test
     fun `positional two-parameter updateAsync call compiles and runs`() = runTest {
         val updater: suspend (JsonObject, DocPresence) -> Unit =
             { root, _ -> root["k"] = "positional" }

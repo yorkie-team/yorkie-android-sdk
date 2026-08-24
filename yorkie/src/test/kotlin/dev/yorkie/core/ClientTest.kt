@@ -472,7 +472,15 @@ class ClientTest {
     fun `attachDocument leaves the document attached and detachable when an initializer fails`() =
         runTest {
             // given
+            mockkStatic(Base64::class)
+            every { Base64.encodeToString(any(), any()) } returns "mockk"
             val document = Document(NORMAL_DOCUMENT_KEY)
+            // A pre-attach offline edit on the Detached document: proves an undo entry
+            // exists to be cleared by the moved-up attach-path clearHistory (spec 009 AC4).
+            // Its VersionVector must encode via Base64 when the attach request's ChangePack
+            // is built, hence the mock above.
+            document.updateAsync { root, _ -> root["pre"] = 1 }.await()
+            assertTrue(document.history.canUndo())
             val statuses = mutableListOf<Document.Event.DocumentStatusChanged>()
             val collector = launch(start = CoroutineStart.UNDISPATCHED) {
                 document.events.filterIsInstance<Document.Event.DocumentStatusChanged>()
@@ -503,11 +511,16 @@ class ClientTest {
             assertEquals(ResourceStatus.Attached, document.getStatus())
             assertTrue(target.has(NORMAL_DOCUMENT_KEY))
             assertTrue(statuses.any { it.docStatus == ResourceStatus.Attached })
+            // The moved-up clearHistory() runs before applyStatus, so history is cleared
+            // even though the initializer threw afterward (spec 009 AC4).
+            assertFalse(document.history.canUndo())
+            assertFalse(document.history.canRedo())
 
             collector.cancel()
             target.detachDocument(document).await()
             target.deactivateAsync().await()
             document.close()
+            unmockkStatic(Base64::class)
         }
 
     @Test

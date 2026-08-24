@@ -119,13 +119,13 @@ import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
  * server-provided root does not contain it. The absence guard checks only the mapped key itself —
  * an initializer is expected to write only that key; writes to other keys are not guarded against
  * and are not part of the documented contract. Initial values become ordinary Yorkie changes but
- * are removed from undo history before attachment completes. Concurrent first attachments may both
- * initialize a missing key and converge through normal CRDT conflict resolution.
+ * are history-exempt via `skipHistory`, so they never enter the undo/redo history. Concurrent
+ * first attachments may both initialize a missing key and converge through normal CRDT conflict
+ * resolution.
  *
- * The initializer stays a callback (`suspend JsonObject.(key: String) -> Unit`) rather than a
- * plain value map because a value cannot express [JsonObject.setNewTree] or
- * [JsonObject.setNewText] construction; Java consumers that need only primitive/object values can
- * still use this shape by writing directly to the receiver inside the lambda.
+ * The initializer is a `suspend JsonObject.(key: String) -> Unit` lambda, which is awkward to
+ * construct from Java; Java consumers should prefer the no-`initialRoot` [attachDocument]
+ * overload instead.
  */
 public typealias InitialRoot = Map<String, suspend JsonObject.(key: String) -> Unit>
 
@@ -1056,15 +1056,18 @@ public class Client(
      *
      * The authoritative server response is applied first. Each [initialRoot] initializer is then
      * invoked only if its map key is absent, and receives that key as its argument. All invoked
-     * initializers form one atomic local change. This change synchronizes normally, but is removed
-     * from undo history before the attached event. Concurrent first attachments are not globally
-     * serialized; their ordinary CRDT changes converge through normal conflict resolution.
+     * initializers form one atomic local change. This change runs as a history-exempt
+     * `skipHistory` update, so it never enters the undo/redo history. Concurrent first
+     * attachments are not globally serialized; their ordinary CRDT changes converge through
+     * normal conflict resolution.
      *
      * The document is marked [ResourceStatus.Attached] and registered with this client BEFORE the
      * [initialRoot] initializers run, so a throwing initializer leaves the document attached and
-     * detachable rather than rolled back; the returned deferred still resolves to failure. Document
-     * events emitted by the initializer change are always preceded by the `Attached`
-     * [Document.Event.DocumentStatusChanged] event.
+     * detachable rather than rolled back; the returned deferred still resolves to failure, and
+     * history is already cleared. A user edit made after the `Attached` event while an
+     * initializer is still running keeps its undo entry, index-reconciled against the
+     * initializer change. Document events emitted by the initializer change are always preceded
+     * by the `Attached` [Document.Event.DocumentStatusChanged] event.
      *
      * @param initialPresence The initial presence of the client.
      * @param syncMode The synchronization mode of the document.
@@ -1153,14 +1156,24 @@ public class Client(
                 document.setDisablePresence(response.disablePresence)
                 document.applyChangePack(pack)
 
-                // JS SDK v0.7.16 ordering (packages/sdk/src/client/client.ts:665-793 @ 28a5a42e):
-                // Removed early-return (no clearHistory here — JS parity) → applyStatus(Attached)
-                // → attachment registration → runWatchLoop → initialRoot update → single
-                // unconditional clearHistory. On an initializer throw, the document stays
-                // Attached and registered (detachable), matching JS's no-rollback behavior.
+                // Ordering (spec 009 — closes the PR #358 clearHistory window; JS SDK v0.7.16
+                // reference at packages/sdk/src/client/client.ts:665-793 @ 28a5a42e admits no
+                // interleaving because that block is synchronous, so no JS-observable case
+                // changes): Removed early-return → single clearHistory() (wipes pre-attach/offline
+                // entries) → applyStatus(Attached) → attachment registration → runWatchLoop →
+                // initialRoot updateAsync(skipHistory = true) (never enters history, so it needs
+                // no trailing cleanup) → return. History is already cleared before the initializer
+                // runs, so a user edit made after the Attached event while the initializer is
+                // still suspended keeps its undo entry instead of being silently wiped. On an
+                // initializer throw the document still stays Attached and registered (detachable,
+                // matching JS's no-rollback behavior), and history is already cleared.
                 if (document.getStatus() == ResourceStatus.Removed) {
                     return@async SUCCESS
                 }
+
+                // Clear undo/redo stacks so that pre-attach/offline entries and the upcoming
+                // initialRoot setup are not reachable via undo. Mirrors JS SDK PR #1238.
+                document.clearHistory()
 
                 document.applyStatus(ResourceStatus.Attached)
                 attachments[documentKey] = Attachment(
@@ -1178,7 +1191,7 @@ public class Client(
                 }
 
                 val initialRootResult = try {
-                    document.updateAsync { root, _ ->
+                    document.updateAsync(skipHistory = true) { root, _ ->
                         initialRoot.forEach { (key, initializer) ->
                             if (key !in root.keys) {
                                 initializer(root, key)
@@ -1192,10 +1205,6 @@ public class Client(
                 if (initialRootResult.isFailure) {
                     return@async initialRootResult
                 }
-
-                // Clear undo/redo stacks so that initialRoot setup operations
-                // are not reachable via undo. Mirrors JS SDK PR #1238.
-                document.clearHistory()
             }
             SUCCESS
         }

@@ -31,6 +31,16 @@ internal data class TreeEditOperation(
     val splitLevel: Int,
     override var executedAt: TimeTicket,
     /**
+     * Tickets an element split issued, in issue order, captured by
+     * [dev.yorkie.document.json.JsonTree]'s edit on the originating replica.
+     * Serialized to protobuf (port 4ec66cc0): the applying replica consumes
+     * these instead of reconstructing them from [executedAt] + the top-level
+     * content count, which under-counts once a content has descendants (each
+     * consumes a ticket too). Empty for changes written before this field
+     * existed; [issueTimeTicket] falls back to the reconstruction then.
+     */
+    var splitTickets: List<TimeTicket> = emptyList(),
+    /**
      * Document-index offsets that define the undo range in the integer coordinate space.
      * These are used by [reconcileOperation] to adjust positions when remote edits land.
      *
@@ -193,8 +203,8 @@ internal data class TreeEditOperation(
                             tree,
                             actualFrom,
                             fromIndex,
-                            editContents,
                             result.removedNodes,
+                            result.insertedContentSize,
                             result.mergeLevel,
                             result.removedSpans,
                             result.insertedSpans,
@@ -331,8 +341,8 @@ internal data class TreeEditOperation(
         tree: CrdtTree,
         actualFrom: CrdtTreePos,
         fromIndex: Int,
-        editContents: List<CrdtTreeNode>?,
         removedNodes: List<CrdtTreeNode>,
+        insertedContentSize: Int = 0,
         mergeLevel: Int = 0,
         removedSpans: List<TreeRestoreSpan> = emptyList(),
         insertedSpans: List<TreeRestoreSpan> = emptyList(),
@@ -381,12 +391,13 @@ internal data class TreeEditOperation(
             )
         }
 
-        // Document-index span occupied by what was actually inserted. For undo
-        // ops this comes from the freshly-rebuilt snapshot nodes, not the
-        // original [contents] (which is null on undo ops). Each node
-        // contributes its [paddedSize]: text length for text nodes, or
-        // `2 + sum(children.paddedSize)` for elements (open + close + body).
-        val insertedSpan = editContents?.sumOf { it.paddedSize } ?: 0
+        // Document-index span occupied by what was actually inserted. Read
+        // from CrdtTree.edit's accepted-content measurement rather than
+        // recomputed from contents here: a copy dropped as a cross-change ID
+        // reuse (CrdtTree.dropDuplicateContents, port 2ed28322) contributes
+        // nothing, so this reverse never widens past what was truly
+        // inserted (redo would otherwise delete a neighbour).
+        val insertedSpan = insertedContentSize
 
         // Integer range of the reverse op: covers the inserted span (if any).
         // fromIndex is the live-tree position just before this edit was applied.
@@ -520,7 +531,14 @@ internal data class TreeEditOperation(
     private fun issueTimeTicket(executedAt: TimeTicket): () -> TimeTicket {
         var delimiter = executedAt.delimiter
         contents?.let { delimiter += it.size.toUInt() }
-        return { TimeTicket(executedAt.lamport, ++delimiter, executedAt.actorID) }
+        var issued = 0
+        return {
+            if (issued < splitTickets.size) {
+                splitTickets[issued++]
+            } else {
+                TimeTicket(executedAt.lamport, ++delimiter, executedAt.actorID)
+            }
+        }
     }
 
     companion object {

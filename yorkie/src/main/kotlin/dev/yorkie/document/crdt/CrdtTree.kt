@@ -17,6 +17,7 @@ import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
 import dev.yorkie.util.Logger.Companion.logDebug
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
@@ -29,6 +30,17 @@ public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
 internal typealias CrdtTreeToken = TreeToken<CrdtTreeNode>
 
 internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
+
+/**
+ * Judges whether a node reached [CrdtTree]'s merge target strictly AFTER
+ * the merge-source tombstone a style/removeStyle range's declared end
+ * anchor names — i.e., whether it is an "interloper" the styling client
+ * never saw when it recorded that range. Returned by
+ * [CrdtTree.mergedAnchorInterloperGuard]. Port 1c033ff5.
+ */
+private fun interface MergedAnchorInterloperGuard {
+    fun isInterloper(node: CrdtTreeNode): Boolean
+}
 
 /**
  * [Boundary] selects how [CrdtTree.findNodesAndSplitText] resolves a
@@ -143,8 +155,18 @@ internal data class CrdtTree(
         get() = indexTree.root.toTreeNode()
 
     init {
+        // Plain put on the fast path; a document whose history carries a
+        // duplicate CrdtTreeNodeID (a pre-v0.7.16 copy-reinsert undo) leaves
+        // nodeMapByID smaller than the traversed node count, so re-register
+        // every node through registerNode to resolve the winner (port
+        // 2ed28322). Correct trees pay only the size-vs-count comparison.
+        var nodeCount = 0
         indexTree.traverseAll { node, _ ->
             nodeMapByID[node.id] = node
+            nodeCount++
+        }
+        if (nodeMapByID.size != nodeCount) {
+            indexTree.traverseAll { node, _ -> registerNode(node) }
         }
         rebuildMergeState()
     }
@@ -214,6 +236,7 @@ internal data class CrdtTree(
         val prevAttributes = mutableMapOf<String, String>()
         val newAttrKeys = mutableListOf<String>()
         var capturedPrev = false
+        val shouldSkipToken = styleSkipPredicate(range.second, versionVector)
         traverseInPosRange(
             fromParent = fromParent,
             fromLeft = fromLeft,
@@ -224,10 +247,7 @@ internal data class CrdtTree(
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
             if (node.canStyle(executedAt, clientLamportAtChange) && attributes != null) {
-                if (tokenType == TokenType.End &&
-                    versionVector != null &&
-                    hasUnknownSplitSibling(node, versionVector)
-                ) {
+                if (shouldSkipToken(node, tokenType)) {
                     return@traverseInPosRange
                 }
 
@@ -729,12 +749,41 @@ internal data class CrdtTree(
             )
         }
 
-        // 05. insert the given node at the given position.
-        if (contents?.isNotEmpty() == true) {
+        // 05. insert the given node at the given position. Cross-change ID
+        // reuse (an earlier change, another actor, or an ID this same edit's
+        // own split is about to create) is dropped as a whole subtree here —
+        // AFTER step 01's range resolution, which can itself split text and
+        // create the very ID a content node carries (port 2ed28322).
+        // insertedContentSize is measured on the still-detached content, so
+        // it reflects the accepted-content span even if the insert loop
+        // below tombstones the content under a removed fromParent.
+        val acceptedContents = contents?.let { dropDuplicateContents(it, executedAt) }
+        val insertedContentSize = acceptedContents?.sumOf { it.paddedSize } ?: 0
+        if (acceptedContents?.isNotEmpty() == true) {
             val aliveContents = mutableListOf<CrdtTreeNode>()
             var leftInChildren = fromLeft
 
-            contents.forEach { content ->
+            // Merge-bound insert stamping (port 1c033ff5): an insert
+            // declared inside a parent a concurrent merge tombstoned stamps
+            // mergedFrom/mergedAt so mergedAnchorInterloperGuard can later
+            // distinguish it from a genuine interloper.
+            val declaredFromParent = range.first.toTreeNodePair(this).first
+            val intendedParent = if (declaredFromParent !== fromParent &&
+                declaredFromParent.isRemoved &&
+                declaredFromParent.mergedInto != null &&
+                resolveMergeTarget(declaredFromParent) === fromParent
+            ) {
+                declaredFromParent
+            } else {
+                null
+            }
+            val intendedMergedAt = intendedParent?.let { parent ->
+                fromParent.allChildren
+                    .firstOrNull { it.mergedFrom == parent.id && it.mergedAt != null }
+                    ?.mergedAt ?: parent.removedAt
+            }
+
+            acceptedContents.forEach { content ->
                 // 03-1. insert the content nodes to the list.
                 if (leftInChildren == fromParent) {
                     // 03-1-1. when there's no leftSibling, then insert content into very front of parent's children List
@@ -745,6 +794,10 @@ internal data class CrdtTree(
                 }
 
                 leftInChildren = content
+                if (intendedParent != null) {
+                    content.mergedFrom = intendedParent.id
+                    content.mergedAt = intendedMergedAt
+                }
                 traverseAll(content) { node, _ ->
                     // if insertion happens during concurrent editing and parent node has been removed,
                     // make new nodes as tombstone immediately
@@ -754,7 +807,7 @@ internal data class CrdtTree(
                     } else {
                         diff = addDataSizes(diff, node.dataSize)
                     }
-                    nodeMapByID[node.id] = node
+                    registerNode(node)
                     // Capture this inserted node's identity span for
                     // identity-preserving insert undo/redo.
                     insertedSpans.add(captureRestoreSpan(node))
@@ -813,6 +866,7 @@ internal data class CrdtTree(
             // recreate a purged subtree top-down (a child's recreate
             // resolves its parent by identity).
             insertedSpans = if (spansComplete) insertedSpans.asReversed() else emptyList(),
+            insertedContentSize = insertedContentSize,
         )
     }
 
@@ -972,6 +1026,7 @@ internal data class CrdtTree(
         val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         var capturedPrev = false
+        val shouldSkipToken = styleSkipPredicate(range.second, versionVector)
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, tokenType), _ ->
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
@@ -981,10 +1036,7 @@ internal data class CrdtTree(
                     clientLamportAtChange,
                 ) && attributeToRemove.isNotEmpty()
             ) {
-                if (tokenType == TokenType.End &&
-                    versionVector != null &&
-                    hasUnknownSplitSibling(node, versionVector)
-                ) {
+                if (shouldSkipToken(node, tokenType)) {
                     return@traverseInPosRange
                 }
 
@@ -1076,8 +1128,64 @@ internal data class CrdtTree(
         indexTree.tokensBetween(fromIndex, toIndex, callback, includeRemoved)
     }
 
+    /**
+     * Registers [node] under its [CrdtTreeNode.id] in [nodeMapByID], keeping
+     * a live node over a tombstone when two nodes claim the same ID (a
+     * document whose history re-inserted a deleted copy under its original
+     * ID, port 2ed28322). A refused node stays reachable via tree traversal,
+     * just not via lookup. Same-state pairs (both live or both removed)
+     * stay last-registered-wins — element-split delimiter IDs legitimately
+     * collide.
+     */
     fun registerNode(node: CrdtTreeNode) {
+        val entry = nodeMapByID.floorEntry(node.id)
+        if (entry != null &&
+            entry.value !== node &&
+            entry.key == node.id &&
+            node.isRemoved &&
+            !entry.value.isRemoved
+        ) {
+            return
+        }
         nodeMapByID[node.id] = node
+    }
+
+    /**
+     * Filters [contents] before they are spliced into the tree at
+     * [editedAt]: a content subtree whose ID was already claimed by a
+     * DIFFERENT change (an earlier change, another actor, or an ID this
+     * same edit's own split is about to create) is dropped as a whole
+     * subtree — silently, never throwing, since such a change may already
+     * be part of a stored history. A subtree whose reused ID belongs to
+     * THIS SAME change/actor is kept: element-split delimiter IDs are
+     * simulated (not carried on the wire pre-field-11), so they
+     * legitimately collide with this edit's own content. Port 2ed28322.
+     */
+    fun dropDuplicateContents(
+        contents: List<CrdtTreeNode>,
+        editedAt: TimeTicket,
+    ): List<CrdtTreeNode> {
+        return contents.filterNot { content ->
+            var reusedID: CrdtTreeNodeID? = null
+            traverseAll(content) { node, _ ->
+                if (node.id.createdAt.lamport == editedAt.lamport &&
+                    node.id.createdAt.actorID == editedAt.actorID
+                ) {
+                    return@traverseAll
+                }
+                val entry = nodeMapByID.floorEntry(node.id)
+                if (entry != null && entry.key == node.id) {
+                    reusedID = node.id
+                }
+            }
+            reusedID?.let { id ->
+                logError(TAG) {
+                    "dropping content subtree rooted at ${content.id}: " +
+                        "$id is already registered by another change"
+                }
+            }
+            reusedID != null
+        }
     }
 
     /**
@@ -1210,6 +1318,95 @@ internal data class CrdtTree(
     }
 
     /**
+     * Builds the interloper judgment for a style/removeStyle range whose
+     * end anchor ([pos]) is declared inside a parent a concurrent merge
+     * tombstoned (port 1c033ff5, mirrors yorkie#1928): fires only when the
+     * declared end parent is a removed, merged-into tombstone sitting
+     * DIRECTLY under its merge target and the styling client's
+     * [versionVector] does not yet know about that removal. Returns null
+     * when the guard does not apply (ordinary range, or the removal is
+     * already known — [advancePastUnknownSplitSiblings]-style redirects
+     * already cover the known case).
+     *
+     * The returned [MergedAnchorInterloperGuard.isInterloper] judges a node
+     * by its highest ancestor still under the merge target (so a moved
+     * subtree's descendants are judged as one unit) and fails open on any
+     * [CrdtTreeNode.mergedFrom] stamp: the first-move rule keeps the
+     * ORIGINAL source parent in the stamp even across a chained merge, so a
+     * stamped node cannot be proven to be a genuine interloper by stamp
+     * equality alone — only stamp-free nodes are positively judged.
+     */
+    private fun mergedAnchorInterloperGuard(
+        pos: CrdtTreePos,
+        versionVector: VersionVector?,
+    ): MergedAnchorInterloperGuard? {
+        if (versionVector == null) return null
+
+        val declaredParent = pos.toTreeNodePair(this).first
+        val removedAt = declaredParent.removedAt
+        if (!declaredParent.isRemoved || declaredParent.mergedInto == null || removedAt == null) {
+            return null
+        }
+        val isRemovalUnknown = versionVector.get(removedAt.actorID)
+            .let { it == null || it < removedAt.lamport }
+        if (!isRemovalUnknown) return null
+
+        val target = resolveMergeTarget(declaredParent)
+        if (target === declaredParent || declaredParent.parent !== target) return null
+
+        val afterTombstone = mutableSetOf<CrdtTreeNode>()
+        var passedTombstone = false
+        for (child in target.allChildren) {
+            if (child === declaredParent) {
+                passedTombstone = true
+                continue
+            }
+            if (passedTombstone) {
+                afterTombstone.add(child)
+            }
+        }
+
+        return MergedAnchorInterloperGuard { node ->
+            var top = node
+            while (top.parent != null && top.parent !== target) {
+                top = requireNotNull(top.parent)
+            }
+            if (top.parent !== target) {
+                false
+            } else if (top.mergedFrom != null) {
+                false
+            } else {
+                top in afterTombstone
+            }
+        }
+    }
+
+    /**
+     * Bundles the existing End-token unknown-split-sibling skip with
+     * [mergedAnchorInterloperGuard] into a single predicate [style] and
+     * [removeStyle] both consult, so a token is skipped either because a
+     * concurrent split extended the range unbeknownst to the editor, or
+     * because it is a merge interloper the range's declared end never
+     * intended to cover. Port 1c033ff5.
+     */
+    private fun styleSkipPredicate(
+        pos: CrdtTreePos,
+        versionVector: VersionVector?,
+    ): (CrdtTreeNode, TokenType) -> Boolean {
+        val anchorGuard = mergedAnchorInterloperGuard(pos, versionVector)
+        return { node, tokenType ->
+            if (tokenType == TokenType.End &&
+                versionVector != null &&
+                hasUnknownSplitSibling(node, versionVector)
+            ) {
+                true
+            } else {
+                anchorGuard != null && anchorGuard.isInterloper(node)
+            }
+        }
+    }
+
+    /**
      * Checks whether [node] has a split sibling (via [CrdtTreeNode.insNextID])
      * whose creation the editor did not know about. Prevents styling via End
      * tokens when a concurrent split extended the range into the split sibling.
@@ -1302,7 +1499,13 @@ internal data class CrdtTree(
      */
     override fun delete(node: CrdtTreeNode) {
         node.parent?.removeChild(node)
-        nodeMapByID.remove(node.id)
+        // Guarded purge (port 2ed28322): only remove the map entry [node]
+        // actually holds — an unconditional remove would unregister a
+        // different live node sharing this ID.
+        val entry = nodeMapByID.floorEntry(node.id)
+        if (entry != null && entry.value === node && entry.key == node.id) {
+            nodeMapByID.remove(node.id)
+        }
 
         val insPrevID = node.insPrevID
         val insNextID = node.insNextID
@@ -1589,14 +1792,14 @@ internal data class CrdtTree(
                 succ.id.offset == offset + length
             ) {
                 parent.insertAt(siblings.indexOf(succ), node)
-                nodeMapByID[node.id] = node
+                registerNode(node)
                 return node
             }
             if (offset > span.id.offset || offset > 0) {
                 val pred = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset - 1))
                 if (pred != null && pred.isText && pred.parent === parent) {
                     parent.insertAfter(pred, node)
-                    nodeMapByID[node.id] = node
+                    registerNode(node)
                     return node
                 }
             }
@@ -1606,7 +1809,7 @@ internal data class CrdtTree(
         val left = span.leftSiblingID?.let(::findFloorNode)
         if (left != null && left.parent === parent) {
             parent.insertAfter(left, node)
-            nodeMapByID[node.id] = node
+            registerNode(node)
             return node
         }
 
@@ -1614,7 +1817,7 @@ internal data class CrdtTree(
         val right = span.rightSiblingID?.let(::findFloorNode)
         if (right != null && right.parent === parent) {
             parent.insertAt(siblings.indexOf(right), node)
-            nodeMapByID[node.id] = node
+            registerNode(node)
             return node
         }
 
@@ -1622,7 +1825,7 @@ internal data class CrdtTree(
         val insertIndex = siblings.indexOfFirst { it.id > node.id }
             .let { if (it == -1) siblings.size else it }
         parent.insertAt(insertIndex, node)
-        nodeMapByID[node.id] = node
+        registerNode(node)
         return node
     }
 
@@ -1973,7 +2176,9 @@ internal data class CrdtTreeNode(
     }
 
     /**
-     * Clones this text node with the given [offset].
+     * Clones this text node with the given [offset], carrying [mergedFrom] and
+     * [mergedAt] so the split product keeps the merge stamp of the moved node
+     * it came from.
      */
     override fun cloneText(offset: Int): CrdtTreeNode {
         return clone(offset, id.createdAt).apply {
@@ -1984,8 +2189,15 @@ internal data class CrdtTreeNode(
 
     /**
      * Clones this element node with the given [issueTimeTicket] function.
+     * The split product holds the other half of the same moved node, so it
+     * carries the same merge stamp (as [cloneText] does).
      */
-    override fun cloneElement(issueTimeTicket: () -> TimeTicket) = clone(0, issueTimeTicket())
+    override fun cloneElement(issueTimeTicket: () -> TimeTicket): CrdtTreeNode {
+        return clone(0, issueTimeTicket()).apply {
+            mergedFrom = this@CrdtTreeNode.mergedFrom
+            mergedAt = this@CrdtTreeNode.mergedAt
+        }
+    }
 
     private fun clone(offset: Int, createdAt: TimeTicket): CrdtTreeNode {
         return copy(

@@ -15,6 +15,7 @@ internal data class ChangeExecutionResult(
     val newPresences: Presences?,
     val reverseOps: List<Operation>,
     val executedOperations: List<Operation>,
+    val opInfoCounts: List<Int>,
 )
 
 /**
@@ -52,16 +53,18 @@ public data class Change internal constructor(
             }
         }
         val allOpInfos = mutableListOf<OperationInfo>()
+        val opInfoCounts = mutableListOf<Int>()
         val reverseOps = mutableListOf<Operation>()
 
         for (op in operations) {
             val result = op.execute(root, source, id.versionVector)
             allOpInfos.addAll(result.opInfos)
+            opInfoCounts.add(result.opInfos.size)
             // addAll(0, ...) preserves internal order of multi-op reverses
             // while reversing the outer operation order (first op's reverse runs last)
             reverseOps.addAll(0, result.reverseOps)
         }
 
-        return ChangeExecutionResult(allOpInfos, newPresences, reverseOps, operations)
+        return ChangeExecutionResult(allOpInfos, newPresences, reverseOps, operations, opInfoCounts)
     }
 }

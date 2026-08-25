@@ -707,70 +707,50 @@ public class Document(
      */
     private fun reconcileHistoryEdits(result: ChangeExecutionResult) {
         var opInfoIndex = 0
-        for (executedOp in result.executedOperations) {
+        result.executedOperations.forEachIndexed { index, executedOp ->
+            // Slice by each operation's own recorded opInfo count instead of
+            // peeking at opInfo types: a zero-effect edit emits none, an
+            // ordinary edit emits one, and executeRestore's retombstone-then-
+            // restore split can emit two — but two adjacent EditOperations can
+            // each emit exactly one, which type-peeking cannot tell apart from
+            // a single operation's two entries.
+            val count = result.opInfoCounts[index]
+            val opInfosForOp = result.opInfos.subList(opInfoIndex, opInfoIndex + count)
+            opInfoIndex += count
+
             when (executedOp) {
                 is EditOperation -> {
-                    // A zero-effect edit emits no EditOpInfo; executeRestore's
-                    // retombstone-then-restore split can emit up to two (a
-                    // retombstone range and a restore range, each covering a
-                    // different span). Reconcile once per entry so pending
-                    // undo/redo offsets shift correctly for every affected span.
-                    while (opInfoIndex < result.opInfos.size) {
-                        val opInfo =
-                            result.opInfos[opInfoIndex] as? OperationInfo.EditOpInfo
-                                ?: break
-                        opInfoIndex++
-                        internalHistory.reconcileTextEdit(
-                            executedOp.parentCreatedAt,
-                            opInfo.from,
-                            opInfo.to,
-                            opInfo.value.text.length,
-                        )
-                    }
+                    // Reconcile once per entry so pending undo/redo offsets
+                    // shift correctly for every affected span.
+                    opInfosForOp.filterIsInstance<OperationInfo.EditOpInfo>()
+                        .forEach { opInfo ->
+                            internalHistory.reconcileTextEdit(
+                                executedOp.parentCreatedAt,
+                                opInfo.from,
+                                opInfo.to,
+                                opInfo.value.text.length,
+                            )
+                        }
                 }
 
                 is TreeEditOperation -> {
                     // For tree edits there may be multiple TreeEditOpInfos per operation
                     // (split/merge decomposes into multiple ranges). Reconcile using the
                     // first deletion range's from/to and the inserted node count.
-                    var firstTreeEditOpInfo: OperationInfo.TreeEditOpInfo? = null
-                    while (opInfoIndex < result.opInfos.size) {
-                        val opInfo = result.opInfos[opInfoIndex]
-                        opInfoIndex++
-                        if (opInfo is OperationInfo.TreeEditOpInfo) {
-                            if (firstTreeEditOpInfo == null) {
-                                firstTreeEditOpInfo = opInfo
-                            }
-                            // Keep consuming TreeEditOpInfos for this operation
-                            val next = result.opInfos.getOrNull(opInfoIndex)
-                            if (next !is OperationInfo.TreeEditOpInfo) break
-                        } else {
-                            break
+                    opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
+                        .firstOrNull()
+                        ?.let { opInfo ->
+                            val insertedSize = opInfo.nodes?.size ?: 0
+                            internalHistory.reconcileTreeEdit(
+                                executedOp.parentCreatedAt,
+                                opInfo.from,
+                                opInfo.to,
+                                insertedSize,
+                            )
                         }
-                    }
-                    firstTreeEditOpInfo?.let { opInfo ->
-                        val insertedSize = opInfo.nodes?.size ?: 0
-                        internalHistory.reconcileTreeEdit(
-                            executedOp.parentCreatedAt,
-                            opInfo.from,
-                            opInfo.to,
-                            insertedSize,
-                        )
-                    }
                 }
 
-                else -> {
-                    // Skip opInfos for non-Edit operations
-                    while (opInfoIndex < result.opInfos.size) {
-                        val opInfo = result.opInfos[opInfoIndex]
-                        opInfoIndex++
-                        if (opInfo !is OperationInfo.EditOpInfo &&
-                            opInfo !is OperationInfo.TreeEditOpInfo
-                        ) {
-                            break
-                        }
-                    }
-                }
+                else -> Unit
             }
         }
     }

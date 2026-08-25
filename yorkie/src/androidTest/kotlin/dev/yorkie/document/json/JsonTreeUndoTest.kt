@@ -100,7 +100,7 @@ class JsonTreeUndoTest {
             c2.syncAsync().await()
             assertEquals(
                 "<root><p>hlo</p></root>",
-                d2.getRoot().getAs<JsonTree>("tree").toXml(),
+                d1.getRoot().getAs<JsonTree>("tree").toXml(),
             )
             assertEquals(
                 "<root><p>hlo</p></root>",
@@ -143,7 +143,7 @@ class JsonTreeUndoTest {
             c2.syncAsync().await()
             assertEquals(
                 "<root><p>hello</p></root>",
-                d2.getRoot().getAs<JsonTree>("tree").toXml(),
+                d1.getRoot().getAs<JsonTree>("tree").toXml(),
             )
             assertEquals(
                 "<root><p>hello</p></root>",
@@ -155,7 +155,7 @@ class JsonTreeUndoTest {
             c2.syncAsync().await()
             assertEquals(
                 "<root><p>hELLlo</p></root>",
-                d2.getRoot().getAs<JsonTree>("tree").toXml(),
+                d1.getRoot().getAs<JsonTree>("tree").toXml(),
             )
             assertEquals(
                 "<root><p>hELLlo</p></root>",

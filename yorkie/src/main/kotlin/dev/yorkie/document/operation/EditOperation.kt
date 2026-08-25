@@ -15,8 +15,8 @@ import dev.yorkie.util.Logger.Companion.logError
  * [EditOperation] is an operations representing editing rich text.
  */
 internal data class EditOperation(
-    val fromPos: RgaTreeSplitPos,
-    val toPos: RgaTreeSplitPos,
+    var fromPos: RgaTreeSplitPos,
+    var toPos: RgaTreeSplitPos,
     val content: String,
     override var parentCreatedAt: TimeTicket,
     override var executedAt: TimeTicket,
@@ -61,6 +61,11 @@ internal data class EditOperation(
                 fromPos to toPos
             }
 
+            if (isUndoOp) {
+                fromPos = actualFrom
+                toPos = actualTo
+            }
+
             val result = parentObject.edit(
                 RgaTreeSplitPosRange(actualFrom, actualTo),
                 content,
@@ -82,9 +87,11 @@ internal data class EditOperation(
                 )
             }
 
-            // Reverse ops are only generated for local and undo/redo operations.
-            // Remote applications (applyChanges) do not produce reverse ops.
-            val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
+            // Reverse ops are only generated for local and undo/redo operations that
+            // actually changed something. Remote applications (applyChanges) and
+            // history-exempt (skipHistory) changes do not produce reverse ops, nor
+            // does a zero-effect edit (empty opInfos).
+            val reverseOps = if (opInfos.isNotEmpty() && source.producesReverseOps) {
                 // fromIndex is the document index where this edit starts in the live text.
                 // Use the opInfo value computed during the edit (before any insertion offset).
                 val fromIndex = opInfos.filterIsInstance<OperationInfo.EditOpInfo>()

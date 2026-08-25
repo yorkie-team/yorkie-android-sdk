@@ -45,13 +45,17 @@ internal data class ArraySetOperation(
 
         root.registerElement(value, null)
 
-        val reverseOp = previousValue?.let {
-            ArraySetOperation(
-                createdAt = createdAt,
-                value = it.deepCopy(),
-                parentCreatedAt = parentCreatedAt,
-                executedAt = executedAt,
-            )
+        val reverseOp = if (source.producesReverseOps) {
+            previousValue?.let {
+                ArraySetOperation(
+                    createdAt = createdAt,
+                    value = it.deepCopy(),
+                    parentCreatedAt = parentCreatedAt,
+                    executedAt = executedAt,
+                )
+            }
+        } else {
+            null
         }
 
         return ExecutionResult(

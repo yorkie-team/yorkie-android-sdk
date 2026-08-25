@@ -12,6 +12,7 @@ import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeContext
+import dev.yorkie.document.change.ChangeExecutionResult
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
@@ -182,7 +183,8 @@ public class Document(
             .orEmpty()
 
     /**
-     * Provides undo/redo operations for this document.
+     * Provides undo/redo operations for local user changes in this document.
+     * The resulting document changes are synchronized normally.
      */
     public val history: DocumentHistory = object : DocumentHistory {
         override fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating
@@ -224,6 +226,25 @@ public class Document(
      */
     public fun updateAsync(
         message: String? = null,
+        updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
+    ): Deferred<OperationResult> = updateAsync(message, skipHistory = false, updater = updater)
+
+    /**
+     * Executes the given [updater] to update this document.
+     *
+     * A `skipHistory` write is treated exactly like a remote client's write for history
+     * purposes: pending undo/redo entries are index-reconciled against it, but an entry
+     * whose target element it overwrites or removes is not retargeted and undoes/redoes
+     * as a no-op or replay, as with remote changes.
+     *
+     * @param skipHistory Skips recording this change on the undo/redo history
+     * stacks when true. The change still mutates the document, emits events,
+     * and syncs normally; only the undo entry and redo-stack clearing are
+     * skipped, mirroring how remote changes bypass local history.
+     */
+    public fun updateAsync(
+        message: String? = null,
+        skipHistory: Boolean,
         updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
     ): Deferred<OperationResult> {
         return scope.async {
@@ -306,7 +327,11 @@ public class Document(
                 return@async result
             }
             val change = context.toChange()
-            val localResult = change.execute(root, _presences.value)
+            val localResult = change.execute(
+                root,
+                _presences.value,
+                if (skipHistory) OpSource.LocalNoHistory else OpSource.Local,
+            )
             val operationInfos = localResult.opInfos
             val newPresences = localResult.newPresences
             val reverseOps = localResult.reverseOps
@@ -314,13 +339,19 @@ public class Document(
             localChanges += change
             changeID = context.getNextId()
 
-            // Push reverse ops for undo
-            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
-            if (reverseHistoryOps.isNotEmpty()) {
-                internalHistory.pushUndo(reverseHistoryOps)
-            }
-            if (operationInfos.isNotEmpty()) {
-                internalHistory.clearRedo()
+            if (skipHistory) {
+                // A skipHistory write is treated exactly like a remote client's write for
+                // history purposes: pending undo/redo entries are index-reconciled against
+                // it, but it is never itself pushed onto the undo stack.
+                reconcileHistoryEdits(localResult)
+            } else {
+                val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+                if (reverseHistoryOps.isNotEmpty()) {
+                    internalHistory.pushUndo(reverseHistoryOps)
+                }
+                if (operationInfos.isNotEmpty()) {
+                    internalHistory.clearRedo()
+                }
             }
 
             if (change.hasOperations) {
@@ -644,70 +675,7 @@ public class Document(
             // Reconcile text and tree undo/redo stack entries against remote edits.
             // Only reconcile against changes from other clients.
             if (change.id.actor != changeID.actor) {
-                var opInfoIndex = 0
-                for (executedOp in remoteResult.executedOperations) {
-                    when (executedOp) {
-                        is EditOperation -> {
-                            // For text edits there is at most one EditOpInfo per operation.
-                            while (opInfoIndex < remoteResult.opInfos.size) {
-                                val opInfo = remoteResult.opInfos[opInfoIndex]
-                                opInfoIndex++
-                                if (opInfo is OperationInfo.EditOpInfo) {
-                                    internalHistory.reconcileTextEdit(
-                                        executedOp.parentCreatedAt,
-                                        opInfo.from,
-                                        opInfo.to,
-                                        opInfo.value.text.length,
-                                    )
-                                    break
-                                }
-                            }
-                        }
-
-                        is TreeEditOperation -> {
-                            // For tree edits there may be multiple TreeEditOpInfos per operation
-                            // (split/merge decomposes into multiple ranges). Reconcile using the
-                            // first deletion range's from/to and the inserted node count.
-                            var firstTreeEditOpInfo: OperationInfo.TreeEditOpInfo? = null
-                            while (opInfoIndex < remoteResult.opInfos.size) {
-                                val opInfo = remoteResult.opInfos[opInfoIndex]
-                                opInfoIndex++
-                                if (opInfo is OperationInfo.TreeEditOpInfo) {
-                                    if (firstTreeEditOpInfo == null) {
-                                        firstTreeEditOpInfo = opInfo
-                                    }
-                                    // Keep consuming TreeEditOpInfos for this operation
-                                    val next = remoteResult.opInfos.getOrNull(opInfoIndex)
-                                    if (next !is OperationInfo.TreeEditOpInfo) break
-                                } else {
-                                    break
-                                }
-                            }
-                            firstTreeEditOpInfo?.let { opInfo ->
-                                val insertedSize = opInfo.nodes?.size ?: 0
-                                internalHistory.reconcileTreeEdit(
-                                    executedOp.parentCreatedAt,
-                                    opInfo.from,
-                                    opInfo.to,
-                                    insertedSize,
-                                )
-                            }
-                        }
-
-                        else -> {
-                            // Skip opInfos for non-Edit operations
-                            while (opInfoIndex < remoteResult.opInfos.size) {
-                                val opInfo = remoteResult.opInfos[opInfoIndex]
-                                opInfoIndex++
-                                if (opInfo !is OperationInfo.EditOpInfo &&
-                                    opInfo !is OperationInfo.TreeEditOpInfo
-                                ) {
-                                    break
-                                }
-                            }
-                        }
-                    }
-                }
+                reconcileHistoryEdits(remoteResult)
             }
 
             if (opInfos.isNotEmpty()) {
@@ -720,6 +688,80 @@ public class Document(
                 changeID.syncLamport(change.id)
             } else {
                 changeID.syncClocks(change.id)
+            }
+        }
+    }
+
+    /**
+     * Reconciles pending undo/redo stack entries against the operations in [result].
+     * Adjusts index-based undo ranges so that entries created before [result] was executed
+     * still target the correct positions afterward. Used both for remote changes from other
+     * clients ([applyChanges]) and for local `skipHistory` changes ([updateAsync]), which are
+     * treated identically for history-reconciliation purposes.
+     */
+    private fun reconcileHistoryEdits(result: ChangeExecutionResult) {
+        var opInfoIndex = 0
+        for (executedOp in result.executedOperations) {
+            when (executedOp) {
+                is EditOperation -> {
+                    // For text edits there is at most one EditOpInfo per operation.
+                    while (opInfoIndex < result.opInfos.size) {
+                        val opInfo = result.opInfos[opInfoIndex]
+                        opInfoIndex++
+                        if (opInfo is OperationInfo.EditOpInfo) {
+                            internalHistory.reconcileTextEdit(
+                                executedOp.parentCreatedAt,
+                                opInfo.from,
+                                opInfo.to,
+                                opInfo.value.text.length,
+                            )
+                            break
+                        }
+                    }
+                }
+
+                is TreeEditOperation -> {
+                    // For tree edits there may be multiple TreeEditOpInfos per operation
+                    // (split/merge decomposes into multiple ranges). Reconcile using the
+                    // first deletion range's from/to and the inserted node count.
+                    var firstTreeEditOpInfo: OperationInfo.TreeEditOpInfo? = null
+                    while (opInfoIndex < result.opInfos.size) {
+                        val opInfo = result.opInfos[opInfoIndex]
+                        opInfoIndex++
+                        if (opInfo is OperationInfo.TreeEditOpInfo) {
+                            if (firstTreeEditOpInfo == null) {
+                                firstTreeEditOpInfo = opInfo
+                            }
+                            // Keep consuming TreeEditOpInfos for this operation
+                            val next = result.opInfos.getOrNull(opInfoIndex)
+                            if (next !is OperationInfo.TreeEditOpInfo) break
+                        } else {
+                            break
+                        }
+                    }
+                    firstTreeEditOpInfo?.let { opInfo ->
+                        val insertedSize = opInfo.nodes?.size ?: 0
+                        internalHistory.reconcileTreeEdit(
+                            executedOp.parentCreatedAt,
+                            opInfo.from,
+                            opInfo.to,
+                            insertedSize,
+                        )
+                    }
+                }
+
+                else -> {
+                    // Skip opInfos for non-Edit operations
+                    while (opInfoIndex < result.opInfos.size) {
+                        val opInfo = result.opInfos[opInfoIndex]
+                        opInfoIndex++
+                        if (opInfo !is OperationInfo.EditOpInfo &&
+                            opInfo !is OperationInfo.TreeEditOpInfo
+                        ) {
+                            break
+                        }
+                    }
+                }
             }
         }
     }

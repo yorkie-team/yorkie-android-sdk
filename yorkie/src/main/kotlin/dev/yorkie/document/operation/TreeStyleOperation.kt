@@ -92,7 +92,7 @@ internal data class TreeStyleOperation(
             else -> emptyList()
         }
 
-        val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
+        val reverseOps = if (source.producesReverseOps) {
             buildReverseOps(reversePrevAttributes, reverseAttrsToRemove)
         } else {
             emptyList()

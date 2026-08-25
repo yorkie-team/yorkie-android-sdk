@@ -710,19 +710,22 @@ public class Document(
         for (executedOp in result.executedOperations) {
             when (executedOp) {
                 is EditOperation -> {
-                    // For text edits there is at most one EditOpInfo per operation.
+                    // A zero-effect edit emits no EditOpInfo; executeRestore's
+                    // retombstone-then-restore split can emit up to two (a
+                    // retombstone range and a restore range, each covering a
+                    // different span). Reconcile once per entry so pending
+                    // undo/redo offsets shift correctly for every affected span.
                     while (opInfoIndex < result.opInfos.size) {
-                        val opInfo = result.opInfos[opInfoIndex]
+                        val opInfo =
+                            result.opInfos[opInfoIndex] as? OperationInfo.EditOpInfo
+                                ?: break
                         opInfoIndex++
-                        if (opInfo is OperationInfo.EditOpInfo) {
-                            internalHistory.reconcileTextEdit(
-                                executedOp.parentCreatedAt,
-                                opInfo.from,
-                                opInfo.to,
-                                opInfo.value.text.length,
-                            )
-                            break
-                        }
+                        internalHistory.reconcileTextEdit(
+                            executedOp.parentCreatedAt,
+                            opInfo.from,
+                            opInfo.to,
+                            opInfo.value.text.length,
+                        )
                     }
                 }
 

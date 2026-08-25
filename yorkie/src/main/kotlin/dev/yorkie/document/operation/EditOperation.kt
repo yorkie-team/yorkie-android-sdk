@@ -225,9 +225,15 @@ internal data class EditOperation(
 
         root.acc(totalDiff)
 
-        // Reverse ops are only generated for local and undo/redo operations,
-        // mirroring the ordinary edit path.
-        val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
+        // Reverse ops are only generated for local and undo/redo operations
+        // that actually changed something, mirroring the ordinary edit path
+        // (restore()'s targets can already be live if a concurrent undo got
+        // there first — see RgaTreeSplit.restore's idempotent-skip case —
+        // in which case opInfos stays empty and there is nothing to reverse).
+        val reverseOps = if (
+            opInfos.isNotEmpty() &&
+            (source == OpSource.Local || source == OpSource.UndoRedo)
+        ) {
             // Keep the same span sets and undo offsets; flip only the mode.
             // undoFromOffset/undoToOffset need no re-derivation: they are
             // re-resolved into a position fresh on every execute() call via

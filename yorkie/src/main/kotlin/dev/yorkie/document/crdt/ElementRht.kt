@@ -111,8 +111,11 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
      * @throws NoSuchElementException if [Node] doesn't exist.
      */
     operator fun get(key: String): T {
-        return nodeMapByKey[key]?.value
-            ?: throw NoSuchElementException("ElementRhtNode by $key doesn't exist")
+        val node = nodeMapByKey[key]
+        if (node == null || node.isRemoved) {
+            throw NoSuchElementException("ElementRhtNode by $key doesn't exist")
+        }
+        return node.value
     }
 
     /**

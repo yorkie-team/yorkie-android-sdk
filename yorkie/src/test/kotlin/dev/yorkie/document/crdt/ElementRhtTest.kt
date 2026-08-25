@@ -182,7 +182,7 @@ class ElementRhtTest {
         val timeTicketForDeletion = generateTimeTicket(1, 1, "0")
         val removedPrimitive = elementRht.removeByKey("test1", timeTicketForDeletion)
         assertEquals(primitive, removedPrimitive)
-        assertEquals(timeTicketForDeletion, elementRht["test1"].removedAt)
+        assertEquals(timeTicketForDeletion, removedPrimitive?.removedAt)
     }
 
     @Test

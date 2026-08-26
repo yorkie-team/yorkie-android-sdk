@@ -206,29 +206,23 @@ class TextRestoreConvergenceTest {
         }
     }
 
-    // F2 (corrected root cause per coordinator review against yorkie-js-sdk):
-    // rung (c) itself already matches JS's floorEntry-on-rightmost-piece
-    // logic verbatim — that was NOT the bug, and a ceilingEntry rewrite
-    // (this repo's first attempt) diverges from JS and was reverted. The
-    // REAL gap is a missing rung: JS's findRestoreAnchor has a `chainAnchor`
-    // rung (d) — "the previously placed fragment of this same restore call,
-    // in document order" — that Android never ported. It matters when ONE
-    // restore() call must recreate MULTIPLE fragments of the same
-    // insertion that were all purged: without it, every fragment falls
-    // back to the SAME fixed anchor (fallbackAnchor/head), and each
-    // insertAfter(sameAnchor, ...) pushes the previous fragment to the
-    // right — rebuilding the run reversed.
-    //
-    // The original review probe (two SEPARATE deletes, each undone as its
-    // own history entry) does not exercise this rung at all — each undo's
-    // restore() call only ever recreates a single fragment, so chainAnchor
-    // stays unused, and this repo could not reproduce a scrambled result
-    // for that exact sequence once rung (c) matches JS (see build report:
-    // F2 marked needs-further-investigation for that specific probe).
-    // The scenario below instead pins the concretely-reachable case
-    // chainAnchor fixes: a SINGLE delete spanning three fragments of one
-    // insertion (split apart by an intervening style call), all purged by
-    // one GC pass, recreated by one undo call.
+    // F2 / BLOCKER-1 (round-2 QA correction of the round-1 disclosure below,
+    // which incorrectly reported the reviewer's exact probe as
+    // non-reproducible): rung (c) previously picked the RIGHTMOST surviving
+    // piece of the WHOLE insertion (`floorEntry(createdAt, MAX)`), not the
+    // NEAREST surviving piece to the right of the gap. When a closer
+    // same-insertion survivor exists between the gap and that rightmost
+    // piece (e.g. style() split off a middle fragment that never got
+    // deleted), rung (c) anchors the recreated fragment behind the WRONG,
+    // farther-away survivor — scrambling the rebuilt order. A `ceilingEntry`
+    // search from `gapEnd` finds the true nearest successor instead; hand
+    // traced against the exact spec Scenario 1 probe and confirmed by
+    // `undo-after-GC scrambles content into the exact spec scenario 1
+    // order` below. The `chainAnchor` rung (d, still present) is a separate,
+    // additionally-needed fix for the different case pinned by the test
+    // immediately below this comment: a SINGLE delete spanning multiple
+    // fragments of one insertion, all purged by one GC pass and recreated
+    // by one undo call.
     @Test
     fun `restore chains multiple purged fragments of one insertion in order`() = runTest {
         val document = Document("test-doc")
@@ -260,19 +254,70 @@ class TextRestoreConvergenceTest {
         )
     }
 
-    // F3 (per coordinator review against yorkie-js-sdk): direct comparison
-    // of Android's findFloorNodePreferToLeft (RgaTreeSplit.kt ~line 511)
-    // against JS's (rga_tree_split.ts ~1330-1349) shows IDENTICAL logic,
-    // including JS's own "InsPrev may not be present due to GC" comment —
-    // both gracefully fall back to the floor node itself when insPrev is
-    // absent. JS's restore() recreate path also does NOT link
-    // insPrev/insNext (confirmed at rga_tree_split.ts ~806-819, plain
-    // insertAfter only) — so the insertion-chain-linking fix this repo
-    // first attempted diverges from JS and was reverted; it was not the
-    // real root cause. The review's probe (edit at index 6 silently no-ops
-    // after undo) is a real bug per the review, but this pass could not
-    // pin down the actual divergence within budget — no code change here.
-    // Needs further investigation in a follow-up round (see build report).
+    // Exact spec Scenario 1 / F2 / BLOCKER-1 probe (round-2 QA P2): build
+    // "0123456789", style(6,8), delete [2,4) then [0,2), GC, then undo BOTH
+    // as two SEPARATE undoAsync() calls (not one restore() call — chainAnchor
+    // alone does not cover this; see the comment above). Before the rung (c)
+    // ceiling fix, undo1 alone produced "45670189" (the new "01" fragment
+    // anchored behind the far-away "89" survivor instead of the near "45"
+    // one) and undo2 compounded it into "2345670189".
+    @Test
+    fun `undo-after-GC scrambles content into the exact spec scenario 1 order`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "0123456789")
+        }.await()
+        document.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").style(6, 8, mapOf("b" to "1"))
+        }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(2, 4, "") }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 2, "") }.await()
+        assertEquals("456789", document.getRoot().getAs<JsonText>("text").toString())
+
+        val purged = document.garbageCollect(maxVectorOf(listOf(document.changeID.actor)))
+        assertTrue(purged > 0, "expected both purged tombstones to be collected")
+
+        document.history.undoAsync().await()
+        document.history.undoAsync().await()
+
+        assertEquals(
+            "0123456789",
+            document.getRoot().getAs<JsonText>("text").toString(),
+            "two separate undos after a GC pass must not scramble character order",
+        )
+    }
+
+    // Exact spec Scenario 2 / F3 / BLOCKER-2 probe (round-2 QA P1): build
+    // "0123456789", delete [4,6), GC, undo (recreates the deleted "45" node),
+    // then edit(6,6,"X") at the boundary the recreated node sits on. Before
+    // the insertion-chain re-link fix, the recreated node was never linked
+    // into insertionPrev/insertionNext, so findFloorNodePreferToLeft walked
+    // the stale insertionPrev straight past it, computed an out-of-range
+    // split offset, and JsonText.edit's IllegalArgumentException catch
+    // swallowed it — silently dropping "X" (result stayed "0123456789").
+    @Test
+    fun `edit after undo of a GC'd delete actually inserts at the boundary`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "0123456789")
+        }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(4, 6, "") }.await()
+        assertEquals("01236789", document.getRoot().getAs<JsonText>("text").toString())
+
+        val purged = document.garbageCollect(maxVectorOf(listOf(document.changeID.actor)))
+        assertTrue(purged > 0, "expected the purged tombstone to be collected")
+
+        document.history.undoAsync().await()
+        assertEquals("0123456789", document.getRoot().getAs<JsonText>("text").toString())
+
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(6, 6, "X") }.await()
+
+        assertEquals(
+            "012345X6789",
+            document.getRoot().getAs<JsonText>("text").toString(),
+            "an edit at the recreated node's boundary must not silently no-op",
+        )
+    }
 
     // F5 (corrected per coordinator review against yorkie-js-sdk): a node
     // landing in alreadyRemovedIDs only got there via canRemove()'s

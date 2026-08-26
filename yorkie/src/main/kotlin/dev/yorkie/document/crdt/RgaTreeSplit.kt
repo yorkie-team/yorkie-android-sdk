@@ -266,6 +266,23 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                         )
                     liveDiff = addDataSizes(liveDiff, anchorDiff)
                     insertAfter(prev, newNode)
+                    // Re-link the insertion chain around the recreated
+                    // fragment (BLOCKER-2 / F3). `delete()`'s purge-relink
+                    // already pointed the surviving successor's
+                    // insertionPrev straight across this gap (skipping the
+                    // node we just recreated); left un-repaired, that stale
+                    // pointer makes findFloorNodePreferToLeft (used by every
+                    // subsequent findNodeWithSplit) resolve a later edit at
+                    // this boundary to the WRONG node, producing an
+                    // out-of-range splitNode offset that JsonText.edit's
+                    // IllegalArgumentException catch swallows silently.
+                    // Mirrors splitNode's own linking pattern
+                    // (node.insertionNext?.setInsertionPrev(splitNode);
+                    // splitNode.setInsertionPrev(node)).
+                    val insertionSuccessor = findPieceCovering(span.createdAt, gapEnd)
+                    val insertionPredecessor = insertionSuccessor?.insertionPrev
+                    newNode.setInsertionPrev(insertionPredecessor)
+                    insertionSuccessor?.setInsertionPrev(newNode)
                     recreated.add(newNode)
                     chainAnchor = newNode
                     cursor = gapEnd
@@ -406,8 +423,16 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      *      (originally-adjacent successor; exact original slot)
      *  (b) nearest surviving piece of the same insertion left of [gapStart]
      *      -> directly after it
-     *  (c) rightmost surviving piece of the same insertion (must be right of
-     *      the gap) -> directly before it
+     *  (c) nearest surviving piece of the same insertion right of the gap
+     *      (may be non-adjacent, with other purged or foreign-insertion
+     *      material between) -> directly before it. BLOCKER-1 / F2: this
+     *      rung previously picked the RIGHTMOST piece of the whole
+     *      insertion regardless of distance, which misplaces a recreated
+     *      fragment behind an unrelated, farther-away survivor whenever a
+     *      nearer same-insertion survivor exists between the gap and that
+     *      rightmost piece — scrambling multi-fragment undo order after a
+     *      GC pass. Ceiling-searching from [gapEnd] finds the true nearest
+     *      successor instead.
      *  (d) [chainAnchor]: the previously placed fragment of this same
      *      restore call (document order) -> directly after it, so a purged
      *      multi-fragment run is rebuilt left-to-right instead of each
@@ -447,13 +472,10 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             }
         }
 
-        val rightmostKey = RgaTreeSplitNodeID(createdAt, Int.MAX_VALUE)
-        val rightmost = treeByID.floorEntry(rightmostKey)
-        if (rightmost != null &&
-            rightmost.key.hasSameCreatedAt(rightmostKey) &&
-            rightmost.value.id.offset >= gapEnd
-        ) {
-            return requireNotNull(rightmost.value.prev) to zeroDiff
+        val ceilingKey = RgaTreeSplitNodeID(createdAt, gapEnd)
+        val ceiling = treeByID.ceilingEntry(ceilingKey)
+        if (ceiling != null && ceiling.key.hasSameCreatedAt(ceilingKey)) {
+            return requireNotNull(ceiling.value.prev) to zeroDiff
         }
 
         // (d) No surviving piece of this insertion anchors the fragment.

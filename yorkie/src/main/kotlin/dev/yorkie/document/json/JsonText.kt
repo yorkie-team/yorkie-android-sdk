@@ -59,6 +59,11 @@ public class JsonText internal constructor(
         val (_, rangeAfterEdit, gcPairs, diff) = runCatching {
             target.edit(range, content, executedAt, attributes)
         }.getOrElse {
+            // The first of RgaTreeSplit.edit's two sequential findNodeWithSplit
+            // calls can already have buffered a born-dead split piece before
+            // the second throws; drain and register it now or it is never
+            // counted into docSize (F11).
+            recoverPendingGcPairs()
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
                     logError(TAG, "can't style text")
@@ -124,6 +129,9 @@ public class JsonText internal constructor(
 
             gcPairs.forEach(context::registerGCPair)
         }.getOrElse {
+            // Same leak as edit(): CrdtText.style's first findNodeWithSplit
+            // call can buffer a born-dead piece before the second throws.
+            recoverPendingGcPairs()
             when (it) {
                 is NoSuchElementException, is IllegalArgumentException -> {
                     logError(TAG, "can't style text")
@@ -134,6 +142,17 @@ public class JsonText internal constructor(
             }
         }
         return true
+    }
+
+    /**
+     * Registers any GC pair [target]'s underlying [dev.yorkie.document.crdt.RgaTreeSplit]
+     * buffered but never got to drain itself, because the operation that
+     * would have drained it threw before reaching its own drain call. The
+     * buffer is instance-level and survives the throw, so this is safe to
+     * call from any catch handler around [target]'s edit/style calls.
+     */
+    private fun recoverPendingGcPairs() {
+        target.rgaTreeSplit.drainPendingGcPairs().forEach(context::registerGCPair)
     }
 
     private fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange? {

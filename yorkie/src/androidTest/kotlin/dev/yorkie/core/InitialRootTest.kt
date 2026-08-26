@@ -81,6 +81,7 @@ class InitialRootTest {
             assertFalse(d1.history.canUndo())
             assertTrue(d1.history.canRedo())
             assertFalse("edit" in d2.getRoot().keys)
+            assertEquals(null, d2.getRoot().getOrNull("edit"))
 
             d1.history.redoAsync().await()
             c1.syncAsync(d1).await()

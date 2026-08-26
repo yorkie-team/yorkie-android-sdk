@@ -223,6 +223,12 @@ public class Document(
 
     /**
      * Executes the given [updater] to update this document.
+     *
+     * @param skipHistory Skips recording this change on the undo/redo history
+     * stacks when true. The change still mutates the document, emits events,
+     * and syncs normally; only the undo entry and redo-stack clearing are
+     * skipped, mirroring how remote changes bypass local history. Defaults
+     * to false, which preserves existing history behavior.
      */
     public fun updateAsync(
         message: String? = null,
@@ -701,67 +707,50 @@ public class Document(
      */
     private fun reconcileHistoryEdits(result: ChangeExecutionResult) {
         var opInfoIndex = 0
-        for (executedOp in result.executedOperations) {
+        result.executedOperations.forEachIndexed { index, executedOp ->
+            // Slice by each operation's own recorded opInfo count instead of
+            // peeking at opInfo types: a zero-effect edit emits none, an
+            // ordinary edit emits one, and executeRestore's retombstone-then-
+            // restore split can emit two — but two adjacent EditOperations can
+            // each emit exactly one, which type-peeking cannot tell apart from
+            // a single operation's two entries.
+            val count = result.opInfoCounts[index]
+            val opInfosForOp = result.opInfos.subList(opInfoIndex, opInfoIndex + count)
+            opInfoIndex += count
+
             when (executedOp) {
                 is EditOperation -> {
-                    // For text edits there is at most one EditOpInfo per operation.
-                    while (opInfoIndex < result.opInfos.size) {
-                        val opInfo = result.opInfos[opInfoIndex]
-                        opInfoIndex++
-                        if (opInfo is OperationInfo.EditOpInfo) {
+                    // Reconcile once per entry so pending undo/redo offsets
+                    // shift correctly for every affected span.
+                    opInfosForOp.filterIsInstance<OperationInfo.EditOpInfo>()
+                        .forEach { opInfo ->
                             internalHistory.reconcileTextEdit(
                                 executedOp.parentCreatedAt,
                                 opInfo.from,
                                 opInfo.to,
                                 opInfo.value.text.length,
                             )
-                            break
                         }
-                    }
                 }
 
                 is TreeEditOperation -> {
                     // For tree edits there may be multiple TreeEditOpInfos per operation
                     // (split/merge decomposes into multiple ranges). Reconcile using the
                     // first deletion range's from/to and the inserted node count.
-                    var firstTreeEditOpInfo: OperationInfo.TreeEditOpInfo? = null
-                    while (opInfoIndex < result.opInfos.size) {
-                        val opInfo = result.opInfos[opInfoIndex]
-                        opInfoIndex++
-                        if (opInfo is OperationInfo.TreeEditOpInfo) {
-                            if (firstTreeEditOpInfo == null) {
-                                firstTreeEditOpInfo = opInfo
-                            }
-                            // Keep consuming TreeEditOpInfos for this operation
-                            val next = result.opInfos.getOrNull(opInfoIndex)
-                            if (next !is OperationInfo.TreeEditOpInfo) break
-                        } else {
-                            break
+                    opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
+                        .firstOrNull()
+                        ?.let { opInfo ->
+                            val insertedSize = opInfo.nodes?.size ?: 0
+                            internalHistory.reconcileTreeEdit(
+                                executedOp.parentCreatedAt,
+                                opInfo.from,
+                                opInfo.to,
+                                insertedSize,
+                            )
                         }
-                    }
-                    firstTreeEditOpInfo?.let { opInfo ->
-                        val insertedSize = opInfo.nodes?.size ?: 0
-                        internalHistory.reconcileTreeEdit(
-                            executedOp.parentCreatedAt,
-                            opInfo.from,
-                            opInfo.to,
-                            insertedSize,
-                        )
-                    }
                 }
 
-                else -> {
-                    // Skip opInfos for non-Edit operations
-                    while (opInfoIndex < result.opInfos.size) {
-                        val opInfo = result.opInfos[opInfoIndex]
-                        opInfoIndex++
-                        if (opInfo !is OperationInfo.EditOpInfo &&
-                            opInfo !is OperationInfo.TreeEditOpInfo
-                        ) {
-                            break
-                        }
-                    }
-                }
+                else -> Unit
             }
         }
     }
@@ -904,7 +893,14 @@ public class Document(
      */
     public suspend fun getRoot(): JsonObject = withContext(dispatcher) {
         val clone = ensureClone()
-        val context = ChangeContext(changeID.next(), clone.root)
+        // gcRoot = root (not clone.root): a read-path conversion's split GC
+        // pair (see JsonTree.posRangeToIndexRange/posRangeToPathRange) never
+        // gets replayed as an Operation, so registering it onto the clone
+        // would leave it stuck there, invisible to the live document's
+        // docSize/getDocSize() and silently inflating clone.root.docSize for
+        // whatever later updateAsync call reuses this same cached clone for
+        // its size-limit gate (F10).
+        val context = ChangeContext(changeID.next(), clone.root, gcRoot = root)
         JsonObject(context, clone.root.rootObject)
     }
 

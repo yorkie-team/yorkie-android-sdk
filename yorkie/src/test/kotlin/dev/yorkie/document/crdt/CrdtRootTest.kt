@@ -98,10 +98,12 @@ class CrdtRootTest {
             executedAt = TimeTicket.InitialTimeTicket.copy(lamport = 2),
         )
         val root = CrdtRoot(obj)
-        obj["k1"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 3))
-        obj["k2"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))
-        root.registerRemovedElement(obj["k1"])
-        root.registerRemovedElement(obj["k2"])
+        val k1 = obj["k1"]
+        val k2 = obj["k2"]
+        k1.remove(TimeTicket.InitialTimeTicket.copy(lamport = 3))
+        k2.remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))
+        root.registerRemovedElement(k1)
+        root.registerRemovedElement(k2)
         root.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
     }
 

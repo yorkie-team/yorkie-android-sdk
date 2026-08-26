@@ -32,12 +32,22 @@ internal data class StyleOperation(
             val reverseAttrsToRemove = mutableListOf<String>()
 
             if (attributesToRemove.isNotEmpty()) {
-                val result = parentObject.removeStyle(
-                    RgaTreeSplitPosRange(fromPos, toPos),
-                    attributesToRemove,
-                    executedAt,
-                    versionVector,
-                )
+                val result = try {
+                    parentObject.removeStyle(
+                        RgaTreeSplitPosRange(fromPos, toPos),
+                        attributesToRemove,
+                        executedAt,
+                        versionVector,
+                    )
+                } catch (e: RuntimeException) {
+                    // The first of CrdtText.removeStyle's two sequential
+                    // findNodeWithSplit calls can have already buffered a
+                    // born-dead split piece before the second throws; drain
+                    // and register it before propagating (F11).
+                    parentObject.rgaTreeSplit.drainPendingGcPairs()
+                        .forEach(root::registerGCPair)
+                    throw e
+                }
                 root.acc(result.dataSize)
                 result.gcPairs.forEach(root::registerGCPair)
                 allChanges.addAll(result.textChanges)
@@ -45,12 +55,18 @@ internal data class StyleOperation(
             }
 
             if (attributes.isNotEmpty()) {
-                val result = parentObject.style(
-                    RgaTreeSplitPosRange(fromPos, toPos),
-                    attributes,
-                    executedAt,
-                    versionVector,
-                )
+                val result = try {
+                    parentObject.style(
+                        RgaTreeSplitPosRange(fromPos, toPos),
+                        attributes,
+                        executedAt,
+                        versionVector,
+                    )
+                } catch (e: RuntimeException) {
+                    parentObject.rgaTreeSplit.drainPendingGcPairs()
+                        .forEach(root::registerGCPair)
+                    throw e
+                }
                 root.acc(result.dataSize)
                 result.gcPairs.forEach(root::registerGCPair)
                 allChanges.addAll(result.textChanges)

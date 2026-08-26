@@ -50,7 +50,12 @@ internal fun getValueByPath(obj: Any?, path: String): Any? {
     val keys = path.split(".")
     for (i in 1 until keys.size) {
         val key = keys[i]
-        if (current !is CrdtObject) {
+        if (current !is CrdtObject || !current.has(key)) {
+            // A removed (tombstoned) or otherwise absent key resolves to a
+            // normal schema-violation null instead of letting
+            // ElementRht.get's throwing contract (06d4fa24, correct for its
+            // own callers) escape past updateAsync's failure-recovery
+            // boundary and permanently corrupt Document.clone (F7).
             return null
         }
         current = current[key]

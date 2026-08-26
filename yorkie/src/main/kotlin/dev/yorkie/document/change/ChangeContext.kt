@@ -18,6 +18,18 @@ internal class ChangeContext(
     val prevId: ChangeID,
     val root: CrdtRoot,
     val message: String? = null,
+    /**
+     * The root that pure read-path conversions (no corresponding [Operation]
+     * is ever pushed/replayed, e.g. [dev.yorkie.document.json.JsonTree.posRangeToIndexRange])
+     * should register their GC pairs against. Defaults to [root] so every
+     * ordinary mutating call site (edit/style/etc., always eventually
+     * replayed onto the live root via [Operation.execute]) is unaffected.
+     * [dev.yorkie.document.Document.getRoot] overrides this to the document's
+     * live root: its [root] is a read snapshot clone that a read-path
+     * split's GC pair would otherwise silently register onto and never
+     * leave (F10).
+     */
+    val gcRoot: CrdtRoot = root,
 ) {
     var presenceChange: PresenceChange? = null
     private val operations: MutableList<Operation> = mutableListOf()
@@ -67,6 +79,16 @@ internal class ChangeContext(
      */
     fun registerGCPair(pair: GCPair<*>) {
         root.registerGCPair(pair)
+    }
+
+    /**
+     * Registers the given pair against [gcRoot] instead of [root]. Used only
+     * by read-path conversions that split a node as a side effect of
+     * resolving a position but never push a corresponding [Operation]
+     * (see [gcRoot]'s doc).
+     */
+    fun registerReadPathGCPair(pair: GCPair<*>) {
+        gcRoot.registerGCPair(pair)
     }
 
     /**

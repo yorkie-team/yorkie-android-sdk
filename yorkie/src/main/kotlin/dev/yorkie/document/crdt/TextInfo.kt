@@ -113,11 +113,36 @@ internal data class TextEditResult(
     val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
     val dataSize: DataSize,
     val removedValues: List<TextValue> = emptyList(),
+    val removedSpans: List<RestoreSpan<TextValue>> = emptyList(),
+)
+
+/**
+ * Result of [CrdtText.restore].
+ */
+internal data class TextRestoreResult(
+    val untombstoned: List<RgaTreeSplitNode<TextValue>>,
+    val recreated: List<RgaTreeSplitNode<TextValue>>,
+    val textChanges: List<TextChange>,
+    val dataSize: DataSize,
+    // GCPair<*>: mixes born-dead split pieces (GCPair<RgaTreeSplitNode<TextValue>>)
+    // with a recreated node's copied attribute tombstones (GCPair<RhtNode>, F13).
+    val pendingGcPairs: List<GCPair<*>>,
+)
+
+/**
+ * Result of [CrdtText.retombstone].
+ */
+internal data class TextRetombstoneResult(
+    val gcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
+    val textChanges: List<TextChange>,
+    val dataSize: DataSize,
 )
 
 internal data class TextStyleResult(
     val textChanges: List<TextChange>,
-    val gcPairs: List<GCPair<RhtNode>>,
+    // GCPair<*>: this result mixes attribute pairs (GCPair<RhtNode>) with
+    // pairs drained from born-dead split pieces (GCPair<RgaTreeSplitNode<TextValue>>).
+    val gcPairs: List<GCPair<*>>,
     val dataSize: DataSize,
     val prevAttributes: Map<String, String> = emptyMap(),
     val attributesToRemove: List<String> = emptyList(),

@@ -15,6 +15,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
+import dev.yorkie.api.v1.RestoreMode as PbRestoreMode
 import dev.yorkie.api.v1.RestoreSpan as PbRestoreSpan
 
 /**
@@ -112,6 +113,22 @@ class RestoreConverterTest {
 
         assertNull(restored.restoreSpans)
         assertEquals("hi", restored.content)
+    }
+
+    // Twin of the Tree case: the server rejects restore_mode with no spans
+    // (from_pb.go: hasMode != hasSpans), which would strand the change in
+    // localChanges and retry forever. JS guards on length, not on presence.
+    @Test
+    fun `omits restore_mode when both span lists are empty but non-null`() {
+        val pbOp = restoreOp(
+            restoreSpans = emptyList(),
+            restoreMode = RestoreMode.Restore,
+            retombstoneSpans = emptyList(),
+        ).toPBOperation()
+
+        assertTrue(pbOp.edit.restoreSpansList.isEmpty())
+        assertTrue(pbOp.edit.retombstoneSpansList.isEmpty())
+        assertEquals(PbRestoreMode.RESTORE_MODE_UNSPECIFIED, pbOp.edit.restoreMode)
     }
 
     @Test

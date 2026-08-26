@@ -9,6 +9,11 @@ Yorkie Android SDK provides a suite of tools for building real-time collaborativ
 
 See [Getting Started with Android SDK](https://yorkie.dev/docs/getting-started/with-android-sdk) for the instructions.
 
+> **Server requirement:** identity-preserving undo/redo for `JsonText` and `JsonTree` requires
+> Yorkie server `v0.7.14` or later. An older server drops the restore fields when it relays a
+> change, so an undo applies locally but reaches peers as an empty-range no-op — no error on
+> either side. Every other SDK feature works against earlier servers.
+
 Example projects can be found in the [examples](https://github.com/yorkie-team/yorkie-android-sdk/tree/main/examples) folder.
 
 Read the [full documentation](https://yorkie.dev/docs) for all details.

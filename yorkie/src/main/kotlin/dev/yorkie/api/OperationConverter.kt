@@ -239,8 +239,14 @@ internal fun Operation.toPBOperation(): PBOperation {
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
                     // Ordinary edits set none of these — the wire payload stays
-                    // byte-identical to before this field was added.
-                    if (operation.restoreSpans != null || operation.retombstoneSpans != null) {
+                    // byte-identical to before this field was added. Guard on
+                    // non-EMPTY, not non-null: the server rejects the whole
+                    // PushPull when restore_mode is set with no spans
+                    // (from_pb.go's hasMode != hasSpans), which would strand the
+                    // change in localChanges and retry forever.
+                    if (!operation.restoreSpans.isNullOrEmpty() ||
+                        !operation.retombstoneSpans.isNullOrEmpty()
+                    ) {
                         restoreSpans.addAll(operation.restoreSpans.orEmpty().map { it.toPbSpan() })
                         retombstoneSpans.addAll(
                             operation.retombstoneSpans.orEmpty().map { it.toPbSpan() },
@@ -278,8 +284,14 @@ internal fun Operation.toPBOperation(): PBOperation {
                     contents.addAll(operation.contents?.toPBTreeNodesWhenEdit().orEmpty())
                     splitLevel = operation.splitLevel
                     // Ordinary tree edits set none of these — the wire payload
-                    // stays byte-identical to before this field was added.
-                    if (operation.restoreSpans != null || operation.retombstoneSpans != null) {
+                    // stays byte-identical to before this field was added. Guard
+                    // on non-EMPTY, not non-null: the server rejects the whole
+                    // PushPull when restore_mode is set with no spans
+                    // (from_pb.go's hasMode != hasSpans), which would strand the
+                    // change in localChanges and retry forever.
+                    if (!operation.restoreSpans.isNullOrEmpty() ||
+                        !operation.retombstoneSpans.isNullOrEmpty()
+                    ) {
                         restoreSpans.addAll(
                             operation.restoreSpans.orEmpty().map { it.toPbTreeSpan() },
                         )
@@ -417,7 +429,7 @@ private fun PbTreeRestoreSpan.toTreeRestoreSpan(): TreeRestoreSpan {
     val malformed = !hasId() || !id.hasCreatedAt() ||
         anchors.any { (present, anchor) -> present && !anchor.hasCreatedAt() } ||
         attributesMap.values.any { !it.hasUpdatedAt() } ||
-        (isText && (length < 0 || value.length != length))
+        length < 0 || (isText && value.length != length)
     if (malformed) {
         throw YorkieException(
             ErrInvalidArgument,

@@ -97,30 +97,34 @@ internal data class TreeEditOperation(
             return ExecutionResult(opInfos = emptyList())
         }
 
+        // Restore/retombstone execution addresses content by identity, never by
+        // this op's own index range, so it must run BEFORE the offset -> position
+        // resolution below: a chained undo/redo can leave undoFromOffset/
+        // undoToOffset pointing past the live size (backlog 002 / generator lesson
+        // 008), and resolving them here would throw on an op that does not use the
+        // result. Mirrors JS, where the restore branch is the first thing in
+        // execute().
+        if (isRestoreOp) {
+            return executeRestore(root, tree, source)
+        }
+
         // For undo ops, translate the stored integer offsets back to live CrdtTreePos
         // so that reconcile adjustments are honoured.  For all other operations use
         // the stored positions directly.
         //
-        // Restore/retombstone execution mutates content by identity rather than by
-        // this op's own index range (see executeRestore), so a chained undo/redo can
-        // leave undoFromOffset/undoToOffset pointing past the live size (backlog 002 /
-        // generator lesson 008 — mirrors EditOperation.kt's Text-side clamp). Clamp
-        // both offsets to the current tree size before resolving: this protects every
-        // undo op, not just restore ones, since a stale offset previously threw
-        // instead of resolving to a legal (clamped) position.
+        // Offsets are NOT clamped to the live size: an ordinary undo op consumes the
+        // resolved range as its actual edit range, so clamping a stale offset would
+        // silently relocate the re-inserted content (to the document end, in the
+        // worst case) and replicate that misplacement to every peer as a concrete
+        // fromPos/toPos. Out-of-range offsets must fail loudly, as in JS
+        // (tree.findPos() throws) — pinned by TreeEditOperationReverseTest's
+        // `undo op whose offsets exceed the live size does not relocate content`.
         val (actualFrom, actualTo) =
             if (isUndoOp) {
-                val size = tree.size
-                tree.indexRangeToPosRange(
-                    undoFromOffset.coerceIn(0, size) to undoToOffset.coerceIn(0, size),
-                )
+                tree.indexRangeToPosRange(undoFromOffset to undoToOffset)
             } else {
                 fromPos to toPos
             }
-
-        if (isRestoreOp) {
-            return executeRestore(root, tree, source)
-        }
 
         if (!tree.checkPosRangeValid(actualFrom to actualTo)) {
             logError(TAG, "has invalid pos range, skip executing the operation")
@@ -251,9 +255,13 @@ internal data class TreeEditOperation(
         root.acc(diff)
 
         // opInfos must be non-empty or Document.executeUndoRedo drops the undo
-        // change from localChanges (it never propagates to peers). Exact from/to
-        // for editor integration is best-effort here; positions are a follow-up
-        // (JS interim contract, parity).
+        // change from localChanges (it never propagates to peers).
+        //
+        // TODO(RTCOLLABPLATFORM-754): paths/values are empty and, for a remote
+        //  restore, fromIdx/toIdx are both 0 — a subscriber driving an editor
+        //  view cannot apply this op info yet. Interim JS contract (upstream
+        //  yorkie-js-sdk marks exact positions a follow-up); revisit when
+        //  upstream lands them.
         val fromIdx = undoFromOffset.takeUnless { it == NotAnUndoOp } ?: 0
         val toIdx = undoToOffset.takeUnless { it == NotAnUndoOp } ?: fromIdx
         val opInfos = listOf(
@@ -274,7 +282,7 @@ internal data class TreeEditOperation(
         // whatever this op already carries — unused on this identity-
         // addressed restore path, same as JS, which also keeps the
         // original fromPos/toPos on its reverse.
-        val reverseOps = if (source == OpSource.Local || source == OpSource.UndoRedo) {
+        val reverseOps = if (source.producesReverseOps) {
             val flippedMode = if (isRetombstone) RestoreMode.Restore else RestoreMode.Retombstone
             listOf(copy(restoreMode = flippedMode))
         } else {

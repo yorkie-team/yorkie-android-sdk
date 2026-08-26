@@ -22,6 +22,9 @@ import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.traverseAll
+import dev.yorkie.util.traverseAllPreorder
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.TreeMap
 
 public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
@@ -524,11 +527,16 @@ internal data class CrdtTree(
                                 vv != null && vv >= next.createdAt.lamport
                             }
                             if (!splitCreationKnown) {
-                                val sibling = next
-                                nodesToBeRemoved.add(sibling)
-                                // Cascade through the full subtree, not just immediate children.
-                                traverseAll(sibling) { n, _ ->
-                                    if (n !== sibling) nodesToBeRemoved.add(n)
+                                // Cascade through the full subtree, not just
+                                // immediate children. PREORDER, not JS's
+                                // postorder traverseAll: nodesToBeRemoved order
+                                // becomes removedSpans order, and restore()
+                                // requires parent-before-child (a child's
+                                // recreate resolves its parent by identity, so a
+                                // postorder span list silently drops
+                                // grandchildren once GC has purged the subtree).
+                                traverseAllPreorder(next) { n, _ ->
+                                    nodesToBeRemoved.add(n)
                                 }
                             }
                             val followID = next.insNextID ?: break
@@ -807,7 +815,7 @@ internal data class CrdtTree(
             // to get parent-before-child — the order restore() needs to
             // recreate a purged subtree top-down (a child's recreate
             // resolves its parent by identity).
-            insertedSpans = if (spansComplete) insertedSpans.asReversed() else emptyList(),
+            insertedSpans = if (spansComplete) insertedSpans.reversed() else emptyList(),
         )
     }
 
@@ -1192,7 +1200,11 @@ internal data class CrdtTree(
      */
     private fun resolveMergeTarget(node: CrdtTreeNode): CrdtTreeNode {
         var target = node
-        val seen = mutableSetOf(target)
+        // Identity set, not a hash set: CrdtTreeNode's data-class equals
+        // recurses over childNodes/_attributes, so any bucket collision would
+        // turn this cycle guard into a deep comparison on a hot merge path.
+        val seen = Collections.newSetFromMap(IdentityHashMap<CrdtTreeNode, Boolean>())
+        seen.add(target)
         while (true) {
             if (!target.isRemoved) break
             val mergedInto = target.mergedInto ?: break
@@ -1337,7 +1349,11 @@ internal data class CrdtTree(
             isText = node.isText,
             length = if (node.isText) node.value.length else 0,
             value = if (node.isText) node.value else null,
-            attrs = node.getAttrs().deepCopy(),
+            // Elements only: JS leaves a text span's attrs undefined, and a text
+            // node's Rht is never read back by recreate/retombstone — copying it
+            // would leak tombstoned Rht nodes into the recreated node as
+            // unregistered GC children.
+            attrs = node.getAttrs().takeIf { !node.isText }?.deepCopy(),
             parentID = parent?.id,
             leftSiblingID = leftSiblingID,
             rightSiblingID = rightSiblingID,
@@ -1483,9 +1499,18 @@ internal data class CrdtTree(
      *      this parent -> after it;
      *  (c) captured [TreeRestoreSpan.rightSiblingID], still parented under
      *      this parent -> before it;
-     *  (d) deterministic id-order slot: first index in the parent's current
-     *      children whose id compares greater than the node's id (pure
-     *      function of ids -> identical on every replica).
+     *  (d) last-resort id-order slot: first index in the parent's current
+     *      children whose id compares greater than the node's id.
+     *
+     * CAVEAT — rung (d) is NOT convergent: the parent's children are in
+     * document/RGA order, which is not id order, so the resulting slot
+     * depends on which concurrent siblings this replica has already
+     * received. Two replicas that both fall to rung (d) with different
+     * sibling sets can place the node at different indices and diverge
+     * permanently. Rungs (a)-(c) are identity-anchored and unaffected.
+     * Making (d) convergent (e.g. the same `return null` skip used for a
+     * missing parent) changes wire-visible behaviour across SDKs, so it
+     * must land in yorkie-js-sdk first — upstream carries the same rung.
      * Parent genuinely absent (purged, and not part of this undo's spans)
      * -> returns null: the node stays unplaced/invisible; convergent,
      * because every replica resolves parent-absent identically.
@@ -1555,7 +1580,9 @@ internal data class CrdtTree(
             return node
         }
 
-        // (d) deterministic id-order fallback: first slot whose child id > node id.
+        // (d) last-resort id-order fallback: first slot whose child id > node id.
+        // NOT convergent — siblings are in RGA order, not id order, so this
+        // depends on the local replica's sibling set (see the KDoc caveat).
         val insertIndex = siblings.indexOfFirst { it.id > node.id }
             .let { if (it == -1) siblings.size else it }
         parent.insertAt(insertIndex, node)

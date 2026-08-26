@@ -1,7 +1,10 @@
 package dev.yorkie.helper
 
 import android.util.Log
+import dev.yorkie.api.toOperations
+import dev.yorkie.api.toPBOperation
 import dev.yorkie.document.Document
+import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.time.ActorID
@@ -34,10 +37,30 @@ fun maxVectorOf(actors: List<String>): VersionVector {
  * empty [VersionVector] so the trailing garbage collection inside
  * `applyChangePack` is a no-op. Then self-acks each sender so its pushed
  * local changes are cleared and are not resent by a later call. Operations
- * are passed in memory (no protobuf round-trip), so identity-preserving
- * restore payloads (`restoreSpans`) survive intact.
+ * are passed in memory by default (no protobuf round-trip), so
+ * identity-preserving restore payloads (`restoreSpans`) survive intact. Pass
+ * [overWire] to route every relayed operation through the protobuf converters
+ * first, as a real server does — the only way a unit test exercises the
+ * `restore_spans` encode/decode path under convergence.
  */
-suspend fun crossSync(d1: Document, d2: Document) {
+suspend fun crossSync(
+    d1: Document,
+    d2: Document,
+    overWire: Boolean = false,
+) {
+    // Only the operations are round-tripped: encoding a whole Change would pull
+    // in the version-vector converter, which needs android.util.Base64 (not
+    // available in a JVM unit test).
+    fun List<Change>.relay() = if (!overWire) {
+        this
+    } else {
+        map { change ->
+            change.copy(
+                operations = change.operations.map { it.toPBOperation() }.toOperations(),
+            )
+        }
+    }
+
     val pack1 = d1.createChangePack()
     val pack2 = d2.createChangePack()
 
@@ -45,7 +68,7 @@ suspend fun crossSync(d1: Document, d2: Document) {
         ChangePack(
             d1.getKey(),
             CheckPoint.InitialCheckPoint,
-            pack1.changes,
+            pack1.changes.relay(),
             null,
             false,
             VersionVector(),
@@ -55,7 +78,7 @@ suspend fun crossSync(d1: Document, d2: Document) {
         ChangePack(
             d2.getKey(),
             CheckPoint.InitialCheckPoint,
-            pack2.changes,
+            pack2.changes.relay(),
             null,
             false,
             VersionVector(),

@@ -22,6 +22,24 @@ internal fun <T : IndexTreeNode<T>> traverseAll(
     action.invoke(node, depth)
 }
 
+/**
+ * Traverses [node] and all of its descendants (tombstones included) in
+ * PREORDER — parent before children. [traverseAll] is postorder, which is
+ * wrong wherever the visit order has to be a valid parent-first topological
+ * order (e.g. capturing restore spans for a cascaded subtree, where a child's
+ * recreate resolves its parent by identity).
+ */
+internal fun <T : IndexTreeNode<T>> traverseAllPreorder(
+    node: T,
+    depth: Int = 0,
+    action: ((T, Int) -> Unit),
+) {
+    action.invoke(node, depth)
+    node.allChildren.forEach { child ->
+        traverseAllPreorder(child, depth + 1, action)
+    }
+}
+
 internal fun <T : IndexTreeNode<T>> findCommonAncestor(node1: T, node2: T): T? {
     if (node1 == node2) {
         return node1

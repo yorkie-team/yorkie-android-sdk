@@ -408,7 +408,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         gapEnd: Int,
         executedAt: TimeTicket,
         fallbackAnchor: RgaTreeSplitPos?,
-        chainAnchor: RgaTreeSplitNode<T>? = null,
+        chainAnchor: RgaTreeSplitNode<T>?,
     ): RgaTreeSplitNode<T> {
         findPieceCovering(createdAt, gapEnd)?.let { successor ->
             return requireNotNull(successor.prev)

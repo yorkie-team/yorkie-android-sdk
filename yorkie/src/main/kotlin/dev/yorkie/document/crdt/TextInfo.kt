@@ -124,7 +124,9 @@ internal data class TextRestoreResult(
     val recreated: List<RgaTreeSplitNode<TextValue>>,
     val textChanges: List<TextChange>,
     val dataSize: DataSize,
-    val pendingGcPairs: List<GCPair<RgaTreeSplitNode<TextValue>>>,
+    // GCPair<*>: mixes born-dead split pieces (GCPair<RgaTreeSplitNode<TextValue>>)
+    // with a recreated node's copied attribute tombstones (GCPair<RhtNode>, F13).
+    val pendingGcPairs: List<GCPair<*>>,
 )
 
 /**

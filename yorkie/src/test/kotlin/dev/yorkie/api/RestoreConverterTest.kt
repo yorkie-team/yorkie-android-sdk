@@ -8,6 +8,7 @@ import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.RestoreMode
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.MaxTimeTicket
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import kotlin.test.assertEquals
@@ -172,6 +173,15 @@ class RestoreConverterTest {
                 end = 1
             },
             "missing createdAt" to mutateSpan { clearCreatedAt() },
+            // F14: a createdAt colliding with a sentinel ID (e.g. a tree's
+            // sentinel `head` node) would silently overwrite it instead of
+            // failing loudly — reject at the decode boundary.
+            "createdAt is InitialTimeTicket" to mutateSpan {
+                createdAt = InitialTimeTicket.toPBTimeTicket()
+            },
+            "createdAt is MaxTimeTicket" to mutateSpan {
+                createdAt = MaxTimeTicket.toPBTimeTicket()
+            },
         )
 
         cases.forEach { (name, pbOp) ->

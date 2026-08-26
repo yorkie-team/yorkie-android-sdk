@@ -4,9 +4,12 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.RestoreSpan
 import dev.yorkie.document.crdt.RgaTreeSplit
+import dev.yorkie.document.crdt.RgaTreeSplitNode
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPos
+import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.time.TimeTicket
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -311,5 +314,63 @@ class EditOperationReverseTest {
         // Should be unchanged since isUndoOp is false
         assertEquals(EditOperation.NOT_AN_UNDO_OP, op.undoFromOffset)
         assertEquals(EditOperation.NOT_AN_UNDO_OP, op.undoToOffset)
+    }
+
+    // F4: insertedSpans (the reverse op's retombstoneSpans) must carry the
+    // original edit's attributes onto the rebuilt TextValue. A later redo
+    // (RestoreMode.Retombstone, restoring THESE spans by identity once the
+    // originally-inserted node is gone — e.g. after a GC purge) reads
+    // formatting from exactly this value; before the fix it was always
+    // empty, silently dropping formatting on redo-after-GC.
+    @Test
+    fun `insertedSpans carry the edit's attributes onto the rebuilt TextValue`() {
+        // given: text is "Hello"
+        val (text, root) = buildTextRoot()
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
+
+        // when: insert "X" at position 2 WITH an attribute
+        val ticket = makeTicket(4)
+        val range = text.indexRangeToPosRange(2, 2)
+        val op = EditOperation(
+            fromPos = range.first,
+            toPos = range.second,
+            content = "X",
+            parentCreatedAt = textTicket,
+            executedAt = ticket,
+            attributes = mapOf("bold" to "true"),
+        )
+        val result = op.execute(root, OpSource.Local, null)
+
+        // then: the reverse op's retombstoneSpans (insertedSpans) carry the
+        // attributes onto the rebuilt TextValue, not an unattributed copy.
+        val reverseOp = result.reverseOps.single() as EditOperation
+        val insertedSpan = reverseOp.retombstoneSpans?.single()
+        assertEquals("X", insertedSpan?.value?.content)
+        assertEquals(mapOf("bold" to "true"), insertedSpan?.value?.attributes)
+    }
+
+    // F15: retombstone() must emit a ContentChange for every piece it
+    // actually tombstones, unconditionally — symmetric with restore()'s
+    // equivalent list. Before the fix, an `if (from < to)` guard could
+    // silently drop the opInfo for a piece whose visible range collapsed to
+    // zero width even though gcPairs (and the real removal) still happened,
+    // breaking the undo/redo chain and dropping a real local mutation from
+    // Document.kt's opInfos.isEmpty()-gated sync queue.
+    @Test
+    fun `retombstone emits one ContentChange per piece it actually tombstones`() {
+        val split = RgaTreeSplit<TextValue>()
+        val ticket0 = TimeTicket(0L, 0u, "actor-0")
+        val node = RgaTreeSplitNode(RgaTreeSplitNodeID(ticket0, 0), TextValue("AB"))
+        split.insertAfter(split.head, node)
+
+        val span = RestoreSpan(ticket0, 0, 2, TextValue("AB"))
+        val result = split.retombstone(listOf(span), TimeTicket(1L, 0u, "actor-0"))
+
+        assertEquals(1, result.gcPairs.size, "the one live piece is actually tombstoned")
+        assertEquals(
+            result.gcPairs.size,
+            result.changes.size,
+            "every piece actually tombstoned must produce a matching opInfo, unconditionally",
+        )
     }
 }

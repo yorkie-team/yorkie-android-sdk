@@ -36,10 +36,21 @@ class Rht : Collection<RhtNode> {
         if (prev?.executedAt < executedAt) {
             val node = RhtNode(key, value, executedAt, isRemoved)
             nodeMapByKey[key] = node
-            if (prev?.isRemoved == true) {
-                return RhtSetResult(prev, node)
+            val tombstonedPrev = when {
+                prev == null -> null
+                // Already-removed predecessor: hand back the SAME object so
+                // CrdtRoot.registerGCPair's identity-keyed toggle unregisters
+                // its earlier registration (re-setting a removed key makes
+                // that old tombstone unreachable again, same as before).
+                prev.isRemoved -> prev
+                // Live predecessor: a fresh tombstoned copy (never the same
+                // object) so it registers as a NEW gc pair, moving its bytes
+                // out of docSize.live instead of leaking them there forever
+                // (F12) — reusing `prev` here would collide with nothing
+                // (never registered while live), which is exactly the bug.
+                else -> prev.copy(isRemoved = true, executedAt = executedAt)
             }
-            return RhtSetResult(null, node)
+            return RhtSetResult(tombstonedPrev, node)
         }
 
         if (prev?.isRemoved == true) {

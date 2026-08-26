@@ -29,18 +29,14 @@ internal data class CrdtText(
             // them), so their pairs use the normal live -> gc accounting.
             rgaTreeSplit.forEach { node ->
                 if (node.removedAt != null) {
+                    // node.dataSize (TextValue.getDataSize) already sums the
+                    // node's own content bytes PLUS every attribute
+                    // tombstone's bytes, so re-adding each attribute pair
+                    // below would double-count them into docSize.gc (E4).
+                    // Its bytes are fully covered by this single outer pair.
                     add(GCPair(rgaTreeSplit, node, gcOnlySize = node.dataSize))
-                }
-                node.value.gcPairs.forEach { pair ->
-                    add(
-                        if (node.removedAt != null) {
-                            pair.copy(
-                                gcOnlySize = pair.child.dataSize,
-                            )
-                        } else {
-                            pair
-                        },
-                    )
+                } else {
+                    node.value.gcPairs.forEach { pair -> add(pair) }
                 }
             }
         }
@@ -114,12 +110,19 @@ internal data class CrdtText(
         fallbackAnchor: RgaTreeSplitPos? = null,
     ): TextRestoreResult {
         val result = rgaTreeSplit.restore(spans, executedAt, fallbackAnchor)
+        // A recreated node's subSequence-copied attribute tombstones (see
+        // TextValue.gcPairs, same pattern as CrdtText.gcPairs's own live-node
+        // case) must also be registered, or their bytes are never reachable
+        // by any future GC pass (F13). subSequence deliberately preserves
+        // their exact original state for LWW arbitration, so this is the
+        // one place that can harvest them without touching subSequence.
+        val attributeGcPairs = result.recreated.flatMap { it.value.gcPairs }
         return TextRestoreResult(
             result.untombstoned,
             result.recreated,
             toTextChanges(result.changes),
             result.liveDiff,
-            result.pendingGcPairs,
+            result.pendingGcPairs + attributeGcPairs,
         )
     }
 

@@ -146,6 +146,16 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         // preserving undo can restore this exact content later. value.deepCopy()
         // deep-copies the value so a later split of the tombstone cannot
         // mutate the captured content.
+        //
+        // Deliberately UNFILTERED by alreadyRemovedIDs (unlike gcPairs
+        // above): a node only lands in alreadyRemovedIDs via canRemove()'s
+        // LWW-won-concurrent-overwrite case, meaning THIS op legitimately
+        // becomes the node's causal owner (editedAt is after the previous
+        // removedAt) — so attributing it to this op's undo is correct. Only
+        // the GC-pair bookkeeping is skipped there, to avoid double-toggling
+        // an already-registered pair. Filtering removedSpans the same way
+        // would silently drop legitimate undo content (matches JS SDK
+        // rga_tree_split.ts's edit(), which does not filter here either).
         val removedSpans = removedNodes.map { (_, node) ->
             RestoreSpan(
                 createdAt = node.createdAt,
@@ -193,6 +203,15 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val recreated = mutableListOf<RgaTreeSplitNode<T>>()
         var liveDiff = DataSize(data = 0, meta = 0)
 
+        // The last node placed at the current cursor (un-tombstoned or
+        // recreated), in document order. When a recreated fragment has no
+        // surviving same-insertion anchor, chaining after this keeps a
+        // multi-fragment run in left-to-right order instead of each
+        // fragment prepending at the same fixed fallback anchor — which
+        // would rebuild the run reversed/scrambled (F2's actual root cause;
+        // mirrors JS SDK rga_tree_split.ts's chainAnchor).
+        var chainAnchor: RgaTreeSplitNode<T>? = null
+
         for (span in spans) {
             val pieces = findPiecesOverlapping(span.createdAt, span.start, span.end)
 
@@ -216,6 +235,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                         // Repair splay weights on the path to root (length 0 -> len).
                         treeByIndex.splay(target)
                         untombstoned.add(target)
+                        chainAnchor = target
+                    } else {
+                        chainAnchor = piece
                     }
                     cursor = overlapEnd
                     if (overlapEnd >= pieceEnd) {
@@ -233,16 +255,19 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     val newNode =
                         RgaTreeSplitNode(RgaTreeSplitNodeID(span.createdAt, cursor), value)
                     liveDiff = addDataSizes(liveDiff, newNode.dataSize)
-                    val prev =
+                    val (prev, anchorDiff) =
                         findRestoreAnchor(
                             span.createdAt,
                             cursor,
                             gapEnd,
                             executedAt,
                             fallbackAnchor,
+                            chainAnchor,
                         )
+                    liveDiff = addDataSizes(liveDiff, anchorDiff)
                     insertAfter(prev, newNode)
                     recreated.add(newNode)
+                    chainAnchor = newNode
                     cursor = gapEnd
                 }
             }
@@ -306,9 +331,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                 target.remove(executedAt)
                 treeByIndex.splay(target)
                 gcPairs.add(GCPair(this, target))
-                if (from < to) {
-                    changes.add(ContentChange(executedAt.actorID, from, to))
-                }
+                // Emit unconditionally, symmetric with restore()'s equivalent
+                // list: every piece actually tombstoned here must produce a
+                // matching opInfo, or the undo/redo chain can silently drop
+                // an entry and a real local mutation never reaches sync (F15).
+                changes.add(ContentChange(executedAt.actorID, from, to))
             }
         }
 
@@ -372,18 +399,31 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      * Returns the physical node to insert a recreated fragment
      * [[gapStart], [gapEnd]) of insertion [createdAt] AFTER.
      *
-     * Resolution ladder (all rules key on op-carried data + ID lookups only):
+     * Resolution ladder (mirrors JS SDK `rga_tree_split.ts`'s
+     * `findRestoreAnchor`, all rules key on op-carried data + ID lookups
+     * only):
      *  (a) a piece covering [gapEnd] exists -> directly before it
      *      (originally-adjacent successor; exact original slot)
      *  (b) nearest surviving piece of the same insertion left of [gapStart]
      *      -> directly after it
      *  (c) rightmost surviving piece of the same insertion (must be right of
      *      the gap) -> directly before it
-     *  (d) [fallbackAnchor], resolved via [findNodeWithSplit] (DEC-5: Android
+     *  (d) [chainAnchor]: the previously placed fragment of this same
+     *      restore call (document order) -> directly after it, so a purged
+     *      multi-fragment run is rebuilt left-to-right instead of each
+     *      fragment falling back to the same fixed anchor (which would
+     *      rebuild the run reversed/scrambled — the actual F2 root cause;
+     *      rung (c) itself already matches JS)
+     *  (e) [fallbackAnchor], resolved via [findNodeWithSplit] (DEC-5: Android
      *      has no refinePos/normalizePos; the caller already reconciles
      *      [fallbackAnchor] from undo integer offsets, mirroring JS's
      *      fromPos-doubles-as-fallback-anchor interplay)
-     *  (e) [head] (deterministic last resort)
+     *  (f) [head] (deterministic last resort)
+     *
+     * Returns the anchor node together with the metadata-size overhead (if
+     * any) that resolving rung (e) via [findNodeWithSplit] incurred, so the
+     * caller can fold it into its own live-size accounting instead of
+     * discarding it.
      */
     private fun findRestoreAnchor(
         createdAt: TimeTicket,
@@ -391,16 +431,19 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         gapEnd: Int,
         executedAt: TimeTicket,
         fallbackAnchor: RgaTreeSplitPos?,
-    ): RgaTreeSplitNode<T> {
+        chainAnchor: RgaTreeSplitNode<T>?,
+    ): Pair<RgaTreeSplitNode<T>, DataSize> {
+        val zeroDiff = DataSize(data = 0, meta = 0)
+
         findPieceCovering(createdAt, gapEnd)?.let { successor ->
-            return requireNotNull(successor.prev)
+            return requireNotNull(successor.prev) to zeroDiff
         }
 
         if (gapStart > 0) {
             val key = RgaTreeSplitNodeID(createdAt, gapStart - 1)
             val entry = treeByID.floorEntry(key)
             if (entry != null && entry.key.hasSameCreatedAt(key)) {
-                return entry.value
+                return entry.value to zeroDiff
             }
         }
 
@@ -410,19 +453,28 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             rightmost.key.hasSameCreatedAt(rightmostKey) &&
             rightmost.value.id.offset >= gapEnd
         ) {
-            return requireNotNull(rightmost.value.prev)
+            return requireNotNull(rightmost.value.prev) to zeroDiff
+        }
+
+        // (d) No surviving piece of this insertion anchors the fragment.
+        // When the whole run was purged, every fragment lands here;
+        // anchoring after the fragment placed just before it (document
+        // order) keeps the run forward instead of scrambled.
+        if (chainAnchor != null) {
+            return chainAnchor to zeroDiff
         }
 
         if (fallbackAnchor != null) {
             try {
-                return findNodeWithSplit(fallbackAnchor, executedAt).first
-            } catch (e: RuntimeException) {
-                // Anchor fully purged — fall through to (e).
+                val (node, _, diff) = findNodeWithSplit(fallbackAnchor, executedAt)
+                return node to diff
+            } catch (e: NoSuchElementException) {
+                // Anchor fully purged — fall through to (f).
             }
         }
 
         logDebug(TAG, "restore anchor exhausted; falling back to head")
-        return head
+        return head to zeroDiff
     }
 
     /**

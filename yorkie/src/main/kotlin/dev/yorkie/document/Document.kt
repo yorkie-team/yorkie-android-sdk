@@ -893,7 +893,14 @@ public class Document(
      */
     public suspend fun getRoot(): JsonObject = withContext(dispatcher) {
         val clone = ensureClone()
-        val context = ChangeContext(changeID.next(), clone.root)
+        // gcRoot = root (not clone.root): a read-path conversion's split GC
+        // pair (see JsonTree.posRangeToIndexRange/posRangeToPathRange) never
+        // gets replayed as an Operation, so registering it onto the clone
+        // would leave it stuck there, invisible to the live document's
+        // docSize/getDocSize() and silently inflating clone.root.docSize for
+        // whatever later updateAsync call reuses this same cached clone for
+        // its size-limit gate (F10).
+        val context = ChangeContext(changeID.next(), clone.root, gcRoot = root)
         JsonObject(context, clone.root.rootObject)
     }
 

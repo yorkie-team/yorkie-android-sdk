@@ -576,6 +576,7 @@ internal data class CrdtTree(
         if (splitLevel > 0 && issueTimeTicket != null) {
             var parent = fromParent
             var left = fromLeft
+            var actualSplitLevel = 0
             // `run` so an exhausted ancestor chain terminates the whole loop
             // (return@run), rather than re-splitting the same node.
             run {
@@ -619,20 +620,24 @@ internal data class CrdtTree(
                         issueTimeTicket,
                         versionVector,
                     )
+                    actualSplitLevel++
                     left = parent
                     parent = parent.parent ?: return@run
                 }
             }
-            changes.add(
-                TreeChange(
-                    type = TreeChangeType.Content,
-                    from = fromIndex,
-                    to = fromIndex,
-                    fromPath = fromPath,
-                    toPath = fromPath,
-                    actorID = executedAt.actorID,
-                ),
-            )
+            if (actualSplitLevel > 0) {
+                changes.add(
+                    TreeChange(
+                        type = TreeChangeType.Content,
+                        from = fromIndex,
+                        to = fromIndex,
+                        fromPath = fromPath,
+                        toPath = fromPath,
+                        actorID = executedAt.actorID,
+                        splitLevel = actualSplitLevel,
+                    ),
+                )
+            }
         }
 
         // 05. insert the given node at the given position.
@@ -656,7 +661,7 @@ internal data class CrdtTree(
                     // make new nodes as tombstone immediately
                     if (fromParent.isRemoved) {
                         node.remove(executedAt)
-                        gcPairs.add(GCPair(this, node))
+                        gcPairs.add(GCPair(this, node, gcOnlySize = node.dataSize))
                     } else {
                         diff = addDataSizes(diff, node.dataSize)
                     }
@@ -1715,6 +1720,15 @@ internal data class CrdtTreeNode(
 
     override fun delete(node: RhtNode) {
         _attributes.delete(node)
+    }
+
+    // The data-class hash covers mutable state (childNodes, attributes), so
+    // hash-keyed registrations (e.g. CrdtRoot's gcPairMap) would silently
+    // miss after a concurrent edit mutates a registered node. Hashing the
+    // immutable id keeps buckets stable; structural equals stays consistent
+    // with it (equal nodes share the id).
+    override fun hashCode(): Int {
+        return id.hashCode()
     }
 
     @Suppress("FunctionName")

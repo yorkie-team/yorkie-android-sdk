@@ -14,6 +14,7 @@ import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -281,4 +282,81 @@ class GcSplitLeakTest {
         // share the pendingGcPairs list between the two CrdtTree instances.
         assertEquals(0, sourceTree.drainPendingGcPairs().size)
     }
+
+    // F8: CrdtTree's third born-tombstoned site (traverseAll's
+    // fromParent.isRemoved branch) must pass gcOnlySize like its three
+    // sibling sites, or docSize.live can go negative / diverge between
+    // replicas that saw the concurrent insert-into-removed-parent case.
+    @Test
+    fun `docSize converges when a peer concurrently inserts into a removed paragraph`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree(
+                key = "t",
+                initialRoot = element("doc") {
+                    element("p") { text { "hello" } }
+                    element("p") { text { "world" } }
+                },
+            )
+        }.await()
+        crossSync(d1, d2)
+
+        // d1 removes the first <p>; d2 concurrently inserts into it, unaware
+        // it is being removed — the inserted content is born already-removed
+        // once d1's remove is known.
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").editRange(0, 7) }.await()
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(3, 3, text { "X" }) }.await()
+        crossSync(d1, d2)
+
+        assertEquals(
+            d2.getDocSize(),
+            d1.getDocSize(),
+            "docSize must converge even when the inserted content is born already-removed",
+        )
+    }
+
+    // F10: a read-path conversion's split GC pair must register on the
+    // authoritative root (Document.getDocSize()), not only on
+    // Document.getRoot()'s snapshot clone — otherwise the size is invisible
+    // until some unrelated future updateAsync happens to reuse and drain
+    // that same cached clone.
+    @Test
+    fun `read-path GC pair is visible on getDocSize immediately, not only after garbageCollect`() =
+        runTest {
+            val d1 = Document("test-doc")
+            val d2 = Document("test-doc")
+            d1.setActor(actor1)
+            d2.setActor(actor2)
+
+            d1.updateAsync { root, _ ->
+                root.setNewTree(
+                    key = "t",
+                    initialRoot = element("doc") { element("p") { text { "hello" } } },
+                )
+            }.await()
+            crossSync(d1, d2)
+
+            val selection = d1.getRoot().getAs<JsonTree>("t").indexRangeToPosRange(2 to 4)
+
+            // A peer deletes the whole <p>, tombstoning "hello" on d1.
+            d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").editRange(0, 7) }.await()
+            crossSync(d1, d2)
+
+            val gcBefore = d1.getDocSize().gc
+
+            // Resolving the stored selection lands inside the tombstoned text
+            // and splits it — a read path that emits no operation.
+            d1.getRoot().getAs<JsonTree>("t").posRangeToIndexRange(selection)
+
+            assertNotEquals(
+                gcBefore,
+                d1.getDocSize().gc,
+                "the split's GC pair must be visible on the authoritative getDocSize() " +
+                    "immediately, not only via a later unrelated updateAsync",
+            )
+        }
 }

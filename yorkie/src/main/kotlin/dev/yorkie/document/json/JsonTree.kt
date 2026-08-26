@@ -588,16 +588,20 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * Registers with the root any GC pairs [target] buffered while resolving
-     * a position. [posRangeToIndexRange] and [posRangeToPathRange] split text
-     * nodes to locate a position; when the position lands inside a
-     * tombstoned node the split produces a born-removed piece. Unlike
+     * Registers with the authoritative root ([ChangeContext.gcRoot], not
+     * necessarily [ChangeContext.root]) any GC pairs [target] buffered while
+     * resolving a position. [posRangeToIndexRange] and [posRangeToPathRange]
+     * split text nodes to locate a position; when the position lands inside
+     * a tombstoned node the split produces a born-removed piece. Unlike
      * edit/style/removeStyle, these read-path conversions emit no operation,
-     * so the buffered pairs would otherwise never reach the root and the
-     * piece would leak (invisible to GC).
+     * so the buffered pairs would otherwise never reach a root that is
+     * actually read back from (F10: registering onto a
+     * [dev.yorkie.document.Document.getRoot] snapshot clone's root leaks the
+     * pair — the clone is discarded, or worse, reused to gate a later
+     * `updateAsync`'s size check).
      */
     private fun drainPendingGcPairs() {
-        target.drainPendingGcPairs().forEach(context::registerGCPair)
+        target.drainPendingGcPairs().forEach(context::registerReadPathGCPair)
     }
 
     companion object {

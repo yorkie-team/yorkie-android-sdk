@@ -110,13 +110,22 @@ internal data class EditOperation(
                 return executeRestore(root, parentObject, source, actualFrom)
             }
 
-            val result = parentObject.edit(
-                RgaTreeSplitPosRange(actualFrom, actualTo),
-                content,
-                executedAt,
-                attributes,
-                versionVector,
-            )
+            val result = try {
+                parentObject.edit(
+                    RgaTreeSplitPosRange(actualFrom, actualTo),
+                    content,
+                    executedAt,
+                    attributes,
+                    versionVector,
+                )
+            } catch (e: RuntimeException) {
+                // The first of RgaTreeSplit.edit's two sequential
+                // findNodeWithSplit calls can have already buffered a
+                // born-dead split piece before the second throws; drain and
+                // register it before propagating (F11).
+                parentObject.rgaTreeSplit.drainPendingGcPairs().forEach(root::registerGCPair)
+                throw e
+            }
 
             root.acc(result.dataSize)
 
@@ -283,7 +292,14 @@ internal data class EditOperation(
 
         if (removedSpans.isNotEmpty() || content.isNotEmpty()) {
             val insertedSpans = if (content.isNotEmpty()) {
-                listOf(RestoreSpan(executedAt, 0, content.length, TextValue(content)))
+                // Captured before `.apply`: inside that lambda, `attributes`
+                // would otherwise resolve to the new (empty) TextValue
+                // receiver's own property, not this EditOperation's field.
+                val editAttributes = attributes
+                val insertedValue = TextValue(content).apply {
+                    editAttributes.forEach { (key, value) -> setAttribute(key, value, executedAt) }
+                }
+                listOf(RestoreSpan(executedAt, 0, content.length, insertedValue))
             } else {
                 null
             }

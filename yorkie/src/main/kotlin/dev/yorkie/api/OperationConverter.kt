@@ -312,11 +312,18 @@ private fun RestoreSpan<TextValue>.toPbSpan(): PbRestoreSpan {
  * mismatch signals a corrupt or hostile payload that would otherwise throw
  * [StringIndexOutOfBoundsException] out of
  * [dev.yorkie.document.crdt.RgaTreeSplit]'s substring calls in `restore`.
- * Rejected here, at the decode boundary.
+ * Also rejected: a `created_at` decoding to [TimeTicket.InitialTimeTicket] or
+ * [TimeTicket.MaxTimeTicket] — these collide with sentinel IDs used
+ * internally (e.g. a tree's sentinel `head` node), so a payload carrying one
+ * would silently overwrite it instead of failing loudly (F14). Rejected
+ * here, at the decode boundary.
  */
 private fun PbRestoreSpan.toRestoreSpan(executedAt: TimeTicket): RestoreSpan<TextValue> {
-    val malformed = !hasCreatedAt() || start < 0 || end < start ||
-        content.length != end - start
+    val decodedCreatedAt = if (hasCreatedAt()) createdAt.toTimeTicket() else null
+    val malformed = decodedCreatedAt == null || start < 0 || end < start ||
+        content.length != end - start ||
+        decodedCreatedAt == TimeTicket.InitialTimeTicket ||
+        decodedCreatedAt == TimeTicket.MaxTimeTicket
     if (malformed) {
         throw YorkieException(
             ErrInvalidArgument,
@@ -326,5 +333,5 @@ private fun PbRestoreSpan.toRestoreSpan(executedAt: TimeTicket): RestoreSpan<Tex
     val value = TextValue(content).apply {
         attributesMap.forEach { (key, attrValue) -> setAttribute(key, attrValue, executedAt) }
     }
-    return RestoreSpan(createdAt.toTimeTicket(), start, end, value)
+    return RestoreSpan(requireNotNull(decodedCreatedAt), start, end, value)
 }

@@ -11,7 +11,9 @@ import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
 
@@ -218,6 +220,10 @@ class TreeEditOperationReverseTest {
         assertEquals(null, reverseOp.contents)
         assertEquals(0, reverseOp.splitLevel)
         assertEquals(1, reverseOp.redoSplitLevel)
+        // AC10: the re-split path, NOT identity restore — asserted directly on
+        // the reverse op, since both paths render the same XML here.
+        assertFalse(reverseOp.isRestoreOp)
+        assertNull(reverseOp.restoreSpans)
     }
 
     @Test
@@ -242,6 +248,8 @@ class TreeEditOperationReverseTest {
         assertEquals(null, reverseOp.contents)
         assertEquals(0, reverseOp.splitLevel)
         assertEquals(2, reverseOp.redoSplitLevel)
+        assertFalse(reverseOp.isRestoreOp)
+        assertNull(reverseOp.restoreSpans)
     }
 
     @Test
@@ -389,6 +397,143 @@ class TreeEditOperationReverseTest {
         assertTrue(result.opInfos.isEmpty())
         assertTrue(result.reverseOps.isEmpty())
         assertEquals("<root><p></p></root>", tree.toXml())
+    }
+
+    // B1 (review #360): an ordinary undo op consumes the resolved offset range
+    // as its actual edit range. Clamping a stale offset to the live size would
+    // re-insert the content at the END of the document and push that
+    // misplacement to every peer as a concrete fromPos/toPos, so an
+    // out-of-range offset must fail loudly instead.
+    @Test
+    fun `undo op whose offsets exceed the live size does not relocate content`() {
+        // given: <root><p>hello</p></root> — size 7, so offsets 8..12 are stale
+        // (e.g. the doc shrank from a concurrent remote delete after this undo
+        // op was pushed onto the stack)
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        makeTreeEditOp(tree, 0, 0, listOf(pNode), 3).execute(root, OpSource.Local, null)
+        val helloNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "hello")
+        makeTreeEditOp(tree, 1, 1, listOf(helloNode), 4).execute(root, OpSource.Local, null)
+        val before = tree.toXml()
+        assertEquals(7, tree.size)
+
+        val pos = tree.indexRangeToPosRange(0 to 0).first
+        val staleUndo = TreeEditOperation(
+            parentCreatedAt = treeTicket,
+            fromPos = pos,
+            toPos = pos,
+            contents = listOf(CrdtTreeText(CrdtTreeNodeID(makeTicket(9), 0), "stale")),
+            splitLevel = 0,
+            executedAt = makeTicket(10),
+            undoFromOffset = 8,
+            undoToOffset = 12,
+        )
+
+        // when / then: rejected, and the tree is untouched — no content lands
+        // at the clamped (end-of-document) position
+        assertFailsWith<IllegalArgumentException> {
+            staleUndo.execute(root, OpSource.UndoRedo, null)
+        }
+        assertEquals(before, tree.toXml())
+    }
+
+    // I4 (review #360): a merge-involved delete must reverse via copy-reinsert
+    // (a split), never via identity restore — CrdtTree.edit's spansComplete
+    // guard. Asserted on the reverse op itself: the XML round-trip is identical
+    // whichever path runs, so it cannot tell them apart.
+    @Test
+    fun `reverse of a merge-involved delete is copy-reinsert, not identity restore`() {
+        // given: <root><p>ab</p><p>cd</p></root>
+        val (tree, root) = buildTreeRoot()
+        makeTreeEditOp(
+            tree,
+            0,
+            0,
+            listOf(CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")),
+            3,
+        ).execute(root, OpSource.Local, null)
+        makeTreeEditOp(
+            tree,
+            1,
+            1,
+            listOf(CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "ab")),
+            4,
+        ).execute(root, OpSource.Local, null)
+        makeTreeEditOp(
+            tree,
+            4,
+            4,
+            listOf(CrdtTreeElement(CrdtTreeNodeID(makeTicket(5), 0), "p")),
+            5,
+        ).execute(root, OpSource.Local, null)
+        makeTreeEditOp(
+            tree,
+            5,
+            5,
+            listOf(CrdtTreeText(CrdtTreeNodeID(makeTicket(6), 0), "cd")),
+            6,
+        ).execute(root, OpSource.Local, null)
+        assertEquals("<root><p>ab</p><p>cd</p></root>", tree.toXml())
+
+        // when: delete the </p><p> boundary — a merge, not a plain deletion
+        val result = makeTreeEditOp(tree, 3, 5, null, 7).execute(root, OpSource.Local, null)
+        assertEquals("<root><p>abcd</p></root>", tree.toXml())
+
+        // then: the reverse is a split, carrying no identity payload
+        val reverseOp = result.reverseOps.single() as TreeEditOperation
+        assertFalse(reverseOp.isRestoreOp)
+        assertNull(reverseOp.restoreSpans)
+        assertNull(reverseOp.retombstoneSpans)
+        assertEquals(1, reverseOp.splitLevel)
+    }
+
+    // I4 (review #360): the reverse span payload itself — non-empty, no
+    // duplicate ids, every parentID resolvable, parent BEFORE child (restore()
+    // recreates top-down and silently drops a child whose parent is missing),
+    // and nodes tombstoned before this edit excluded.
+    @Test
+    fun `restore span payload is parent-first and excludes pre-tombstoned nodes`() {
+        // given: <root><p>hello</p></root> with "el" already tombstoned
+        val (tree, root) = buildTreeRoot()
+        makeTreeEditOp(
+            tree,
+            0,
+            0,
+            listOf(CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")),
+            3,
+        ).execute(root, OpSource.Local, null)
+        makeTreeEditOp(
+            tree,
+            1,
+            1,
+            listOf(CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "hello")),
+            4,
+        ).execute(root, OpSource.Local, null)
+        val preTombstone = makeTreeEditOp(tree, 2, 4, null, 5)
+            .execute(root, OpSource.Local, null)
+        val preTombstonedID =
+            (preTombstone.reverseOps.single() as TreeEditOperation).restoreSpans!!.single().id
+        assertEquals("<root><p>hlo</p></root>", tree.toXml())
+
+        // when: delete the whole <p>, which spans the pre-tombstoned "el"
+        val result = makeTreeEditOp(tree, 0, tree.size, null, 6)
+            .execute(root, OpSource.Local, null)
+        val spans = (result.reverseOps.single() as TreeEditOperation).restoreSpans
+        requireNotNull(spans)
+
+        // then
+        assertTrue(spans.isNotEmpty())
+        assertEquals(spans.size, spans.map { it.id }.distinct().size, "no duplicate span ids")
+        assertTrue(spans.none { it.id == preTombstonedID }, "pre-tombstoned node excluded")
+        assertTrue(spans.all { it.parentID != null }, "every span records its parent")
+        val indexByID = spans.withIndex().associate { (i, span) -> span.id to i }
+        spans.forEachIndexed { index, span ->
+            val parentIndex = indexByID[span.parentID] ?: return@forEachIndexed
+            assertTrue(
+                parentIndex < index,
+                "parent ${span.parentID} must precede its child ${span.id}",
+            )
+        }
     }
 
     @Test

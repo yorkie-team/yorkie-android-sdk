@@ -9,6 +9,7 @@ import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -72,18 +73,21 @@ class TreeRestoreConvergenceTest {
     // both must revive the original insertion exactly once (a set-union of
     // the two restored ranges), converging to identical content AND
     // identical node ids on both replicas regardless of order.
-    private suspend fun runBothUndos(undoD1First: Boolean): Pair<Document, Document> {
+    private suspend fun runBothUndos(
+        undoD1First: Boolean,
+        overWire: Boolean = false,
+    ): Pair<Document, Document> {
         val (d1, d2) = buildOverlappingDeletes()
         if (undoD1First) {
             d1.history.undoAsync().await()
-            crossSync(d1, d2)
+            crossSync(d1, d2, overWire)
             d2.history.undoAsync().await()
         } else {
             d2.history.undoAsync().await()
-            crossSync(d1, d2)
+            crossSync(d1, d2, overWire)
             d1.history.undoAsync().await()
         }
-        crossSync(d1, d2)
+        crossSync(d1, d2, overWire)
         return d1 to d2
     }
 
@@ -106,6 +110,178 @@ class TreeRestoreConvergenceTest {
         assertEquals("<root>0123456789</root>", b1.getRoot().getAs<JsonTree>("t").toXml())
         assertEquals(identitySequence(a1.crdtTree()), identitySequence(a2.crdtTree()))
         assertEquals(identitySequence(b1.crdtTree()), identitySequence(b2.crdtTree()))
+        assertEquals(
+            identitySequence(a1.crdtTree()),
+            identitySequence(b1.crdtTree()),
+            "the undo order must not change the converged result",
+        )
+    }
+
+    // I2 (review #360): the Retombstone (redo) direction was never relayed to
+    // a second replica — every redo in the suite ran on a single document. A
+    // redo pushes `restore_mode = RETOMBSTONE` to peers, so it needs the same
+    // convergence guarantee as the undo direction.
+    @Test
+    fun `converges when both replicas redo their undone deletes`() = runTest {
+        val (d1, d2) = runBothUndos(undoD1First = true)
+
+        d1.history.redoAsync().await()
+        crossSync(d1, d2)
+        d2.history.redoAsync().await()
+        crossSync(d1, d2)
+
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals(
+            identitySequence(d1.crdtTree()),
+            identitySequence(d2.crdtTree()),
+            "both replicas must converge on content AND node ids after both redos",
+        )
+        // Back to the state both deletes produced, by identity.
+        assertEquals("<root>0189</root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+    }
+
+    // I5 (review #360): the same both-undo convergence, but with every relayed
+    // change routed through the protobuf converters — the restore_spans
+    // encode/decode path is otherwise untested under convergence, since
+    // crossSync passes operations in memory.
+    @Test
+    fun `converges when both undos are relayed over the wire`() = runTest {
+        val (d1, d2) = runBothUndos(undoD1First = true, overWire = true)
+
+        assertEquals("<root>0123456789</root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(
+            identitySequence(d1.crdtTree()),
+            identitySequence(d2.crdtTree()),
+            "spans must survive the protobuf round-trip with identity intact",
+        )
+    }
+
+    // I2 (review #360): port of `history_tree_test.ts` -> "recreates a purged
+    // subtree on redo and converges" (JS v0.7.14). The undo after GC has to
+    // rebuild the subtree from spans (recreateFromSpan) rather than
+    // un-tombstone it, and both replicas must land on the same tree.
+    @Test
+    fun `recreates a purged subtree after GC and converges`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { element("p") { text { "hello" } } })
+        }.await()
+        crossSync(d1, d2)
+
+        // d1 deletes the whole <p>hello</p>; both replicas tombstone it.
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 7) }.await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+
+        // Undo revives it, then purge on both so the next redo's tombstones
+        // are physically removed.
+        d1.history.undoAsync().await()
+        crossSync(d1, d2)
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+
+        // Redo re-deletes; purge again so the nodes are gone for good.
+        d1.history.redoAsync().await()
+        crossSync(d1, d2)
+        val purged1 = d1.garbageCollect(vector)
+        val purged2 = d2.garbageCollect(vector)
+        assertEquals(purged1, purged2, "both replicas must purge the same count")
+        assertTrue(purged1 > 0, "the subtree must actually be purged before the recreate")
+
+        // The final undo has nothing left to un-tombstone: it must recreate the
+        // whole subtree from its spans, top-down, and converge.
+        d1.history.undoAsync().await()
+        crossSync(d1, d2)
+
+        assertEquals(
+            "<doc><p>hello</p></doc>",
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            "the purged subtree is recreated under its original identity",
+        )
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals(
+            identitySequence(d1.crdtTree()),
+            identitySequence(d2.crdtTree()),
+            "recreated nodes must carry identical ids on both replicas",
+        )
+    }
+
+    /**
+     * Runs one of the reconcile overlap cases upstream un-skipped in v0.7.14
+     * (`history_tree_test.ts` Cases 5 and 6): both replicas delete overlapping
+     * ranges, then both undo, then both redo. Every stage must converge.
+     */
+    private suspend fun runOverlapCase(d1Range: Pair<Int, Int>, d2Range: Pair<Int, Int>) {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { element("p") { text { "0123456789" } } })
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").edit(d1Range.first, d1Range.second)
+        }.await()
+        d2.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").edit(d2Range.first, d2Range.second)
+        }.await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+            "after the concurrent deletes",
+        )
+
+        d1.history.undoAsync().await()
+        d2.history.undoAsync().await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+            "after both undos",
+        )
+        assertEquals(identitySequence(d1.crdtTree()), identitySequence(d2.crdtTree()))
+
+        d1.history.redoAsync().await()
+        d2.history.redoAsync().await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+            "after both redos",
+        )
+        assertEquals(identitySequence(d1.crdtTree()), identitySequence(d2.crdtTree()))
+    }
+
+    // Reconcile Case 5 (overlap_start): the remote delete overlaps the start of
+    // the undo range. Un-skipped upstream in v0.7.14.
+    @Test
+    fun `converges when the remote delete overlaps the start of the undo range`() = runTest {
+        runOverlapCase(d1Range = 5 to 9, d2Range = 3 to 7)
+    }
+
+    // Reconcile Case 6 (overlap_end): the remote delete overlaps the end of the
+    // undo range. Un-skipped upstream in v0.7.14.
+    @Test
+    fun `converges when the remote delete overlaps the end of the undo range`() = runTest {
+        runOverlapCase(d1Range = 3 to 7, d2Range = 5 to 9)
     }
 
     @Test

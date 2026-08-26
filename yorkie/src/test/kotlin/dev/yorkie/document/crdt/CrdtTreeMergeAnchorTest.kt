@@ -276,7 +276,9 @@ class CrdtTreeMergeAnchorTest {
     // edit is a fully collapsed, content-less no-op EXCEPT for the
     // resolveMergeTarget(fromParent) call every edit() performs up front —
     // without the `seen`-set guard this test would hang instead of failing.
-    @Test
+    // Timeout: a regressed cycle guard loops forever, which would hang the whole
+    // JVM suite instead of failing this one test.
+    @Test(timeout = 5000)
     fun `resolveMergeTarget cycle guard terminates for a concurrent mutual merge`() {
         val tree = CrdtTree(CrdtTreeElement(issuePos(), "root"), issueTime())
         tree.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())

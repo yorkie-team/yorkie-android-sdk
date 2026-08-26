@@ -9,6 +9,9 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
+import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.issueTime
 import kotlin.test.assertEquals
@@ -26,6 +29,9 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class TreeRestoreTest {
+
+    private val actor1 = "000000000000000000000001"
+    private val actor2 = "000000000000000000000002"
 
     private fun Document.crdtTree(key: String = "t"): CrdtTree = getRootObject()[key] as CrdtTree
 
@@ -149,7 +155,11 @@ class TreeRestoreTest {
     }
 
     // AC10 (guard): a merge-involved edit emits empty spans and reverses via
-    // copy-reinsert (the pre-existing path), never via identity restore.
+    // copy-reinsert (the pre-existing path), never via identity restore. This
+    // case covers the round-trip; that the reverse op really is the
+    // copy-reinsert one (identical XML either way) is asserted on the op itself
+    // in TreeEditOperationReverseTest's `reverse of a merge-involved delete
+    // is copy-reinsert, not identity restore`.
     @Test
     fun `merge-involved edit reverses via copy-reinsert, not identity restore`() = runTest {
         val document = Document("test-doc")
@@ -179,7 +189,9 @@ class TreeRestoreTest {
     }
 
     // AC10 (guard): a pure split's own boundary-deletion undo stays on the
-    // re-split reverse path (redoSplitLevel), never identity restore.
+    // re-split reverse path (redoSplitLevel), never identity restore — pinned
+    // on the reverse op in TreeEditOperationReverseTest's `reverse of pure L1
+    // split ...` (assertFalse(isRestoreOp)); this case covers the round-trip.
     @Test
     fun `pure split undo redo round trips via the re-split path`() = runTest {
         val document = Document("test-doc")
@@ -232,9 +244,12 @@ class TreeRestoreTest {
         collectJob.cancel()
     }
 
-    // AC11: the reverse-span payload fingerprint stays stable and non-empty
-    // across repeated undo/redo cycles, and pre-tombstoned nodes never
-    // reappear in it.
+    // AC11: the reverse-span payload stays stable across repeated undo/redo
+    // cycles — asserted through the ids it revives, which is the property the
+    // payload exists to preserve: a regenerated (copy-reinsert) reverse would
+    // render the same XML with FRESH ids. The payload's own shape (ordering,
+    // duplicate ids, pre-tombstoned exclusion) is asserted directly in
+    // TreeEditOperationReverseTest's `restore span payload is parent-first ...`.
     @Test
     fun `reverse span fingerprint is stable across repeated undo redo cycles`() = runTest {
         val document = Document("test-doc")
@@ -245,18 +260,27 @@ class TreeRestoreTest {
         // "el" pre-tombstoned before the undo/redo cycles ever start.
         assertEquals("<root>hlo</root>", document.getRoot().getAs<JsonTree>("t").toXml())
 
+        var revivedIDs: List<CrdtTreeNodeID>? = null
         repeat(4) {
             document.history.undoAsync().await()
             assertEquals(
                 "<root>hello</root>",
                 document.getRoot().getAs<JsonTree>("t").toXml(),
             )
+            // Every cycle must revive the SAME node ids — no fresh ids, and no
+            // resurrection of the "el" tombstoned before the cycles started.
+            val ids = buildList {
+                document.crdtTree().indexTree.traverse { node, _ -> add(node.id) }
+            }
+            revivedIDs?.let { assertEquals(it, ids, "revived ids drift across cycles") }
+            revivedIDs = ids
             document.history.redoAsync().await()
             assertEquals(
                 "<root>hlo</root>",
                 document.getRoot().getAs<JsonTree>("t").toXml(),
             )
         }
+        assertTrue(revivedIDs!!.isNotEmpty())
     }
 
     // AC11: a text span's length is in UTF-16 code units — an astral
@@ -382,6 +406,81 @@ class TreeRestoreTest {
         // resolves and "x" reappears without throwing.
         document.history.undoAsync().await()
         assertEquals("<root><p>x</p></root>", document.getRoot().getAs<JsonTree>("t").toXml())
+    }
+
+    // B2 (review #360): when a delete cascades into a concurrently-created
+    // split sibling, the captured spans must stay parent-before-child.
+    // restore() recreates top-down and resolves each span's parent BY
+    // IDENTITY, so a child that precedes its own parent is silently dropped
+    // once GC has purged the subtree — permanent divergence against a replica
+    // that had not yet run GC. The cascade walk is therefore preorder, unlike
+    // JS's postorder `traverseAll` (upstream carries the same defect).
+    @Test
+    fun `cascaded split subtree captures restore spans parent before child`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        // d2 owns the content; d1 owns the split, so a version vector that
+        // knows only d2 sees the split sibling as concurrently created.
+        d2.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    // A left neighbour, so the delete range below does not start
+                    // at the leftmost slot (a leftmost boundary advances past the
+                    // split sibling too, which would collapse the range).
+                    element("s")
+                    element("p") {
+                        element("b") { text { "x" } }
+                        element("i") { text { "y" } }
+                    }
+                },
+            )
+        }.await()
+        crossSync(d1, d2)
+
+        // d1 splits <p> between <b> and <i>: the new right-hand <p> (the split
+        // sibling) carries <i>y</i> as a two-level subtree.
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(6, 6, 1) }.await()
+        assertEquals(
+            "<doc><s></s><p><b>x</b></p><p><i>y</i></p></doc>",
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+
+        // Delete the whole doc AS d2 SEES IT: the range comes from d2's own
+        // tree (which has no split sibling) and carries d2's version vector,
+        // exactly like the remote change d2 would push. At d1 the insNextID
+        // cascade then tombstones the split sibling's whole subtree.
+        val remoteRange = d2.crdtTree().let { it.indexRangeToPosRange(2 to it.size) }
+        val tree = d1.crdtTree()
+        // A ticket newer than every existing node, as a real d2 delete would be.
+        var delimiter = 0u
+        val editedAt = TimeTicket(100L, 0u, actor2)
+        val result = tree.edit(
+            remoteRange,
+            null,
+            0,
+            editedAt,
+            { TimeTicket(100L, ++delimiter, actor2) },
+            VersionVector(mapOf(actor2 to TimeTicket.MAX_LAMPORT)),
+        )
+        assertEquals("<doc><s></s></doc>", tree.toXml())
+
+        val spans = result.removedSpans
+        assertTrue(spans.isNotEmpty(), "the delete must capture a complete span set")
+        // The cascaded subtree is present: split sibling <p>, its <i> and "y".
+        assertTrue(spans.any { it.nodeType == "i" }, "cascaded child captured")
+        assertTrue(spans.any { it.isText && it.value == "y" }, "cascaded grandchild captured")
+        val indexByID = spans.withIndex().associate { (index, span) -> span.id to index }
+        spans.forEachIndexed { index, span ->
+            val parentIndex = indexByID[span.parentID] ?: return@forEachIndexed
+            assertTrue(
+                parentIndex < index,
+                "parent ${span.parentID} must precede its child ${span.id}",
+            )
+        }
     }
 
     // AC8 (parent-gone guard, direct CrdtTree level): when the span's

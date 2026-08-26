@@ -160,6 +160,24 @@ class TreeRestoreConverterTest {
         assertNull(restored.restoreMode)
     }
 
+    // The server rejects the whole PushPull when restore_mode is set with no
+    // spans (from_pb.go: hasMode != hasSpans), stranding the change in
+    // localChanges forever. Empty-but-non-null span lists must therefore
+    // encode as an ordinary edit, exactly as JS guards on length.
+    @Test
+    fun `omits restore_mode when both span lists are empty but non-null`() {
+        val op = treeEditOp(
+            restoreSpans = emptyList(),
+            restoreMode = RestoreMode.Restore,
+            retombstoneSpans = emptyList(),
+        )
+        val pbOp = op.toPBOperation()
+
+        assertTrue(pbOp.treeEdit.restoreSpansList.isEmpty())
+        assertTrue(pbOp.treeEdit.retombstoneSpansList.isEmpty())
+        assertEquals(PbRestoreMode.RESTORE_MODE_UNSPECIFIED, pbOp.treeEdit.restoreMode)
+    }
+
     // --- Malformed spans: each blanks a required timestamp, or (the last
     // case) corrupts a text span's length/value invariant. ---
 

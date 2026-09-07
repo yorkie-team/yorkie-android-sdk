@@ -479,6 +479,48 @@ class TextRestoreConvergenceTest {
         )
     }
 
+    // Two-client pair (I1, AC8): replica A performs the exact spec scenario
+    // 5 sequence, replica B independently purges the same tombstone so its
+    // relayed restore ALSO takes the recreate-from-scratch path (not an
+    // in-place untombstone, which would not exercise the insertionPrev
+    // fallback), then A's edit at the recreated boundary must converge.
+    @Test
+    fun `two replicas converge after an edit at a recreated node boundary`() = runTest {
+        val a = Document("test-doc")
+        val b = Document("test-doc")
+        a.setActor(actor1)
+        b.setActor(actor2)
+
+        a.updateAsync { root, _ -> root.setNewText("text").edit(0, 0, "abcdef") }.await()
+        crossSync(a, b)
+
+        a.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(3, 6, "") }.await()
+        crossSync(a, b)
+        assertEquals("abc", a.getRoot().getAs<JsonText>("text").toString())
+        assertEquals("abc", b.getRoot().getAs<JsonText>("text").toString())
+
+        val vector = maxVectorOf(listOf(actor1))
+        val purgedA = a.garbageCollect(vector)
+        val purgedB = b.garbageCollect(vector)
+        assertTrue(purgedA > 0, "expected the purged tombstone to be collected on A")
+        assertTrue(purgedB > 0, "expected the purged tombstone to be collected on B")
+
+        a.history.undoAsync().await()
+        assertEquals("abcdef", a.getRoot().getAs<JsonText>("text").toString())
+
+        a.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(3, 3, "X") }.await()
+        assertEquals("abcXdef", a.getRoot().getAs<JsonText>("text").toString())
+
+        crossSync(a, b)
+
+        assertEquals(
+            a.getRoot().getAs<JsonText>("text").toString(),
+            b.getRoot().getAs<JsonText>("text").toString(),
+            "both replicas must converge after an edit at the recreated node's boundary",
+        )
+        assertEquals("abcXdef", b.getRoot().getAs<JsonText>("text").toString())
+    }
+
     // F5 (corrected per coordinator review against yorkie-js-sdk): a node
     // landing in alreadyRemovedIDs only got there via canRemove()'s
     // LWW-won-concurrent-overwrite case — this op's timestamp is causally

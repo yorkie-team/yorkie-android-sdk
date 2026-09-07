@@ -90,6 +90,12 @@ YORKIE_SERVER_URL=https://your-yorkie-server.com
 YORKIE_API_KEY=Your Yorkie API key
 ```
 
+> **Compatibility:** this SDK requires a self-hosted Yorkie server **>= 0.7.13** for text
+> undo/redo. An older server strips the restore-related `Edit` operation fields (they are
+> unknown to it) before relaying the change to other clients, so a text undo applies only
+> on the local client and never reaches peers — a permanent silent divergence between
+> replicas, not a harmless no-op.
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting patches and the contribution workflow.

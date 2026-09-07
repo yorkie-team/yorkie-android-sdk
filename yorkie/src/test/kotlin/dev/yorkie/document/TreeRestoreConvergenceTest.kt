@@ -17,7 +17,8 @@ import org.junit.Test
 
 /**
  * Regression tests for [dev.yorkie.document.crdt.CrdtTree]/`TreeEditOperation`
- * split-count and GC-identity fixes (spec 010, AC1, AC16).
+ * split-count and GC-identity fixes (spec 010, AC1, AC16; spec 011 B1/AC1
+ * extends the split-count coverage to the PARTIAL, non-zero case).
  */
 class TreeRestoreConvergenceTest {
 
@@ -57,6 +58,94 @@ class TreeRestoreConvergenceTest {
             document.getRoot().getOrNull("t"),
             "a splitLevel walk that performed zero real splits must not push its own reverse op",
         )
+    }
+
+    // Spec 011 B1: a PARTIAL (not zero) split still root-stops. CrdtTree
+    // records the actual per-op split count on the TreeChange/TreeEditOpInfo
+    // (`actualSplitLevel`), but TreeEditOperation.execute previously read the
+    // REQUESTED splitLevel field for isPureSplit/boundarySize/redoSplitLevel
+    // — so the reverse op deleted 2*requestedSplitLevel boundary tokens when
+    // the walk actually produced fewer, eating into content the walk never
+    // split. "ab" inside <p> at index2, requesting splitLevel=2: level 1
+    // splits "p" (actual=1); level 2 would split "doc", but "doc" is the
+    // tree root, so the walk stops there (actual stays 1).
+    @Test
+    fun `partial split reverse deletes only the boundary tokens actually inserted`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { element("p") { text { "ab" } } })
+        }.await()
+
+        document.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(2, 2, 2) }.await()
+        assertEquals(
+            "<doc><p>a</p><p>b</p></doc>",
+            document.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+
+        document.history.undoAsync().await()
+        assertEquals(
+            "<doc><p>ab</p></doc>",
+            document.getRoot().getAs<JsonTree>("t").toXml(),
+            "undo of a partial split must delete exactly the boundary tokens the walk" +
+                " actually inserted (actual=1), not the requested splitLevel's worth (2)",
+        )
+    }
+
+    // Deeper case: "ab" inside <b> inside <p>, requesting splitLevel=3.
+    // Level 1 splits "b" (actual=1), level 2 splits "p" (actual=2), level 3
+    // would split "doc" — root-stop, actual stays 2.
+    @Test
+    fun `deeper partial split reverse round-trips at its actual level`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") { element("p") { element("b") { text { "ab" } } } },
+            )
+        }.await()
+
+        document.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(3, 3, 3) }.await()
+        assertEquals(
+            "<doc><p><b>a</b></p><p><b>b</b></p></doc>",
+            document.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+
+        document.history.undoAsync().await()
+        assertEquals(
+            "<doc><p><b>ab</b></p></doc>",
+            document.getRoot().getAs<JsonTree>("t").toXml(),
+            "a deeper partial split must round-trip on its actual (not requested) level too",
+        )
+    }
+
+    // Two-client pair (constitution C9): replica A performs the partial
+    // split and its undo entirely locally, then cross-syncs — both replicas
+    // must converge back to the original XML.
+    @Test
+    fun `two replicas converge after a partial split is undone`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { element("p") { text { "ab" } } })
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(2, 2, 2) }.await()
+        assertEquals("<doc><p>a</p><p>b</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
+
+        d1.history.undoAsync().await()
+        assertEquals("<doc><p>ab</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
+
+        crossSync(d1, d2)
+
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals("<doc><p>ab</p></doc>", d2.getRoot().getAs<JsonTree>("t").toXml())
     }
 
     // E2: a registered tree node's data-class hash covers mutable state

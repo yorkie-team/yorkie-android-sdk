@@ -11,7 +11,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
-import org.junit.Ignore
 import org.junit.Test
 
 /**
@@ -182,15 +181,14 @@ class TextRestoreTest {
     // and throw IndexOutOfBoundsException before ever reaching executeRestore.
 
     @Test
-    @Ignore(
-        "known bug: undoing a setNewText+edit done in the same updateAsync block " +
-            "also reverses the SetOperation, removing the \"text\" key instead of only " +
-            "emptying it (RTCOLLABPLATFORM-752 follow-up)",
-    )
     fun `redo after undoing an insert that emptied the document restores content`() = runTest {
         val document = Document("test-doc")
+        // setNewText in its OWN updateAsync block (spec 011 B3) — undoing the
+        // content edit below must reverse only that edit, not the
+        // SetOperation that created "text".
+        document.updateAsync { root, _ -> root.setNewText("text") }.await()
         document.updateAsync { root, _ ->
-            root.setNewText("text").edit(0, 0, "0123456789")
+            root.getAs<JsonText>("text").edit(0, 0, "0123456789")
         }.await()
         assertEquals("0123456789", document.getRoot().getAs<JsonText>("text").toString())
         assertTrue(document.history.canUndo())

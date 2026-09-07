@@ -284,7 +284,7 @@ class TextRestoreConvergenceTest {
         assertEquals(
             "0123456789",
             document.getRoot().getAs<JsonText>("text").toString(),
-            "chainAnchor must rebuild a multi-fragment purge in left-to-right order," +
+            "rung (b) must chain a multi-fragment purge in left-to-right order," +
                 " not reversed",
         )
     }

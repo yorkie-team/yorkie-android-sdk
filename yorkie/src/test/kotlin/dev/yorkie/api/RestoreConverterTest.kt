@@ -93,6 +93,24 @@ class RestoreConverterTest {
         assertEquals(1, restored.restoreSpans?.size)
     }
 
+    // S2: a retombstone-only op (nothing to restore, e.g. reversing a pure
+    // insert) must decode restoreSpans as null independently of
+    // retombstoneSpans being present — not coupled to one shared
+    // hasRestorePayload flag.
+    @Test
+    fun `retombstone-only op round-trips with restoreSpans null`() {
+        val restored = restoreOp(
+            restoreSpans = null,
+            retombstoneSpans = listOf(span(0, 4, "0123")),
+            restoreMode = RestoreMode.Retombstone,
+        ).roundTrip()
+
+        assertNull(restored.restoreSpans)
+        assertEquals(RestoreMode.Retombstone, restored.restoreMode)
+        assertEquals(1, restored.retombstoneSpans?.size)
+        assertEquals("0123", restored.retombstoneSpans?.get(0)?.value?.content)
+    }
+
     @Test
     fun `round-trips the companion retombstoneSpans of a replace reverse`() {
         // The reverse of a replace revives the removed content (restoreSpans)

@@ -319,13 +319,17 @@ class GcSplitLeakTest {
         )
     }
 
-    // F10: a read-path conversion's split GC pair must register on the
-    // authoritative root (Document.getDocSize()), not only on
-    // Document.getRoot()'s snapshot clone — otherwise the size is invisible
-    // until some unrelated future updateAsync happens to reuse and drain
-    // that same cached clone.
+    // F10 (spec 010) asserted a read-path split's GC pair must be visible on
+    // the LIVE root's getDocSize() immediately. Spec 011 I2 reverts that as
+    // an over-correction: ChangeContext.gcRoot and registerReadPathGCPair
+    // are deleted, and Document.getRoot()'s read-path split now registers
+    // its GC pair on the CLONE's own root (the one getRoot() actually hands
+    // back) — never the live root, which never gets replayed the
+    // corresponding operation. The clone's docSize growing is accurate for
+    // the clone and is swept by Document.garbageCollect (which sweeps
+    // clone?.root alongside the live root).
     @Test
-    fun `read-path GC pair is visible on getDocSize immediately, not only after garbageCollect`() =
+    fun `read-path GC pair registers on the clone root, leaving the live docSize untouched`() =
         runTest {
             val d1 = Document("test-doc")
             val d2 = Document("test-doc")
@@ -346,17 +350,23 @@ class GcSplitLeakTest {
             d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").editRange(0, 7) }.await()
             crossSync(d1, d2)
 
-            val gcBefore = d1.getDocSize().gc
+            val liveGcBefore = d1.getDocSize().gc
+            val cloneGcBefore = requireNotNull(d1.clone).root.docSize.gc
 
             // Resolving the stored selection lands inside the tombstoned text
             // and splits it — a read path that emits no operation.
             d1.getRoot().getAs<JsonTree>("t").posRangeToIndexRange(selection)
 
-            assertNotEquals(
-                gcBefore,
+            assertEquals(
+                liveGcBefore,
                 d1.getDocSize().gc,
-                "the split's GC pair must be visible on the authoritative getDocSize() " +
-                    "immediately, not only via a later unrelated updateAsync",
+                "a read-path split must never inflate the LIVE root's docSize.gc",
+            )
+            assertNotEquals(
+                cloneGcBefore,
+                requireNotNull(d1.clone).root.docSize.gc,
+                "the split's GC pair must register onto the clone's own root instead," +
+                    " where Document.garbageCollect reclaims it",
             )
         }
 }

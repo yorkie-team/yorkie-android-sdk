@@ -4,6 +4,9 @@ import com.google.gson.JsonParser
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonText
+import dev.yorkie.document.json.JsonTree
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
 import dev.yorkie.document.time.ActorID
@@ -378,5 +381,59 @@ class DocumentTest {
             },
         )
         assertEquals(2, target.getRoot().getAs<JsonText>("text").treeByID.size)
+    }
+
+    // Spec 011 I2 (scenario 6): a read-path split (JsonTree.posRangeToIndexRange
+    // splitting a tombstoned text node to resolve a position inside it) must
+    // register its GC pair on the CLONE's own root — the one getRoot() actually
+    // hands back and the one Document.garbageCollect sweeps — never on the LIVE
+    // root, which never gets replayed the corresponding operation.
+    @Test
+    fun `read-path split registers its GC pair on the clone root not the live root`() = runTest {
+        target.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { element("p") { text { "abcdefgh" } } })
+        }.await()
+
+        // Captured BEFORE the delete, at doc-index 5 (char offset 4 of
+        // "abcdefgh") — identity/absolute-offset addressed, so it still
+        // floor-resolves correctly once that span becomes tombstoned below.
+        val capturedPos = target.getRoot().getAs<JsonTree>("t").indexRangeToPosRange(5 to 5).first
+
+        // Delete doc-indices [3, 8) = char offsets [2, 7) = "cdefg", leaving
+        // "ab" + "h" live and one tombstoned span covering the captured position.
+        target.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(3, 8) }.await()
+        assertEquals("<doc><p>abh</p></doc>", target.getRoot().getAs<JsonTree>("t").toXml())
+
+        val liveGcBefore = target.getDocSize().gc
+        val liveGarbageLengthBefore = target.garbageLength
+
+        // Read-path split: the captured position lands INSIDE the tombstoned
+        // span, so resolving it splits the tombstone into two born-dead pieces.
+        target.getRoot().getAs<JsonTree>("t").posRangeToIndexRange(capturedPos to capturedPos)
+
+        assertEquals(
+            "a read-path split must never inflate the LIVE root's docSize.gc",
+            liveGcBefore,
+            target.getDocSize().gc,
+        )
+        assertEquals(
+            "the read-path split's GC pair must not register onto the live root",
+            liveGarbageLengthBefore,
+            target.garbageLength,
+        )
+
+        val cloneGarbageLength = target.clone?.root?.garbageLength ?: 0
+        assertTrue(
+            "the read-path split's GC pair must register onto the clone's own root instead",
+            cloneGarbageLength > liveGarbageLengthBefore,
+        )
+
+        val purgedFromLive = target.garbageCollect(maxVectorOf(listOf(target.changeID.actor)))
+        assertEquals(
+            "the live root's purge count reflects only the original delete," +
+                " unaffected by the read-path split parked on the clone",
+            1,
+            purgedFromLive,
+        )
     }
 }

@@ -588,20 +588,19 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * Registers with the authoritative root ([ChangeContext.gcRoot], not
-     * necessarily [ChangeContext.root]) any GC pairs [target] buffered while
-     * resolving a position. [posRangeToIndexRange] and [posRangeToPathRange]
-     * split text nodes to locate a position; when the position lands inside
-     * a tombstoned node the split produces a born-removed piece. Unlike
-     * edit/style/removeStyle, these read-path conversions emit no operation,
-     * so the buffered pairs would otherwise never reach a root that is
-     * actually read back from (F10: registering onto a
-     * [dev.yorkie.document.Document.getRoot] snapshot clone's root leaks the
-     * pair — the clone is discarded, or worse, reused to gate a later
-     * `updateAsync`'s size check).
+     * Registers with [ChangeContext.root] any GC pairs [target] buffered
+     * while resolving a position. [posRangeToIndexRange] and
+     * [posRangeToPathRange] split text nodes to locate a position; when the
+     * position lands inside a tombstoned node the split produces a
+     * born-removed piece. This context's own root is always the one such a
+     * pair should register onto: in the mutating call path it is the live
+     * document root; in the [dev.yorkie.document.Document.getRoot] read
+     * path it is that call's own clone snapshot, which
+     * [dev.yorkie.document.Document.garbageCollect] sweeps alongside the
+     * live root.
      */
     private fun drainPendingGcPairs() {
-        target.drainPendingGcPairs().forEach(context::registerReadPathGCPair)
+        target.drainPendingGcPairs().forEach(context::registerGCPair)
     }
 
     companion object {

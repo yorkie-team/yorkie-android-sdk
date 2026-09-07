@@ -3,7 +3,10 @@ package dev.yorkie.document.json
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
+import dev.yorkie.document.crdt.RgaTreeSplitNodeID
+import dev.yorkie.helper.maxVectorOf
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -26,12 +29,20 @@ import org.junit.runner.RunWith
 class JsonTextRestoreTest {
 
     /**
-     * The live node-identity sequence of a text, in list order. Two replicas
-     * converging must match on this (not just on rendered content) — same
-     * load-bearing check as the unit-level convergence tests (S4).
+     * The per-character origin identity of a text's live content, in document
+     * order: one `(createdAt, absolute offset)` pair per character. Two replicas
+     * converging must match on this, not just on rendered content (S4). Node
+     * granularity is deliberately NOT compared: after GC, concurrent undos
+     * recreate the purged run as differently-split nodes on each replica
+     * (one replica recreates `[2,8)` whole, the other as `[2,4)+[4,6)+[6,8)`),
+     * and RGA split boundaries are local state, not a convergence invariant.
      */
     private fun identitySequence(text: JsonText) =
-        text.target.rgaTreeSplit.filterNot { it.isRemoved }.map { it.id }
+        text.target.rgaTreeSplit.filterNot { it.isRemoved }.flatMap { node ->
+            (0 until node.contentLength).map {
+                RgaTreeSplitNodeID(node.id.createdAt, node.id.offset + it)
+            }
+        }
 
     @Test
     fun test_overlapping_deletes_both_undo_converge() {
@@ -60,6 +71,14 @@ class JsonTextRestoreTest {
                 d1.getRoot().getAs<JsonText>("text").toString(),
                 d2.getRoot().getAs<JsonText>("text").toString(),
             )
+
+            // Purge both replicas' tombstones first (delete -> sync -> GC ->
+            // undo -> sync), so each undo must recreate the deleted nodes from
+            // scratch and the server relays recreate-path restore ops rather
+            // than in-place un-tombstoning.
+            val vector = maxVectorOf(listOf(d1.changeID.actor, d2.changeID.actor))
+            assertTrue(d1.garbageCollect(vector) > 0)
+            assertTrue(d2.garbageCollect(vector) > 0)
 
             // Both undo their own overlapping delete — identity-preserving
             // restore must converge both replicas back to the original

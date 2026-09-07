@@ -74,20 +74,31 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
 
             it.hasEdit() -> {
                 val executedAt = it.edit.executedAt.toTimeTicket()
-                val hasRestorePayload = it.edit.restoreSpansList.isNotEmpty() ||
-                    it.edit.retombstoneSpansList.isNotEmpty()
-                val restoreSpans = it.edit.restoreSpansList.takeIf { hasRestorePayload }
+                // S2: each side decodes to null independently of the other,
+                // so a retombstone-only op decodes restoreSpans == null (and
+                // vice versa) — a true round-trip of the encode-side guard's
+                // non-empty check.
+                val restoreSpans = it.edit.restoreSpansList.takeIf { list -> list.isNotEmpty() }
                     ?.map { span -> span.toRestoreSpan(executedAt) }
-                val retombstoneSpans = it.edit.retombstoneSpansList.takeIf { hasRestorePayload }
-                    ?.map { span -> span.toRestoreSpan(executedAt) }
-                val restoreMode = if (hasRestorePayload) {
-                    if (it.edit.restoreMode == PbRestoreMode.RESTORE_MODE_RETOMBSTONE) {
-                        RestoreMode.Retombstone
-                    } else {
-                        RestoreMode.Restore
-                    }
-                } else {
+                val retombstoneSpans =
+                    it.edit.retombstoneSpansList.takeIf { list -> list.isNotEmpty() }
+                        ?.map { span -> span.toRestoreSpan(executedAt) }
+                // S3: an explicit `when` over the wire enum. A payload-carrying
+                // op whose restoreMode is neither RESTORE nor RETOMBSTONE
+                // (UNSPECIFIED/UNRECOGNIZED) is malformed input from a newer
+                // peer, not something to guess a direction for — throw at the
+                // decode boundary, mirroring the malformed-span guard below.
+                val restoreMode = if (restoreSpans == null && retombstoneSpans == null) {
                     null
+                } else {
+                    when (it.edit.restoreMode) {
+                        PbRestoreMode.RESTORE_MODE_RESTORE -> RestoreMode.Restore
+                        PbRestoreMode.RESTORE_MODE_RETOMBSTONE -> RestoreMode.Retombstone
+                        else -> throw YorkieException(
+                            ErrInvalidArgument,
+                            "unknown restore mode with payload present: ${it.edit.restoreMode}",
+                        )
+                    }
                 }
                 EditOperation(
                     fromPos = it.edit.from.toRgaTreeSplitNodePos(),
@@ -211,8 +222,16 @@ internal fun Operation.toPBOperation(): PBOperation {
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
                     // Ordinary edits set none of these — the wire payload stays
-                    // byte-identical to before this field was added.
-                    if (operation.restoreSpans != null || operation.retombstoneSpans != null) {
+                    // byte-identical to before this field was added. Guard on
+                    // non-EMPTY (Minor), not non-null: a re-encoded decoded op
+                    // can carry emptyList() on both sides (S2's decode-null
+                    // asymmetry only applies going forward), and emitting
+                    // RESTORE_MODE_RESTORE with zero spans would make the
+                    // server's NewRestoreEdit (which keys off restore_mode)
+                    // drop the edit's content.
+                    if (!operation.restoreSpans.isNullOrEmpty() ||
+                        !operation.retombstoneSpans.isNullOrEmpty()
+                    ) {
                         restoreSpans.addAll(operation.restoreSpans.orEmpty().map { it.toPbSpan() })
                         retombstoneSpans.addAll(
                             operation.retombstoneSpans.orEmpty().map { it.toPbSpan() },

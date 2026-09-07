@@ -16,6 +16,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
+import dev.yorkie.api.v1.RestoreMode as PbRestoreMode
 import dev.yorkie.api.v1.RestoreSpan as PbRestoreSpan
 
 /**
@@ -56,8 +57,12 @@ class RestoreConverterTest {
         retombstoneSpans = retombstoneSpans,
     )
 
+    // S6: round-trips through the wire bytes (parseFrom(ByteArray)), not the
+    // in-memory message — the earlier in-memory roundTrip() could not have
+    // caught a field that serializes incorrectly.
     private fun EditOperation.roundTrip() =
-        listOf(toPBOperation()).toOperations().single() as EditOperation
+        listOf(PBOperation.parseFrom(toPBOperation().toByteArray())).toOperations().single()
+            as EditOperation
 
     @Test
     fun `round-trips a restore operation over the wire`() {
@@ -108,6 +113,18 @@ class RestoreConverterTest {
     }
 
     @Test
+    fun `restore span attributes survive the wire`() {
+        val value = TextValue("45").apply { setAttribute("bold", "true", seed) }
+        val restored = restoreOp(
+            restoreSpans = listOf(RestoreSpan(seed, 4, 6, value)),
+            restoreMode = RestoreMode.Restore,
+        ).roundTrip()
+
+        val got = requireNotNull(restored.restoreSpans).single()
+        assertEquals("true", got.value.attributes["bold"])
+    }
+
+    @Test
     fun `leaves ordinary edits without a restore payload`() {
         val restored = restoreOp(content = "hi").roundTrip()
 
@@ -145,6 +162,43 @@ class RestoreConverterTest {
         // A new peer still receives the full identity payload.
         assertEquals(RestoreMode.Restore, restored.restoreMode)
         assertEquals(1, restored.restoreSpans?.size)
+    }
+
+    // Minor: guarding the encode side on non-empty (not non-null) matters
+    // for exactly this shape — a re-encoded decoded op can carry emptyList()
+    // on both sides (S2's decode-null asymmetry only applies going forward).
+    @Test
+    fun `both-empty span lists with content never encode a restore mode`() {
+        val pbOp = restoreOp(
+            restoreSpans = emptyList(),
+            retombstoneSpans = emptyList(),
+            content = "hi",
+        ).toPBOperation()
+
+        assertEquals(PbRestoreMode.RESTORE_MODE_UNSPECIFIED, pbOp.edit.restoreMode)
+        assertEquals(0, pbOp.edit.restoreSpansCount)
+        assertEquals("hi", pbOp.edit.content)
+    }
+
+    // S3: a payload-carrying op whose restoreMode is neither RESTORE nor
+    // RETOMBSTONE is malformed input from a newer peer — reject at decode,
+    // matching the malformed-span guards below rather than silently
+    // defaulting to a direction.
+    @Test
+    fun `rejects an unknown restore mode carrying a payload at the decode boundary`() {
+        val pbOp = restoreOp(
+            restoreSpans = listOf(span(4, 6, "45")),
+            restoreMode = RestoreMode.Restore,
+        ).toPBOperation()
+        val corruptedEdit = pbOp.edit.toBuilder()
+            .setRestoreMode(PbRestoreMode.RESTORE_MODE_UNSPECIFIED)
+            .build()
+        val corrupted = pbOp.toBuilder().setEdit(corruptedEdit).build()
+
+        val exception = assertFailsWith<YorkieException> {
+            listOf(corrupted).toOperations()
+        }
+        assertEquals(ErrInvalidArgument, exception.code)
     }
 
     // Encodes a valid restore op, then corrupts its single restore span —

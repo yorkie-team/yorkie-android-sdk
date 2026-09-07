@@ -203,15 +203,6 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val recreated = mutableListOf<RgaTreeSplitNode<T>>()
         var liveDiff = DataSize(data = 0, meta = 0)
 
-        // The last node placed at the current cursor (un-tombstoned or
-        // recreated), in document order. When a recreated fragment has no
-        // surviving same-insertion anchor, chaining after this keeps a
-        // multi-fragment run in left-to-right order instead of each
-        // fragment prepending at the same fixed fallback anchor — which
-        // would rebuild the run reversed/scrambled (F2's actual root cause;
-        // mirrors JS SDK rga_tree_split.ts's chainAnchor).
-        var chainAnchor: RgaTreeSplitNode<T>? = null
-
         for (span in spans) {
             val pieces = findPiecesOverlapping(span.createdAt, span.start, span.end)
 
@@ -235,9 +226,6 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                         // Repair splay weights on the path to root (length 0 -> len).
                         treeByIndex.splay(target)
                         untombstoned.add(target)
-                        chainAnchor = target
-                    } else {
-                        chainAnchor = piece
                     }
                     cursor = overlapEnd
                     if (overlapEnd >= pieceEnd) {
@@ -262,7 +250,6 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                             gapEnd,
                             executedAt,
                             fallbackAnchor,
-                            chainAnchor,
                         )
                     liveDiff = addDataSizes(liveDiff, anchorDiff)
                     insertAfter(prev, newNode)
@@ -278,13 +265,23 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     // IllegalArgumentException catch swallows silently.
                     // Mirrors splitNode's own linking pattern
                     // (node.insertionNext?.setInsertionPrev(splitNode);
-                    // splitNode.setInsertionPrev(node)).
+                    // splitNode.setInsertionPrev(node)). I1: when no
+                    // same-insertion piece covers gapEnd (insertionSuccessor
+                    // is null), fall back to the surviving left neighbour —
+                    // `cursor` still equals gapStart here — so the recreated
+                    // node still links into the chain instead of getting a
+                    // null insertionPrev that strands a later boundary edit.
                     val insertionSuccessor = findPieceCovering(span.createdAt, gapEnd)
-                    val insertionPredecessor = insertionSuccessor?.insertionPrev
+                    val insertionPredecessor = if (insertionSuccessor != null) {
+                        insertionSuccessor.insertionPrev
+                    } else if (cursor > 0) {
+                        findPieceCovering(span.createdAt, cursor - 1)
+                    } else {
+                        null
+                    }
                     newNode.setInsertionPrev(insertionPredecessor)
                     insertionSuccessor?.setInsertionPrev(newNode)
                     recreated.add(newNode)
-                    chainAnchor = newNode
                     cursor = gapEnd
                 }
             }
@@ -416,37 +413,40 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      * Returns the physical node to insert a recreated fragment
      * [[gapStart], [gapEnd]) of insertion [createdAt] AFTER.
      *
-     * Resolution ladder (mirrors JS SDK `rga_tree_split.ts`'s
-     * `findRestoreAnchor`, all rules key on op-carried data + ID lookups
-     * only):
+     * Resolution ladder — exactly the JS SDK `rga_tree_split.ts`'s
+     * `findRestoreAnchor` and server `rga_tree_split.go`'s
+     * `findRestoreAnchor` ladder (both @ v0.7.13/5d5cac63), all rules key on
+     * op-carried data + ID lookups only:
      *  (a) a piece covering [gapEnd] exists -> directly before it
      *      (originally-adjacent successor; exact original slot)
      *  (b) nearest surviving piece of the same insertion left of [gapStart]
      *      -> directly after it
-     *  (c) nearest surviving piece of the same insertion right of the gap
-     *      (may be non-adjacent, with other purged or foreign-insertion
-     *      material between) -> directly before it. BLOCKER-1 / F2: this
-     *      rung previously picked the RIGHTMOST piece of the whole
-     *      insertion regardless of distance, which misplaces a recreated
-     *      fragment behind an unrelated, farther-away survivor whenever a
-     *      nearer same-insertion survivor exists between the gap and that
-     *      rightmost piece — scrambling multi-fragment undo order after a
-     *      GC pass. Ceiling-searching from [gapEnd] finds the true nearest
-     *      successor instead.
-     *  (d) [chainAnchor]: the previously placed fragment of this same
-     *      restore call (document order) -> directly after it, so a purged
-     *      multi-fragment run is rebuilt left-to-right instead of each
-     *      fragment falling back to the same fixed anchor (which would
-     *      rebuild the run reversed/scrambled — the actual F2 root cause;
-     *      rung (c) itself already matches JS)
-     *  (e) [fallbackAnchor], resolved via [findNodeWithSplit] (DEC-5: Android
+     *  (c) the RIGHTMOST surviving piece of the whole insertion, gated to be
+     *      right of the gap (`offset >= gapEnd`) -> directly before it. This
+     *      picks the farthest-away survivor, not the nearest one — when a
+     *      nearer same-insertion piece also survives between the gap and
+     *      that rightmost piece, the recreated fragment lands behind the far
+     *      one anyway. Both JS and the server share this exact placement
+     *      (confirmed against `rga_tree_split.ts:992-1002` and
+     *      `rga_tree_split.go:896-914`), so it reproduces a known shared
+     *      upstream scramble for a purge pattern with more than one
+     *      surviving fragment (spec 011 scenario 2 /
+     *      `undo-after-GC scrambles content into the exact spec scenario 1
+     *      order`) — tracked upstream, not an Android divergence; see the
+     *      round build report's "Upstream issue draft". A prior revision of
+     *      this rung used a nearest-successor `ceilingEntry` search instead,
+     *      which fixed the scramble locally but disagreed with both upstream
+     *      implementations on identical replayed input — reverted so a
+     *      relayed restore op resolves to the same text everywhere (spec 011
+     *      B2, binding this round).
+     *  (d) [fallbackAnchor], resolved via [findNodeWithSplit] (DEC-5: Android
      *      has no refinePos/normalizePos; the caller already reconciles
      *      [fallbackAnchor] from undo integer offsets, mirroring JS's
      *      fromPos-doubles-as-fallback-anchor interplay)
-     *  (f) [head] (deterministic last resort)
+     *  (e) [head] (deterministic last resort)
      *
      * Returns the anchor node together with the metadata-size overhead (if
-     * any) that resolving rung (e) via [findNodeWithSplit] incurred, so the
+     * any) that resolving rung (d) via [findNodeWithSplit] incurred, so the
      * caller can fold it into its own live-size accounting instead of
      * discarding it.
      */
@@ -456,7 +456,6 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         gapEnd: Int,
         executedAt: TimeTicket,
         fallbackAnchor: RgaTreeSplitPos?,
-        chainAnchor: RgaTreeSplitNode<T>?,
     ): Pair<RgaTreeSplitNode<T>, DataSize> {
         val zeroDiff = DataSize(data = 0, meta = 0)
 
@@ -472,18 +471,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             }
         }
 
-        val ceilingKey = RgaTreeSplitNodeID(createdAt, gapEnd)
-        val ceiling = treeByID.ceilingEntry(ceilingKey)
-        if (ceiling != null && ceiling.key.hasSameCreatedAt(ceilingKey)) {
-            return requireNotNull(ceiling.value.prev) to zeroDiff
-        }
-
-        // (d) No surviving piece of this insertion anchors the fragment.
-        // When the whole run was purged, every fragment lands here;
-        // anchoring after the fragment placed just before it (document
-        // order) keeps the run forward instead of scrambled.
-        if (chainAnchor != null) {
-            return chainAnchor to zeroDiff
+        val rightmostKey = RgaTreeSplitNodeID(createdAt, Int.MAX_VALUE)
+        val rightmost = treeByID.floorEntry(rightmostKey)
+        if (rightmost != null &&
+            rightmost.key.hasSameCreatedAt(rightmostKey) &&
+            rightmost.value.id.offset >= gapEnd
+        ) {
+            return requireNotNull(rightmost.value.prev) to zeroDiff
         }
 
         if (fallbackAnchor != null) {
@@ -491,7 +485,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                 val (node, _, diff) = findNodeWithSplit(fallbackAnchor, executedAt)
                 return node to diff
             } catch (e: NoSuchElementException) {
-                // Anchor fully purged — fall through to (f).
+                // Anchor fully purged — fall through to (e).
             }
         }
 
@@ -1074,6 +1068,10 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
         return id.hashCode()
     }
 
+    // S8: identity equality is deliberate — gcPairMap keys pairs on node
+    // identity, so a future copy()-based refactor of this override must not
+    // reintroduce structural equality (which would collapse distinct nodes
+    // sharing the same id/value/removedAt into one gcPairMap entry).
     override fun equals(other: Any?): Boolean {
         return super.equals(other)
     }

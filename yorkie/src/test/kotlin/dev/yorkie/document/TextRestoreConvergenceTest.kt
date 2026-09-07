@@ -4,11 +4,13 @@ import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RestoreSpan
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
+import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.helper.RecordingLogger
 import dev.yorkie.helper.crossSync
+import dev.yorkie.helper.crossSyncOverWire
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.Logger
@@ -116,6 +118,40 @@ class TextRestoreConvergenceTest {
         )
     }
 
+    // S5: same both-undos convergence scenario as `runBothUndos`, but routed
+    // through crossSyncOverWire — proves RestoreSpan encode/decode survives
+    // a real protobuf wire round-trip inside a convergence flow, not just
+    // an in-memory hand-off (AC14).
+    @Test
+    fun `converges when both replicas undo overlapping deletes over the wire`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ -> root.setNewText("text").edit(0, 0, "0123456789") }.await()
+        crossSyncOverWire(d1, d2)
+
+        // delete "45"
+        d1.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(4, 6, "") }.await()
+        // delete "234567"
+        d2.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(2, 8, "") }.await()
+        crossSyncOverWire(d1, d2)
+        assertEquals("0189", d1.getRoot().getAs<JsonText>("text").toString())
+
+        d1.history.undoAsync().await()
+        crossSyncOverWire(d1, d2)
+        d2.history.undoAsync().await()
+        crossSyncOverWire(d1, d2)
+
+        assertEquals("0123456789", d1.getRoot().getAs<JsonText>("text").toString())
+        assertEquals(
+            identitySequence(d1.crdtText()),
+            identitySequence(d2.crdtText()),
+            "restore payloads must survive a real wire round-trip and still converge",
+        )
+    }
+
     @Test
     fun `purges symmetrically with docSize gc drained after both undos`() = runTest {
         val (d1, d2) = runBothUndos(undoD1First = true)
@@ -206,23 +242,22 @@ class TextRestoreConvergenceTest {
         }
     }
 
-    // F2 / BLOCKER-1 (round-2 QA correction of the round-1 disclosure below,
-    // which incorrectly reported the reviewer's exact probe as
-    // non-reproducible): rung (c) previously picked the RIGHTMOST surviving
-    // piece of the WHOLE insertion (`floorEntry(createdAt, MAX)`), not the
-    // NEAREST surviving piece to the right of the gap. When a closer
-    // same-insertion survivor exists between the gap and that rightmost
-    // piece (e.g. style() split off a middle fragment that never got
-    // deleted), rung (c) anchors the recreated fragment behind the WRONG,
-    // farther-away survivor — scrambling the rebuilt order. A `ceilingEntry`
-    // search from `gapEnd` finds the true nearest successor instead; hand
-    // traced against the exact spec Scenario 1 probe and confirmed by
-    // `undo-after-GC scrambles content into the exact spec scenario 1
-    // order` below. The `chainAnchor` rung (d, still present) is a separate,
-    // additionally-needed fix for the different case pinned by the test
-    // immediately below this comment: a SINGLE delete spanning multiple
-    // fragments of one insertion, all purged by one GC pass and recreated
-    // by one undo call.
+    // F2 / BLOCKER-1 (spec 011 B2 supersedes prior round comments here):
+    // earlier revisions of this file first reported the reviewer's rung (c)
+    // probe as non-reproducible, then "fixed" it locally with a
+    // nearest-successor `ceilingEntry` search plus an invented `chainAnchor`
+    // rung. Spec 011 B2 reverts both: rung (c) is exactly the JS/server
+    // rightmost-survivor form (`floorEntry(createdAt, MAX)` gated
+    // `offset >= gapEnd`), hand-traced against `rga_tree_split.ts:992-1002`
+    // and `rga_tree_split.go:896-914`. The scramble the ceilingEntry rung
+    // "fixed" locally is a SHARED upstream bug, not an Android divergence —
+    // see `undo-after-GC scrambles content into the exact spec scenario 1
+    // order` below and the round build report's upstream issue draft. This
+    // test still passes with the reverted rung: rung (b)
+    // (`floorEntry(createdAt, gapStart - 1)`, same insertion) finds the
+    // fragment this same restore() call just recreated immediately to its
+    // left, chaining the run forward without the recreated fragments ever
+    // reaching rung (c).
     @Test
     fun `restore chains multiple purged fragments of one insertion in order`() = runTest {
         val document = Document("test-doc")
@@ -254,13 +289,19 @@ class TextRestoreConvergenceTest {
         )
     }
 
-    // Exact spec Scenario 1 / F2 / BLOCKER-1 probe (round-2 QA P2): build
-    // "0123456789", style(6,8), delete [2,4) then [0,2), GC, then undo BOTH
-    // as two SEPARATE undoAsync() calls (not one restore() call — chainAnchor
-    // alone does not cover this; see the comment above). Before the rung (c)
-    // ceiling fix, undo1 alone produced "45670189" (the new "01" fragment
-    // anchored behind the far-away "89" survivor instead of the near "45"
-    // one) and undo2 compounded it into "2345670189".
+    // Spec 011 scenario 2 / B2 (upstream-shared scramble, disclosed not
+    // fixed): build "0123456789", style(6,8), delete [2,4) then [0,2), GC,
+    // then undo BOTH as two SEPARATE undoAsync() calls. Rung (c) anchors a
+    // recreated fragment behind the RIGHTMOST surviving piece of the whole
+    // insertion ("89"), not the nearer one ("45") — JS `rga_tree_split.ts` @
+    // 5d5cac63 and server `rga_tree_split.go` @ v0.7.13 both do the exact
+    // same thing (hand-traced; see the round build report's JS parity probe
+    // and upstream issue draft), so this scramble reproduces identically
+    // from the same input on every SDK — a shared upstream bug, not an
+    // Android divergence. The nearest-successor fix is NOT applied here
+    // (spec 011 binding decision): convergence with JS/server, not a
+    // "better" local placement, is the goal this round. Tracked upstream —
+    // see the build report's "Upstream issue draft" section.
     @Test
     fun `undo-after-GC scrambles content into the exact spec scenario 1 order`() = runTest {
         val document = Document("test-doc")
@@ -281,9 +322,128 @@ class TextRestoreConvergenceTest {
         document.history.undoAsync().await()
 
         assertEquals(
-            "0123456789",
+            "2345670189",
             document.getRoot().getAs<JsonText>("text").toString(),
-            "two separate undos after a GC pass must not scramble character order",
+            "JS/server-parity placement scrambles character order after a GC pass" +
+                " (shared upstream bug, tracked upstream — see the build report)",
+        )
+    }
+
+    // AC4 two-client pair: the same scenario-2 sequence runs on replica A,
+    // cross-syncing after each step so B's tree structure (split points from
+    // style(), tombstones from the deletes) matches A's exactly. Both
+    // replicas then purge the SAME tombstones with a vector covering the
+    // editing actor, so B's restore (identity-based, relayed from A's undo
+    // ops) ALSO takes the recreate-from-scratch path and lands on the SAME
+    // rung-(c) anchor as A — convergence on the identical (scrambled) string
+    // AND identical node-identity sequence is the invariant this pins; the
+    // scramble itself is the disclosed upstream bug, not something this test
+    // re-litigates.
+    @Test
+    fun `two replicas converge to the identical scrambled order after cross-sync`() = runTest {
+        val a = Document("test-doc")
+        val b = Document("test-doc")
+        a.setActor(actor1)
+        b.setActor(actor2)
+
+        a.updateAsync { root, _ -> root.setNewText("text").edit(0, 0, "0123456789") }.await()
+        crossSync(a, b)
+
+        a.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").style(6, 8, mapOf("b" to "1"))
+        }.await()
+        crossSync(a, b)
+
+        a.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(2, 4, "") }.await()
+        crossSync(a, b)
+
+        a.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 2, "") }.await()
+        crossSync(a, b)
+
+        assertEquals("456789", a.getRoot().getAs<JsonText>("text").toString())
+        assertEquals("456789", b.getRoot().getAs<JsonText>("text").toString())
+
+        val vector = maxVectorOf(listOf(actor1))
+        val purgedA = a.garbageCollect(vector)
+        val purgedB = b.garbageCollect(vector)
+        assertTrue(purgedA > 0, "expected both purged tombstones to be collected on A")
+        assertTrue(purgedB > 0, "expected both purged tombstones to be collected on B")
+
+        a.history.undoAsync().await()
+        a.history.undoAsync().await()
+        assertEquals("2345670189", a.getRoot().getAs<JsonText>("text").toString())
+
+        crossSync(a, b)
+
+        assertEquals(
+            a.getRoot().getAs<JsonText>("text").toString(),
+            b.getRoot().getAs<JsonText>("text").toString(),
+            "convergence on the identical (scrambled) string is the invariant;" +
+                " order is the disclosed upstream bug",
+        )
+        assertEquals(
+            identitySequence(a.crdtText()),
+            identitySequence(b.crdtText()),
+            "both replicas must converge to identical node ids too",
+        )
+    }
+
+    // Spec 011 scenario 4 (reviewer probe, B2 AC2): insertion "abcde" purges
+    // [0,1)="a", [1,2)="b", [3,4)="d" leaving [2,3)="c" and [4,5)="e" live.
+    // Restoring [0,1) must anchor before the RIGHTMOST survivor ("e"), not
+    // the nearer "c" — exactly the JS/server rung (c) placement
+    // (`rga_tree_split.ts:992-1002`, `rga_tree_split.go:896-914`), confirming
+    // the reverted rung matches both upstream implementations on this probe.
+    @Test
+    fun `restore anchors before the rightmost survivor not the nearest one`() {
+        val split = RgaTreeSplit<TextValue>()
+        val insertTick = TimeTicket(1L, 0u, actor1)
+
+        split.edit(
+            RgaTreeSplitPosRange(split.indexToPos(0), split.indexToPos(0)),
+            insertTick,
+            TextValue("abcde"),
+            versionVector = null,
+        )
+
+        // Soft-delete "a" [0,1), "b" [1,2), "d" [3,4) as three separate ops
+        // (each an independently purgeable node), leaving "c" and "e" live.
+        // Live indices shift as each preceding piece is soft-deleted (its
+        // length collapses to 0 in treeByIndex).
+        val delTick = TimeTicket(2L, 0u, actor1)
+        split.edit(
+            RgaTreeSplitPosRange(split.indexToPos(0), split.indexToPos(1)),
+            delTick,
+            null,
+            versionVector = null,
+        ) // "a"
+        split.edit(
+            RgaTreeSplitPosRange(split.indexToPos(0), split.indexToPos(1)),
+            delTick,
+            null,
+            versionVector = null,
+        ) // "b" (now live index 0)
+        split.edit(
+            RgaTreeSplitPosRange(split.indexToPos(1), split.indexToPos(2)),
+            delTick,
+            null,
+            versionVector = null,
+        ) // "d" (live "cde" -> index 1)
+        assertEquals("ce", split.toString())
+
+        // Physically purge the three tombstones (mirrors a GC pass) so
+        // restore() must recreate "a" from scratch rather than un-tombstone it.
+        split.treeByID.values.filter { it.isRemoved }.toList().forEach(split::delete)
+
+        val restoreSpan = RestoreSpan(insertTick, 0, 1, TextValue("a"))
+        split.restore(listOf(restoreSpan), TimeTicket(3L, 0u, actor1))
+
+        val liveContent = split.filterNot { it.isRemoved }.map { it.value.content }
+        assertEquals(
+            listOf("c", "a", "e"),
+            liveContent,
+            "the recreated \"a\" must anchor before the RIGHTMOST survivor \"e\"," +
+                " not the nearer \"c\"",
         )
     }
 

@@ -25,6 +25,14 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class JsonTextRestoreTest {
 
+    /**
+     * The live node-identity sequence of a text, in list order. Two replicas
+     * converging must match on this (not just on rendered content) — same
+     * load-bearing check as the unit-level convergence tests (S4).
+     */
+    private fun identitySequence(text: JsonText) =
+        text.target.rgaTreeSplit.filterNot { it.isRemoved }.map { it.id }
+
     @Test
     fun test_overlapping_deletes_both_undo_converge() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
@@ -67,6 +75,13 @@ class JsonTextRestoreTest {
             assertEquals(
                 d1.getRoot().getAs<JsonText>("text").toString(),
                 d2.getRoot().getAs<JsonText>("text").toString(),
+            )
+            // S4 / B2 (instrumented ask): converged content alone is not
+            // enough — both replicas must also agree on node identity
+            // through the real server round-trip, not just rendered text.
+            assertEquals(
+                identitySequence(d1.getRoot().getAs<JsonText>("text")),
+                identitySequence(d2.getRoot().getAs<JsonText>("text")),
             )
         }
     }

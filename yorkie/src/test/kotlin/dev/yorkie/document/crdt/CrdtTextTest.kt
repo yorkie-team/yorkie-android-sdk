@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.time.TimeTicket
@@ -210,6 +211,59 @@ class CrdtTextTest {
             attributes = mapOf("b" to "1"),
             parentCreatedAt = text.createdAt,
             executedAt = tick(3),
+        )
+
+        assertFailsWith<NoSuchElementException> {
+            op.execute(root, OpSource.Local, null)
+        }
+
+        assertEquals(
+            garbageBefore + 1,
+            root.garbageLength,
+            "the born-dead piece must be registered even though the operation threw",
+        )
+        assertTrue(
+            text.rgaTreeSplit.drainPendingGcPairs().isEmpty(),
+            "the buffer must already be drained, not left for a future caller to double-register",
+        )
+    }
+
+    // S7: EditOperation.execute's edit path needs the same catch-drain
+    // regression coverage as StyleOperation above — RgaTreeSplit.edit's
+    // first sequential findNodeWithSplit call (range.second / toPos) can
+    // already have buffered a born-dead split piece before the second call
+    // (range.first / fromPos) throws.
+    @Test
+    fun `EditOperation drains a pending GC pair even when the second split throws`() {
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, 0u, actor)
+
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
+        val root = CrdtRoot(obj)
+        val text = CrdtText(RgaTreeSplit(), tick(0))
+        root.registerElement(text, obj)
+
+        val t1 = tick(1)
+        text.edit(text.indexRangeToPosRange(0, 0), "0123456789", t1)
+        val deleteResult = text.edit(text.indexRangeToPosRange(4, 6), "", tick(2))
+        deleteResult.gcPairs.forEach(root::registerGCPair)
+        val garbageBefore = root.garbageLength
+
+        // toPos lands INSIDE the tombstoned "45" node (id offset 5): splitting
+        // it in the FIRST findNodeWithSplit call (range.second) buffers a
+        // born-dead piece. fromPos is a nonexistent position, so the SECOND
+        // findNodeWithSplit call (range.first) throws before
+        // EditOperation.execute ever gets a TextEditResult back.
+        val insideTombstone = RgaTreeSplitPos(RgaTreeSplitNodeID(t1, 5), 0)
+        val nonexistent = RgaTreeSplitPos(RgaTreeSplitNodeID(TimeTicket.MaxTimeTicket, 0), 0)
+
+        val op = EditOperation(
+            fromPos = nonexistent,
+            toPos = insideTombstone,
+            content = "",
+            parentCreatedAt = text.createdAt,
+            executedAt = tick(3),
+            attributes = emptyMap(),
         )
 
         assertFailsWith<NoSuchElementException> {

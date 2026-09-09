@@ -254,27 +254,23 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     liveDiff = addDataSizes(liveDiff, anchorDiff)
                     insertAfter(prev, newNode)
                     // Re-link the insertion chain around the recreated
-                    // fragment (BLOCKER-2 / F3). `delete()`'s purge-relink
-                    // already pointed the surviving successor's
-                    // insertionPrev straight across this gap (skipping the
-                    // node we just recreated); left un-repaired, that stale
-                    // pointer makes findFloorNodePreferToLeft (used by every
-                    // subsequent findNodeWithSplit) resolve a later edit at
-                    // this boundary to the WRONG node, producing an
-                    // out-of-range splitNode offset that JsonText.edit's
-                    // IllegalArgumentException catch swallows silently.
-                    // Mirrors splitNode's own linking pattern
-                    // (node.insertionNext?.setInsertionPrev(splitNode);
-                    // splitNode.setInsertionPrev(node)). I1: when no
-                    // same-insertion piece covers gapEnd (insertionSuccessor
-                    // is null), fall back to the surviving left neighbour —
-                    // `cursor` still equals gapStart here — so the recreated
-                    // node still links into the chain instead of getting a
-                    // null insertionPrev that strands a later boundary edit.
+                    // fragment (BLOCKER-2 / F3 / I1) in exactly the JS #1328
+                    // (v0.7.18) shape: insertionPrev is the same-insertion
+                    // piece covering cursor-1 (contiguous by construction),
+                    // insertionNext the piece covering gapEnd. `delete()`'s
+                    // purge-relink already pointed the surviving successor's
+                    // insertionPrev straight across this gap; left
+                    // un-repaired, that stale pointer makes
+                    // findFloorNodePreferToLeft (used by every subsequent
+                    // findNodeWithSplit) resolve a later boundary edit to the
+                    // WRONG node with an out-of-range splitNode offset that
+                    // JsonText.edit's IllegalArgumentException catch swallows
+                    // silently. Never inherit `successor.insertionPrev`
+                    // instead: when the purged run extends left of this span
+                    // it is a NON-contiguous far-left piece and reproduces the
+                    // same out-of-range split at the fragment's own start.
                     val insertionSuccessor = findPieceCovering(span.createdAt, gapEnd)
-                    val insertionPredecessor = if (insertionSuccessor != null) {
-                        insertionSuccessor.insertionPrev
-                    } else if (cursor > 0) {
+                    val insertionPredecessor = if (cursor > 0) {
                         findPieceCovering(span.createdAt, cursor - 1)
                     } else {
                         null
@@ -439,10 +435,17 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      *      implementations on identical replayed input — reverted so a
      *      relayed restore op resolves to the same text everywhere (spec 011
      *      B2, binding this round).
-     *  (d) [fallbackAnchor], resolved via [findNodeWithSplit] (DEC-5: Android
-     *      has no refinePos/normalizePos; the caller already reconciles
-     *      [fallbackAnchor] from undo integer offsets, mirroring JS's
-     *      fromPos-doubles-as-fallback-anchor interplay)
+     *  (d) [fallbackAnchor], remapped through [refinePos] and then resolved
+     *      via [findNodeWithSplit] inside a catch-all — exactly JS's
+     *      `refinePos` + `findNodeWithSplit` + `catch {}`. The remap is
+     *      load-bearing, not cosmetic: a JS peer's reverse op carries
+     *      `fromPos = normalizePos(...)`, a HEAD-anchored position whose
+     *      offset is the absolute live index, and a node-relative anchor can
+     *      overshoot a piece whose right neighbours were purged. Either would
+     *      trip [splitNode]'s bounds check (`IllegalArgumentException`) and
+     *      wedge the receiving sync loop. Android's own undo path still
+     *      re-resolves [fallbackAnchor] from reconciled integer offsets first
+     *      (DEC-5), so for local undo this rung sees a fresh anchor.
      *  (e) [head] (deterministic last resort)
      *
      * Returns the anchor node together with the metadata-size overhead (if
@@ -482,15 +485,47 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
         if (fallbackAnchor != null) {
             try {
-                val (node, _, diff) = findNodeWithSplit(fallbackAnchor, executedAt)
+                val (node, _, diff) = findNodeWithSplit(refinePos(fallbackAnchor), executedAt)
                 return node to diff
-            } catch (e: NoSuchElementException) {
-                // Anchor fully purged — fall through to (e).
+            } catch (e: RuntimeException) {
+                // Anchor fully purged (NoSuchElementException from refinePos /
+                // findFloorNodePreferToLeft) or still unresolvable
+                // (IllegalArgumentException from splitNode). JS catches
+                // everything here too — fall through to (e). Nothing above
+                // mutates before it throws, so falling through is safe.
             }
         }
 
         logDebug(TAG, "restore anchor exhausted; falling back to head")
         return head to zeroDiff
+    }
+
+    /**
+     * Remaps [pos] onto the current split chain — a port of JS
+     * `rga_tree_split.ts`'s `refinePos`. Walks the physical `next` chain
+     * (not the insertion chain), counting only live characters, until the
+     * offset fits inside a node; snaps to the end of the last node when it
+     * runs out. Throws [NoSuchElementException] when no node of the anchor's
+     * insertion survives at all.
+     *
+     * Example: `["12345"](1:2:0)`, pos `(1:2:0, rel=5)`; after splits
+     * `["1"](1:2:0) - ["23"](1:2:1) - ["45"](1:2:3)` this yields
+     * `(1:2:3, rel=2)`. With a head-anchored pos `(head, rel=n)` (what JS's
+     * `normalizePos` records on every reverse op) it walks from head past
+     * `n` live characters.
+     */
+    private fun refinePos(pos: RgaTreeSplitPos): RgaTreeSplitPos {
+        var node = findFloorNode(pos.id)
+            ?: throw NoSuchElementException("the node of the given id should be found: ${pos.id}")
+        var offsetInPart = pos.relativeOffSet
+        var partLen = node.contentLength
+        while (offsetInPart > partLen) {
+            offsetInPart -= partLen
+            val next = node.next ?: return RgaTreeSplitPos(node.id, partLen)
+            node = next
+            partLen = node.length
+        }
+        return RgaTreeSplitPos(node.id, offsetInPart)
     }
 
     /**

@@ -4,10 +4,12 @@ import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RestoreSpan
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
+import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.RgaTreeSplitPosRange
 import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.helper.RecordingLogger
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.crossSyncOverWire
@@ -16,6 +18,8 @@ import dev.yorkie.util.DataSize
 import dev.yorkie.util.Logger
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -542,4 +546,121 @@ class TextRestoreConvergenceTest {
     // a tombstoned entry inside the node's own attribute map — see F12) is
     // needed to construct a genuine attribute tombstone inside a node that
     // then gets deleted, GC'd, and recreated.
+
+    private fun RgaTreeSplit<TextValue>.range(from: Int, to: Int) =
+        RgaTreeSplitPosRange(indexToPos(from), indexToPos(to))
+
+    private fun RgaTreeSplit<TextValue>.purgeTombstones() =
+        treeByID.values.filter { it.isRemoved }.toList().forEach(::delete)
+
+    // 2026-09-08 review finding 1: a JS peer's reverse op carries
+    // `fromPos = normalizePos(...)`, a HEAD-anchored position
+    // (InitialNodeID, absolute live index) — edit_operation.ts:237. Rung (d)
+    // must remap it through the physical chain exactly like JS `refinePos`
+    // before findNodeWithSplit; otherwise splitNode(head, n) throws for any
+    // n > 0 and the receiving Android peer re-throws on every pull of the
+    // same pack (Document.applyChanges has no catch).
+    @Test
+    fun `restore refines a head-anchored fallback anchor like JS instead of throwing`() {
+        val split = RgaTreeSplit<TextValue>()
+        val tX = TimeTicket(1L, 0u, actor1)
+        val tZ = TimeTicket(2L, 0u, actor1)
+        split.edit(split.range(0, 0), tX, TextValue("ab"), versionVector = null)
+        split.edit(split.range(2, 2), tZ, TextValue("Z"), versionVector = null)
+        split.edit(split.range(2, 3), TimeTicket(3L, 0u, actor1), null, versionVector = null)
+        split.purgeTombstones()
+        assertEquals("ab", split.toString())
+
+        // What JS normalizePos recorded when "Z" was deleted at live index 2.
+        val headAnchored = RgaTreeSplitPos(RgaTreeSplitNodeID(InitialTimeTicket, 0), 2)
+        val result = split.restore(
+            listOf(RestoreSpan(tZ, 0, 1, TextValue("Z"))),
+            TimeTicket(4L, 0u, actor1),
+            headAnchored,
+        )
+
+        assertEquals("abZ", split.toString())
+        assertEquals(RgaTreeSplitNodeID(tZ, 0), result.recreated.single().id)
+    }
+
+    // Same rung, node-relative shape: the anchor (X, 4) recorded when "Z" went
+    // in after "abcd" now overshoots the surviving "ab" piece because X[2,6)
+    // was purged. JS refinePos walks forward and clamps to the end of "ab".
+    @Test
+    fun `restore refines a stale anchor past a purged hole like JS instead of throwing`() {
+        val split = RgaTreeSplit<TextValue>()
+        val tX = TimeTicket(1L, 0u, actor1)
+        val tZ = TimeTicket(2L, 0u, actor1)
+        split.edit(split.range(0, 0), tX, TextValue("abcdef"), versionVector = null)
+        val zSlot = split.indexToPos(4)
+        assertEquals(RgaTreeSplitNodeID(tX, 4), zSlot.absoluteID)
+        split.edit(RgaTreeSplitPosRange(zSlot, zSlot), tZ, TextValue("Z"), versionVector = null)
+        split.edit(split.range(4, 5), TimeTicket(3L, 0u, actor1), null, versionVector = null) // "Z"
+        split.edit(
+            split.range(2, 6),
+            TimeTicket(4L, 0u, actor1),
+            null,
+            versionVector = null,
+        ) // "cdef"
+        split.purgeTombstones()
+        assertEquals("ab", split.toString())
+
+        split.restore(
+            listOf(RestoreSpan(tZ, 0, 1, TextValue("Z"))),
+            TimeTicket(5L, 0u, actor1),
+            zSlot,
+        )
+
+        assertEquals("abZ", split.toString())
+    }
+
+    // 2026-09-08 review finding 2 — JS #1328 shape: the recreated fragment's
+    // insertionPrev is the same-insertion piece covering cursor-1, never the
+    // successor's purge-relinked pointer. "bc" and "de" were deleted by
+    // separate edits and both purged, so "f".insertionPrev was relinked to
+    // "a". Restoring only "de" must NOT inherit that non-contiguous "a": a
+    // later edit encoded at (X, 3) would resolve through "a" with offset
+    // 3 > 1 and throw. With no piece covering offset 2, the fragment gets no
+    // insertionPrev, and findFloorNodePreferToLeft resolves to it directly.
+    @Test
+    fun `recreated fragment takes insertionPrev from the piece covering cursor-1 like JS 1328`() {
+        val split = RgaTreeSplit<TextValue>()
+        val tX = TimeTicket(1L, 0u, actor1)
+        split.edit(split.range(0, 0), tX, TextValue("abcdef"), versionVector = null)
+        split.edit(
+            split.range(1, 3),
+            TimeTicket(2L, 0u, actor1),
+            null,
+            versionVector = null,
+        ) // "bc"
+        split.edit(
+            split.range(1, 3),
+            TimeTicket(3L, 0u, actor1),
+            null,
+            versionVector = null,
+        ) // "de"
+        split.purgeTombstones()
+        assertEquals("af", split.toString())
+        val f = split.first { it.value.content == "f" }
+        assertEquals("a", f.insertionPrev?.value?.content, "precondition: purge relinked f to a")
+
+        val result = split.restore(
+            listOf(RestoreSpan(tX, 3, 5, TextValue("de"))),
+            TimeTicket(4L, 0u, actor1),
+        )
+        assertEquals("adef", split.toString())
+        val de = result.recreated.single()
+        assertNull(de.insertionPrev, "no same-insertion piece covers offset 2, so no insertionPrev")
+        assertSame(de, f.insertionPrev)
+
+        // A later boundary edit at (X, 3) must resolve without an out-of-range split.
+        val boundary = RgaTreeSplitPos(RgaTreeSplitNodeID(tX, 3), 0)
+        split.edit(
+            RgaTreeSplitPosRange(boundary, boundary),
+            TimeTicket(5L, 0u, actor1),
+            TextValue("Q"),
+            versionVector = null,
+        )
+        assertEquals("adeQf", split.toString())
+    }
 }

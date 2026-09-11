@@ -88,9 +88,8 @@ internal data class EditOperation(
             // this op's own index range, so a chained undo/redo can leave undoFromOffset/
             // undoToOffset pointing past the live length (e.g. redoing an insert while the
             // doc is still shrunk from this same op's prior undo). Clamp both offsets to
-            // the current length before resolving: actualTo is never read past this
-            // resolution for a restore op, and actualFrom is only ever a last-resort
-            // fallback anchor (DEC-5), so a clamped value is always safe.
+            // the current length before resolving; for a restore op actualFrom is only
+            // ever a last-resort fallback anchor (DEC-5), so a clamped value is safe.
             val (actualFrom, actualTo) = if (isUndoOp) {
                 val length = parentObject.length
                 parentObject.indexRangeToPosRange(
@@ -103,7 +102,16 @@ internal data class EditOperation(
 
             if (isUndoOp) {
                 fromPos = actualFrom
-                toPos = actualTo
+                // This very object is what Document.executeUndoRedo appends to
+                // localChanges, and OperationConverter serializes fromPos/toPos
+                // as the wire `from`/`to`. A restore op carries its content in
+                // the restore fields only, so keep its base edit ZERO-WIDTH:
+                // a peer that strips fields 8-10 (a pre-0.7.13 server relay,
+                // or any SDK without restore support) then applies a no-op
+                // instead of a live-range delete. JS returns from its restore
+                // branch before refining positions, so its wire shape is
+                // (from, from) too. executeRestore only reads actualFrom.
+                toPos = if (isRestoreOp) actualFrom else actualTo
             }
 
             if (isRestoreOp) {
@@ -234,15 +242,17 @@ internal data class EditOperation(
 
         root.acc(totalDiff)
 
-        // Reverse ops are only generated for local and undo/redo operations
-        // that actually changed something, mirroring the ordinary edit path
-        // (restore()'s targets can already be live if a concurrent undo got
-        // there first — see RgaTreeSplit.restore's idempotent-skip case —
-        // in which case opInfos stays empty and there is nothing to reverse).
-        val reverseOps = if (
-            opInfos.isNotEmpty() &&
-            (source == OpSource.Local || source == OpSource.UndoRedo)
-        ) {
+        // Reverse ops are generated for local and undo/redo sources
+        // UNCONDITIONALLY — unlike the ordinary edit path, which gates on a
+        // non-empty opInfos. A restore op only ever executes from the undo/
+        // redo stack, where Document.executeUndoRedo has already popped its
+        // entry; if its targets are already in the requested state (a
+        // concurrent peer deleted/revived them first — restore()'s and
+        // retombstone()'s idempotent-skip cases) opInfos is empty, yet the
+        // counterpart entry must still be pushed or the stack silently loses
+        // a level. Same as JS (edit_operation.ts restore branch returns the
+        // reverse before document.ts's empty-opInfos early return).
+        val reverseOps = if (source.producesReverseOps) {
             // Keep the same span sets and undo offsets; flip only the mode.
             // undoFromOffset/undoToOffset need no re-derivation: they are
             // re-resolved into a position fresh on every execute() call via

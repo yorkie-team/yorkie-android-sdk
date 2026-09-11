@@ -8,6 +8,7 @@ import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.subDataSize
+import java.util.IdentityHashMap
 
 /**
  * [CrdtRoot] is a structure that represents the root. It has a hash table of
@@ -31,10 +32,17 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     private val gcElementSetByCreatedAt = mutableSetOf<TimeTicket>()
 
     /**
-     * A hash table that maps the IDString of GCChild to the
-     * element itself and its parent.
+     * Maps each removed [GCChild] to its [GCPair], keyed on object IDENTITY
+     * (mirrors JS `gcPairMap` keyed by the child's ID string). Every
+     * register/unregister/toggle site passes the same node instance, so
+     * identity is exact, whereas `equals` is not: [RhtNode] is a data class
+     * and one style op overwriting the same attribute on several nodes yields
+     * structurally equal tombstoned copies that would toggle each other out
+     * of the map; [CrdtTreeNode]'s data-class hash changes with its children
+     * and attributes, so a value-keyed entry could become unreachable.
+     * Purge order in [garbageCollect] does not depend on iteration order.
      */
-    private val gcPairMap = mutableMapOf<GCChild, GCPair<*>>()
+    private val gcPairMap: MutableMap<GCChild, GCPair<*>> = IdentityHashMap()
 
     /**
      * `docSize` is a structure that represents the size of the document.

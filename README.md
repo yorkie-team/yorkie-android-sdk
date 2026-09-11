@@ -90,11 +90,23 @@ YORKIE_SERVER_URL=https://your-yorkie-server.com
 YORKIE_API_KEY=Your Yorkie API key
 ```
 
-> **Compatibility:** this SDK requires a self-hosted Yorkie server **>= 0.7.13** for text
-> undo/redo. An older server strips the restore-related `Edit` operation fields (they are
-> unknown to it) before relaying the change to other clients, so a text undo applies only
-> on the local client and never reaches peers — a permanent silent divergence between
-> replicas, not a harmless no-op.
+### Compatibility
+
+Text undo/redo is identity-preserving: each undo/redo travels in `Edit` operation fields
+(`restore_spans`, `restore_mode`, `retombstone_spans`) that exist only from Yorkie server
+0.7.13 and the matching SDK releases. Every participant in a document must understand them:
+
+| Participant | Minimum version |
+|-------------|-----------------|
+| Yorkie server (self-hosted or hosted) | 0.7.13 |
+| yorkie-android-sdk peers | a release with text undo/redo (0.7.12 and earlier do not) |
+| yorkie-js-sdk peers | 0.7.13 |
+| yorkie-ios-sdk peers | not yet supported |
+
+An older server or peer drops those fields and sees only the base edit, which this SDK
+always emits as a zero-width, empty edit. That peer deletes nothing, but the undo/redo never
+applies there: it takes effect only on the client that issued it, and the replicas silently
+diverge for good. Upgrade every participant before relying on text undo/redo in a mixed fleet.
 
 ## Contributing
 

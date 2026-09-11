@@ -240,6 +240,13 @@ class RestoreConverterTest {
             "content shorter than span width" to mutateSpan { content = "4" },
             "content longer than span width" to mutateSpan { content = "456" },
             "end before start" to mutateSpan { end = 2 },
+            // R5 (2026-09-10 review): a zero-width span passes the width check
+            // with empty content, yet retombstone would tombstone the rest of
+            // the live piece covering `start - 1`.
+            "zero-width span" to mutateSpan {
+                end = start
+                content = ""
+            },
             "negative start" to mutateSpan {
                 start = -1
                 end = 1

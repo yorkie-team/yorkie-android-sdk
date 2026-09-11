@@ -326,7 +326,9 @@ private fun RestoreSpan<TextValue>.toPbSpan(): PbRestoreSpan {
  * by the value's internal attribute tickets).
  *
  * A span addresses content by insertion identity, so it is malformed without
- * a `created_at`, with negative or inverted offsets, or when [content]
+ * a `created_at`, with negative, inverted or zero-width offsets (a zero-width
+ * span would make `retombstone` tombstone the remainder of the live piece
+ * covering `start - 1`), or when [content]
  * disagrees with the span width — capture always sets them equal, so a
  * mismatch signals a corrupt or hostile payload that would otherwise throw
  * [StringIndexOutOfBoundsException] out of
@@ -339,7 +341,7 @@ private fun RestoreSpan<TextValue>.toPbSpan(): PbRestoreSpan {
  */
 private fun PbRestoreSpan.toRestoreSpan(executedAt: TimeTicket): RestoreSpan<TextValue> {
     val decodedCreatedAt = if (hasCreatedAt()) createdAt.toTimeTicket() else null
-    val malformed = decodedCreatedAt == null || start < 0 || end < start ||
+    val malformed = decodedCreatedAt == null || start < 0 || end <= start ||
         content.length != end - start ||
         decodedCreatedAt == TimeTicket.InitialTimeTicket ||
         decodedCreatedAt == TimeTicket.MaxTimeTicket

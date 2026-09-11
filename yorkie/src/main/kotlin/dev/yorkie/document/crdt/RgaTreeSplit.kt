@@ -269,6 +269,12 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     // instead: when the purged run extends left of this span
                     // it is a NON-contiguous far-left piece and reproduces the
                     // same out-of-range split at the fragment's own start.
+                    // Either link may point at a node that is physically LATER
+                    // than its owner (rung (c) places this fragment behind the
+                    // rightmost survivor); that is fine for every consumer —
+                    // findFloorNodePreferToLeft/posToIndex key on "the
+                    // same-insertion piece ending at my start", not on document
+                    // order — and deepCopy resolves links in a second pass.
                     val insertionSuccessor = findPieceCovering(span.createdAt, gapEnd)
                     val insertionPredecessor = if (cursor > 0) {
                         findPieceCovering(span.createdAt, cursor - 1)
@@ -368,6 +374,11 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         start: Int,
         end: Int,
     ): List<RgaTreeSplitNode<T>> {
+        // An empty interval overlaps nothing. Without this, [start, start)
+        // probes `start - 1`, matches the live piece covering it, and
+        // retombstone's isolateRange(piece, k, k) tombstones that piece's
+        // whole remainder (the second splitNode(node, 0) returns it unsplit).
+        if (start >= end) return emptyList()
         val pieces = mutableListOf<RgaTreeSplitNode<T>>()
         var probe = end - 1
 
@@ -882,17 +893,29 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
     fun deepCopy(): RgaTreeSplit<T> {
         val clone = RgaTreeSplit<T>()
+        // Pass 1: copy every node in document order.
         var node = head.next
         var prev = clone.head
-        var current: RgaTreeSplitNode<T>
         while (node != null) {
-            current = clone.insertAfter(prev, node.deepCopy())
-            if (node.hasInsertionPrev) {
-                val insertionPrevNode = clone.findNode(requireNotNull(node.insertionPrev).id)
-                current.setInsertionPrev(insertionPrevNode)
-            }
-            prev = current
+            prev = clone.insertAfter(prev, node.deepCopy())
             node = node.next
+        }
+        // Pass 2: resolve insertion-chain links only once every node exists.
+        // A link may point at a node that sits LATER in document order:
+        // restore() relinks a recreated fragment to its same-insertion
+        // neighbours by offset, while rung (c) can place that fragment behind
+        // the rightmost survivor. Resolving while walking (the previous
+        // one-pass shape) threw on exactly that case and, through
+        // Document.ensureClone(), bricked the document.
+        node = head.next
+        var copy = clone.head.next
+        while (node != null && copy != null) {
+            val insertionPrev = node.insertionPrev
+            if (insertionPrev != null) {
+                copy.setInsertionPrev(clone.findNode(insertionPrev.id))
+            }
+            node = node.next
+            copy = copy.next
         }
         return clone
     }
@@ -1103,10 +1126,12 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
         return id.hashCode()
     }
 
-    // S8: identity equality is deliberate — gcPairMap keys pairs on node
-    // identity, so a future copy()-based refactor of this override must not
-    // reintroduce structural equality (which would collapse distinct nodes
-    // sharing the same id/value/removedAt into one gcPairMap entry).
+    // S8: identity equality is deliberate — GC pairs are keyed on node
+    // identity (CrdtRoot.gcPairMap is an IdentityHashMap since the 2026-09-10
+    // review, so the map no longer depends on this override, but the rest of
+    // the split — boundary lists, untombstoned lists — still compares nodes
+    // by identity). A future copy()-based refactor must not reintroduce
+    // structural equality.
     override fun equals(other: Any?): Boolean {
         return super.equals(other)
     }

@@ -5,6 +5,7 @@ import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.helper.maxVectorOf
+import dev.yorkie.util.DataSize
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -96,6 +97,48 @@ class CrdtTextTest {
         assertEquals(1, root.garbageLength, "the overwritten value must be reachable by GC")
         assertEquals(1, root.garbageCollect(maxVectorOf(listOf(actor))))
         assertEquals(0, root.garbageLength)
+    }
+
+    // 2026-09-10 review R3 (thread 3975567748): the F12 tombstoned copies for
+    // two nodes styled by ONE op are structurally equal RhtNode data-class
+    // instances (same key, value, executedAt, isRemoved). With an
+    // equals-keyed gcPairMap the second registration hit the toggle branch
+    // and removed the first: garbageLength 0, bytes stuck in docSize.gc
+    // forever, docSize.live over-reporting. Styling a multi-node range is the
+    // common case; the F12 test above styles a single node.
+    @Test
+    fun `style overwrite across two nodes registers one GC pair per node`() {
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, 0u, actor)
+
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
+        val root = CrdtRoot(obj)
+        val text = CrdtText(RgaTreeSplit(), tick(0))
+        root.registerElement(text, obj)
+
+        // Two separate rga nodes: "01" then "23" appended.
+        root.acc(text.edit(text.indexRangeToPosRange(0, 0), "01", tick(1)).dataSize)
+        root.acc(text.edit(text.indexRangeToPosRange(2, 2), "23", tick(2)).dataSize)
+        assertEquals(2, text.rgaTreeSplit.count { !it.isRemoved })
+
+        val firstStyle = text.style(text.indexRangeToPosRange(0, 4), mapOf("b" to "1"), tick(3))
+        root.acc(firstStyle.dataSize)
+        firstStyle.gcPairs.forEach(root::registerGCPair)
+
+        val secondStyle = text.style(text.indexRangeToPosRange(0, 4), mapOf("b" to "2"), tick(4))
+        root.acc(secondStyle.dataSize)
+        secondStyle.gcPairs.forEach(root::registerGCPair)
+
+        assertEquals(2, secondStyle.gcPairs.size, "one overwritten value per node")
+        assertEquals(2, root.garbageLength, "both tombstoned values must stay registered")
+        assertTrue(root.docSize.gc.data > 0)
+        assertEquals(2, root.garbageCollect(maxVectorOf(listOf(actor))))
+        assertEquals(0, root.garbageLength)
+        assertEquals(
+            DataSize(data = 0, meta = 0),
+            root.docSize.gc,
+            "every byte moved into gc must be reclaimable",
+        )
     }
 
     // E4: an already-removed owning node's single outer GCPair (gcOnlySize =

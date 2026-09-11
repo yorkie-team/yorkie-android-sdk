@@ -663,4 +663,100 @@ class TextRestoreConvergenceTest {
         )
         assertEquals("adeQf", split.toString())
     }
+
+    /**
+     * The pinned spec-010 scenario-1 scramble (`"2345670189"`, see
+     * `undo-after-GC scrambles content into the exact spec scenario 1 order`):
+     * rung (c) places the recreated `"01"` behind the RIGHTMOST survivor, so
+     * `"234567".insertionPrev` points at a node that sits LATER in document
+     * order. Reused by the 2026-09-10 review R1 cases below.
+     */
+    private suspend fun buildScenarioOneScramble(): Document {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "0123456789")
+        }.await()
+        document.updateAsync { root, _ ->
+            root.getAs<JsonText>("text").style(6, 8, mapOf("b" to "1"))
+        }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(2, 4, "") }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 2, "") }.await()
+        document.garbageCollect(maxVectorOf(listOf(document.changeID.actor)))
+        document.history.undoAsync().await()
+        document.history.undoAsync().await()
+        assertEquals("2345670189", document.getRoot().getAs<JsonText>("text").toString())
+        return document
+    }
+
+    // 2026-09-10 review R1 (thread 3975567720): deepCopy resolved each
+    // insertion link while walking in document order, so a link whose target
+    // is physically later (exactly what the JS-#1328 relink produces after a
+    // rung-(c) placement) hit `requireNotNull(findFloorNode)` and threw. The
+    // links themselves are right — the piece covering cursor-1 ends at
+    // cursor, the piece covering gapEnd starts at gapEnd — so the copy must
+    // reproduce them, not drop them: copy every node first, link second.
+    @Test
+    fun `deepCopy preserves insertion links that point forward after a rung-c scramble`() =
+        runTest {
+            val split = buildScenarioOneScramble().crdtText().rgaTreeSplit
+
+            val clone = split.deepCopy()
+
+            assertEquals("2345670189", clone.toString())
+            val originals = split.toList()
+            val copies = clone.toList()
+            assertEquals(originals.map { it.id }, copies.map { it.id })
+            originals.zip(copies).forEach { (original, copy) ->
+                assertEquals(
+                    original.insertionPrev?.id,
+                    copy.insertionPrev?.id,
+                    "insertionPrev of ${original.id}",
+                )
+                assertEquals(
+                    original.insertionNext?.id,
+                    copy.insertionNext?.id,
+                    "insertionNext of ${original.id}",
+                )
+            }
+        }
+
+    // Same defect at Document level: Document.ensureClone() throws BEFORE
+    // assigning `clone`, so once any updater/schema/size failure nulls the
+    // cache after a scramble, every later getRoot()/updateAsync failed for
+    // the rest of the document's life.
+    @Test
+    fun `document keeps working after a clone rebuild following a rung-c scramble`() = runTest {
+        val document = buildScenarioOneScramble()
+
+        val failed = document.updateAsync { _, _ -> error("updater failure nulls the clone") }
+            .await()
+        assertTrue(failed.isFailure)
+
+        assertEquals("2345670189", document.getRoot().getAs<JsonText>("text").toString())
+        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 0, "X") }
+            .await()
+            .getOrThrow()
+        assertEquals("X2345670189", document.getRoot().getAs<JsonText>("text").toString())
+    }
+
+    // 2026-09-10 review R5 (thread 3975567761): a zero-width span made
+    // retombstone tombstone the whole remainder of the live piece covering
+    // `start - 1` — `isolateRange(piece, k, k)` splits at k and the second
+    // `splitNode(node, 0)` returns the unsplit remainder as the target. An
+    // empty interval overlaps nothing.
+    @Test
+    fun `retombstone ignores a zero-width span instead of deleting the remainder`() {
+        val split = RgaTreeSplit<TextValue>()
+        val tX = TimeTicket(1L, 0u, actor1)
+        split.edit(split.range(0, 0), tX, TextValue("0123456789"), versionVector = null)
+
+        val result = split.retombstone(
+            listOf(RestoreSpan(tX, 4, 4, TextValue(""))),
+            TimeTicket(2L, 0u, actor1),
+        )
+
+        assertEquals("0123456789", split.toString())
+        assertTrue(result.changes.isEmpty(), "nothing overlaps an empty interval")
+        assertTrue(result.gcPairs.isEmpty())
+    }
 }

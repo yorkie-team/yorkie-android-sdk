@@ -356,7 +356,11 @@ class UndoRedoTest {
             assertEquals("<root><p>x</p></root>", d1.getRoot().getAs<JsonTree>("tree").toXml())
             assertFalse(d1.hasLocalChanges())
             assertFalse(d1.history.canUndo())
-            assertFalse(d1.history.canRedo())
+            // The undo is an identity retombstone whose target is already
+            // tombstoned: a no-op that enqueues no change, yet its redo
+            // counterpart is still pushed so the stacks never lose a level
+            // (Text-twin rule, PR #359 thread 3975567754; JS parity).
+            assertTrue(d1.history.canRedo())
         }
     }
 }

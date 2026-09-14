@@ -1,178 +1,353 @@
 package dev.yorkie.document
 
-import dev.yorkie.document.crdt.CrdtTreeNode
-import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
-import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
+import dev.yorkie.util.DataSize
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Regression tests for [dev.yorkie.document.crdt.CrdtTree]/`TreeEditOperation`
- * split-count and GC-identity fixes (spec 010, AC1, AC16; spec 011 B1/AC1
- * extends the split-count coverage to the PARTIAL, non-zero case).
+ * Ports the GC-symmetry and DocSize-exactness cases from `history_tree_test.ts`
+ * (JS SDK fa6cc513) as JVM unit tests (AC9).
  */
 class TreeRestoreConvergenceTest {
 
     private val actor1 = "000000000000000000000001"
     private val actor2 = "000000000000000000000002"
 
-    // F1: index 0 in `<doc><p>x</p></doc>` resolves directly to the tree's
-    // own root element as fromParent (no element sits strictly between the
-    // root and this boundary), so a requested splitLevel of 1 hits the
-    // "reached tree root" guard on its only iteration and produces zero
-    // real splits. Before the fix, the walk still emitted a TreeChange (and
-    // therefore a reverse op) for this no-op, so undoing it would try to
-    // delete boundary tokens that were never inserted, corrupting the tree.
-    @Test
-    fun `zero-split edit at the tree root pushes no undo entry`() = runTest {
-        val document = Document("test-doc")
-        document.updateAsync { root, _ ->
-            root.setNewTree("t", element("doc") { element("p") { text { "x" } } })
-        }.await()
+    private fun Document.crdtTree(key: String = "t"): CrdtTree = getRootObject()[key] as CrdtTree
 
-        document.updateAsync { root, _ ->
-            root.getAs<JsonTree>("t").edit(0, 0, 1)
-        }.await()
-
-        assertEquals(
-            "<doc><p>x</p></doc>",
-            document.getRoot().getAs<JsonTree>("t").toXml(),
-        )
-
-        // setNewTree itself is undo-able, so canUndo() is always true here —
-        // the load-bearing check is that the zero-split edit pushed NO
-        // separate entry of its own: a single undo must reverse the
-        // ORIGINAL tree creation, not some phantom boundary-deletion of
-        // tokens that were never actually inserted.
-        document.history.undoAsync().await()
-        assertNull(
-            document.getRoot().getOrNull("t"),
-            "a splitLevel walk that performed zero real splits must not push its own reverse op",
-        )
+    /**
+     * The live node-identity sequence of the tree, in postorder. Two
+     * replicas converging must match on this (not just on rendered XML) —
+     * same-[CrdtTreeNodeID] structural equality is the load-bearing check.
+     */
+    private fun identitySequence(tree: CrdtTree): List<CrdtTreeNodeID> = buildList {
+        tree.indexTree.traverse { node, _ -> add(node.id) }
     }
 
-    // Spec 011 B1: a PARTIAL (not zero) split still root-stops. CrdtTree
-    // records the actual per-op split count on the TreeChange/TreeEditOpInfo
-    // (`actualSplitLevel`), but TreeEditOperation.execute previously read the
-    // REQUESTED splitLevel field for isPureSplit/boundarySize/redoSplitLevel
-    // — so the reverse op deleted 2*requestedSplitLevel boundary tokens when
-    // the walk actually produced fewer, eating into content the walk never
-    // split. "ab" inside <p> at index2, requesting splitLevel=2: level 1
-    // splits "p" (actual=1); level 2 would split "doc", but "doc" is the
-    // tree root, so the walk stops there (actual stays 1).
-    @Test
-    fun `partial split reverse deletes only the boundary tokens actually inserted`() = runTest {
-        val document = Document("test-doc")
-        document.updateAsync { root, _ ->
-            root.setNewTree("t", element("doc") { element("p") { text { "ab" } } })
-        }.await()
-
-        document.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(2, 2, 2) }.await()
-        assertEquals(
-            "<doc><p>a</p><p>b</p></doc>",
-            document.getRoot().getAs<JsonTree>("t").toXml(),
-        )
-
-        document.history.undoAsync().await()
-        assertEquals(
-            "<doc><p>ab</p></doc>",
-            document.getRoot().getAs<JsonTree>("t").toXml(),
-            "undo of a partial split must delete exactly the boundary tokens the walk" +
-                " actually inserted (actual=1), not the requested splitLevel's worth (2)",
-        )
-    }
-
-    // Deeper case: "ab" inside <b> inside <p>, requesting splitLevel=3.
-    // Level 1 splits "b" (actual=1), level 2 splits "p" (actual=2), level 3
-    // would split "doc" — root-stop, actual stays 2.
-    @Test
-    fun `deeper partial split reverse round-trips at its actual level`() = runTest {
-        val document = Document("test-doc")
-        document.updateAsync { root, _ ->
-            root.setNewTree(
-                "t",
-                element("doc") { element("p") { element("b") { text { "ab" } } } },
-            )
-        }.await()
-
-        document.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(3, 3, 3) }.await()
-        assertEquals(
-            "<doc><p><b>a</b></p><p><b>b</b></p></doc>",
-            document.getRoot().getAs<JsonTree>("t").toXml(),
-        )
-
-        document.history.undoAsync().await()
-        assertEquals(
-            "<doc><p><b>ab</b></p></doc>",
-            document.getRoot().getAs<JsonTree>("t").toXml(),
-            "a deeper partial split must round-trip on its actual (not requested) level too",
-        )
-    }
-
-    // Two-client pair (constitution C9): replica A performs the partial
-    // split and its undo entirely locally, then cross-syncs — both replicas
-    // must converge back to the original XML.
-    @Test
-    fun `two replicas converge after a partial split is undone`() = runTest {
+    /**
+     * Builds two replicas that both hold `<root>0123456789</root>`, then
+     * concurrently delete overlapping ranges — d1 deletes "45" (indices
+     * 4..6), d2 deletes the superset "234567" (indices 2..8) — and
+     * cross-syncs to the converged "0189". Each replica keeps its own
+     * delete on its undo stack.
+     */
+    private suspend fun buildOverlappingDeletes(): Pair<Document, Document> {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
         d2.setActor(actor2)
 
         d1.updateAsync { root, _ ->
-            root.setNewTree("t", element("doc") { element("p") { text { "ab" } } })
+            root.setNewTree("t", element("root"))
         }.await()
         crossSync(d1, d2)
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 0, text { "0123456789" }) }
+            .await()
+        crossSync(d1, d2)
 
-        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(2, 2, 2) }.await()
-        assertEquals("<doc><p>a</p><p>b</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        // delete "45"
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(4, 6) }.await()
+        // delete "234567"
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(2, 8) }.await()
+        crossSync(d1, d2)
 
-        d1.history.undoAsync().await()
-        assertEquals("<doc><p>ab</p></doc>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals("<root>0189</root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        return d1 to d2
+    }
 
+    // The feature's motivating case: two clients concurrently undo
+    // overlapping deletions. The undos are identity-addressed, so restoring
+    // both must revive the original insertion exactly once (a set-union of
+    // the two restored ranges), converging to identical content AND
+    // identical node ids on both replicas regardless of order.
+    private suspend fun runBothUndos(
+        undoD1First: Boolean,
+        overWire: Boolean = false,
+    ): Pair<Document, Document> {
+        val (d1, d2) = buildOverlappingDeletes()
+        if (undoD1First) {
+            d1.history.undoAsync().await()
+            crossSync(d1, d2, overWire)
+            d2.history.undoAsync().await()
+        } else {
+            d2.history.undoAsync().await()
+            crossSync(d1, d2, overWire)
+            d1.history.undoAsync().await()
+        }
+        crossSync(d1, d2, overWire)
+        return d1 to d2
+    }
+
+    @Test
+    fun `converges when both replicas undo overlapping deletes d1 first`() = runTest {
+        val (d1, d2) = runBothUndos(undoD1First = true)
+        assertEquals("<root>0123456789</root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(
+            identitySequence(d1.crdtTree()),
+            identitySequence(d2.crdtTree()),
+            "both replicas must converge to identical content AND node ids",
+        )
+    }
+
+    @Test
+    fun `converges to the same state under the opposite undo order d2 first`() = runTest {
+        val (a1, a2) = runBothUndos(undoD1First = true)
+        val (b1, b2) = runBothUndos(undoD1First = false)
+        assertEquals("<root>0123456789</root>", a1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals("<root>0123456789</root>", b1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(identitySequence(a1.crdtTree()), identitySequence(a2.crdtTree()))
+        assertEquals(identitySequence(b1.crdtTree()), identitySequence(b2.crdtTree()))
+        assertEquals(
+            identitySequence(a1.crdtTree()),
+            identitySequence(b1.crdtTree()),
+            "the undo order must not change the converged result",
+        )
+    }
+
+    // I2 (review #360): the Retombstone (redo) direction was never relayed to
+    // a second replica — every redo in the suite ran on a single document. A
+    // redo pushes `restore_mode = RETOMBSTONE` to peers, so it needs the same
+    // convergence guarantee as the undo direction.
+    @Test
+    fun `converges when both replicas redo their undone deletes`() = runTest {
+        val (d1, d2) = runBothUndos(undoD1First = true)
+
+        d1.history.redoAsync().await()
+        crossSync(d1, d2)
+        d2.history.redoAsync().await()
         crossSync(d1, d2)
 
         assertEquals(
             d1.getRoot().getAs<JsonTree>("t").toXml(),
             d2.getRoot().getAs<JsonTree>("t").toXml(),
         )
-        assertEquals("<doc><p>ab</p></doc>", d2.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(
+            identitySequence(d1.crdtTree()),
+            identitySequence(d2.crdtTree()),
+            "both replicas must converge on content AND node ids after both redos",
+        )
+        // Back to the state both deletes produced, by identity.
+        assertEquals("<root>0189</root>", d1.getRoot().getAs<JsonTree>("t").toXml())
     }
 
-    // E2: a registered tree node's data-class hash covers mutable state
-    // (childNodes, attributes). A concurrent remote edit that mutates a
-    // registered node's children (e.g. splitting a tombstoned child)
-    // relocates it to a different HashMap bucket, so a later hash-keyed
-    // lookup by the SAME node instance misses. Hashing by the immutable id
-    // instead keeps the bucket stable, mirroring RgaTreeSplitNode.
+    // I5 (review #360): the same both-undo convergence, but with every relayed
+    // change routed through the protobuf converters — the restore_spans
+    // encode/decode path is otherwise untested under convergence, since
+    // crossSync passes operations in memory.
     @Test
-    fun `CrdtTreeNode hashCode is stable across mutation so hash-keyed lookups survive`() {
-        val id = CrdtTreeNodeID(TimeTicket.InitialTimeTicket, 0)
-        val node = CrdtTreeElement(id, "p")
-        val map = HashMap<CrdtTreeNode, String>()
-        map[node] = "registered"
+    fun `converges when both undos are relayed over the wire`() = runTest {
+        val (d1, d2) = runBothUndos(undoD1First = true, overWire = true)
 
-        // Mutate the node's children AFTER it was used as a hash key.
-        node.append(
-            CrdtTreeElement(
-                CrdtTreeNodeID(TimeTicket(1L, 0u, "actor-0"), 0),
-                "span",
-            ),
+        assertEquals("<root>0123456789</root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(
+            identitySequence(d1.crdtTree()),
+            identitySequence(d2.crdtTree()),
+            "spans must survive the protobuf round-trip with identity intact",
+        )
+    }
+
+    // I2 (review #360): port of `history_tree_test.ts` -> "recreates a purged
+    // subtree on redo and converges" (JS v0.7.14). The undo after GC has to
+    // rebuild the subtree from spans (recreateFromSpan) rather than
+    // un-tombstone it, and both replicas must land on the same tree.
+    @Test
+    fun `recreates a purged subtree after GC and converges`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { element("p") { text { "hello" } } })
+        }.await()
+        crossSync(d1, d2)
+
+        // d1 deletes the whole <p>hello</p>; both replicas tombstone it.
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 7) }.await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
         )
 
+        // Undo revives it, then purge on both so the next redo's tombstones
+        // are physically removed.
+        d1.history.undoAsync().await()
+        crossSync(d1, d2)
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+
+        // Redo re-deletes; purge again so the nodes are gone for good.
+        d1.history.redoAsync().await()
+        crossSync(d1, d2)
+        val purged1 = d1.garbageCollect(vector)
+        val purged2 = d2.garbageCollect(vector)
+        assertEquals(purged1, purged2, "both replicas must purge the same count")
+        assertTrue(purged1 > 0, "the subtree must actually be purged before the recreate")
+
+        // The final undo has nothing left to un-tombstone: it must recreate the
+        // whole subtree from its spans, top-down, and converge.
+        d1.history.undoAsync().await()
+        crossSync(d1, d2)
+
         assertEquals(
-            "registered",
-            map[node],
-            "hashing by immutable id must survive a mutation of childNodes",
+            "<doc><p>hello</p></doc>",
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            "the purged subtree is recreated under its original identity",
+        )
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals(
+            identitySequence(d1.crdtTree()),
+            identitySequence(d2.crdtTree()),
+            "recreated nodes must carry identical ids on both replicas",
+        )
+    }
+
+    /**
+     * Runs one of the reconcile overlap cases upstream un-skipped in v0.7.14
+     * (`history_tree_test.ts` Cases 5 and 6): both replicas delete overlapping
+     * ranges, then both undo, then both redo. Every stage must converge.
+     */
+    private suspend fun runOverlapCase(d1Range: Pair<Int, Int>, d2Range: Pair<Int, Int>) {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { element("p") { text { "0123456789" } } })
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").edit(d1Range.first, d1Range.second)
+        }.await()
+        d2.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").edit(d2Range.first, d2Range.second)
+        }.await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+            "after the concurrent deletes",
+        )
+
+        d1.history.undoAsync().await()
+        d2.history.undoAsync().await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+            "after both undos",
+        )
+        assertEquals(identitySequence(d1.crdtTree()), identitySequence(d2.crdtTree()))
+
+        d1.history.redoAsync().await()
+        d2.history.redoAsync().await()
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+            "after both redos",
+        )
+        assertEquals(identitySequence(d1.crdtTree()), identitySequence(d2.crdtTree()))
+    }
+
+    // Reconcile Case 5 (overlap_start): the remote delete overlaps the start of
+    // the undo range. Un-skipped upstream in v0.7.14.
+    @Test
+    fun `converges when the remote delete overlaps the start of the undo range`() = runTest {
+        runOverlapCase(d1Range = 5 to 9, d2Range = 3 to 7)
+    }
+
+    // Reconcile Case 6 (overlap_end): the remote delete overlaps the end of the
+    // undo range. Un-skipped upstream in v0.7.14.
+    @Test
+    fun `converges when the remote delete overlaps the end of the undo range`() = runTest {
+        runOverlapCase(d1Range = 3 to 7, d2Range = 5 to 9)
+    }
+
+    @Test
+    fun `purges symmetrically with docSize gc drained after both undos`() = runTest {
+        val (d1, d2) = runBothUndos(undoD1First = true)
+        val vector = maxVectorOf(listOf(actor1, actor2))
+
+        val purged1 = d1.garbageCollect(vector)
+        val purged2 = d2.garbageCollect(vector)
+        assertEquals(purged1, purged2, "both replicas must purge the same count")
+        assertEquals(0, d1.garbageLength)
+        assertEquals(0, d2.garbageLength)
+
+        assertEquals(
+            DataSize(0, 0),
+            d1.getDocSize().gc,
+            "every revived node must leave docSize.gc empty",
+        )
+        assertEquals(
+            DataSize(0, 0),
+            d2.getDocSize().gc,
+            "every revived node must leave docSize.gc empty",
+        )
+    }
+
+    // unregisterGCPair (revive) must reverse registerGCPair (tombstone) bit
+    // for bit, including the TimeTicketSize meta term, or docSize drifts
+    // across undo/redo cycles.
+    @Test
+    fun `reverses GC accounting exactly across delete undo redo undo`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewTree("t", element("root"))
+        }.await()
+        document.updateAsync { root, _ ->
+            root.getAs<JsonTree>(
+                "t",
+            ).edit(0, 0, text { "0123456789" })
+        }
+            .await()
+
+        document.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(4, 6) }.await()
+        val deleted = document.getDocSize()
+        assertEquals(false, deleted.gc == DataSize(0, 0), "delete registers GC")
+
+        document.history.undoAsync().await()
+        val revived = document.getDocSize()
+        assertEquals(
+            DataSize(0, 0),
+            revived.gc,
+            "revive must drain the tombstoned size out of gc, including the meta term",
+        )
+
+        document.history.redoAsync().await()
+        assertEquals(
+            deleted,
+            document.getDocSize(),
+            "redo must reproduce the tombstoned docSize exactly, including meta",
+        )
+
+        document.history.undoAsync().await()
+        assertEquals(
+            revived,
+            document.getDocSize(),
+            "the revived docSize is bit-identical across cycles, including meta",
         )
     }
 
@@ -180,7 +355,8 @@ class TreeRestoreConvergenceTest {
      * Builds two replicas holding `<root><p>hello</p></root>` where d1
      * deletes the whole `<p>` and d2 concurrently inserts "X" inside
      * "hello". The remote insert splits the tombstoned text under the
-     * already-registered `<p>`, mutating its child list.
+     * already-registered `<p>`, mutating its child list between
+     * registerGCPair and the undo-side unregisterGCPair.
      */
     private suspend fun buildDeleteWithConcurrentSplit(): Pair<Document, Document> {
         val d1 = Document("test-doc")
@@ -199,35 +375,109 @@ class TreeRestoreConvergenceTest {
         return d1 to d2
     }
 
-    // Tree undo/redo rebuilds fresh nodes rather than reviving tombstones by
-    // identity (unlike Text's identity-preserving restore), so undo/redo of
-    // a delete whose remote counterpart concurrently split a registered
-    // node must still leave both replicas purge-symmetric — a stale
-    // gcPairMap entry (E2) would desync the two counts.
+    // Regression: gcPairMap must find a registered tree node even after a
+    // concurrent remote edit mutated its children — keying by structural
+    // (data-class) hash makes the unregister lookup miss and leaves a
+    // stale entry behind.
     @Test
-    fun `undo redo of a concurrently-split delete purges symmetrically on both replicas`() =
+    fun `undo unregisters GC pairs for a revived element mutated by a concurrent split`() =
         runTest {
-            val (d1, d2) = buildDeleteWithConcurrentSplit()
-            assertEquals(4, d1.garbageLength, "p, \"he\", \"llo\", and X are all tombstoned")
+            // given: the delete registered 4 pairs (p, "he", "llo", X — the
+            // concurrent X also converges to tombstoned)
+            val (d1, _) = buildDeleteWithConcurrentSplit()
+            assertEquals(4, d1.garbageLength)
 
+            // when
             d1.history.undoAsync().await()
+
+            // then: p, "he" and "llo" are revived and unregistered; only the
+            // still-tombstoned X remains registered
             assertEquals(
                 "<root><p>hello</p></root>",
                 d1.getRoot().getAs<JsonTree>("t").toXml(),
-                "undo rebuilds fresh nodes rather than reviving the tombstones by identity",
             )
-
-            d1.history.redoAsync().await()
-            assertEquals("<root></root>", d1.getRoot().getAs<JsonTree>("t").toXml())
-
-            // d2 never undid, so it only ever tombstoned the original 4.
-            val vector = maxVectorOf(listOf(actor1, actor2))
-            val purged1 = d1.garbageCollect(vector)
-            val purged2 = d2.garbageCollect(vector)
-
-            assertEquals(0, d1.garbageLength)
-            assertEquals(0, d2.garbageLength)
-            assertEquals(d2.getDocSize(), d1.getDocSize())
-            assertTrue(purged1 >= 4 && purged2 >= 4, "purged1=$purged1 purged2=$purged2")
+            assertEquals(
+                1,
+                d1.garbageLength,
+                "revive must unregister every pair of the revived nodes",
+            )
         }
+
+    // Regression: a stale gcPairMap entry surviving undo makes redo add a
+    // duplicate pair for the same node — the next GC then purges that node
+    // twice and docSize.live permanently loses the size the missed
+    // unregister never credited back.
+    @Test
+    fun `redo after a concurrent split purges each node exactly once`() = runTest {
+        // given
+        val (d1, d2) = buildDeleteWithConcurrentSplit()
+        d1.history.undoAsync().await()
+        d1.history.redoAsync().await()
+
+        // when: d2 never undid, so it purges each of the 4 pairs exactly once
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        val purged1 = d1.garbageCollect(vector)
+        val purged2 = d2.garbageCollect(vector)
+
+        // then
+        assertEquals(purged2, purged1, "undo/redo must not duplicate GC pairs")
+        assertEquals(0, d1.garbageLength)
+        assertEquals(
+            DataSize(0, 0),
+            d1.getDocSize().gc,
+            "each purged node must leave docSize.gc exactly once",
+        )
+    }
+
+    // PR #360 CI regression (spec 015; the JVM twin of UndoRedoTest
+    // `test_tree_undo_consumes_a_change_whose_target_vanished_remotely`):
+    // d1 inserts "y", d2 deletes it first, so d1's undo is an identity
+    // retombstone whose only target is already tombstoned. Spec 002 AC6: the
+    // undo succeeds as a no-op and enqueues NO local change. The redo
+    // counterpart is still pushed — same rule as the Text twin
+    // (EditOperationRestoreTest `a no-effect redo still pushes its undo
+    // counterpart like JS`), so the two stacks never lose a level.
+    @Test
+    fun `a no-effect tree restore undo enqueues no local change but keeps its redo`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+        // skipHistory: the connected twin builds the tree via initialRoot, which
+        // leaves no undo entry either.
+        d1.updateAsync(skipHistory = true) { root, _ ->
+            root.setNewTree("t", element("root") { element("p") { text { "x" } } })
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(2, 2, text { "y" }) }.await()
+        crossSync(d1, d2)
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(2, 3) }.await()
+        crossSync(d1, d2)
+        assertEquals("<root><p>x</p></root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertFalse(d1.hasLocalChanges())
+        assertTrue(d1.history.canUndo())
+
+        assertTrue(d1.history.undoAsync().await().isSuccess)
+        assertEquals("<root><p>x</p></root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertFalse(
+            d1.hasLocalChanges(),
+            "a no-effect restore must not enqueue a phantom local change",
+        )
+        assertFalse(d1.history.canUndo())
+        assertTrue(
+            d1.history.canRedo(),
+            "the redo counterpart is pushed unconditionally (Text twin / JS parity)",
+        )
+
+        // Redo revives "y" by identity and both replicas converge.
+        assertTrue(d1.history.redoAsync().await().isSuccess)
+        assertEquals("<root><p>xy</p></root>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals(identitySequence(d1.crdtTree()), identitySequence(d2.crdtTree()))
+    }
 }

@@ -718,6 +718,46 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         child.parent = null
     }
 
+    /**
+     * Detaches [child] from its current parent, if any, and appends it to
+     * this node, preserving both size dimensions on both parents. Used by
+     * merge to relocate tombstoned children as RGA anchors without
+     * corrupting index positions.
+     *
+     * Differs from [detachChild] followed by [append]: a removed node
+     * contributes no `visibleSize` to either parent (removal already
+     * excluded it from its ancestors), so only the include-removed
+     * `totalSize` is relocated for a tombstone. Reusing detachChild+append
+     * would double-subtract the tombstone's visible dimension.
+     */
+    fun moveChild(child: T) {
+        check(!isText) {
+            "Text node cannot have children"
+        }
+
+        val removed = child.isRemoved
+
+        val oldParent = child.parent
+        if (oldParent != null) {
+            val offset = oldParent.childNodes.indexOf(child)
+            if (offset != -1) {
+                oldParent.childNodes.removeAt(offset)
+                if (!removed) {
+                    child.updateAncestorSize(-child.paddedSize())
+                }
+                child.updateAncestorSize(-child.paddedSize(true), includeRemoved = true)
+            }
+            child.parent = null
+        }
+
+        childNodes.add(child)
+        child.parent = this as T
+        if (!removed) {
+            child.updateAncestorSize(child.paddedSize())
+        }
+        child.updateAncestorSize(child.paddedSize(true), includeRemoved = true)
+    }
+
     fun splitText(offset: Int, absOffset: Int): Pair<T?, DataSize> {
         var diff = DataSize(
             data = 0,

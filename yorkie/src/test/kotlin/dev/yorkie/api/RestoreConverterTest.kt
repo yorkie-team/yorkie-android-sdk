@@ -150,6 +150,22 @@ class RestoreConverterTest {
         assertEquals("hi", restored.content)
     }
 
+    // Twin of the Tree case: the server rejects restore_mode with no spans
+    // (from_pb.go: hasMode != hasSpans), which would strand the change in
+    // localChanges and retry forever. JS guards on length, not on presence.
+    @Test
+    fun `omits restore_mode when both span lists are empty but non-null`() {
+        val pbOp = restoreOp(
+            restoreSpans = emptyList(),
+            restoreMode = RestoreMode.Restore,
+            retombstoneSpans = emptyList(),
+        ).toPBOperation()
+
+        assertTrue(pbOp.edit.restoreSpansList.isEmpty())
+        assertTrue(pbOp.edit.retombstoneSpansList.isEmpty())
+        assertEquals(PbRestoreMode.RESTORE_MODE_UNSPECIFIED, pbOp.edit.restoreMode)
+    }
+
     @Test
     fun `decodes to a harmless no-op for peers that ignore restore fields`() {
         // Mixed-version interop contract: a restore/undo op carries its

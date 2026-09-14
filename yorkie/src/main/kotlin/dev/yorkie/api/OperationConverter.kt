@@ -13,6 +13,7 @@ import dev.yorkie.api.v1.OperationKt.treeStyle
 import dev.yorkie.api.v1.operation
 import dev.yorkie.document.crdt.RestoreSpan
 import dev.yorkie.document.crdt.TextValue
+import dev.yorkie.document.crdt.TreeRestoreSpan
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
@@ -31,7 +32,9 @@ import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import dev.yorkie.api.v1.RestoreMode as PbRestoreMode
 import dev.yorkie.api.v1.RestoreSpan as PbRestoreSpan
+import dev.yorkie.api.v1.TreeRestoreSpan as PbTreeRestoreSpan
 import dev.yorkie.api.v1.restoreSpan as pbRestoreSpan
+import dev.yorkie.api.v1.treeRestoreSpan as pbTreeRestoreSpan
 
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
 
@@ -126,14 +129,39 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 attributesToRemove = it.style.attributesToRemoveList,
             )
 
-            it.hasTreeEdit() -> TreeEditOperation(
-                parentCreatedAt = it.treeEdit.parentCreatedAt.toTimeTicket(),
-                fromPos = it.treeEdit.from.toCrdtTreePos(),
-                toPos = it.treeEdit.to.toCrdtTreePos(),
-                contents = it.treeEdit.contentsList.toCrdtTreeNodesWhenEdit(),
-                executedAt = it.treeEdit.executedAt.toTimeTicket(),
-                splitLevel = it.treeEdit.splitLevel,
-            )
+            it.hasTreeEdit() -> {
+                val hasRestorePayload = it.treeEdit.restoreSpansList.isNotEmpty() ||
+                    it.treeEdit.retombstoneSpansList.isNotEmpty()
+                val treeRestoreSpans = it.treeEdit.restoreSpansList.takeIf { hasRestorePayload }
+                    ?.map(PbTreeRestoreSpan::toTreeRestoreSpan)
+                val treeRetombstoneSpans = it.treeEdit.retombstoneSpansList
+                    .takeIf { hasRestorePayload }
+                    ?.map(PbTreeRestoreSpan::toTreeRestoreSpan)
+                val treeRestoreMode = if (hasRestorePayload) {
+                    if (it.treeEdit.restoreMode == PbRestoreMode.RESTORE_MODE_RETOMBSTONE) {
+                        RestoreMode.Retombstone
+                    } else {
+                        RestoreMode.Restore
+                    }
+                } else {
+                    null
+                }
+                TreeEditOperation(
+                    parentCreatedAt = it.treeEdit.parentCreatedAt.toTimeTicket(),
+                    fromPos = it.treeEdit.from.toCrdtTreePos(),
+                    toPos = it.treeEdit.to.toCrdtTreePos(),
+                    contents = it.treeEdit.contentsList.toCrdtTreeNodesWhenEdit(),
+                    executedAt = it.treeEdit.executedAt.toTimeTicket(),
+                    splitLevel = it.treeEdit.splitLevel,
+                    // undoFromOffset/undoToOffset stay at their NotAnUndoOp
+                    // default: a decoded remote restore op applies by
+                    // identity and is not reconciled locally (mirrors the
+                    // Text edit inbound path above).
+                    restoreSpans = treeRestoreSpans,
+                    restoreMode = treeRestoreMode,
+                    retombstoneSpans = treeRetombstoneSpans,
+                )
+            }
 
             it.hasTreeStyle() -> TreeStyleOperation(
                 parentCreatedAt = it.treeStyle.parentCreatedAt.toTimeTicket(),
@@ -223,12 +251,14 @@ internal fun Operation.toPBOperation(): PBOperation {
                     operation.attributes.forEach { attributes[it.key] = it.value }
                     // Ordinary edits set none of these — the wire payload stays
                     // byte-identical to before this field was added. Guard on
-                    // non-EMPTY (Minor), not non-null: a re-encoded decoded op
-                    // can carry emptyList() on both sides (S2's decode-null
-                    // asymmetry only applies going forward), and emitting
-                    // RESTORE_MODE_RESTORE with zero spans would make the
-                    // server's NewRestoreEdit (which keys off restore_mode)
-                    // drop the edit's content.
+                    // non-EMPTY (Minor/B4), not non-null: a re-encoded decoded
+                    // op can carry emptyList() on both sides (S2's decode-null
+                    // asymmetry only applies going forward), and a mode with
+                    // zero spans is rejected outright by server v0.7.14
+                    // (from_pb.go's hasMode != hasSpans), stranding the change
+                    // in localChanges to retry forever; on the older server
+                    // that accepts it, NewRestoreEdit (which keys off
+                    // restore_mode) drops the edit's content instead.
                     if (!operation.restoreSpans.isNullOrEmpty() ||
                         !operation.retombstoneSpans.isNullOrEmpty()
                     ) {
@@ -268,6 +298,27 @@ internal fun Operation.toPBOperation(): PBOperation {
                     executedAt = operation.executedAt.toPBTimeTicket()
                     contents.addAll(operation.contents?.toPBTreeNodesWhenEdit().orEmpty())
                     splitLevel = operation.splitLevel
+                    // Ordinary tree edits set none of these — the wire payload
+                    // stays byte-identical to before this field was added. Guard
+                    // on non-EMPTY, not non-null: the server rejects the whole
+                    // PushPull when restore_mode is set with no spans
+                    // (from_pb.go's hasMode != hasSpans), which would strand the
+                    // change in localChanges and retry forever.
+                    if (!operation.restoreSpans.isNullOrEmpty() ||
+                        !operation.retombstoneSpans.isNullOrEmpty()
+                    ) {
+                        restoreSpans.addAll(
+                            operation.restoreSpans.orEmpty().map { it.toPbTreeSpan() },
+                        )
+                        retombstoneSpans.addAll(
+                            operation.retombstoneSpans.orEmpty().map { it.toPbTreeSpan() },
+                        )
+                        restoreMode = if (operation.restoreMode == RestoreMode.Retombstone) {
+                            PbRestoreMode.RESTORE_MODE_RETOMBSTONE
+                        } else {
+                            PbRestoreMode.RESTORE_MODE_RESTORE
+                        }
+                    }
                 }
             }
         }
@@ -355,4 +406,69 @@ private fun PbRestoreSpan.toRestoreSpan(executedAt: TimeTicket): RestoreSpan<Tex
         attributesMap.forEach { (key, attrValue) -> setAttribute(key, attrValue, executedAt) }
     }
     return RestoreSpan(requireNotNull(decodedCreatedAt), start, end, value)
+}
+
+/**
+ * Converts a domain [TreeRestoreSpan] to its protobuf representation.
+ * Anchor ids ([TreeRestoreSpan.parentID]/[TreeRestoreSpan.leftSiblingID]/
+ * [TreeRestoreSpan.rightSiblingID]) are set only when present, and [value]
+ * only when the span is a text span — an ordinary tree edit never
+ * populates this message at all (see the `is TreeEditOperation` branch
+ * above), so [value]'s absence here is never observed as a malformed span.
+ */
+private fun TreeRestoreSpan.toPbTreeSpan(): PbTreeRestoreSpan {
+    val span = this
+    return pbTreeRestoreSpan {
+        id = span.id.toPBTreeNodeID()
+        nodeType = span.nodeType
+        isText = span.isText
+        length = span.length
+        span.value?.let { value = it }
+        span.attrs?.let { attributes.putAll(it.toPBRht()) }
+        span.parentID?.let { parentId = it.toPBTreeNodeID() }
+        span.leftSiblingID?.let { leftSiblingId = it.toPBTreeNodeID() }
+        span.rightSiblingID?.let { rightSiblingId = it.toPBTreeNodeID() }
+    }
+}
+
+/**
+ * Converts a protobuf [PbTreeRestoreSpan] to its domain representation.
+ * A span addresses content by insertion identity, so every node id it
+ * carries is malformed without a `created_at`, and the attribute snapshot
+ * is malformed without an `updated_at` per entry — both are rejected here,
+ * at the decode boundary, rather than letting an undefined-equivalent
+ * timestamp fail deep inside [dev.yorkie.document.crdt.CrdtTree.restore].
+ * A text span is additionally malformed when [length] disagrees with
+ * [value]'s length — capture always sets them equal, so a mismatch signals
+ * a corrupt or hostile payload that would otherwise throw
+ * [StringIndexOutOfBoundsException] out of
+ * [dev.yorkie.document.crdt.CrdtTree]'s substring call in `recreateFromSpan`.
+ */
+private fun PbTreeRestoreSpan.toTreeRestoreSpan(): TreeRestoreSpan {
+    val anchors = listOf(
+        hasParentId() to parentId,
+        hasLeftSiblingId() to leftSiblingId,
+        hasRightSiblingId() to rightSiblingId,
+    )
+    val malformed = !hasId() || !id.hasCreatedAt() ||
+        anchors.any { (present, anchor) -> present && !anchor.hasCreatedAt() } ||
+        attributesMap.values.any { !it.hasUpdatedAt() } ||
+        length < 0 || (isText && value.length != length)
+    if (malformed) {
+        throw YorkieException(
+            ErrInvalidArgument,
+            "malformed tree restore span: missing timestamp or inconsistent text length",
+        )
+    }
+    return TreeRestoreSpan(
+        id = id.toCrdtTreeNodeID(),
+        nodeType = nodeType,
+        isText = isText,
+        length = length,
+        value = if (isText) value else null,
+        attrs = attributesMap.takeIf { it.isNotEmpty() }?.toRht(),
+        parentID = if (hasParentId()) parentId.toCrdtTreeNodeID() else null,
+        leftSiblingID = if (hasLeftSiblingId()) leftSiblingId.toCrdtTreeNodeID() else null,
+        rightSiblingID = if (hasRightSiblingId()) rightSiblingId.toCrdtTreeNodeID() else null,
+    )
 }

@@ -89,13 +89,23 @@ internal data class EditOperation(
             // undoToOffset pointing past the live length (e.g. redoing an insert while the
             // doc is still shrunk from this same op's prior undo). Clamp both offsets to
             // the current length before resolving; for a restore op actualFrom is only
-            // ever a last-resort fallback anchor (DEC-5), so a clamped value is safe.
+            // ever a last-resort fallback anchor (DEC-5) and actualTo is never read
+            // (toPos is pinned to actualFrom below), so a clamped value is safe THERE.
+            //
+            // An ordinary undo op, by contrast, consumes the resolved range as its
+            // actual edit range: clamping a stale offset would silently relocate the
+            // re-inserted content and replicate that misplacement to every peer. Those
+            // offsets stay unclamped so an out-of-range value fails loudly, as in JS.
             val (actualFrom, actualTo) = if (isUndoOp) {
-                val length = parentObject.length
-                parentObject.indexRangeToPosRange(
-                    undoFromOffset.coerceIn(0, length),
-                    undoToOffset.coerceIn(0, length),
-                )
+                if (isRestoreOp) {
+                    val length = parentObject.length
+                    parentObject.indexRangeToPosRange(
+                        undoFromOffset.coerceIn(0, length),
+                        undoToOffset.coerceIn(0, length),
+                    )
+                } else {
+                    parentObject.indexRangeToPosRange(undoFromOffset, undoToOffset)
+                }
             } else {
                 fromPos to toPos
             }

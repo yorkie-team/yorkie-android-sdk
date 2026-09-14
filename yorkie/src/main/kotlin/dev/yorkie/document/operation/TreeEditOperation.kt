@@ -230,15 +230,16 @@ internal data class TreeEditOperation(
      * twin, spec 004).
      *
      * Order is load-bearing: (1) retombstone first — register its GC pairs;
-     * (2) restore — unregister GC pairs for the untombstoned nodes and
-     * accumulate each recreated node's size into the live diff (a recreated
-     * node never physically existed, so there is no GC pair to unregister
-     * for it — only [CrdtRoot.acc] applies); (3) accumulate the total diff.
+     * (2) restore — register the pending pairs [CrdtTree.restore] buffered
+     * (born-dead recreates under a still-tombstoned ancestor, attribute
+     * tombstones copied from the span — PR #360 review F2/F4), THEN
+     * unregister GC pairs for the untombstoned nodes (Text-twin order), and
+     * accumulate each live recreated node's size into the live diff (no GC
+     * pair exists for a recreated node — only [CrdtRoot.acc] applies);
+     * (3) accumulate the total diff.
      *
      * Unlike [EditOperation.executeRestore] (the Text twin), there is no
-     * pending-pair pre-registration step and no fallback-anchor parameter:
-     * Tree restore never splits or isolates a range out of a larger
-     * tombstone the way Text's does, and [recreateFromSpan]'s id-order rung
+     * fallback-anchor parameter: [CrdtTree.recreateFromSpan]'s id-order rung
      * needs no externally tracked anchor.
      */
     private fun executeRestore(
@@ -255,8 +256,11 @@ internal data class TreeEditOperation(
         // 1. Re-remove (retombstone) by identity.
         tree.retombstone(toRetombstone, executedAt).forEach(root::registerGCPair)
 
-        // 2. Revive (restore) by identity.
-        val (untombstoned, recreated) = tree.restore(toRestore)
+        // 2. Revive (restore) by identity. Pending pairs (born-dead recreates,
+        // copied attribute tombstones) are registered BEFORE the revived nodes
+        // are unregistered — Text-twin order; the two sets are disjoint here.
+        val (untombstoned, recreated) = tree.restore(toRestore, executedAt)
+        tree.drainPendingGcPairs().forEach(root::registerGCPair)
         untombstoned.forEach { node -> root.unregisterGCPair(GCPair(tree, node)) }
         recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
         root.acc(diff)
@@ -269,6 +273,12 @@ internal data class TreeEditOperation(
         //  view cannot apply this op info yet. Interim JS contract (upstream
         //  yorkie-js-sdk marks exact positions a follow-up); revisit when
         //  upstream lands them.
+        //
+        //  KNOWN DEFECT (PR #360 review F3, JS parity, backlog 009): Document.
+        //  reconcileHistoryEdits feeds this zero-width, node-less opInfo to
+        //  History.reconcileTreeEdit, so a peer's restore re-indexes pending
+        //  tree undos by 0 and a later split-undo deletes live text (pinned by
+        //  TreeUpstreamDefectPinTest). JS emits the same shape; fix upstream first.
         val fromIdx = undoFromOffset.takeUnless { it == NotAnUndoOp } ?: 0
         val toIdx = undoToOffset.takeUnless { it == NotAnUndoOp } ?: fromIdx
         val opInfos = listOf(

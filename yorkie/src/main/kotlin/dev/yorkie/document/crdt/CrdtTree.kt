@@ -1411,6 +1411,18 @@ internal data class CrdtTree(
      * live or removed — so all replicas converge on identical text-node
      * segmentation, instead of skipping the straddler.
      *
+     * KNOWN LIMITATION (upstream; the JS `history_tree_concurrent_test.ts`
+     * `it.skip` twins are ported `@Ignore`d in TreeRestoreConcurrentTest):
+     * when one or more whole elements are deleted concurrently with a text
+     * edit INSIDE one of them and both undo AFTER GC, visible content
+     * converges but text-node segmentation can differ — one replica
+     * un-tombstones the concurrent edit's finer split, the other recreates
+     * the run monolithically from the element's span, because a child
+     * sub-restore is skipped while its parent is transiently purged.
+     * Upstream defers the fix to undo-stack-aware GC (restore un-tombstoning
+     * in place). Do not merge-normalize segmentation here: non-commutative,
+     * breaks GC/tombstone symmetry after redo.
+     *
      * JS parity, KNOWN DEFECT (PR #360 reviews 5165084872 F2 and 5194612367):
      * like yorkie-js-sdk v0.7.14 (`tree.ts` `restore`), a tombstoned target is
      * unremoved even when an ancestor is still tombstoned, and a purged target
@@ -1427,56 +1439,62 @@ internal data class CrdtTree(
         val recreated = mutableListOf<CrdtTreeNode>()
         var diff = DataSize(data = 0, meta = 0)
 
-        for (span in spans) {
-            if (!span.isText) {
-                val node = findFloorNode(span.id)
-                if (node != null && node.id == span.id) {
-                    if (node.isRemoved) {
-                        node.unremove()
-                        untombstoned.add(node)
+        val pairs: List<GCPair<CrdtTreeNode>>
+        try {
+            for (span in spans) {
+                if (!span.isText) {
+                    val node = findFloorNode(span.id)
+                    if (node != null && node.id == span.id) {
+                        if (node.isRemoved) {
+                            node.unremove()
+                            untombstoned.add(node)
+                        }
+                        continue
                     }
+                    recreateFromSpan(span, span.id.offset, span.length)?.let(recreated::add)
                     continue
                 }
-                recreateFromSpan(span, span.id.offset, span.length)?.let(recreated::add)
-                continue
-            }
 
-            // Text: surviving pieces may be split finer than the span.
-            val start = span.id.offset
-            val end = start + span.length
-            val pieces = findPiecesOverlapping(span.id.createdAt, start, end)
+                // Text: surviving pieces may be split finer than the span.
+                val start = span.id.offset
+                val end = start + span.length
+                val pieces = findPiecesOverlapping(span.id.createdAt, start, end)
 
-            var cursor = start
-            var pieceIndex = 0
-            while (cursor < end) {
-                val piece = pieces.getOrNull(pieceIndex)
-                val pieceStart = piece?.id?.offset ?: Int.MAX_VALUE
-                val pieceEnd = if (piece != null) pieceStart + piece.value.length else Int.MAX_VALUE
+                var cursor = start
+                var pieceIndex = 0
+                while (cursor < end) {
+                    val piece = pieces.getOrNull(pieceIndex)
+                    val pieceStart = piece?.id?.offset ?: Int.MAX_VALUE
+                    val pieceEnd =
+                        if (piece != null) pieceStart + piece.value.length else Int.MAX_VALUE
 
-                if (piece != null && pieceStart <= cursor) {
-                    val overlapEnd = minOf(pieceEnd, end)
-                    val (target, splitDiff) = isolateTextRange(piece, cursor, overlapEnd)
-                    diff = addDataSizes(diff, splitDiff)
-                    if (target.isRemoved) {
-                        target.unremove()
-                        untombstoned.add(target)
+                    if (piece != null && pieceStart <= cursor) {
+                        val overlapEnd = minOf(pieceEnd, end)
+                        val (target, splitDiff) = isolateTextRange(piece, cursor, overlapEnd)
+                        diff = addDataSizes(diff, splitDiff)
+                        if (target.isRemoved) {
+                            target.unremove()
+                            untombstoned.add(target)
+                        }
+                        cursor = overlapEnd
+                        if (overlapEnd >= pieceEnd) pieceIndex++
+                    } else {
+                        val gapEnd = minOf(pieceStart, end)
+                        recreateFromSpan(span, cursor, gapEnd - cursor)?.let(recreated::add)
+                        cursor = gapEnd
                     }
-                    cursor = overlapEnd
-                    if (overlapEnd >= pieceEnd) pieceIndex++
-                } else {
-                    val gapEnd = minOf(pieceStart, end)
-                    recreateFromSpan(span, cursor, gapEnd - cursor)?.let(recreated::add)
-                    cursor = gapEnd
                 }
             }
+        } finally {
+            // Splitting a removed straddler buffers born-removed remainders as
+            // pending GC pairs (see CrdtTreeNode.split). The caller registers
+            // these BEFORE unregistering the untombstoned targets, so a target
+            // that was itself a split-born piece is walked gc->live correctly
+            // (mirrors the Text path). Drained on EVERY path, like the server
+            // companion's `defer`: a throw mid-span must not leave this op's
+            // remainders in the buffer for the next operation's drain.
+            pairs = drainPendingGcPairs()
         }
-
-        // Splitting a removed straddler buffers born-removed remainders as
-        // pending GC pairs (see CrdtTreeNode.split). The caller registers
-        // these BEFORE unregistering the untombstoned targets, so a target
-        // that was itself a split-born piece is walked gc->live correctly
-        // (mirrors the Text path).
-        val pairs = drainPendingGcPairs()
         return TreeRestoreResult(untombstoned, recreated, pairs, diff)
     }
 
@@ -1494,13 +1512,20 @@ internal data class CrdtTree(
      * [CrdtTreeNode.split] (contributing zero here) — the caller must still
      * drain and register those pairs.
      *
-     * Requires `pieceStart <= from < to <= pieceEnd`.
+     * Requires `pieceStart <= from < to <= pieceEnd`, enforced: a range that
+     * escapes the piece would silently skip a split and hand back a node
+     * covering content outside the span (which [restore] would then revive).
      */
     private fun isolateTextRange(
         piece: CrdtTreeNode,
         from: Int,
         to: Int,
     ): Pair<CrdtTreeNode, DataSize> {
+        val pieceStart = piece.id.offset
+        val pieceEnd = pieceStart + piece.value.length
+        require(pieceStart <= from && from < to && to <= pieceEnd) {
+            "isolateTextRange: [$from, $to) escapes piece ${piece.id} [$pieceStart, $pieceEnd)"
+        }
         var diff = DataSize(data = 0, meta = 0)
         var node = piece
         if (from > node.id.offset) {

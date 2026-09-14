@@ -8,8 +8,12 @@ import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.TreeRestoreSpan
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
+import dev.yorkie.util.addDataSizes
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -584,5 +588,41 @@ class TreeEditOperationReverseTest {
             root.garbageLength,
             "exactly the two born-removed remainders may stay garbage",
         )
+    }
+
+    // I2 (review #361), at the operation level: the live-split overhead that
+    // restore() reports must reach root.acc, or the split-off pieces' metadata
+    // never enters docSize.live (and a later remove of one of them subtracts
+    // what was never added).
+    @Test
+    fun `restore over a live straddling piece adds the split overhead to docSize live`() {
+        // given: <root>0123456789</root>, one live piece, nothing deleted
+        val (tree, root) = buildTreeRoot()
+        val insertedAt = makeTicket(3)
+        val textNode = CrdtTreeText(CrdtTreeNodeID(insertedAt, 0), "0123456789")
+        makeTreeEditOp(tree, 0, 0, listOf(textNode), 3).execute(root, OpSource.Local, null)
+        val before = root.docSize
+
+        // when: a restore addressing [3,7) of that live piece
+        val span = TreeRestoreSpan(
+            id = CrdtTreeNodeID(insertedAt, 3),
+            nodeType = "text",
+            isText = true,
+            length = 4,
+            value = "3456",
+        )
+        makeTreeEditOp(tree, 0, 0, null, 4)
+            .copy(restoreSpans = listOf(span), restoreMode = RestoreMode.Restore)
+            .execute(root, OpSource.UndoRedo, null)
+
+        // then: visibly unchanged, two live splits charged to live, gc untouched
+        assertEquals("<root>0123456789</root>", tree.toXml())
+        assertEquals(
+            addDataSizes(before.live, DataSize(0, 2 * TIME_TICKET_SIZE)),
+            root.docSize.live,
+            "the live-split overhead must be acc'ed to docSize.live",
+        )
+        assertEquals(before.gc, root.docSize.gc)
+        assertEquals(0, root.garbageLength)
     }
 }

@@ -266,11 +266,11 @@ internal data class TreeEditOperation(
         // straddling piece can split off born-removed remainders as pending
         // GC pairs; register them FIRST so a split-born untombstoned target
         // is walked gc->live correctly by the unregister below.
-        val (untombstoned, recreated, restorePairs, restoreDiff) = tree.restore(toRestore)
-        restorePairs.forEach(root::registerGCPair)
-        untombstoned.forEach { node -> root.unregisterGCPair(GCPair(tree, node)) }
-        diff = addDataSizes(diff, restoreDiff)
-        recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
+        val restored = tree.restore(toRestore)
+        restored.pendingGcPairs.forEach(root::registerGCPair)
+        restored.untombstoned.forEach { node -> root.unregisterGCPair(GCPair(tree, node)) }
+        diff = addDataSizes(diff, restored.diff)
+        restored.recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
         root.acc(diff)
 
         // Document.executeUndoRedo drops a change whose opInfos are empty, so a
@@ -289,8 +289,8 @@ internal data class TreeEditOperation(
         // or text-node segmentation diverges (spec 006,
         // TreeRestoreConcurrentTest interleaved-undo case).
         val changed = retombstonePairs.isNotEmpty() ||
-            untombstoned.isNotEmpty() ||
-            recreated.isNotEmpty() ||
+            restored.untombstoned.isNotEmpty() ||
+            restored.recreated.isNotEmpty() ||
             diff != DataSize(data = 0, meta = 0)
 
         // TODO(RTCOLLABPLATFORM-754): paths/values are empty and, for a remote

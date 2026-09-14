@@ -6,6 +6,7 @@ import dev.yorkie.core.withTwoClientsAndDocuments
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -101,6 +102,8 @@ class JsonTreeRestoreTest {
             // superset "234567".
             d1.updateAsync { root, _ -> root.getAs<JsonTree>("tree").edit(4, 6) }.await()
             d2.updateAsync { root, _ -> root.getAs<JsonTree>("tree").edit(2, 8) }.await()
+            assertTrue(d1.garbageLength > 0, "d1 must hold its tombstone before settling")
+            assertTrue(d2.garbageLength > 0, "d2 must hold its tombstone before settling")
 
             // Settle several extra rounds so the server's min-synced version
             // vector advances past both tombstones and the client-side GC
@@ -115,6 +118,10 @@ class JsonTreeRestoreTest {
                 d2.getRoot().getAs<JsonTree>("tree").toXml(),
             )
             assertEquals(d1.toJson(), d2.toJson())
+            // The purge is what separates this case from the one above: assert
+            // it happened instead of trusting the round count.
+            assertEquals(0, d1.garbageLength, "d1 must have purged every tombstone before undo")
+            assertEquals(0, d2.garbageLength, "d2 must have purged every tombstone before undo")
 
             // Both undo their own overlapping delete after the purge —
             // restore now takes the recreate path and must isolate the

@@ -443,6 +443,10 @@ private fun TreeRestoreSpan.toPbTreeSpan(): PbTreeRestoreSpan {
  * a corrupt or hostile payload that would otherwise throw
  * [StringIndexOutOfBoundsException] out of
  * [dev.yorkie.document.crdt.CrdtTree]'s substring call in `recreateFromSpan`.
+ * A zero-length text span is rejected too (capture never emits one, and
+ * `0 == "".length` would otherwise pass): `retombstone`'s upstream
+ * `max(length, 1)` clamp would widen it into re-removing one character the
+ * sender never deleted.
  */
 private fun PbTreeRestoreSpan.toTreeRestoreSpan(): TreeRestoreSpan {
     val anchors = listOf(
@@ -453,7 +457,7 @@ private fun PbTreeRestoreSpan.toTreeRestoreSpan(): TreeRestoreSpan {
     val malformed = !hasId() || !id.hasCreatedAt() ||
         anchors.any { (present, anchor) -> present && !anchor.hasCreatedAt() } ||
         attributesMap.values.any { !it.hasUpdatedAt() } ||
-        length < 0 || (isText && value.length != length)
+        length < 0 || (isText && (length == 0 || value.length != length))
     if (malformed) {
         throw YorkieException(
             ErrInvalidArgument,

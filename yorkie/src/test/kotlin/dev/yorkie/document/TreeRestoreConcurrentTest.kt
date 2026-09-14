@@ -9,10 +9,11 @@ import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Ignore
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ErrorCollector
 
 /**
  * Ports `history_tree_concurrent_test.ts` (JS SDK 7b2ab7a4, v0.7.15,
@@ -28,6 +29,9 @@ import org.junit.Test
  * all replicas converge on the same text-node segmentation.
  */
 class TreeRestoreConcurrentTest {
+
+    @get:Rule
+    val errors = ErrorCollector()
 
     private val actor1 = "000000000000000000000001"
     private val actor2 = "000000000000000000000002"
@@ -68,8 +72,8 @@ class TreeRestoreConcurrentTest {
      * [r2] on [d2]), cross-syncs, then forces GC on both replicas (the
      * in-process analogue of JS's `settle` twice — `crossSync` passes an
      * empty [dev.yorkie.document.time.VersionVector] so its internal GC is a
-     * no-op) so restore takes the recreate path. Asserts the purge actually
-     * happened and both replicas converged post-delete before returning.
+     * no-op) so restore takes the recreate path. Asserts the purge was total
+     * and both replicas converged post-delete before returning.
      */
     private suspend fun deleteOverlapping(
         d1: Document,
@@ -81,11 +85,17 @@ class TreeRestoreConcurrentTest {
         d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(r2.first, r2.second) }.await()
         crossSync(d1, d2)
 
+        // Every tombstone is eligible under the max vector, so the purge must
+        // be total: one surviving tombstone would send restore down the cheap
+        // unremove() path and the matrix would silently stop exercising the
+        // recreate + isolate path it exists for.
         val vector = maxVectorOf(listOf(actor1, actor2))
-        val purged1 = d1.garbageCollect(vector)
-        val purged2 = d2.garbageCollect(vector)
-        assertTrue(purged1 > 0, "d1 must purge the deleted run before undo")
-        assertTrue(purged2 > 0, "d2 must purge the deleted run before undo")
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(0, d1.garbageLength, "every tombstone must be purged before undo")
+        assertEquals(0, d2.garbageLength, "every tombstone must be purged before undo")
+        assertEquals(DataSize(0, 0), d1.getDocSize().gc)
+        assertEquals(DataSize(0, 0), d2.getDocSize().gc)
 
         assertConverged(d1, d2)
     }
@@ -119,6 +129,19 @@ class TreeRestoreConcurrentTest {
         crossSync(d1, d2)
     }
 
+    /**
+     * Undoes on [first], syncs, then undoes on [second] and syncs -- so the
+     * second replica's restore runs against the first's already-restored
+     * segmentation (live pieces inside its span) instead of a fully purged
+     * run: the mixed recreate-around-live path.
+     */
+    private suspend fun undoInterleaved(first: Document, second: Document) {
+        first.history.undoAsync().await()
+        crossSync(first, second)
+        second.history.undoAsync().await()
+        crossSync(first, second)
+    }
+
     // (label, d1 range, d2 range) — the same six relations as the
     // per-relation matrix below, for the order/interleaving variants.
     private val overlapRelations = listOf(
@@ -129,6 +152,20 @@ class TreeRestoreConcurrentTest {
         Triple("identical", 3 to 7, 3 to 7),
         Triple("adjacent", 3 to 5, 5 to 7),
     )
+
+    /**
+     * Runs [block] once per relation in [overlapRelations], collecting each
+     * relation's failure instead of stopping at the first, so one red
+     * relation cannot hide the others.
+     */
+    private suspend fun forEachRelation(
+        block: suspend (label: String, r1: Pair<Int, Int>, r2: Pair<Int, Int>) -> Unit,
+    ) {
+        for ((label, r1, r2) in overlapRelations) {
+            runCatching { block(label, r1, r2) }
+                .onFailure { errors.addError(AssertionError("$label: ${it.message}", it)) }
+        }
+    }
 
     /**
      * Both undos revive both deleted runs by identity, restoring the
@@ -274,59 +311,62 @@ class TreeRestoreConcurrentTest {
         )
     }
 
-    // undoBoth always undoes d1 first; the restore path must not depend on
-    // that. Each relation converges under the reverse order too, and both
-    // orders land on the same final node segmentation.
-    @Test
-    fun `converges on undo of overlapping deletes regardless of undo order`() = runTest {
-        for ((label, r1, r2) in overlapRelations) {
-            val (d1, d2) = seed()
-            val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
-            deleteOverlapping(d1, d2, r1, r2)
-
-            d2.history.undoAsync().await()
-            d1.history.undoAsync().await()
-            crossSync(d1, d2)
-
-            assertConverged(d1, d2, "$label: after reverse-order undo")
-            assertEquals(
-                initial,
-                d1.getRoot().getAs<JsonTree>("t").toXml(),
-                "$label: undo must restore the initial visible content",
-            )
-
-            val (e1, e2) = seed()
-            deleteOverlapping(e1, e2, r1, r2)
-            undoBoth(e1, e2)
-            assertEquals(
-                identitySequence(e1.crdtTree()),
-                identitySequence(d1.crdtTree()),
-                "$label: undo order must not change the final segmentation",
-            )
-        }
-    }
-
-    // The matrix batches both undos before a single sync. Here d1's undo is
-    // synced first, so d2's own restore runs against d1's already-restored
-    // segmentation (live pieces inside its span) instead of a fully purged
-    // run — the mixed recreate-around-live path.
+    // The matrix batches both undos before a single sync; each relation must
+    // converge under the interleaved order too.
     @Test
     fun `converges when one replica syncs its undo before the other undoes`() = runTest {
-        for ((label, r1, r2) in overlapRelations) {
+        forEachRelation { label, r1, r2 ->
             val (d1, d2) = seed()
             val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
             deleteOverlapping(d1, d2, r1, r2)
 
-            d1.history.undoAsync().await()
-            crossSync(d1, d2)
-            d2.history.undoAsync().await()
-            crossSync(d1, d2)
+            undoInterleaved(d1, d2)
 
             assertConverged(d1, d2, "$label: after interleaved undo")
             assertEquals(
                 initial,
                 d1.getRoot().getAs<JsonTree>("t").toXml(),
                 "$label: undo must restore the initial visible content",
+            )
+        }
+    }
+
+    // Order only matters when the second undo can see the first's result (two
+    // local undos before one sync never interact). Here d2's undo is synced
+    // first, so d1 restores around d2's segmentation; the result must match
+    // both the forward-interleaved and the batched run node-for-node.
+    @Test
+    fun `converges on undo of overlapping deletes regardless of undo order`() = runTest {
+        forEachRelation { label, r1, r2 ->
+            val (d1, d2) = seed()
+            val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
+            deleteOverlapping(d1, d2, r1, r2)
+
+            undoInterleaved(d2, d1)
+
+            assertConverged(d1, d2, "$label: after reverse-interleaved undo")
+            assertEquals(
+                initial,
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                "$label: undo must restore the initial visible content",
+            )
+
+            val (f1, f2) = seed()
+            deleteOverlapping(f1, f2, r1, r2)
+            undoInterleaved(f1, f2)
+            assertEquals(
+                identitySequence(f1.crdtTree()),
+                identitySequence(d1.crdtTree()),
+                "$label: forward and reverse interleaving must reach the same segmentation",
+            )
+
+            val (b1, b2) = seed()
+            deleteOverlapping(b1, b2, r1, r2)
+            undoBoth(b1, b2)
+            assertEquals(
+                identitySequence(b1.crdtTree()),
+                identitySequence(d1.crdtTree()),
+                "$label: batched and interleaved undos must reach the same segmentation",
             )
         }
     }

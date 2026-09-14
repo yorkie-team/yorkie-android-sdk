@@ -288,6 +288,20 @@ class TreeRestoreConverterTest {
     }
 
     @Test
+    fun `throws when a text span is zero-length with an empty value`() {
+        // 0 == "".length, so the length/value agreement check alone passes it;
+        // accepted, retombstone's upstream max(length, 1) clamp would widen
+        // the span into re-removing one character the sender never deleted.
+        val span = validSpanBuilder().apply {
+            isText = true
+            nodeType = "text"
+            value = ""
+            length = 0
+        }.build()
+        assertMalformed(span)
+    }
+
+    @Test
     fun `tolerates a nonzero length on an element span`() {
         // Parity pin: JS validates no span length at all; length is a dead field
         // on every element path, so element spans stay unvalidated by design.

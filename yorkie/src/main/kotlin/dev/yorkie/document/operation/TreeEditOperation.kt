@@ -254,20 +254,33 @@ internal data class TreeEditOperation(
         var diff = DataSize(data = 0, meta = 0)
 
         // 1. Re-remove (retombstone) by identity.
-        tree.retombstone(toRetombstone, executedAt).forEach(root::registerGCPair)
+        val retombstonePairs = tree.retombstone(toRetombstone, executedAt)
+        retombstonePairs.forEach(root::registerGCPair)
 
         // 2. Revive (restore) by identity. Pending pairs (born-dead recreates,
         // copied attribute tombstones) are registered BEFORE the revived nodes
         // are unregistered — Text-twin order; the two sets are disjoint here.
         val (untombstoned, recreated) = tree.restore(toRestore, executedAt)
-        tree.drainPendingGcPairs().forEach(root::registerGCPair)
+        val pendingPairs = tree.drainPendingGcPairs()
+        pendingPairs.forEach(root::registerGCPair)
         untombstoned.forEach { node -> root.unregisterGCPair(GCPair(tree, node)) }
         recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
         root.acc(diff)
 
-        // opInfos must be non-empty or Document.executeUndoRedo drops the undo
-        // change from localChanges (it never propagates to peers).
-        //
+        // Document.executeUndoRedo drops a change whose opInfos are empty, so a
+        // restore that changed anything must report one opInfo or it never
+        // propagates to peers. When every target is already in the requested
+        // state (a peer deleted/revived it first — retombstone()'s and
+        // restore()'s idempotent-skip cases) nothing changed: report no opInfo
+        // so the undo consumes its entry WITHOUT enqueuing a phantom local
+        // change (spec 002 AC6, UndoRedoTest vanished-target case). Diverges
+        // from JS, which emits the opInfo unconditionally; matches the Text
+        // twin, whose opInfos come from the actual textChanges.
+        val changed = retombstonePairs.isNotEmpty() ||
+            pendingPairs.isNotEmpty() ||
+            untombstoned.isNotEmpty() ||
+            recreated.isNotEmpty()
+
         // TODO(RTCOLLABPLATFORM-754): paths/values are empty and, for a remote
         //  restore, fromIdx/toIdx are both 0 — a subscriber driving an editor
         //  view cannot apply this op info yet. Interim JS contract (upstream
@@ -281,24 +294,33 @@ internal data class TreeEditOperation(
         //  TreeUpstreamDefectPinTest). JS emits the same shape; fix upstream first.
         val fromIdx = undoFromOffset.takeUnless { it == NotAnUndoOp } ?: 0
         val toIdx = undoToOffset.takeUnless { it == NotAnUndoOp } ?: fromIdx
-        val opInfos = listOf(
-            OperationInfo.TreeEditOpInfo(
-                fromIdx,
-                toIdx,
-                emptyList(),
-                emptyList(),
-                emptyList(),
-                0,
-                root.createPath(parentCreatedAt),
-            ),
-        )
+        val opInfos = if (changed) {
+            listOf(
+                OperationInfo.TreeEditOpInfo(
+                    fromIdx,
+                    toIdx,
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    0,
+                    root.createPath(parentCreatedAt),
+                ),
+            )
+        } else {
+            emptyList()
+        }
 
-        // Reverse ops are only generated for local and undo/redo operations,
-        // mirroring the ordinary edit path. Keeps the same span sets and
-        // undo offsets; flips only the mode. fromPos/toPos (via copy) stay
-        // whatever this op already carries — unused on this identity-
-        // addressed restore path, same as JS, which also keeps the
-        // original fromPos/toPos on its reverse.
+        // Reverse ops are generated for local and undo/redo sources
+        // UNCONDITIONALLY — unlike the ordinary edit path, which gates on a
+        // non-empty opInfos. A restore op only ever executes from the undo/
+        // redo stack, where Document.executeUndoRedo has already popped its
+        // entry; even when nothing changed the counterpart must still be
+        // pushed or the stacks silently lose a level (Text twin, PR #359
+        // review thread 3975567754; JS pushes before its empty-opInfos
+        // return). Keeps the same span sets and undo offsets; flips only the
+        // mode. fromPos/toPos (via copy) stay whatever this op already
+        // carries — unused on this identity-addressed restore path, same as
+        // JS, which also keeps the original fromPos/toPos on its reverse.
         val reverseOps = if (source.producesReverseOps) {
             val flippedMode = if (isRetombstone) RestoreMode.Restore else RestoreMode.Retombstone
             listOf(copy(restoreMode = flippedMode))

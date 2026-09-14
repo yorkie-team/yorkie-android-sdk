@@ -9,6 +9,7 @@ import dev.yorkie.document.time.VersionVector
 import dev.yorkie.helper.maxVectorOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CrdtRootTest {
@@ -97,10 +98,12 @@ class CrdtRootTest {
             executedAt = TimeTicket.InitialTimeTicket.copy(lamport = 2),
         )
         val root = CrdtRoot(obj)
-        obj["k1"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 3))
-        obj["k2"].remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))
-        root.registerRemovedElement(obj["k1"])
-        root.registerRemovedElement(obj["k2"])
+        val k1 = obj["k1"]
+        val k2 = obj["k2"]
+        k1.remove(TimeTicket.InitialTimeTicket.copy(lamport = 3))
+        k2.remove(TimeTicket.InitialTimeTicket.copy(lamport = 4))
+        root.registerRemovedElement(k1)
+        root.registerRemovedElement(k2)
         root.garbageCollect(VersionVector.INITIAL_VERSION_VECTOR)
     }
 
@@ -160,5 +163,37 @@ class CrdtRootTest {
         // then the LWW-losing new value is also registered as garbage
         assertEquals(2, root.garbageLength)
         assertEquals("""{"key":2}""", root.rootObject.toJson())
+    }
+
+    // F2/AC8: a skipHistory (LocalNoHistory) change generates zero reverse ops at the
+    // source, while Local and Remote keep their existing behavior.
+    @Test
+    fun `should generate reverse ops only for sources that push undo history`() {
+        // given
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport = lamport, delimiter = 0u, actorID = actor)
+
+        // when: Local produces a reverse op (existing behavior, unchanged)
+        val localResult = SetOperation(
+            "key",
+            CrdtPrimitive(1, tick(1)),
+            TimeTicket.InitialTimeTicket,
+            tick(1),
+        ).execute(root, OpSource.Local, null)
+
+        // then
+        assertEquals(1, localResult.reverseOps.size)
+
+        // when: LocalNoHistory (skipHistory) produces zero reverse ops (F2)
+        val skipHistoryResult = SetOperation(
+            "key",
+            CrdtPrimitive(2, tick(2)),
+            TimeTicket.InitialTimeTicket,
+            tick(2),
+        ).execute(root, OpSource.LocalNoHistory, null)
+
+        // then
+        assertTrue(skipHistoryResult.reverseOps.isEmpty())
     }
 }

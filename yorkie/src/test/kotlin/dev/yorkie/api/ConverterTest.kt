@@ -36,6 +36,7 @@ import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.RestoreMode
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
@@ -51,6 +52,8 @@ import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import java.util.Date
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -314,6 +317,142 @@ class ConverterTest {
         assertEquals(styleOperation, converted[7])
         assertEquals(treeEditOperation, converted[8])
         assertEquals(treeStyleOperation, converted[9])
+    }
+
+    // Updated for stage E (port fa6cc513, spec 005): the reverse of a pure
+    // Tree insert/delete now round-trips an identity-preserving restore
+    // payload (restoreSpans/restoreMode/retombstoneSpans) instead of a real
+    // fromPos/toPos range and copy-reinserted contents with a fresh id. See
+    // the AC15 disclosure in the round build report.
+    @Test
+    fun `should round trip the effective history tree edit payload`() {
+        fun ticket(lamport: Long) = TimeTicket(lamport, 0u, ActorID.INITIAL_ACTOR_ID)
+
+        val treeTicket = ticket(1)
+        val rootNode = CrdtTreeElement(CrdtTreeNodeID(treeTicket, 0), DEFAULT_ROOT_TYPE)
+        val paragraph = CrdtTreeElement(CrdtTreeNodeID(ticket(2), 0), "p")
+        paragraph.append(CrdtTreeText(CrdtTreeNodeID(ticket(3), 0), "12"))
+        rootNode.append(paragraph)
+        val tree = CrdtTree(rootNode, treeTicket)
+        val root = CrdtRoot(CrdtObject(InitialTimeTicket, memberNodes = ElementRht()))
+        root.rootObject.set("tree", tree, treeTicket)
+        root.registerElement(tree, root.rootObject)
+
+        val threeID = CrdtTreeNodeID(ticket(4), 0)
+        val three = CrdtTreeText(threeID, "3")
+        val (insertFrom, insertTo) = tree.indexRangeToPosRange(3 to 3)
+        val insert =
+            TreeEditOperation(treeTicket, insertFrom, insertTo, listOf(three), 0, ticket(4))
+        val delete = insert.execute(root, OpSource.Local, null).reverseOps.single()
+            as TreeEditOperation
+
+        // then: the reverse of a pure insert retombstones "3" by identity.
+        assertTrue(delete.isRestoreOp)
+        assertEquals(RestoreMode.Restore, delete.restoreMode)
+        assertEquals(threeID, delete.retombstoneSpans?.single()?.id)
+
+        delete.executedAt = ticket(5)
+        val deleteResult = delete.execute(root, OpSource.UndoRedo, null)
+        val decodedDelete = listOf(delete.toPBOperation()).toOperations().single()
+            as TreeEditOperation
+
+        assertEquals(delete.fromPos, decodedDelete.fromPos)
+        assertEquals(delete.toPos, decodedDelete.toPos)
+        assertEquals(delete.splitLevel, decodedDelete.splitLevel)
+        assertEquals(RestoreMode.Restore, decodedDelete.restoreMode)
+        assertEquals(threeID, decodedDelete.retombstoneSpans?.single()?.id)
+        assertTrue(decodedDelete.restoreSpans.isNullOrEmpty())
+        assertEquals("<root><p>12</p></root>", tree.toXml())
+
+        // and: delete's own reverse is a plain copy() with only restoreMode
+        // flipped to Retombstone — retombstoneSpans still carries "3" (a
+        // copy() never touches restoreSpans/retombstoneSpans). Under
+        // Retombstone mode, executeRestore reads the DIRECTION-FLIPPED
+        // fields: toRestore = retombstoneSpans ("3", revived) and
+        // toRetombstone = restoreSpans (empty). Net effect: redoing the
+        // original insert, i.e. "3" comes back.
+        val restore = deleteResult.reverseOps.single() as TreeEditOperation
+        assertTrue(restore.isRestoreOp)
+        assertEquals(RestoreMode.Retombstone, restore.restoreMode)
+        assertEquals(threeID, restore.retombstoneSpans?.single()?.id)
+        assertTrue(restore.restoreSpans.isNullOrEmpty())
+
+        restore.executedAt = ticket(6)
+        restore.execute(root, OpSource.UndoRedo, null)
+        val decodedRestore = listOf(restore.toPBOperation()).toOperations().single()
+            as TreeEditOperation
+
+        assertEquals(restore.fromPos, decodedRestore.fromPos)
+        assertEquals(restore.toPos, decodedRestore.toPos)
+        assertEquals(RestoreMode.Retombstone, decodedRestore.restoreMode)
+        assertEquals(threeID, decodedRestore.retombstoneSpans?.single()?.id)
+        assertNull(decodedRestore.contents)
+        assertEquals("<root><p>123</p></root>", tree.toXml())
+
+        val splitPos = tree.indexRangeToPosRange(2 to 2).first
+        val split =
+            TreeEditOperation(
+                treeTicket,
+                splitPos,
+                splitPos,
+                null,
+                1,
+                ticket(7),
+                undoFromOffset = 2,
+                undoToOffset = 2,
+            )
+        split.execute(root, OpSource.UndoRedo, null)
+        val decodedSplit = listOf(split.toPBOperation()).toOperations().single()
+            as TreeEditOperation
+
+        assertEquals(1, decodedSplit.splitLevel)
+    }
+
+    @Test
+    fun `should round trip the effective history text edit payload`() {
+        fun ticket(lamport: Long) = TimeTicket(lamport, 0u, ActorID.INITIAL_ACTOR_ID)
+
+        val textTicket = ticket(1)
+        val text = CrdtText(RgaTreeSplit(), textTicket)
+        val root = CrdtRoot(CrdtObject(InitialTimeTicket, memberNodes = ElementRht()))
+        root.rootObject.set("text", text, textTicket)
+        root.registerElement(text, root.rootObject)
+
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", ticket(2))
+
+        val (insertFrom, insertTo) = text.indexRangeToPosRange(2, 2)
+        val insert = EditOperation(
+            fromPos = insertFrom,
+            toPos = insertTo,
+            content = "XYZ",
+            parentCreatedAt = textTicket,
+            executedAt = ticket(3),
+            attributes = emptyMap(),
+        )
+        val delete = insert.execute(root, OpSource.Local, null).reverseOps.single()
+            as EditOperation
+
+        delete.executedAt = ticket(4)
+        val deleteResult = delete.execute(root, OpSource.UndoRedo, null)
+        val decodedDelete = listOf(delete.toPBOperation()).toOperations().single()
+            as EditOperation
+
+        // F10: the reconciled range (assigned back onto fromPos/toPos by execute()) is
+        // what gets serialized — not the stale capture-time positions.
+        assertEquals(delete.fromPos, decodedDelete.fromPos)
+        assertEquals(delete.toPos, decodedDelete.toPos)
+
+        val restore = deleteResult.reverseOps.single() as EditOperation
+        restore.executedAt = ticket(5)
+        restore.execute(root, OpSource.UndoRedo, null)
+        val decodedRestore = listOf(restore.toPBOperation()).toOperations().single()
+            as EditOperation
+
+        assertEquals(restore.fromPos, decodedRestore.fromPos)
+        assertEquals(restore.toPos, decodedRestore.toPos)
+        // Net effect of insert -> undo(delete) -> undo-the-undo(restore) is the original
+        // insert persisting, mirroring the tree round-trip test's "123" end state above.
+        assertEquals("HeXYZllo", text.toString())
     }
 
     @Test

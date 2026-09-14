@@ -38,11 +38,17 @@ internal data class AddOperation(
             parentObject.insertAfter(prevCreatedAt, copiedValue)
             root.registerElement(copiedValue, parentObject)
 
-            val reverseOp = RemoveOperation(
-                createdAt = copiedValue.createdAt,
-                parentCreatedAt = parentCreatedAt,
-                executedAt = executedAt,
-            )
+            val reverseOps = if (source.producesReverseOps) {
+                listOf(
+                    RemoveOperation(
+                        createdAt = copiedValue.createdAt,
+                        parentCreatedAt = parentCreatedAt,
+                        executedAt = executedAt,
+                    ),
+                )
+            } else {
+                emptyList()
+            }
 
             ExecutionResult(
                 opInfos = listOf(
@@ -51,7 +57,7 @@ internal data class AddOperation(
                         root.createPath(parentCreatedAt),
                     ),
                 ),
-                reverseOps = listOf(reverseOp),
+                reverseOps = reverseOps,
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

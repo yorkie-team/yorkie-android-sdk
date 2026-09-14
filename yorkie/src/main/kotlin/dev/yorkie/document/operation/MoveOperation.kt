@@ -41,12 +41,18 @@ internal data class MoveOperation(
             }
             val index = parentObject.subPathOf(createdAt).toInt()
 
-            val reverseOp = MoveOperation(
-                prevCreatedAt = prevCreatedAtBefore,
-                createdAt = createdAt,
-                parentCreatedAt = parentCreatedAt,
-                executedAt = executedAt,
-            )
+            val reverseOps = if (source.producesReverseOps) {
+                listOf(
+                    MoveOperation(
+                        prevCreatedAt = prevCreatedAtBefore,
+                        createdAt = createdAt,
+                        parentCreatedAt = parentCreatedAt,
+                        executedAt = executedAt,
+                    ),
+                )
+            } else {
+                emptyList()
+            }
 
             ExecutionResult(
                 opInfos = listOf(
@@ -56,7 +62,7 @@ internal data class MoveOperation(
                         path = root.createPath(parentCreatedAt),
                     ),
                 ),
-                reverseOps = listOf(reverseOp),
+                reverseOps = reverseOps,
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

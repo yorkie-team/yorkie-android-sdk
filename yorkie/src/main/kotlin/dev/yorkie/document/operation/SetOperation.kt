@@ -51,17 +51,22 @@ internal data class SetOperation(
                 root.registerRemovedElement(copiedValue)
             }
 
-            val reverseOp = if (previousValue != null) {
-                SetOperation(key, previousValue.deepCopy(), parentCreatedAt, executedAt)
+            val reverseOps = if (source.producesReverseOps) {
+                val reverseOp = if (previousValue != null) {
+                    SetOperation(key, previousValue.deepCopy(), parentCreatedAt, executedAt)
+                } else {
+                    RemoveOperation(copiedValue.createdAt, parentCreatedAt, executedAt)
+                }
+                listOf(reverseOp)
             } else {
-                RemoveOperation(copiedValue.createdAt, parentCreatedAt, executedAt)
+                emptyList()
             }
 
             ExecutionResult(
                 opInfos = listOf(
                     OperationInfo.SetOpInfo(key, root.createPath(parentCreatedAt)),
                 ),
-                reverseOps = listOf(reverseOp),
+                reverseOps = reverseOps,
             )
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")

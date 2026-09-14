@@ -572,7 +572,9 @@ public class JsonTree internal constructor(
      */
     public fun posRangeToIndexRange(range: TreePosStructRange): Pair<Int, Int> {
         val posRange = range.first.toOriginal() to range.second.toOriginal()
-        return target.posRangeToIndexRange(posRange)
+        val indexRange = target.posRangeToIndexRange(posRange)
+        drainPendingGcPairs()
+        return indexRange
     }
 
     /**
@@ -580,7 +582,25 @@ public class JsonTree internal constructor(
      */
     public fun posRangeToPathRange(range: TreePosStructRange): Pair<List<Int>, List<Int>> {
         val posRange = range.first.toOriginal() to range.second.toOriginal()
-        return target.posRangeToPathRange(posRange)
+        val pathRange = target.posRangeToPathRange(posRange)
+        drainPendingGcPairs()
+        return pathRange
+    }
+
+    /**
+     * Registers with [ChangeContext.root] any GC pairs [target] buffered
+     * while resolving a position. [posRangeToIndexRange] and
+     * [posRangeToPathRange] split text nodes to locate a position; when the
+     * position lands inside a tombstoned node the split produces a
+     * born-removed piece. This context's own root is always the one such a
+     * pair should register onto: in the mutating call path it is the live
+     * document root; in the [dev.yorkie.document.Document.getRoot] read
+     * path it is that call's own clone snapshot, which
+     * [dev.yorkie.document.Document.garbageCollect] sweeps alongside the
+     * live root.
+     */
+    private fun drainPendingGcPairs() {
+        target.drainPendingGcPairs().forEach(context::registerGCPair)
     }
 
     companion object {

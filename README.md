@@ -90,6 +90,26 @@ YORKIE_SERVER_URL=https://your-yorkie-server.com
 YORKIE_API_KEY=Your Yorkie API key
 ```
 
+### Compatibility
+
+Undo/redo of `JsonText` and `JsonTree` is identity-preserving: each undo/redo travels in
+operation fields that exist only from Yorkie server 0.7.14 and the matching SDK releases
+(`Edit` and `TreeEdit`: `restore_spans`, `restore_mode`, `retombstone_spans`). Every
+participant in a document must understand them — the server and every peer SDK alike:
+
+| Participant | Minimum version |
+|-------------|-----------------|
+| Yorkie server (self-hosted or hosted) | 0.7.14 |
+| yorkie-android-sdk peers | a release with identity-preserving undo/redo (0.7.12 and earlier do not) |
+| yorkie-js-sdk peers | 0.7.14 |
+| yorkie-ios-sdk peers | not yet supported |
+
+An older server or peer drops those fields and sees only the base edit, which this SDK
+always emits as a zero-width, empty edit. That participant deletes nothing, but the undo/redo
+never applies there: it takes effect only on the client that issued it, and the replicas silently
+diverge for good, with no error on either side. Every other SDK feature works against earlier
+servers and peers. Upgrade every participant before relying on undo/redo in a mixed fleet.
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting patches and the contribution workflow.

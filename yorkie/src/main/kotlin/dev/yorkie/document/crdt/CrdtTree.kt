@@ -16,11 +16,15 @@ import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
+import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.traverseAll
+import dev.yorkie.util.traverseAllPreorder
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.TreeMap
 
 public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
@@ -28,6 +32,45 @@ public typealias TreePosRange = Pair<CrdtTreePos, CrdtTreePos>
 internal typealias CrdtTreeToken = TreeToken<CrdtTreeNode>
 
 internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
+
+/**
+ * [Boundary] selects how [CrdtTree.findNodesAndSplitText] resolves a
+ * position inside a parent tombstoned by a merge. [Insert] places it at the
+ * insertion boundary in the merge target (before the first moved child, so
+ * RGA ordering breaks ties). [Range] places it right after the
+ * merge-source tombstone itself, so a style/removeStyle range neither grows
+ * over nor shrinks past nodes concurrently inserted at that anchor.
+ */
+internal enum class Boundary { Insert, Range }
+
+/**
+ * [TreeRestoreSpan] identifies a node this edit transitioned
+ * visible -> tombstoned (or inserted), for identity-preserving Tree
+ * undo/redo. Parallel to Text's [RestoreSpan], not shared: a tree span
+ * carries the node's structure and its position anchors instead of a flat
+ * offset interval, because id order is not sibling order in a tree.
+ *
+ * For a text node the span addresses the absolute-offset interval
+ * `[id.offset, id.offset + length)` of the original insertion
+ * (split-invariant); for an element node it is the whole node (`length` is
+ * 0). [value]/[attrs] are deep copies so a GC-purged node can be recreated.
+ * [leftSiblingID]/[rightSiblingID] are the deleted run's external boundary
+ * anchors captured at tombstone time — redundant on purpose: since a run's
+ * spans are carried together, [CrdtTree.restore] can rebuild the run's
+ * internal order from the op itself and needs only ONE surviving boundary
+ * to place it.
+ */
+internal data class TreeRestoreSpan(
+    val id: CrdtTreeNodeID,
+    val nodeType: String,
+    val isText: Boolean,
+    val length: Int,
+    val value: String? = null,
+    val attrs: Rht? = null,
+    val parentID: CrdtTreeNodeID? = null,
+    val leftSiblingID: CrdtTreeNodeID? = null,
+    val rightSiblingID: CrdtTreeNodeID? = null,
+)
 
 @SuppressLint("VisibleForTests")
 internal data class CrdtTree(
@@ -39,9 +82,14 @@ internal data class CrdtTree(
 
     override val gcPairs: List<GCPair<*>>
         get() = buildList {
-            indexTree.traverse { node, _ ->
+            // traverseAll (not traverse) is required to register tombstones —
+            // including pieces split off a tombstoned node — after snapshot
+            // load; the visible-only traversal skipped tombstones entirely.
+            // These pairs carry gcOnlySize because the freshly built root's
+            // getDataSize only counted visible nodes into docSize.live.
+            indexTree.traverseAll { node, _ ->
                 if (node.removedAt != null) {
-                    add(GCPair(this@CrdtTree, node))
+                    add(GCPair(this@CrdtTree, node, gcOnlySize = node.dataSize))
                 }
                 addAll(node.gcPairs)
             }
@@ -50,6 +98,33 @@ internal data class CrdtTree(
     internal val indexTree = IndexTree(root)
 
     private val nodeMapByID = TreeMap<CrdtTreeNodeID, CrdtTreeNode>()
+
+    /**
+     * Buffers GC pairs for pieces born already-tombstoned by splitting a
+     * removed node, which were never counted live. [edit], [style], and
+     * [removeStyle] drain this buffer via [drainPendingGcPairs] into the GC
+     * pairs they already return.
+     */
+    private var pendingGcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+
+    /**
+     * Buffers a GC pair for [node], a piece born already-tombstoned by
+     * splitting an already-removed node. [size] is the net-new size created
+     * by the split; it is accounted to `docSize.gc` at registration since the
+     * node was never live.
+     */
+    fun registerPendingGcPair(node: CrdtTreeNode, size: DataSize) {
+        pendingGcPairs.add(GCPair(this, node, gcOnlySize = size))
+    }
+
+    /**
+     * Returns the buffered GC pairs and clears the buffer.
+     */
+    fun drainPendingGcPairs(): List<GCPair<CrdtTreeNode>> {
+        val pairs = pendingGcPairs
+        pendingGcPairs = mutableListOf()
+        return pairs
+    }
 
     val rootTreeNode: TreeNode
         get() = indexTree.root.toTreeNode()
@@ -93,9 +168,12 @@ internal data class CrdtTree(
             meta = 0,
         )
 
-        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
+        // Boundary.Range (port 5c158690): a style range must never cross a
+        // concurrent merge anchor, so both endpoints resolve right after the
+        // merge-source tombstone rather than the insertion boundary.
+        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
         val (fromParent, fromLeftRaw) = from
-        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
+        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
         val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
@@ -116,7 +194,10 @@ internal data class CrdtTree(
 
         val changes = mutableListOf<TreeChange>()
 
-        val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        // Widened to GCPair<*>: drained pending pairs below are
+        // GCPair<CrdtTreeNode>, a different type parameter than the
+        // GCPair<RhtNode> attribute pairs added by this loop.
+        val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         val newAttrKeys = mutableListOf<String>()
         var capturedPrev = false
@@ -226,6 +307,10 @@ internal data class CrdtTree(
                 }
             }
         }
+        // This style operation's boundary splits (findNodesAndSplitText) can
+        // land inside an already-tombstoned node and buffer a born-dead
+        // piece; drain it so it is not left unregistered for GC.
+        gcPairs.addAll(drainPendingGcPairs())
         return TreeOperationResult(
             changes,
             gcPairs,
@@ -284,6 +369,13 @@ internal data class CrdtTree(
         executedAt: TimeTicket,
         issueTimeTicket: (() -> TimeTicket)? = null,
         versionVector: VersionVector? = null,
+        /**
+         * Whether to capture deep-copy snapshots of removed top-level nodes for reverse
+         * (undo) operation generation. Defaults to true. Callers that will never produce a
+         * reverse operation for this edit (e.g. a history-exempt `skipHistory` change, or
+         * remote application) can pass false to skip the allocation.
+         */
+        captureRemovedNodes: Boolean = true,
     ): TreeOperationResult {
         var diff = DataSize(
             data = 0,
@@ -378,7 +470,11 @@ internal data class CrdtTree(
                 }
                 if (nodeCreationKnown) {
                     toBeMergedNodes.add(node)
-                    toBeMovedToFromParents.addAll(node.children)
+                    // Include removed children (allChildren) so tombstones move
+                    // with the merge and survive as RGA anchors; a concurrent
+                    // insert referencing one then resolves in the merge target
+                    // and orders via the RGA tie-break (port c5d5c851).
+                    toBeMovedToFromParents.addAll(node.allChildren)
                 }
             }
 
@@ -432,11 +528,16 @@ internal data class CrdtTree(
                                 vv != null && vv >= next.createdAt.lamport
                             }
                             if (!splitCreationKnown) {
-                                val sibling = next
-                                nodesToBeRemoved.add(sibling)
-                                // Cascade through the full subtree, not just immediate children.
-                                traverseAll(sibling) { n, _ ->
-                                    if (n !== sibling) nodesToBeRemoved.add(n)
+                                // Cascade through the full subtree, not just
+                                // immediate children. PREORDER, not JS's
+                                // postorder traverseAll: nodesToBeRemoved order
+                                // becomes removedSpans order, and restore()
+                                // requires parent-before-child (a child's
+                                // recreate resolves its parent by identity, so a
+                                // postorder span list silently drops
+                                // grandchildren once GC has purged the subtree).
+                                traverseAllPreorder(next) { n, _ ->
+                                    nodesToBeRemoved.add(n)
                                 }
                             }
                             val followID = next.insNextID ?: break
@@ -456,49 +557,97 @@ internal data class CrdtTree(
         // tombstoned, so that a reverse TreeEditOperation can convert them to plain
         // TreeNode snapshots for undo re-insertion. Only root-level removed nodes are
         // captured; their children are already included in each node's subtree via deepCopy().
-        val removedNodes = nodesToBeRemoved
-            .filter { it.parent !in nodesToBeRemoved }
-            .map(CrdtTreeNode::deepCopy)
+        // Skipped entirely when the caller will never produce a reverse op (F2).
+        val removedNodes = if (captureRemovedNodes) {
+            nodesToBeRemoved
+                .filter { it.parent !in nodesToBeRemoved }
+                .map(CrdtTreeNode::deepCopy)
+        } else {
+            emptyList()
+        }
 
         // 02. Delete: delete the nodes that are marked as removed.
         val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+        // Identity-preserving undo: capture one span per node THIS edit
+        // transitions visible -> tombstoned. node.remove() returning true is
+        // exactly that transition, so pre-tombstoned nodes and LWW
+        // overwrites are excluded automatically (AC11). nodesToBeRemoved is
+        // in traversal order -> parents precede children, which restore()
+        // relies on when recreating purged subtrees.
+        val removedSpans = mutableListOf<TreeRestoreSpan>()
+        // Captured in the insert phase below: identity spans of the nodes
+        // this edit inserts, so an undo re-removes them by identity (not by
+        // index, which would clobber concurrently-restored content) and a
+        // redo revives them.
+        val insertedSpans = mutableListOf<TreeRestoreSpan>()
         nodesToBeRemoved.forEach { node ->
             if (node.remove(executedAt)) {
                 gcPairs.add(GCPair(this, node))
+                removedSpans.add(captureRestoreSpan(node))
             }
         }
+        // Snapshot the GC-pair count right after the plain-delete loop: if
+        // the merge phases below (03/03-1) or the born-dead split pieces
+        // drained afterward add more pairs, this edit involved merge-child
+        // propagation and removedSpans/insertedSpans are NOT a complete
+        // description of the deletion (spansComplete guard, below).
+        val deletePairCount = gcPairs.size
 
-        // 03. Merge: move the nodes that are marked as moved.
-        toBeMovedToFromParents.filter { it.removedAt == null }.forEach { node ->
-            val oldParent = node.parent
-            if (oldParent != null) {
-                // Record source parent for split-skip check (Fix 8).
+        // §6.3 Chained-Merge Flattening (Fix 20, port b2e66114): a merge
+        // chain P->Q->R is kept flat so runtime state matches what
+        // rebuildMergeState derives from a snapshot (which can only ever
+        // represent the compressed chain, because it records one mergedFrom
+        // pointer per child and reads the child's current physical parent).
+        // The destination is resolved through resolveMergeTarget, so
+        // children merged into an already-merged-away parent forward to the
+        // final live target instead of piling up under the removed
+        // intermediate.
+        val dest = resolveMergeTarget(fromParent)
+
+        // 03. Merge: move the nodes that are marked as moved. A moved child
+        // must have a source parent to record; skip otherwise rather than
+        // move an untracked node (Fix 8). Tombstoned children are moved too
+        // (kept removed): they stay as RGA anchors so a concurrent insert
+        // referencing one resolves in the merge target and orders via the
+        // RGA tie-break, converging with the replica that inserted before
+        // the merge. moveChild keeps the size accounting correct for both
+        // live and tombstoned children (visible-neutral for the latter), so
+        // index positions stay correct (port c5d5c851).
+        toBeMovedToFromParents.forEach { node ->
+            val oldParent = node.parent ?: return@forEach
+            // mergedFrom/mergedAt are stamped only on the first move, so a
+            // child carried through a chained merge keeps its original
+            // source and the original merge ticket (Fix 20).
+            if (node.mergedFrom == null) {
                 node.mergedFrom = oldParent.id
                 node.mergedAt = executedAt
-                // Detach from old parent to prevent ghost references. Swallow
-                // NoSuchElementException: a cascade delete of a split sibling
-                // may have already detached the child.
-                try {
-                    oldParent.detachChild(node)
-                } catch (_: NoSuchElementException) {
-                    // Child already detached, skip.
-                }
             }
-            fromParent.append(node)
+            dest.moveChild(node)
+            // Point this child's original source at the resolved
+            // destination, path-compressing a transitive source (a prior
+            // merge whose children were just relocated again) from the
+            // now-removed intermediate to the final target. mergedInto is
+            // derived solely from a moved child (never from the
+            // merge-source list directly), mirroring rebuildMergeState so
+            // runtime and snapshot agree: a source with no moved child of
+            // its own (an intermediate that only relayed another source's
+            // children) is left unset on both paths.
+            node.mergedFrom?.let(::findFloorNode)?.let { src -> src.mergedInto = dest.id }
         }
-        // Set forwarding pointer on merge-source nodes so future insertions
-        // that land on the tombstoned parent redirect to the merge target.
-        toBeMergedNodes.forEach { src -> src.mergedInto = fromParent.id }
 
         // 03-1. Propagate deletes to children moved by prior merges. When a
         // merge-source node is fully deleted (not itself a merge boundary),
         // its former children in the merge target should also be deleted.
-        // Skip when mergedInto points to fromParent (concurrent merge).
+        // Skip when mergedInto points to the merge destination (concurrent
+        // merge). Compare against the resolved dest, not fromParent: the
+        // forwarding pointers above point at the flattened target (§6.3), so
+        // a chained merge (dest !== fromParent) must recognize a
+        // concurrent-merge boundary by dest.
         nodesToBeRemoved.forEach { node ->
             val mergedInto = node.mergedInto
             if (mergedInto != null &&
                 node !in toBeMergedNodes &&
-                mergedInto != fromParent.id
+                mergedInto != dest.id
             ) {
                 val mergeTarget = findFloorNode(mergedInto) ?: return@forEach
                 mergeTarget.allChildren
@@ -525,6 +674,7 @@ internal data class CrdtTree(
         if (splitLevel > 0 && issueTimeTicket != null) {
             var parent = fromParent
             var left = fromLeft
+            var actualSplitLevel = 0
             // `run` so an exhausted ancestor chain terminates the whole loop
             // (return@run), rather than re-splitting the same node.
             run {
@@ -550,26 +700,42 @@ internal data class CrdtTree(
                     } else {
                         0
                     }
+                    if (parent.parent == null) {
+                        // The walk reached the tree root: stop before splitting it so
+                        // the root is never split and its clone never orphaned.
+                        // Mirrors JS SDK 2ef3260b, which breaks out of the walk
+                        // here and applies the edit's insertion normally after a
+                        // partial split; Android additionally logs.
+                        logDebug(
+                            TAG,
+                            "splitLevel walk reached tree root; stopping before splitting root",
+                        )
+                        return@run
+                    }
                     parent.split(
                         this,
                         splitOffset,
                         issueTimeTicket,
                         versionVector,
                     )
+                    actualSplitLevel++
                     left = parent
                     parent = parent.parent ?: return@run
                 }
             }
-            changes.add(
-                TreeChange(
-                    type = TreeChangeType.Content,
-                    from = fromIndex,
-                    to = fromIndex,
-                    fromPath = fromPath,
-                    toPath = fromPath,
-                    actorID = executedAt.actorID,
-                ),
-            )
+            if (actualSplitLevel > 0) {
+                changes.add(
+                    TreeChange(
+                        type = TreeChangeType.Content,
+                        from = fromIndex,
+                        to = fromIndex,
+                        fromPath = fromPath,
+                        toPath = fromPath,
+                        actorID = executedAt.actorID,
+                        splitLevel = actualSplitLevel,
+                    ),
+                )
+            }
         }
 
         // 05. insert the given node at the given position.
@@ -593,11 +759,14 @@ internal data class CrdtTree(
                     // make new nodes as tombstone immediately
                     if (fromParent.isRemoved) {
                         node.remove(executedAt)
-                        gcPairs.add(GCPair(this, node))
+                        gcPairs.add(GCPair(this, node, gcOnlySize = node.dataSize))
                     } else {
                         diff = addDataSizes(diff, node.dataSize)
                     }
                     nodeMapByID[node.id] = node
+                    // Capture this inserted node's identity span for
+                    // identity-preserving insert undo/redo.
+                    insertedSpans.add(captureRestoreSpan(node))
                 }
                 if (!content.isRemoved) {
                     aliveContents.add(content)
@@ -624,6 +793,20 @@ internal data class CrdtTree(
                 }
             }
         }
+        // Both the boundary splits (step 01, findNodesAndSplitText) and the
+        // splitLevel walk (step 04) can land inside an already-tombstoned
+        // node and buffer a born-dead piece; drain them all so none are left
+        // unregistered for GC.
+        gcPairs.addAll(drainPendingGcPairs())
+
+        // Identity-preserving restore only covers plain deletions. If this
+        // edit merged nodes (mergeLevel > 0) or its merge propagation (03-1)
+        // or a born-dead split piece (drainPendingGcPairs, above) added GC
+        // pairs beyond the plain-delete loop, the captured spans don't fully
+        // describe the deletion -> emit empty spans so the op layer keeps
+        // the copy-reinsert reverse.
+        val spansComplete = toBeMergedNodes.isEmpty() && gcPairs.size == deletePairCount
+
         // Count merged boundaries before their children were moved (above), so
         // the undo can regenerate them via split instead of re-inserting the
         // emptied shells. Mirrors JS SDK PR #1237.
@@ -633,6 +816,12 @@ internal data class CrdtTree(
             diff,
             removedNodes,
             mergeLevel = toBeMergedNodes.size,
+            removedSpans = if (spansComplete) removedSpans else emptyList(),
+            // traverseAll is postorder (children before parent), so reverse
+            // to get parent-before-child — the order restore() needs to
+            // recreate a purged subtree top-down (a child's recreate
+            // resolves its parent by identity).
+            insertedSpans = if (spansComplete) insertedSpans.reversed() else emptyList(),
         )
     }
 
@@ -763,9 +952,10 @@ internal data class CrdtTree(
             meta = 0,
         )
 
-        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt)
+        // Boundary.Range (port 5c158690): see the matching comment in style().
+        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
         val (fromParent, fromLeftRaw) = from
-        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt)
+        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
         val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
@@ -785,7 +975,10 @@ internal data class CrdtTree(
         }
 
         val changes = mutableListOf<TreeChange>()
-        val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        // Widened to GCPair<*>: drained pending pairs below are
+        // GCPair<CrdtTreeNode>, a different type parameter than the
+        // GCPair<RhtNode> attribute pairs added by this loop.
+        val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         var capturedPrev = false
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, tokenType), _ ->
@@ -869,6 +1062,10 @@ internal data class CrdtTree(
                 }
             }
         }
+        // This remove-style operation's boundary splits (findNodesAndSplitText)
+        // can land inside an already-tombstoned node and buffer a born-dead
+        // piece; drain it so it is not left unregistered for GC.
+        gcPairs.addAll(drainPendingGcPairs())
         return TreeOperationResult(changes, gcPairs, diff, prevAttributes = prevAttributes)
     }
 
@@ -900,10 +1097,14 @@ internal data class CrdtTree(
      *
      * If [executedAt] is given, then it is used to find the appropriate left node
      * for concurrent insertion.
+     *
+     * [boundary] selects how a position inside a merged-away parent resolves
+     * — see [Boundary].
      */
     fun findNodesAndSplitText(
         pos: CrdtTreePos,
         executedAt: TimeTicket? = null,
+        boundary: Boundary = Boundary.Insert,
     ): Pair<TreeNodePair, DataSize> {
         var diff = DataSize(
             data = 0,
@@ -924,6 +1125,20 @@ internal data class CrdtTree(
         // merge destination using the forwarding pointer.
         val mergedIntoID = realParent.mergedInto
         if (realParent.isRemoved && isLeftMost && mergedIntoID != null) {
+            // §9.3 Range Boundary at Merged-Away Anchors (port 5c158690): a
+            // range boundary resolves to the position right after the
+            // merge-source tombstone, not the insertion boundary below. The
+            // insertion boundary sits before the first moved child, so it
+            // would extend a style range over nodes concurrently inserted
+            // between the tombstone and the moved children — nodes the
+            // styling client saw outside its range (after the then-live
+            // parent).
+            if (boundary == Boundary.Range && realParent.parent != null) {
+                return Pair(
+                    first = Pair(realParent.parent!!, realParent),
+                    second = diff,
+                )
+            }
             val mergeTarget = findFloorNode(mergedIntoID)
             if (mergeTarget != null && !mergeTarget.isRemoved) {
                 val allCh = mergeTarget.allChildren
@@ -977,6 +1192,34 @@ internal data class CrdtTree(
     fun findFloorNode(id: CrdtTreeNodeID): CrdtTreeNode? {
         val (key, value) = nodeMapByID.floorEntry(id) ?: return null
         return value.takeIf { key.createdAt == id.createdAt }
+    }
+
+    /**
+     * Follows the [CrdtTreeNode.mergedInto] forwarding chain from [node]
+     * while the current node is a merge-away tombstone, returning the final
+     * live target. When a merge lands on a parent that a prior concurrent
+     * merge already merged away (a chained merge P->Q->R, applied Q->R
+     * before this P->Q), the children must flow to that parent's final
+     * destination so the merge chain stays flat (P->R, not P->Q) and both
+     * replicas converge. The `seen` set guards against a cycle from a
+     * concurrent mutual merge (port b2e66114).
+     */
+    private fun resolveMergeTarget(node: CrdtTreeNode): CrdtTreeNode {
+        var target = node
+        // Identity set, not a hash set: CrdtTreeNode's data-class equals
+        // recurses over childNodes/_attributes, so any bucket collision would
+        // turn this cycle guard into a deep comparison on a hot merge path.
+        val seen = Collections.newSetFromMap(IdentityHashMap<CrdtTreeNode, Boolean>())
+        seen.add(target)
+        while (true) {
+            if (!target.isRemoved) break
+            val mergedInto = target.mergedInto ?: break
+            val next = findFloorNode(mergedInto) ?: break
+            if (next in seen) break
+            seen.add(next)
+            target = next
+        }
+        return target
     }
 
     /**
@@ -1088,6 +1331,297 @@ internal data class CrdtTree(
 
         node.insPrevID = null
         node.insNextID = null
+    }
+
+    /**
+     * Builds the [TreeRestoreSpan] for [node] at the point it is deleted or
+     * inserted: its structure/value/attributes plus the external boundary
+     * anchors ([TreeRestoreSpan.leftSiblingID]/[TreeRestoreSpan.rightSiblingID])
+     * captured from its CURRENT physical siblings. Shared by [edit]'s delete
+     * and insert phases (port fa6cc513).
+     */
+    private fun captureRestoreSpan(node: CrdtTreeNode): TreeRestoreSpan {
+        val parent = node.parent
+        val siblings = parent?.allChildren
+        val index = siblings?.indexOf(node) ?: -1
+        val leftSiblingID = siblings?.takeIf { index > 0 }?.get(index - 1)?.let(::leftAnchorID)
+        val rightSiblingID = siblings
+            ?.takeIf { index in 0 until siblings.size - 1 }
+            ?.get(index + 1)
+            ?.id
+        return TreeRestoreSpan(
+            id = node.id,
+            nodeType = node.type,
+            isText = node.isText,
+            length = if (node.isText) node.value.length else 0,
+            value = if (node.isText) node.value else null,
+            // Elements only — JS domain-model parity (a text span's attrs are
+            // undefined there), not a guard: a text node's Rht is empty. The
+            // snapshot copies tombstoned Rht nodes too, and recreateFromSpan
+            // deep-copies them into the recreated element WITHOUT registering
+            // GC pairs — exactly like JS v0.7.14. KNOWN shared leak (PR #360
+            // review F4), pinned in TreeUpstreamDefectPinTest; fix upstream
+            // first, then port.
+            attrs = node.getAttrs().takeIf { !node.isText }?.deepCopy(),
+            parentID = parent?.id,
+            leftSiblingID = leftSiblingID,
+            rightSiblingID = rightSiblingID,
+        )
+    }
+
+    /**
+     * Re-establishes the nodes described by [spans] under their ORIGINAL
+     * identities (identity-preserving Tree undo): live -> skip (idempotent),
+     * tombstoned -> [CrdtTreeNode.unremove] in place, purged ->
+     * [recreateFromSpan]. [spans] must be in parent-before-child order
+     * ([edit] captures them that way). Returns `(untombstoned, recreated)`;
+     * the caller unregisters GC pairs for the untombstoned nodes and
+     * accounts each recreated node's size into the live size.
+     *
+     * JS parity, KNOWN DEFECT (PR #360 reviews 5165084872 F2 and 5194612367):
+     * like yorkie-js-sdk v0.7.14 (`tree.ts` `restore`), a tombstoned target is
+     * unremoved even when an ancestor is still tombstoned, and a purged target
+     * is recreated live under such an ancestor. The node stays invisible but
+     * is counted live, and a replica that already purged the parent and one
+     * that still holds its tombstone can diverge once the parent is revived.
+     * Deliberately NOT guarded Android-only: the wire payload is identical, so
+     * a local guard would make the same relayed op resolve differently here
+     * than on JS/iOS peers (the worse defect — lesson all/003, #359 B2).
+     * Pinned in TreeUpstreamDefectPinTest; fix upstream first, then port.
+     */
+    fun restore(spans: List<TreeRestoreSpan>): Pair<List<CrdtTreeNode>, List<CrdtTreeNode>> {
+        val untombstoned = mutableListOf<CrdtTreeNode>()
+        val recreated = mutableListOf<CrdtTreeNode>()
+
+        for (span in spans) {
+            if (!span.isText) {
+                val node = findFloorNode(span.id)
+                if (node != null && node.id == span.id) {
+                    if (node.isRemoved) {
+                        node.unremove()
+                        untombstoned.add(node)
+                    }
+                    continue
+                }
+                recreateFromSpan(span, span.id.offset, span.length)?.let(recreated::add)
+                continue
+            }
+
+            // Text: surviving pieces may be split finer than the span.
+            val start = span.id.offset
+            val end = start + span.length
+            val pieces = findPiecesOverlapping(span.id.createdAt, start, end)
+
+            var cursor = start
+            var pieceIndex = 0
+            while (cursor < end) {
+                val piece = pieces.getOrNull(pieceIndex)
+                val pieceStart = piece?.id?.offset ?: Int.MAX_VALUE
+                val pieceEnd = if (piece != null) pieceStart + piece.value.length else Int.MAX_VALUE
+
+                if (piece != null && pieceStart <= cursor) {
+                    if (pieceStart < start || pieceEnd > end) {
+                        // Piece straddles a span boundary. Under causal
+                        // delivery the forward delete split at span
+                        // boundaries on every replica before its undo could
+                        // arrive, so this is not expected; skip
+                        // conservatively rather than un-tombstone beyond the
+                        // span. Mirrors the guard in retombstone().
+                        break
+                    }
+                    if (piece.isRemoved) {
+                        piece.unremove()
+                        untombstoned.add(piece)
+                    }
+                    cursor = minOf(pieceEnd, end)
+                    if (cursor >= pieceEnd) pieceIndex++
+                } else {
+                    val gapEnd = minOf(pieceStart, end)
+                    recreateFromSpan(span, cursor, gapEnd - cursor)?.let(recreated::add)
+                    cursor = gapEnd
+                }
+            }
+        }
+        return untombstoned to recreated
+    }
+
+    /**
+     * Re-deletes the nodes described by [spans] (redo of an
+     * identity-preserving undo). Live pieces only; idempotent. Returns GC
+     * pairs for the newly tombstoned nodes.
+     */
+    fun retombstone(
+        spans: List<TreeRestoreSpan>,
+        executedAt: TimeTicket,
+    ): List<GCPair<CrdtTreeNode>> {
+        val pairs = mutableListOf<GCPair<CrdtTreeNode>>()
+        for (span in spans) {
+            val start = span.id.offset
+            val end = start + maxOf(span.length, 1)
+            val pieces = if (span.isText) {
+                findPiecesOverlapping(span.id.createdAt, start, end)
+            } else {
+                listOfNotNull(findFloorNode(span.id)?.takeIf { it.id == span.id })
+            }
+            for (piece in pieces) {
+                if (piece.isRemoved) continue
+                if (piece.isText &&
+                    (piece.id.offset < start || piece.id.offset + piece.value.length > end)
+                ) {
+                    // Piece straddles a span boundary (same clamped `end` as
+                    // findPiecesOverlapping); skip so we never re-tombstone
+                    // content outside the span. Mirrors the guard in restore().
+                    continue
+                }
+                if (piece.remove(executedAt)) {
+                    pairs.add(GCPair(this, piece))
+                }
+            }
+        }
+        return pairs
+    }
+
+    /**
+     * Collects surviving pieces (live or tombstoned) of the text insertion
+     * [createdAt] overlapping `[start, end)`, in ascending offset order, via
+     * descending floor probes.
+     */
+    private fun findPiecesOverlapping(
+        createdAt: TimeTicket,
+        start: Int,
+        end: Int,
+    ): List<CrdtTreeNode> {
+        val pieces = mutableListOf<CrdtTreeNode>()
+        var probe = end - 1
+        while (probe >= 0) {
+            val node = findFloorNode(CrdtTreeNodeID(createdAt, probe)) ?: break
+            if (!node.isText) break
+            val nodeStart = node.id.offset
+            val nodeEnd = nodeStart + node.value.length
+            if (nodeEnd <= start) break
+            if (nodeStart < end && nodeEnd > start) pieces.add(node)
+            if (nodeStart <= start) break
+            probe = nodeStart - 1
+        }
+        return pieces.reversed()
+    }
+
+    /**
+     * Rebuilds a purged node (or purged text sub-range) under its original
+     * identity and attaches it. Anchor ladder, each rung a floor-lookup +
+     * parent-identity check:
+     *  (a) same-insertion successor/predecessor piece (text) -> exact slot;
+     *  (b) captured [TreeRestoreSpan.leftSiblingID], still parented under
+     *      this parent -> after it;
+     *  (c) captured [TreeRestoreSpan.rightSiblingID], still parented under
+     *      this parent -> before it;
+     *  (d) last-resort id-order slot: first index in the parent's current
+     *      children whose id compares greater than the node's id.
+     *
+     * CAVEAT — rung (d) is NOT convergent: the parent's children are in
+     * document/RGA order, which is not id order, so the resulting slot
+     * depends on which concurrent siblings this replica has already
+     * received. Two replicas that both fall to rung (d) with different
+     * sibling sets can place the node at different indices and diverge
+     * permanently. Rungs (a)-(c) are identity-anchored and unaffected.
+     * Making (d) convergent (e.g. the same `return null` skip used for a
+     * missing parent) changes wire-visible behaviour across SDKs, so it
+     * must land in yorkie-js-sdk first — upstream carries the same rung.
+     * Parent genuinely absent (purged, and not part of this undo's spans)
+     * -> returns null: the node stays unplaced/invisible; convergent,
+     * because every replica resolves parent-absent identically.
+     *
+     * Parent still tombstoned (not purged) -> the node is placed and returned
+     * LIVE, exactly like JS v0.7.14; see the known-defect note on [restore].
+     */
+    private fun recreateFromSpan(
+        span: TreeRestoreSpan,
+        offset: Int,
+        length: Int,
+    ): CrdtTreeNode? {
+        val parent = span.parentID?.let(::findFloorNode)
+        if (parent == null || parent.id != span.parentID) {
+            return null
+        }
+
+        val node = if (span.isText) {
+            val spanValue = requireNotNull(span.value)
+            val relativeOffset = offset - span.id.offset
+            CrdtTreeNode.CrdtTreeText(
+                CrdtTreeNodeID(span.id.createdAt, offset),
+                spanValue.substring(relativeOffset, relativeOffset + length),
+            )
+        } else {
+            CrdtTreeNode.CrdtTreeElement(
+                span.id,
+                span.nodeType,
+                attributes = span.attrs?.deepCopy() ?: Rht(),
+            )
+        }
+
+        val siblings = parent.allChildren
+
+        // (a) same-insertion successor / predecessor piece (text): exact slot.
+        if (span.isText) {
+            val succ = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset + length))
+            if (succ != null &&
+                succ.isText &&
+                succ.parent === parent &&
+                succ.id.offset == offset + length
+            ) {
+                parent.insertAt(siblings.indexOf(succ), node)
+                nodeMapByID[node.id] = node
+                return node
+            }
+            if (offset > span.id.offset || offset > 0) {
+                val pred = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset - 1))
+                if (pred != null && pred.isText && pred.parent === parent) {
+                    parent.insertAfter(pred, node)
+                    nodeMapByID[node.id] = node
+                    return node
+                }
+            }
+        }
+
+        // (b) captured left boundary sibling, if it still exists under this parent.
+        val left = span.leftSiblingID?.let(::findFloorNode)
+        if (left != null && left.parent === parent) {
+            parent.insertAfter(left, node)
+            nodeMapByID[node.id] = node
+            return node
+        }
+
+        // (c) captured right boundary sibling (redundant anchor): insert before it.
+        val right = span.rightSiblingID?.let(::findFloorNode)
+        if (right != null && right.parent === parent) {
+            parent.insertAt(siblings.indexOf(right), node)
+            nodeMapByID[node.id] = node
+            return node
+        }
+
+        // (d) last-resort id-order fallback: first slot whose child id > node id.
+        // NOT convergent — siblings are in RGA order, not id order, so this
+        // depends on the local replica's sibling set (see the KDoc caveat).
+        val insertIndex = siblings.indexOfFirst { it.id > node.id }
+            .let { if (it == -1) siblings.size else it }
+        parent.insertAt(insertIndex, node)
+        nodeMapByID[node.id] = node
+        return node
+    }
+
+    /**
+     * Returns the id to store as a restore span's left-sibling anchor. For a
+     * text node the anchor is its LAST character's offset, not its start: a
+     * concurrent delete may later split the left neighbor, and only the
+     * last-char offset floor-resolves to the rightmost surviving fragment
+     * (the true left neighbor of the restored node). For elements (never
+     * split by offset) the node's own id is exact. Right-sibling anchors
+     * always use the start offset, which floor-resolves to the leftmost
+     * fragment — the true right neighbor.
+     */
+    private fun leftAnchorID(sibling: CrdtTreeNode): CrdtTreeNodeID {
+        if (!sibling.isText) return sibling.id
+        return CrdtTreeNodeID(sibling.id.createdAt, sibling.id.offset + sibling.value.length - 1)
     }
 
     /**
@@ -1290,6 +1824,10 @@ internal data class CrdtTree(
             versionVector.get(actorID) ?: 0L
         } ?: MAX_LAMPORT
     }
+
+    companion object {
+        private const val TAG = "CrdtTree"
+    }
 }
 
 /**
@@ -1305,9 +1843,12 @@ internal data class CrdtTreeNode(
 ) : IndexTreeNode<CrdtTreeNode>(), GCChild, GCParent<RhtNode> {
 
     val gcPairs: List<GCPair<*>>
+        // Only reached when a root is built from a snapshot. Removed
+        // attribute nodes are skipped by dataSize, so they were never
+        // counted into docSize.live — hence gcOnlySize.
         get() = _attributes
             .filter { node -> node.removedAt != null }
-            .map { node -> GCPair(this, node) }
+            .map { node -> GCPair(this, node, gcOnlySize = node.dataSize) }
 
     val attributes: Map<String, String>
         get() = _attributes.nodeKeyValueMap
@@ -1489,6 +2030,18 @@ internal data class CrdtTreeNode(
             tree.registerNode(split)
         }
 
+        // A piece split off an already-tombstoned node inherits removedAt
+        // without going through remove(), so no GC pair is created for it in
+        // the normal deletion path. Register it here so it can be purged;
+        // otherwise it stays in the tree forever. The piece was never live,
+        // so its size goes straight to docSize.gc when the pair is
+        // registered; report a zero diff to the caller (which accounts
+        // diffs to docSize.live).
+        if (split != null && split.removedAt != null) {
+            tree.registerPendingGcPair(split, diff)
+            return Pair(split, DataSize(data = 0, meta = 0))
+        }
+
         return Pair(split, diff)
     }
 
@@ -1547,6 +2100,24 @@ internal data class CrdtTreeNode(
             updateAncestorSize(-paddedSize())
         }
         return alived
+    }
+
+    /**
+     * Clears the tombstone of this node (identity-preserving restore).
+     * Mirrors [remove]'s ancestor-size bookkeeping so the node becomes
+     * visible again in place. No-op when the node is not removed.
+     *
+     * [IndexTreeNode.onRemovedListener] only ever wires the forward
+     * (live -> removed) transition — see [IndexTreeNodeList.onUnremoved] —
+     * so the parent's cached active-children list is refreshed explicitly
+     * here via the CURRENT [parent] reference (never a stale one: a prior
+     * [moveChild] already updated [parent] before this can run).
+     */
+    fun unremove() {
+        if (removedAt == null) return
+        removedAt = null
+        updateAncestorSize(paddedSize())
+        parent?.childNodes?.onUnremoved(this)
     }
 
     /**
@@ -1620,6 +2191,15 @@ internal data class CrdtTreeNode(
 
     override fun delete(node: RhtNode) {
         _attributes.delete(node)
+    }
+
+    // The data-class hash covers mutable state (childNodes, attributes), so
+    // hash-keyed registrations (e.g. CrdtRoot's gcPairMap) would silently
+    // miss after a concurrent edit mutates a registered node. Hashing the
+    // immutable id keeps buckets stable; structural equals stays consistent
+    // with it (equal nodes share the id).
+    override fun hashCode(): Int {
+        return id.hashCode()
     }
 
     @Suppress("FunctionName")

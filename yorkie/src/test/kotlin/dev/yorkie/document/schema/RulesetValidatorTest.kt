@@ -450,4 +450,59 @@ class RulesetValidatorTest {
         )
         assertTrue(thrown.message.orEmpty().contains("Unknown node type"))
     }
+
+    // F7: removing a schema-required key leaves a tombstoned entry behind.
+    // getValueByPath must resolve that to a normal schema violation (null),
+    // not let ElementRht.get's throwing contract (06d4fa24, correct for its
+    // own callers) escape past updateAsync's failure-recovery boundary and
+    // permanently corrupt Document.clone for a subsequent updateAsync call.
+    @Test
+    fun `removing a schema-required key fails validation without corrupting clone`() = runTest {
+        val document = Document(UUID.randomUUID().toString().toDocKey())
+        document.updateAsync { root, _ ->
+            val user = root.setNewObject("user")
+            user["name"] = "test"
+        }.await()
+
+        document.setSchemaRules(
+            listOf(
+                Rule.ObjectRule(
+                    path = "\$",
+                    type = "object",
+                    properties = listOf("user"),
+                    optional = emptyList(),
+                ),
+                Rule.ObjectRule(
+                    path = "\$.user",
+                    type = "object",
+                    properties = listOf("name"),
+                    optional = emptyList(),
+                ),
+                Rule.PrimitiveRule(
+                    path = "\$.user.name",
+                    type = "string",
+                ),
+            ),
+        )
+
+        var thrown: YorkieException? = null
+        try {
+            document.updateAsync { root, _ ->
+                val user = root.getAs<JsonObject>("user")
+                user.remove("name")
+            }.await()
+        } catch (e: YorkieException) {
+            thrown = e
+        }
+        assertNotNull(thrown)
+        assertEquals(YorkieException.Code.ErrDocumentSchemaValidationFailed, thrown!!.code)
+
+        // A subsequent, unrelated update must still succeed — proving
+        // `clone` was not left corrupted by the earlier validation
+        // failure (F7's actual demonstrated blocker).
+        document.updateAsync { root, _ ->
+            root.setNewObject("other")["k"] = 1
+        }.await()
+        assertNotNull(document.getRoot().getAs<JsonObject>("other").getOrNull("k"))
+    }
 }

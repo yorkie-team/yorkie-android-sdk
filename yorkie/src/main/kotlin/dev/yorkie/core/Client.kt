@@ -45,6 +45,7 @@ import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
+import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.presence.Presences.Companion.asPresences
@@ -110,6 +111,23 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
+
+/**
+ * Initializers for missing root keys when attaching a [Document].
+ *
+ * Each map key is authoritative: its initializer receives that key and is invoked only when the
+ * server-provided root does not contain it. The absence guard checks only the mapped key itself —
+ * an initializer is expected to write only that key; writes to other keys are not guarded against
+ * and are not part of the documented contract. Initial values become ordinary Yorkie changes but
+ * are history-exempt via `skipHistory`, so they never enter the undo/redo history. Concurrent
+ * first attachments may both initialize a missing key and converge through normal CRDT conflict
+ * resolution.
+ *
+ * The initializer is a `suspend JsonObject.(key: String) -> Unit` lambda, which is awkward to
+ * construct from Java; Java consumers should prefer the no-`initialRoot` [attachDocument]
+ * overload instead.
+ */
+public typealias InitialRoot = Map<String, suspend JsonObject.(key: String) -> Unit>
 
 /**
  * Client that can communicate with the server.
@@ -1023,6 +1041,55 @@ public class Client(
         schema: String? = null,
         disableGC: Boolean = false,
         disablePresence: Boolean = false,
+    ): Deferred<OperationResult> = attachDocument(
+        document = document,
+        initialPresence = initialPresence,
+        syncMode = syncMode,
+        schema = schema,
+        disableGC = disableGC,
+        disablePresence = disablePresence,
+        initialRoot = emptyMap(),
+    )
+
+    /**
+     * Attaches the given [Document] to this [Client] and initializes missing root keys.
+     *
+     * The authoritative server response is applied first. Each [initialRoot] initializer is then
+     * invoked only if its map key is absent, and receives that key as its argument. All invoked
+     * initializers form one atomic local change. This change runs as a history-exempt
+     * `skipHistory` update, so it never enters the undo/redo history. Concurrent first
+     * attachments are not globally serialized; their ordinary CRDT changes converge through
+     * normal conflict resolution.
+     *
+     * The document is marked [ResourceStatus.Attached] and registered with this client BEFORE the
+     * [initialRoot] initializers run, so a throwing initializer leaves the document attached and
+     * detachable rather than rolled back; the returned deferred still resolves to failure, and
+     * history is already cleared. A user edit made after the [ResourceStatus.Attached] event
+     * while an initializer is still running keeps its undo entry, index-reconciled against the
+     * initializer change. Document events emitted by the initializer change are always preceded
+     * by the [ResourceStatus.Attached] [Document.Event.DocumentStatusChanged] event.
+     *
+     * @param initialPresence The initial presence of the client.
+     * @param syncMode The synchronization mode of the document.
+     * @param schema The schema used to validate the document.
+     * @param disableGC declares that this attachment will not produce or consume
+     * tombstones. The server skips minVV tracking and omits the response
+     * VersionVector for this client. Use only with Counter or primitive
+     * workloads where no client consumes tombstones; misuse on a document
+     * that uses Tree, Text, or Array deletions leads to undefined GC behavior
+     * on this client. Controls only the wire contract and is distinct from
+     * any local-only [Document] GC pass.
+     * @param disablePresence Whether this attachment opts out of presence.
+     * @param initialRoot Initializers for root keys absent from the authoritative server response.
+     */
+    public fun attachDocument(
+        document: Document,
+        initialPresence: P = emptyMap(),
+        syncMode: SyncMode = SyncMode.Realtime,
+        schema: String? = null,
+        disableGC: Boolean = false,
+        disablePresence: Boolean = false,
+        initialRoot: InitialRoot,
     ): Deferred<OperationResult> {
         return scope.async {
             checkYorkieError(
@@ -1089,13 +1156,26 @@ public class Client(
                 document.setDisablePresence(response.disablePresence)
                 document.applyChangePack(pack)
 
-                // Clear undo/redo stacks so that initialRoot setup operations
-                // are not reachable via undo. Mirrors JS SDK PR #1238.
+                // Ordering (spec 009 — closes the PR #358 clearHistory window; JS SDK v0.7.16
+                // reference at packages/sdk/src/client/client.ts:665-793 @ 28a5a42e admits no
+                // interleaving because that block is synchronous, so no JS-observable case
+                // changes): single clearHistory() (wipes pre-attach/offline entries; runs before
+                // the Removed check for develop parity, so a reused Document instance whose
+                // server-side copy was removed cannot undo into an unsyncable state) → Removed
+                // early-return → applyStatus(Attached) → attachment registration → runWatchLoop →
+                // initialRoot updateAsync(skipHistory = true) (never enters history, so it needs
+                // no trailing cleanup) → return. History is already cleared before the initializer
+                // runs, so a user edit made after the Attached event while the initializer is
+                // still suspended keeps its undo entry instead of being silently wiped. On an
+                // initializer throw the document still stays Attached and registered (detachable,
+                // matching JS's no-rollback behavior), and history is already cleared.
+                // Mirrors JS SDK PR #1238 for the history flush itself.
                 document.clearHistory()
 
                 if (document.getStatus() == ResourceStatus.Removed) {
                     return@async SUCCESS
                 }
+
                 document.applyStatus(ResourceStatus.Attached)
                 attachments[documentKey] = Attachment(
                     resource = document,
@@ -1109,6 +1189,22 @@ public class Client(
                 // open a watch stream. Mirrors JS SDK PR #1243.
                 if (syncMode != SyncMode.Manual && syncMode != SyncMode.Polling) {
                     runWatchLoop(documentKey)
+                }
+
+                val initialRootResult = try {
+                    document.updateAsync(skipHistory = true) { root, _ ->
+                        initialRoot.forEach { (key, initializer) ->
+                            if (key !in root.keys) {
+                                initializer(root, key)
+                            }
+                        }
+                    }.await()
+                } catch (t: Throwable) {
+                    ensureActive()
+                    Result.failure(t)
+                }
+                if (initialRootResult.isFailure) {
+                    return@async initialRootResult
                 }
             }
             SUCCESS

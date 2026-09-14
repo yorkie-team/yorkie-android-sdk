@@ -499,7 +499,7 @@ class TreeRestoreTest {
             parentID = ghostParentID,
         )
 
-        val (untombstoned, recreated) = tree.restore(listOf(span), issueTime())
+        val (untombstoned, recreated) = tree.restore(listOf(span))
 
         assertTrue(untombstoned.isEmpty())
         assertTrue(recreated.isEmpty())

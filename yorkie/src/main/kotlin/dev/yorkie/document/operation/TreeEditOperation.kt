@@ -230,13 +230,11 @@ internal data class TreeEditOperation(
      * twin, spec 004).
      *
      * Order is load-bearing: (1) retombstone first — register its GC pairs;
-     * (2) restore — register the pending pairs [CrdtTree.restore] buffered
-     * (born-dead recreates under a still-tombstoned ancestor, attribute
-     * tombstones copied from the span — PR #360 review F2/F4), THEN
-     * unregister GC pairs for the untombstoned nodes (Text-twin order), and
-     * accumulate each live recreated node's size into the live diff (no GC
-     * pair exists for a recreated node — only [CrdtRoot.acc] applies);
-     * (3) accumulate the total diff.
+     * (2) restore — unregister GC pairs for the untombstoned nodes (Text-twin
+     * order) and accumulate each recreated node's size into the live diff (no
+     * GC pair exists for a recreated node — only [CrdtRoot.acc] applies);
+     * (3) accumulate the total diff. Same shape as JS v0.7.14, including its
+     * known F2/F4 defects (see [CrdtTree.restore]).
      *
      * Unlike [EditOperation.executeRestore] (the Text twin), there is no
      * fallback-anchor parameter: [CrdtTree.recreateFromSpan]'s id-order rung
@@ -257,12 +255,10 @@ internal data class TreeEditOperation(
         val retombstonePairs = tree.retombstone(toRetombstone, executedAt)
         retombstonePairs.forEach(root::registerGCPair)
 
-        // 2. Revive (restore) by identity. Pending pairs (born-dead recreates,
-        // copied attribute tombstones) are registered BEFORE the revived nodes
-        // are unregistered — Text-twin order; the two sets are disjoint here.
-        val (untombstoned, recreated) = tree.restore(toRestore, executedAt)
-        val pendingPairs = tree.drainPendingGcPairs()
-        pendingPairs.forEach(root::registerGCPair)
+        // 2. Revive (restore) by identity: un-tombstoned nodes move gc -> live
+        // via unregisterGCPair; recreated nodes are brand new, so add their
+        // size to live.
+        val (untombstoned, recreated) = tree.restore(toRestore)
         untombstoned.forEach { node -> root.unregisterGCPair(GCPair(tree, node)) }
         recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
         root.acc(diff)
@@ -277,7 +273,6 @@ internal data class TreeEditOperation(
         // from JS, which emits the opInfo unconditionally; matches the Text
         // twin, whose opInfos come from the actual textChanges.
         val changed = retombstonePairs.isNotEmpty() ||
-            pendingPairs.isNotEmpty() ||
             untombstoned.isNotEmpty() ||
             recreated.isNotEmpty()
 

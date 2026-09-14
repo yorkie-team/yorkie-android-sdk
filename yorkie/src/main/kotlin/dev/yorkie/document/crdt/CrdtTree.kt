@@ -100,15 +100,12 @@ internal data class CrdtTree(
     private val nodeMapByID = TreeMap<CrdtTreeNodeID, CrdtTreeNode>()
 
     /**
-     * Buffers GC pairs for nodes that were never counted live: pieces born
-     * already-tombstoned by splitting a removed node, recreates placed under
-     * a still-tombstoned ancestor, and the attribute tombstones a recreated
-     * element copies from its span ([restore]). [edit], [style], and
+     * Buffers GC pairs for pieces born already-tombstoned by splitting a
+     * removed node, which were never counted live. [edit], [style], and
      * [removeStyle] drain this buffer via [drainPendingGcPairs] into the GC
-     * pairs they already return; [dev.yorkie.document.operation.TreeEditOperation]
-     * drains it after [restore].
+     * pairs they already return.
      */
-    private var pendingGcPairs = mutableListOf<GCPair<*>>()
+    private var pendingGcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
 
     /**
      * Buffers a GC pair for [node], a piece born already-tombstoned by
@@ -123,7 +120,7 @@ internal data class CrdtTree(
     /**
      * Returns the buffered GC pairs and clears the buffer.
      */
-    fun drainPendingGcPairs(): List<GCPair<*>> {
+    fun drainPendingGcPairs(): List<GCPair<CrdtTreeNode>> {
         val pairs = pendingGcPairs
         pendingGcPairs = mutableListOf()
         return pairs
@@ -570,7 +567,7 @@ internal data class CrdtTree(
         }
 
         // 02. Delete: delete the nodes that are marked as removed.
-        val gcPairs = mutableListOf<GCPair<*>>()
+        val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
         // Identity-preserving undo: capture one span per node THIS edit
         // transitions visible -> tombstoned. node.remove() returning true is
         // exactly that transition, so pre-tombstoned nodes and LWW
@@ -1360,9 +1357,11 @@ internal data class CrdtTree(
             value = if (node.isText) node.value else null,
             // Elements only — JS domain-model parity (a text span's attrs are
             // undefined there), not a guard: a text node's Rht is empty. The
-            // snapshot copies tombstoned Rht nodes too; recreateFromSpan
-            // registers them as GC pairs (attachRecreated) so they are not
-            // leaked into the recreated element.
+            // snapshot copies tombstoned Rht nodes too, and recreateFromSpan
+            // deep-copies them into the recreated element WITHOUT registering
+            // GC pairs — exactly like JS v0.7.14. KNOWN shared leak (PR #360
+            // review F4), pinned in TreeUpstreamDefectPinTest; fix upstream
+            // first, then port.
             attrs = node.getAttrs().takeIf { !node.isText }?.deepCopy(),
             parentID = parent?.id,
             leftSiblingID = leftSiblingID,
@@ -1379,24 +1378,18 @@ internal data class CrdtTree(
      * the caller unregisters GC pairs for the untombstoned nodes and
      * accounts each recreated node's size into the live size.
      *
-     * Born-dead rule (PR #360 review F2): a node whose ancestor is still
-     * tombstoned is invisible whatever its own tombstone says, so it is
-     * never revived — a tombstoned target stays tombstoned with its GC pair
-     * intact, and a purged target is recreated already-removed at
-     * [executedAt] with a gcOnlySize pair buffered via
-     * [registerPendingGcPair] (the same treatment [edit] gives an insert
-     * under a removed parent). The caller drains [drainPendingGcPairs] into
-     * the root BEFORE unregistering the untombstoned pairs. Without this
-     * rule a replica that already purged the parent and one that still holds
-     * its tombstone diverge, and the revived node's size is counted live
-     * while nothing renders it. A skipped child is not re-applied when its
-     * parent is revived later — same limitation as the purged-parent skip in
-     * [recreateFromSpan] (JS #1315 lists it as known).
+     * JS parity, KNOWN DEFECT (PR #360 reviews 5165084872 F2 and 5194612367):
+     * like yorkie-js-sdk v0.7.14 (`tree.ts` `restore`), a tombstoned target is
+     * unremoved even when an ancestor is still tombstoned, and a purged target
+     * is recreated live under such an ancestor. The node stays invisible but
+     * is counted live, and a replica that already purged the parent and one
+     * that still holds its tombstone can diverge once the parent is revived.
+     * Deliberately NOT guarded Android-only: the wire payload is identical, so
+     * a local guard would make the same relayed op resolve differently here
+     * than on JS/iOS peers (the worse defect — lesson all/003, #359 B2).
+     * Pinned in TreeUpstreamDefectPinTest; fix upstream first, then port.
      */
-    fun restore(
-        spans: List<TreeRestoreSpan>,
-        executedAt: TimeTicket,
-    ): Pair<List<CrdtTreeNode>, List<CrdtTreeNode>> {
+    fun restore(spans: List<TreeRestoreSpan>): Pair<List<CrdtTreeNode>, List<CrdtTreeNode>> {
         val untombstoned = mutableListOf<CrdtTreeNode>()
         val recreated = mutableListOf<CrdtTreeNode>()
 
@@ -1404,14 +1397,13 @@ internal data class CrdtTree(
             if (!span.isText) {
                 val node = findFloorNode(span.id)
                 if (node != null && node.id == span.id) {
-                    if (node.isRemoved && !node.hasRemovedAncestor) {
+                    if (node.isRemoved) {
                         node.unremove()
                         untombstoned.add(node)
                     }
                     continue
                 }
-                recreateFromSpan(span, span.id.offset, span.length, executedAt)
-                    ?.let(recreated::add)
+                recreateFromSpan(span, span.id.offset, span.length)?.let(recreated::add)
                 continue
             }
 
@@ -1437,7 +1429,7 @@ internal data class CrdtTree(
                         // span. Mirrors the guard in retombstone().
                         break
                     }
-                    if (piece.isRemoved && !piece.hasRemovedAncestor) {
+                    if (piece.isRemoved) {
                         piece.unremove()
                         untombstoned.add(piece)
                     }
@@ -1445,8 +1437,7 @@ internal data class CrdtTree(
                     if (cursor >= pieceEnd) pieceIndex++
                 } else {
                     val gapEnd = minOf(pieceStart, end)
-                    recreateFromSpan(span, cursor, gapEnd - cursor, executedAt)
-                        ?.let(recreated::add)
+                    recreateFromSpan(span, cursor, gapEnd - cursor)?.let(recreated::add)
                     cursor = gapEnd
                 }
             }
@@ -1540,15 +1531,13 @@ internal data class CrdtTree(
      * -> returns null: the node stays unplaced/invisible; convergent,
      * because every replica resolves parent-absent identically.
      *
-     * Every rung hands the placed node to [attachRecreated], which applies
-     * the born-dead rule (a node under a tombstoned ancestor is tombstoned
-     * at [executedAt] and reported as null) — see [restore].
+     * Parent still tombstoned (not purged) -> the node is placed and returned
+     * LIVE, exactly like JS v0.7.14; see the known-defect note on [restore].
      */
     private fun recreateFromSpan(
         span: TreeRestoreSpan,
         offset: Int,
         length: Int,
-        executedAt: TimeTicket,
     ): CrdtTreeNode? {
         val parent = span.parentID?.let(::findFloorNode)
         if (parent == null || parent.id != span.parentID) {
@@ -1581,13 +1570,15 @@ internal data class CrdtTree(
                 succ.id.offset == offset + length
             ) {
                 parent.insertAt(siblings.indexOf(succ), node)
-                return attachRecreated(node, executedAt)
+                nodeMapByID[node.id] = node
+                return node
             }
             if (offset > span.id.offset || offset > 0) {
                 val pred = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset - 1))
                 if (pred != null && pred.isText && pred.parent === parent) {
                     parent.insertAfter(pred, node)
-                    return attachRecreated(node, executedAt)
+                    nodeMapByID[node.id] = node
+                    return node
                 }
             }
         }
@@ -1596,14 +1587,16 @@ internal data class CrdtTree(
         val left = span.leftSiblingID?.let(::findFloorNode)
         if (left != null && left.parent === parent) {
             parent.insertAfter(left, node)
-            return attachRecreated(node, executedAt)
+            nodeMapByID[node.id] = node
+            return node
         }
 
         // (c) captured right boundary sibling (redundant anchor): insert before it.
         val right = span.rightSiblingID?.let(::findFloorNode)
         if (right != null && right.parent === parent) {
             parent.insertAt(siblings.indexOf(right), node)
-            return attachRecreated(node, executedAt)
+            nodeMapByID[node.id] = node
+            return node
         }
 
         // (d) last-resort id-order fallback: first slot whose child id > node id.
@@ -1612,31 +1605,7 @@ internal data class CrdtTree(
         val insertIndex = siblings.indexOfFirst { it.id > node.id }
             .let { if (it == -1) siblings.size else it }
         parent.insertAt(insertIndex, node)
-        return attachRecreated(node, executedAt)
-    }
-
-    /**
-     * Finishes [recreateFromSpan] once [node] sits under its parent:
-     * registers it in [nodeMapByID], then applies the born-dead rule. A node
-     * placed under a tombstoned ancestor is invisible whatever its span says,
-     * so it is tombstoned right away at [executedAt] and its size — which the
-     * insert never added to any live ancestor — is buffered as a gcOnlySize
-     * pair, exactly like [edit]'s insert under a removed parent. Returns null
-     * for that case so [restore]'s caller accounts nothing into the live size.
-     */
-    private fun attachRecreated(node: CrdtTreeNode, executedAt: TimeTicket): CrdtTreeNode? {
         nodeMapByID[node.id] = node
-        // The span's attribute snapshot was deep-copied tombstones included
-        // (removeStyle leaves its tombstone inside the Rht; an overwrite's
-        // tombstone is a detached copy and never enters it). Those copies
-        // were never counted live and no sweep knows them — register them
-        // exactly as the snapshot-load path does (PR #360 review F4).
-        pendingGcPairs.addAll(node.gcPairs)
-        if (node.hasRemovedAncestor) {
-            node.remove(executedAt)
-            registerPendingGcPair(node, node.dataSize)
-            return null
-        }
         return node
     }
 
@@ -2150,22 +2119,6 @@ internal data class CrdtTreeNode(
         updateAncestorSize(paddedSize())
         parent?.childNodes?.onUnremoved(this)
     }
-
-    /**
-     * True when any ancestor of this node is tombstoned. Such a node is
-     * invisible whatever its own [removedAt] says; [CrdtTree.restore] uses
-     * this to keep the born-dead rule that [CrdtTree.edit] applies to inserts
-     * under a removed parent.
-     */
-    val hasRemovedAncestor: Boolean
-        get() {
-            var ancestor = parent
-            while (ancestor != null) {
-                if (ancestor.isRemoved) return true
-                ancestor = ancestor.parent
-            }
-            return false
-        }
 
     /**
      * Copies itself deeply.

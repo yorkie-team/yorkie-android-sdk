@@ -57,6 +57,7 @@ $dokka.location:dev.yorkie.core/Client///PointingToDeclaration/yorkie/dev.yorki
 $dokka.location:dev.yorkie.core/Client/Client/#kotlin.String#dev.yorkie.core.Client.Options#okhttp3.OkHttpClient#okhttp3.OkHttpClient/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-client.html
 $dokka.location:dev.yorkie.core/Client/activateAsync/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/activate-async.html
 $dokka.location:dev.yorkie.core/Client/attachChannel/#dev.yorkie.presence.Channel#kotlin.Boolean?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-channel.html
+$dokka.location:dev.yorkie.core/Client/attachDocument/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?#kotlin.Boolean#kotlin.Boolean#kotlin.collections.Map[kotlin.String,kotlin.coroutines.SuspendFunction2[dev.yorkie.document.json.JsonObject,kotlin.String,kotlin.Unit]]/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-document.html
 $dokka.location:dev.yorkie.core/Client/attachDocument/#dev.yorkie.document.Document#kotlin.collections.Map[kotlin.String,kotlin.String]#dev.yorkie.core.Client.SyncMode#kotlin.String?#kotlin.Boolean#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-document.html
 $dokka.location:dev.yorkie.core/Client/attachPresence/#dev.yorkie.presence.Channel#kotlin.Boolean?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/attach-presence.html
 $dokka.location:dev.yorkie.core/Client/authToken/#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.core/-client/auth-token.html
@@ -80,6 +81,7 @@ $dokka.location:dev.yorkie.core/Client/service/#/PointingToDeclaration/yorkie/d
 $dokka.location:dev.yorkie.core/Client/shouldRefreshToken/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/should-refresh-token.html
 $dokka.location:dev.yorkie.core/Client/status/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/status.html
 $dokka.location:dev.yorkie.core/Client/syncAsync/#dev.yorkie.core.Attachable?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/sync-async.html
+$dokka.location:dev.yorkie.core/InitialRoot///PointingToDeclaration/yorkie/dev.yorkie.core/-initial-root/index.html
 $dokka.location:dev.yorkie.core/ResourceEvent///PointingToDeclaration/yorkie/dev.yorkie.core/-resource-event/index.html
 $dokka.location:dev.yorkie.core/ResourceStatus.Attached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-resource-status/-attached/index.html
 $dokka.location:dev.yorkie.core/ResourceStatus.Detached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.core/-resource-status/-detached/index.html
@@ -773,6 +775,7 @@ $dokka.location:dev.yorkie.document/Document/setActor/#kotlin.String/PointingToD
 $dokka.location:dev.yorkie.document/Document/setMaxSizePerDocument/#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document/-document/set-max-size-per-document.html
 $dokka.location:dev.yorkie.document/Document/setSchemaRules/#kotlin.collections.List[dev.yorkie.document.schema.Rule]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/set-schema-rules.html
 $dokka.location:dev.yorkie.document/Document/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/to-json.html
+$dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.Boolean#kotlin.coroutines.SuspendFunction2[dev.yorkie.document.json.JsonObject,dev.yorkie.document.presence.DocPresence,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
 $dokka.location:dev.yorkie.document/Document/updateAsync/#kotlin.String?#kotlin.coroutines.SuspendFunction2[dev.yorkie.document.json.JsonObject,dev.yorkie.document.presence.DocPresence,kotlin.Unit]/PointingToDeclaration/yorkie/dev.yorkie.document/-document/update-async.html
 $dokka.location:dev.yorkie.document/RgaTreeSplitNodeIDStruct///PointingToDeclaration/yorkie/dev.yorkie.document/-rga-tree-split-node-i-d-struct/index.html
 $dokka.location:dev.yorkie.document/RgaTreeSplitNodeIDStruct/RgaTreeSplitNodeIDStruct/#dev.yorkie.document.TimeTicketStruct#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document/-rga-tree-split-node-i-d-struct/-rga-tree-split-node-i-d-struct.html
@@ -869,6 +872,7 @@ $dokka.location:dev.yorkie.util/IndexTreeNode/isRemoved/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.util/IndexTreeNode/isSplitSiblingSkipForBoundaryMigration/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-split-sibling-skip-for-boundary-migration.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isText/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-text.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isUnknownToEditor/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-unknown-to-editor.html
+$dokka.location:dev.yorkie.util/IndexTreeNode/moveChild/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/move-child.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/nextSibling/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/next-sibling.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/onRemovedListener/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/on-removed-listener.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/paddedSize/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/padded-size.html

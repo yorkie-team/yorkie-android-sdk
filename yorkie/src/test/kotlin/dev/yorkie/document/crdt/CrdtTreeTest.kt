@@ -935,11 +935,16 @@ class CrdtTreeTest {
         target.edit(1 to 1, CrdtTreeText(issuePos(), "ab").toList())
         assertEquals("<root><p>ab</p></root>", target.toXml())
 
-        // splitLevel 2 splits <p> and then the root itself; the loop stops when
-        // the root has no parent instead of re-splitting the same node
+        // splitLevel 2 first splits <p> (producing a legitimate empty <p></p>
+        // sibling) and would then split the root itself. The walk now stops
+        // BEFORE that second split (spec 004 / JS SDK 2ef3260b): splitting a
+        // parentless node produced an unreachable orphaned clone whose
+        // reattach silently no-ops, which used to erase the already-valid
+        // empty <p></p> sibling from the visible tree instead of merely being
+        // a no-op. Stopping one step earlier keeps that sibling visible.
         target.edit(3 to 3, null, 2)
-        assertEquals("<root><p>ab</p></root>", target.toXml())
-        assertEquals(4, target.size)
+        assertEquals("<root><p>ab</p><p></p></root>", target.toXml())
+        assertEquals(6, target.size)
     }
 
     @Test

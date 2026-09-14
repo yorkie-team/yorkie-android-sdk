@@ -4,12 +4,16 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.RestoreSpan
 import dev.yorkie.document.crdt.RgaTreeSplit
+import dev.yorkie.document.crdt.RgaTreeSplitNode
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.crdt.RgaTreeSplitPos
+import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.time.TimeTicket
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
 
@@ -68,7 +72,7 @@ class EditOperationReverseTest {
     }
 
     @Test
-    fun `reverse of pure delete is a pure insert`() {
+    fun `reverse of pure delete restores the removed content by identity`() {
         // given: text is "Hello"
         val (text, root) = buildTextRoot()
         text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
@@ -77,15 +81,20 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 2, 4, "", 4)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse op should insert "ll" at position 2
+        // then: reverse op restores "ll" by identity (restoreSpans), not by
+        // copy-reinsert — spec 004 Stage C / DEC-7. Content stays empty; the
+        // removed run travels in restoreSpans instead.
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ll", reverseOp.content)
+        assertEquals("", reverseOp.content)
         assertTrue(reverseOp.isUndoOp)
+        assertEquals(RestoreMode.Restore, reverseOp.restoreMode)
+        assertEquals("ll", reverseOp.restoreSpans?.joinToString("") { it.value.content })
+        assertNull(reverseOp.retombstoneSpans)
     }
 
     @Test
-    fun `reverse of replace deletes new and inserts old`() {
+    fun `reverse of replace restores old by identity and retombstones new`() {
         // given: text is "Hello"
         val (text, root) = buildTextRoot()
         text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
@@ -94,11 +103,15 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 2, 4, "NEW", 4)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse op should delete "NEW" and insert "ll"
+        // then: reverse op restores "ll" (removed) and retombstones "NEW"
+        // (inserted), both by identity.
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ll", reverseOp.content)
+        assertEquals("", reverseOp.content)
         assertTrue(reverseOp.isUndoOp)
+        assertEquals(RestoreMode.Restore, reverseOp.restoreMode)
+        assertEquals("ll", reverseOp.restoreSpans?.joinToString("") { it.value.content })
+        assertEquals("NEW", reverseOp.retombstoneSpans?.joinToString("") { it.value.content })
         // undo range is [2, 2+"NEW".length) = [2, 5)
         assertEquals(2, reverseOp.undoFromOffset)
         assertEquals(2 + "NEW".length, reverseOp.undoToOffset)
@@ -119,15 +132,16 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 2, 4, "", 4)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse content is "ll" and attributes are preserved (single-segment removal)
+        // then: the restored span carries its own attributes (single-segment removal)
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ll", reverseOp.content)
-        assertEquals(mapOf("bold" to "true"), reverseOp.attributes)
+        val restoredSpan = reverseOp.restoreSpans?.single()
+        assertEquals("ll", restoredSpan?.value?.content)
+        assertEquals(mapOf("bold" to "true"), restoredSpan?.value?.attributes)
     }
 
     @Test
-    fun `reverse drops attributes when multi-segment`() {
+    fun `reverse restores per-span attributes when multi-segment`() {
         // given: two styled nodes "He" (bold) and "llo" (italic)
         val (text, root) = buildTextRoot()
         text.edit(text.indexRangeToPosRange(0, 0), "He", makeTicket(3), mapOf("bold" to "true"))
@@ -137,11 +151,18 @@ class EditOperationReverseTest {
         val op = makeEditOp(text, 1, 4, "", 5)
         val result = op.execute(root, OpSource.Local, null)
 
-        // then: reverse attributes are empty for multi-segment removals
+        // then: identity-preserving restore keeps each segment's own
+        // attributes — no more dropping attributes on a multi-segment undo,
+        // since each span now carries its own value+attributes rather than
+        // being flattened into one content+attributes pair.
         assertEquals(1, result.reverseOps.size)
         val reverseOp = result.reverseOps[0] as EditOperation
-        assertEquals("ell", reverseOp.content)
-        assertTrue(reverseOp.attributes.isEmpty())
+        assertEquals("", reverseOp.content)
+        assertEquals("ell", reverseOp.restoreSpans?.joinToString("") { it.value.content })
+        assertEquals(
+            listOf(mapOf("bold" to "true"), mapOf("italic" to "true")),
+            reverseOp.restoreSpans?.map { it.value.attributes },
+        )
     }
 
     @Test
@@ -293,5 +314,63 @@ class EditOperationReverseTest {
         // Should be unchanged since isUndoOp is false
         assertEquals(EditOperation.NOT_AN_UNDO_OP, op.undoFromOffset)
         assertEquals(EditOperation.NOT_AN_UNDO_OP, op.undoToOffset)
+    }
+
+    // F4: insertedSpans (the reverse op's retombstoneSpans) must carry the
+    // original edit's attributes onto the rebuilt TextValue. A later redo
+    // (RestoreMode.Retombstone, restoring THESE spans by identity once the
+    // originally-inserted node is gone — e.g. after a GC purge) reads
+    // formatting from exactly this value; before the fix it was always
+    // empty, silently dropping formatting on redo-after-GC.
+    @Test
+    fun `insertedSpans carry the edit's attributes onto the rebuilt TextValue`() {
+        // given: text is "Hello"
+        val (text, root) = buildTextRoot()
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
+
+        // when: insert "X" at position 2 WITH an attribute
+        val ticket = makeTicket(4)
+        val range = text.indexRangeToPosRange(2, 2)
+        val op = EditOperation(
+            fromPos = range.first,
+            toPos = range.second,
+            content = "X",
+            parentCreatedAt = textTicket,
+            executedAt = ticket,
+            attributes = mapOf("bold" to "true"),
+        )
+        val result = op.execute(root, OpSource.Local, null)
+
+        // then: the reverse op's retombstoneSpans (insertedSpans) carry the
+        // attributes onto the rebuilt TextValue, not an unattributed copy.
+        val reverseOp = result.reverseOps.single() as EditOperation
+        val insertedSpan = reverseOp.retombstoneSpans?.single()
+        assertEquals("X", insertedSpan?.value?.content)
+        assertEquals(mapOf("bold" to "true"), insertedSpan?.value?.attributes)
+    }
+
+    // F15: retombstone() must emit a ContentChange for every piece it
+    // actually tombstones, unconditionally — symmetric with restore()'s
+    // equivalent list. Before the fix, an `if (from < to)` guard could
+    // silently drop the opInfo for a piece whose visible range collapsed to
+    // zero width even though gcPairs (and the real removal) still happened,
+    // breaking the undo/redo chain and dropping a real local mutation from
+    // Document.kt's opInfos.isEmpty()-gated sync queue.
+    @Test
+    fun `retombstone emits one ContentChange per piece it actually tombstones`() {
+        val split = RgaTreeSplit<TextValue>()
+        val ticket0 = TimeTicket(0L, 0u, "actor-0")
+        val node = RgaTreeSplitNode(RgaTreeSplitNodeID(ticket0, 0), TextValue("AB"))
+        split.insertAfter(split.head, node)
+
+        val span = RestoreSpan(ticket0, 0, 2, TextValue("AB"))
+        val result = split.retombstone(listOf(span), TimeTicket(1L, 0u, "actor-0"))
+
+        assertEquals(1, result.gcPairs.size, "the one live piece is actually tombstoned")
+        assertEquals(
+            result.gcPairs.size,
+            result.changes.size,
+            "every piece actually tombstoned must produce a matching opInfo, unconditionally",
+        )
     }
 }

@@ -142,16 +142,23 @@ internal data class TreeEditOperation(
         // Reverse ops are only generated for local and undo/redo operations.
         val reverseOps =
             if (opInfos.isNotEmpty() && source.producesReverseOps) {
-                val fromIndex =
-                    opInfos
-                        .filterIsInstance<OperationInfo.TreeEditOpInfo>()
-                        .firstOrNull()
-                        ?.from ?: 0
+                val treeEditOpInfo =
+                    opInfos.filterIsInstance<OperationInfo.TreeEditOpInfo>().firstOrNull()
+                val fromIndex = treeEditOpInfo?.from ?: 0
+                // B1: a root-stopped walk can produce fewer real splits than
+                // requested (CrdtTree.kt increments actualSplitLevel only per
+                // real parent.split(...) call). Reading the requested
+                // splitLevel field here instead would build a reverse op that
+                // deletes more boundary tokens than this operation actually
+                // inserted, destroying content the walk never split.
+                val actualSplitLevel = treeEditOpInfo?.splitLevel ?: 0
                 val isPureSplit =
-                    splitLevel > 0 && editContents.isNullOrEmpty() && result.removedNodes.isEmpty()
+                    actualSplitLevel > 0 &&
+                        editContents.isNullOrEmpty() &&
+                        result.removedNodes.isEmpty()
                 val reverseOp =
                     if (isPureSplit) {
-                        toSplitReverseOperation(tree, fromIndex)
+                        toSplitReverseOperation(tree, fromIndex, actualSplitLevel)
                     } else if (splitLevel == 0) {
                         toReverseOperation(
                             tree,
@@ -262,11 +269,13 @@ internal data class TreeEditOperation(
     }
 
     /**
-     * Builds the reverse [TreeEditOperation] for a pure split (splitLevel > 0).
+     * Builds the reverse [TreeEditOperation] for a pure split ([actualSplitLevel] > 0).
      *
-     * A split creates 2*splitLevel boundary tokens (one close + one open tag
-     * per level). The reverse is a boundary-deletion: a splitLevel=0 edit
-     * that removes those tokens, merging the split elements back together.
+     * A split creates 2*[actualSplitLevel] boundary tokens (one close + one
+     * open tag per level actually produced — a root-stopped walk can split
+     * fewer levels than the requested [splitLevel]). The reverse is a
+     * boundary-deletion: a splitLevel=0 edit that removes those tokens,
+     * merging the split elements back together.
      *
      * Tags [redoSplitLevel] on the returned op so that its own reverse (the
      * redo) regenerates a proper split rather than re-inserting raw boundary
@@ -275,8 +284,12 @@ internal data class TreeEditOperation(
      * Returns null if the boundary indices exceed the tree size (the split
      * was a no-op due to concurrent parent deletion).
      */
-    private fun toSplitReverseOperation(tree: CrdtTree, preEditFromIdx: Int): TreeEditOperation? {
-        val boundarySize = 2 * splitLevel
+    private fun toSplitReverseOperation(
+        tree: CrdtTree,
+        preEditFromIdx: Int,
+        actualSplitLevel: Int,
+    ): TreeEditOperation? {
+        val boundarySize = 2 * actualSplitLevel
         val reverseFromIdx = preEditFromIdx
         val reverseToIdx = preEditFromIdx + boundarySize
 
@@ -294,7 +307,7 @@ internal data class TreeEditOperation(
             executedAt = executedAt,
             undoFromOffset = reverseFromIdx,
             undoToOffset = reverseToIdx,
-            redoSplitLevel = splitLevel,
+            redoSplitLevel = actualSplitLevel,
         )
     }
 

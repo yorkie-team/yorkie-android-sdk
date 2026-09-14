@@ -280,10 +280,12 @@ class DocumentSkipHistoryTest {
 
     @Test
     fun `skipHistory reconciles a pending text undo entry across index shift`() = runTest {
-        // given: setNewText, ordinary insert "A"
-        target.updateAsync { root, _ ->
-            root.setNewText("text").edit(0, 0, "A")
-        }.await()
+        // given: setNewText in its OWN updateAsync block (spec 011 B3) — undoing
+        // the content edit below must reverse only that edit, not the
+        // SetOperation that created "text", or getAs<JsonText>("text") throws
+        // once the key is tombstoned.
+        target.updateAsync { root, _ -> root.setNewText("text") }.await()
+        target.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 0, "A") }.await()
         assertEquals("A", target.getRoot().getAs<JsonText>("text").toString())
 
         // skipHistory insert "X" before "A", shifting the pending undo range right.
@@ -308,6 +310,12 @@ class DocumentSkipHistoryTest {
             // gated-concurrent variant is unsafe — see the discovery note in the round build
             // report — so this pins the identical observable window guarantee deterministically.
 
+            // 0. setNewText in its OWN updateAsync, before clearHistory (spec 011 B3):
+            // undoing the user edit below must reverse only that edit, not this
+            // SetOperation. Placed ahead of clearHistory so its own undo entry is
+            // wiped there too, leaving the user edit as the sole tracked entry.
+            target.updateAsync { root, _ -> root.setNewText("text") }.await()
+
             // 1. Attach-path clearHistory, moved up ahead of applyStatus(Attached). Wipes any
             // prior/offline entries.
             target.clearHistory()
@@ -315,7 +323,7 @@ class DocumentSkipHistoryTest {
             // 2. A user edit lands in the window between that clearHistory and the initialRoot
             // update completing.
             target.updateAsync { root, _ ->
-                root.setNewText("text").edit(0, 0, "user")
+                root.getAs<JsonText>("text").edit(0, 0, "user")
             }.await()
             assertTrue(target.history.canUndo())
 

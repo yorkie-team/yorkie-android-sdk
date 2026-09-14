@@ -16,6 +16,7 @@ import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
+import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
@@ -39,9 +40,14 @@ internal data class CrdtTree(
 
     override val gcPairs: List<GCPair<*>>
         get() = buildList {
-            indexTree.traverse { node, _ ->
+            // traverseAll (not traverse) is required to register tombstones —
+            // including pieces split off a tombstoned node — after snapshot
+            // load; the visible-only traversal skipped tombstones entirely.
+            // These pairs carry gcOnlySize because the freshly built root's
+            // getDataSize only counted visible nodes into docSize.live.
+            indexTree.traverseAll { node, _ ->
                 if (node.removedAt != null) {
-                    add(GCPair(this@CrdtTree, node))
+                    add(GCPair(this@CrdtTree, node, gcOnlySize = node.dataSize))
                 }
                 addAll(node.gcPairs)
             }
@@ -50,6 +56,32 @@ internal data class CrdtTree(
     internal val indexTree = IndexTree(root)
 
     private val nodeMapByID = TreeMap<CrdtTreeNodeID, CrdtTreeNode>()
+
+    /**
+     * Buffers GC pairs for nodes created already-tombstoned by splitting a
+     * removed node. [edit], [style], and [removeStyle] drain this buffer via
+     * [drainPendingGcPairs] into the GC pairs they already return.
+     */
+    private var pendingGcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+
+    /**
+     * Buffers a GC pair for [node], a piece born already-tombstoned by
+     * splitting an already-removed node. [size] is the net-new size created
+     * by the split; it is accounted to `docSize.gc` at registration since the
+     * node was never live.
+     */
+    fun registerPendingGcPair(node: CrdtTreeNode, size: DataSize) {
+        pendingGcPairs.add(GCPair(this, node, gcOnlySize = size))
+    }
+
+    /**
+     * Returns the buffered GC pairs and clears the buffer.
+     */
+    fun drainPendingGcPairs(): List<GCPair<CrdtTreeNode>> {
+        val pairs = pendingGcPairs
+        pendingGcPairs = mutableListOf()
+        return pairs
+    }
 
     val rootTreeNode: TreeNode
         get() = indexTree.root.toTreeNode()
@@ -116,7 +148,10 @@ internal data class CrdtTree(
 
         val changes = mutableListOf<TreeChange>()
 
-        val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        // Widened to GCPair<*>: drained pending pairs below are
+        // GCPair<CrdtTreeNode>, a different type parameter than the
+        // GCPair<RhtNode> attribute pairs added by this loop.
+        val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         val newAttrKeys = mutableListOf<String>()
         var capturedPrev = false
@@ -226,6 +261,10 @@ internal data class CrdtTree(
                 }
             }
         }
+        // This style operation's boundary splits (findNodesAndSplitText) can
+        // land inside an already-tombstoned node and buffer a born-dead
+        // piece; drain it so it is not left unregistered for GC.
+        gcPairs.addAll(drainPendingGcPairs())
         return TreeOperationResult(
             changes,
             gcPairs,
@@ -537,6 +576,7 @@ internal data class CrdtTree(
         if (splitLevel > 0 && issueTimeTicket != null) {
             var parent = fromParent
             var left = fromLeft
+            var actualSplitLevel = 0
             // `run` so an exhausted ancestor chain terminates the whole loop
             // (return@run), rather than re-splitting the same node.
             run {
@@ -562,26 +602,42 @@ internal data class CrdtTree(
                     } else {
                         0
                     }
+                    if (parent.parent == null) {
+                        // The walk reached the tree root: stop before splitting it so
+                        // the root is never split and its clone never orphaned.
+                        // Mirrors JS SDK 2ef3260b, which breaks out of the walk
+                        // here and applies the edit's insertion normally after a
+                        // partial split; Android additionally logs.
+                        logDebug(
+                            TAG,
+                            "splitLevel walk reached tree root; stopping before splitting root",
+                        )
+                        return@run
+                    }
                     parent.split(
                         this,
                         splitOffset,
                         issueTimeTicket,
                         versionVector,
                     )
+                    actualSplitLevel++
                     left = parent
                     parent = parent.parent ?: return@run
                 }
             }
-            changes.add(
-                TreeChange(
-                    type = TreeChangeType.Content,
-                    from = fromIndex,
-                    to = fromIndex,
-                    fromPath = fromPath,
-                    toPath = fromPath,
-                    actorID = executedAt.actorID,
-                ),
-            )
+            if (actualSplitLevel > 0) {
+                changes.add(
+                    TreeChange(
+                        type = TreeChangeType.Content,
+                        from = fromIndex,
+                        to = fromIndex,
+                        fromPath = fromPath,
+                        toPath = fromPath,
+                        actorID = executedAt.actorID,
+                        splitLevel = actualSplitLevel,
+                    ),
+                )
+            }
         }
 
         // 05. insert the given node at the given position.
@@ -605,7 +661,7 @@ internal data class CrdtTree(
                     // make new nodes as tombstone immediately
                     if (fromParent.isRemoved) {
                         node.remove(executedAt)
-                        gcPairs.add(GCPair(this, node))
+                        gcPairs.add(GCPair(this, node, gcOnlySize = node.dataSize))
                     } else {
                         diff = addDataSizes(diff, node.dataSize)
                     }
@@ -636,6 +692,12 @@ internal data class CrdtTree(
                 }
             }
         }
+        // Both the boundary splits (step 01, findNodesAndSplitText) and the
+        // splitLevel walk (step 04) can land inside an already-tombstoned
+        // node and buffer a born-dead piece; drain them all so none are left
+        // unregistered for GC.
+        gcPairs.addAll(drainPendingGcPairs())
+
         // Count merged boundaries before their children were moved (above), so
         // the undo can regenerate them via split instead of re-inserting the
         // emptied shells. Mirrors JS SDK PR #1237.
@@ -797,7 +859,10 @@ internal data class CrdtTree(
         }
 
         val changes = mutableListOf<TreeChange>()
-        val gcPairs = mutableListOf<GCPair<RhtNode>>()
+        // Widened to GCPair<*>: drained pending pairs below are
+        // GCPair<CrdtTreeNode>, a different type parameter than the
+        // GCPair<RhtNode> attribute pairs added by this loop.
+        val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         var capturedPrev = false
         traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, tokenType), _ ->
@@ -881,6 +946,10 @@ internal data class CrdtTree(
                 }
             }
         }
+        // This remove-style operation's boundary splits (findNodesAndSplitText)
+        // can land inside an already-tombstoned node and buffer a born-dead
+        // piece; drain it so it is not left unregistered for GC.
+        gcPairs.addAll(drainPendingGcPairs())
         return TreeOperationResult(changes, gcPairs, diff, prevAttributes = prevAttributes)
     }
 
@@ -1302,6 +1371,10 @@ internal data class CrdtTree(
             versionVector.get(actorID) ?: 0L
         } ?: MAX_LAMPORT
     }
+
+    companion object {
+        private const val TAG = "CrdtTree"
+    }
 }
 
 /**
@@ -1317,9 +1390,12 @@ internal data class CrdtTreeNode(
 ) : IndexTreeNode<CrdtTreeNode>(), GCChild, GCParent<RhtNode> {
 
     val gcPairs: List<GCPair<*>>
+        // Only reached when a root is built from a snapshot. Removed
+        // attribute nodes are skipped by dataSize, so they were never
+        // counted into docSize.live — hence gcOnlySize.
         get() = _attributes
             .filter { node -> node.removedAt != null }
-            .map { node -> GCPair(this, node) }
+            .map { node -> GCPair(this, node, gcOnlySize = node.dataSize) }
 
     val attributes: Map<String, String>
         get() = _attributes.nodeKeyValueMap
@@ -1501,6 +1577,18 @@ internal data class CrdtTreeNode(
             tree.registerNode(split)
         }
 
+        // A piece split off an already-tombstoned node inherits removedAt
+        // without going through remove(), so no GC pair is created for it in
+        // the normal deletion path. Register it here so it can be purged;
+        // otherwise it stays in the tree forever. The piece was never live,
+        // so its size goes straight to docSize.gc when the pair is
+        // registered; report a zero diff to the caller (which accounts
+        // diffs to docSize.live).
+        if (split != null && split.removedAt != null) {
+            tree.registerPendingGcPair(split, diff)
+            return Pair(split, DataSize(data = 0, meta = 0))
+        }
+
         return Pair(split, diff)
     }
 
@@ -1632,6 +1720,15 @@ internal data class CrdtTreeNode(
 
     override fun delete(node: RhtNode) {
         _attributes.delete(node)
+    }
+
+    // The data-class hash covers mutable state (childNodes, attributes), so
+    // hash-keyed registrations (e.g. CrdtRoot's gcPairMap) would silently
+    // miss after a concurrent edit mutates a registered node. Hashing the
+    // immutable id keeps buckets stable; structural equals stays consistent
+    // with it (equal nodes share the id).
+    override fun hashCode(): Int {
+        return id.hashCode()
     }
 
     @Suppress("FunctionName")

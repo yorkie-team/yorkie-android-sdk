@@ -11,6 +11,8 @@ import dev.yorkie.api.v1.OperationKt.style
 import dev.yorkie.api.v1.OperationKt.treeEdit
 import dev.yorkie.api.v1.OperationKt.treeStyle
 import dev.yorkie.api.v1.operation
+import dev.yorkie.document.crdt.RestoreSpan
+import dev.yorkie.document.crdt.TextValue
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
@@ -18,12 +20,18 @@ import dev.yorkie.document.operation.IncreaseOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.Operation
 import dev.yorkie.document.operation.RemoveOperation
+import dev.yorkie.document.operation.RestoreMode
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.StyleOperation
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
+import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
+import dev.yorkie.api.v1.RestoreMode as PbRestoreMode
+import dev.yorkie.api.v1.RestoreSpan as PbRestoreSpan
+import dev.yorkie.api.v1.restoreSpan as pbRestoreSpan
 
 internal typealias PBOperation = dev.yorkie.api.v1.Operation
 
@@ -64,15 +72,50 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                 actor = it.increase.actor,
             )
 
-            it.hasEdit() -> EditOperation(
-                fromPos = it.edit.from.toRgaTreeSplitNodePos(),
-                toPos = it.edit.to.toRgaTreeSplitNodePos(),
-                parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
-                executedAt = it.edit.executedAt.toTimeTicket(),
-                content = it.edit.content,
-                attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() }
-                    ?: mapOf(),
-            )
+            it.hasEdit() -> {
+                val executedAt = it.edit.executedAt.toTimeTicket()
+                // S2: each side decodes to null independently of the other,
+                // so a retombstone-only op decodes restoreSpans == null (and
+                // vice versa) — a true round-trip of the encode-side guard's
+                // non-empty check.
+                val restoreSpans = it.edit.restoreSpansList.takeIf { list -> list.isNotEmpty() }
+                    ?.map { span -> span.toRestoreSpan(executedAt) }
+                val retombstoneSpans =
+                    it.edit.retombstoneSpansList.takeIf { list -> list.isNotEmpty() }
+                        ?.map { span -> span.toRestoreSpan(executedAt) }
+                // S3: an explicit `when` over the wire enum. A payload-carrying
+                // op whose restoreMode is neither RESTORE nor RETOMBSTONE
+                // (UNSPECIFIED/UNRECOGNIZED) is malformed input from a newer
+                // peer, not something to guess a direction for — throw at the
+                // decode boundary, mirroring the malformed-span guard below.
+                val restoreMode = if (restoreSpans == null && retombstoneSpans == null) {
+                    null
+                } else {
+                    when (it.edit.restoreMode) {
+                        PbRestoreMode.RESTORE_MODE_RESTORE -> RestoreMode.Restore
+                        PbRestoreMode.RESTORE_MODE_RETOMBSTONE -> RestoreMode.Retombstone
+                        else -> throw YorkieException(
+                            ErrInvalidArgument,
+                            "unknown restore mode with payload present: ${it.edit.restoreMode}",
+                        )
+                    }
+                }
+                EditOperation(
+                    fromPos = it.edit.from.toRgaTreeSplitNodePos(),
+                    toPos = it.edit.to.toRgaTreeSplitNodePos(),
+                    parentCreatedAt = it.edit.parentCreatedAt.toTimeTicket(),
+                    executedAt = executedAt,
+                    content = it.edit.content,
+                    attributes = it.edit.attributesMap.takeUnless { attrs -> attrs.isEmpty() }
+                        ?: mapOf(),
+                    // undoFromOffset/undoToOffset stay at their NOT_AN_UNDO_OP
+                    // default: a decoded remote restore op applies by
+                    // identity and is not reconciled locally.
+                    restoreSpans = restoreSpans,
+                    restoreMode = restoreMode,
+                    retombstoneSpans = retombstoneSpans,
+                )
+            }
 
             it.hasStyle() -> StyleOperation(
                 fromPos = it.style.from.toRgaTreeSplitNodePos(),
@@ -178,6 +221,27 @@ internal fun Operation.toPBOperation(): PBOperation {
                     content = operation.content
                     executedAt = operation.executedAt.toPBTimeTicket()
                     operation.attributes.forEach { attributes[it.key] = it.value }
+                    // Ordinary edits set none of these — the wire payload stays
+                    // byte-identical to before this field was added. Guard on
+                    // non-EMPTY (Minor), not non-null: a re-encoded decoded op
+                    // can carry emptyList() on both sides (S2's decode-null
+                    // asymmetry only applies going forward), and emitting
+                    // RESTORE_MODE_RESTORE with zero spans would make the
+                    // server's NewRestoreEdit (which keys off restore_mode)
+                    // drop the edit's content.
+                    if (!operation.restoreSpans.isNullOrEmpty() ||
+                        !operation.retombstoneSpans.isNullOrEmpty()
+                    ) {
+                        restoreSpans.addAll(operation.restoreSpans.orEmpty().map { it.toPbSpan() })
+                        retombstoneSpans.addAll(
+                            operation.retombstoneSpans.orEmpty().map { it.toPbSpan() },
+                        )
+                        restoreMode = if (operation.restoreMode == RestoreMode.Retombstone) {
+                            PbRestoreMode.RESTORE_MODE_RETOMBSTONE
+                        } else {
+                            PbRestoreMode.RESTORE_MODE_RESTORE
+                        }
+                    }
                 }
             }
         }
@@ -239,3 +303,56 @@ internal fun Operation.toPBOperation(): PBOperation {
 }
 
 internal fun List<Operation>.toPBOperations(): List<PBOperation> = map(Operation::toPBOperation)
+
+/**
+ * Converts a domain [RestoreSpan] to its protobuf representation.
+ */
+private fun RestoreSpan<TextValue>.toPbSpan(): PbRestoreSpan {
+    val span = this
+    return pbRestoreSpan {
+        createdAt = span.createdAt.toPBTimeTicket()
+        start = span.start
+        end = span.end
+        content = span.value.content
+        span.value.attributes.forEach { attributes[it.key] = it.value }
+    }
+}
+
+/**
+ * Converts a protobuf [PbRestoreSpan] to its domain representation. Restores
+ * the span's attributes onto the decoded [TextValue] via [executedAt] — the
+ * decoded value's own attribute-RHT tickets are otherwise unobservable
+ * (identity is carried by the span's [PbRestoreSpan.createdAt]/offsets, not
+ * by the value's internal attribute tickets).
+ *
+ * A span addresses content by insertion identity, so it is malformed without
+ * a `created_at`, with negative, inverted or zero-width offsets (a zero-width
+ * span would make `retombstone` tombstone the remainder of the live piece
+ * covering `start - 1`), or when [content]
+ * disagrees with the span width — capture always sets them equal, so a
+ * mismatch signals a corrupt or hostile payload that would otherwise throw
+ * [StringIndexOutOfBoundsException] out of
+ * [dev.yorkie.document.crdt.RgaTreeSplit]'s substring calls in `restore`.
+ * Also rejected: a `created_at` decoding to [TimeTicket.InitialTimeTicket] or
+ * [TimeTicket.MaxTimeTicket] — these collide with sentinel IDs used
+ * internally (e.g. a tree's sentinel `head` node), so a payload carrying one
+ * would silently overwrite it instead of failing loudly (F14). Rejected
+ * here, at the decode boundary.
+ */
+private fun PbRestoreSpan.toRestoreSpan(executedAt: TimeTicket): RestoreSpan<TextValue> {
+    val decodedCreatedAt = if (hasCreatedAt()) createdAt.toTimeTicket() else null
+    val malformed = decodedCreatedAt == null || start < 0 || end <= start ||
+        content.length != end - start ||
+        decodedCreatedAt == TimeTicket.InitialTimeTicket ||
+        decodedCreatedAt == TimeTicket.MaxTimeTicket
+    if (malformed) {
+        throw YorkieException(
+            ErrInvalidArgument,
+            "malformed restore span: missing timestamp or inconsistent offsets",
+        )
+    }
+    val value = TextValue(content).apply {
+        attributesMap.forEach { (key, attrValue) -> setAttribute(key, attrValue, executedAt) }
+    }
+    return RestoreSpan(requireNotNull(decodedCreatedAt), start, end, value)
+}

@@ -6,8 +6,19 @@ import dev.yorkie.util.DataSize
 /**
  * [GCPair] is a structure that represents a pair of parent and child for garbage
  * collection.
+ *
+ * [gcOnlySize] is set when [child]'s size was never counted in `docSize.live`:
+ * a piece born already-removed by splitting an already-tombstoned node, or a
+ * tombstone registered by the full snapshot-load scan (which only counts
+ * visible nodes into live). When present, [CrdtRoot.registerGCPair] adds this
+ * size to `docSize.gc` and leaves `docSize.live` untouched, instead of moving
+ * [child]'s size from live to gc.
  */
-internal data class GCPair<T : GCChild>(val parent: GCParent<T>, val child: T)
+internal data class GCPair<T : GCChild>(
+    val parent: GCParent<T>,
+    val child: T,
+    val gcOnlySize: DataSize? = null,
+)
 
 /**
  * [GCParent] is an interface for the parent of the garbage collection target.

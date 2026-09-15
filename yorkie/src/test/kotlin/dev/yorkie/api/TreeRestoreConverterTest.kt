@@ -288,17 +288,24 @@ class TreeRestoreConverterTest {
     }
 
     @Test
-    fun `throws when a text span is zero-length with an empty value`() {
-        // 0 == "".length, so the length/value agreement check alone passes it;
-        // accepted, retombstone's upstream max(length, 1) clamp would widen
-        // the span into re-removing one character the sender never deleted.
+    fun `tolerates a zero-length text span with an empty value`() {
+        // Parity pin: 0 == "".length passes the agreement check on every SDK
+        // (JS and iOS validate no tree-span length), and retombstone's shared
+        // max(length, 1) clamp then re-removes one character. Rejecting it
+        // here alone would make Android fail to apply a change its peers
+        // accept; closing the clamp belongs upstream.
         val span = validSpanBuilder().apply {
             isText = true
             nodeType = "text"
             value = ""
             length = 0
         }.build()
-        assertMalformed(span)
+
+        val operations = decode(span)
+
+        val decoded = (operations.single() as TreeEditOperation).restoreSpans?.single()
+        assertEquals(0, decoded?.length)
+        assertEquals("", decoded?.value)
     }
 
     @Test

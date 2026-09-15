@@ -14,6 +14,7 @@ import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.issueTime
 import dev.yorkie.util.DataSize
+import dev.yorkie.util.YorkieException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -710,7 +711,8 @@ class TreeRestoreConvergenceTest {
     // already buffered a born-removed piece, must not leave that pair in the
     // tree-level buffer -- the next edit/style/restore on this tree would
     // drain it into its own GC accounting. (The server companion drains via
-    // `defer`; restore mirrors it with try/finally.)
+    // `defer`; restore mirrors it with try/finally.) The failure surfaces as
+    // a typed YorkieException, not an unchecked IllegalArgumentException.
     @Test
     fun `restore drains pending GC pairs even when a later span throws`() = runTest {
         val (tree, span) = buildDeletedRun("0123456789", 3, 9)
@@ -719,8 +721,9 @@ class TreeRestoreConvergenceTest {
         // gap where recreateFromSpan trips on the missing value.
         val poisoned = span.copy(id = span.id.copy(offset = 5), length = 10, value = null)
 
-        assertFailsWith<IllegalArgumentException> { tree.restore(listOf(poisoned)) }
+        val thrown = assertFailsWith<YorkieException> { tree.restore(listOf(poisoned)) }
 
+        assertEquals(YorkieException.Code.ErrInvalidArgument, thrown.code)
         assertTrue(tree.drainPendingGcPairs().isEmpty(), "the throw path must drain the buffer")
     }
 

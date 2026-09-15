@@ -20,6 +20,8 @@ import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.TokenType
 import dev.yorkie.util.TreePos
 import dev.yorkie.util.TreeToken
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.traverseAll
 import dev.yorkie.util.traverseAllPreorder
@@ -1512,8 +1514,9 @@ internal data class CrdtTree(
      * [CrdtTreeNode.split] (contributing zero here) — the caller must still
      * drain and register those pairs.
      *
-     * Requires `pieceStart <= from < to <= pieceEnd`, enforced: a range that
-     * escapes the piece would silently skip a split and hand back a node
+     * Requires `pieceStart <= from < to <= pieceEnd`, enforced with
+     * [YorkieException] ([ErrInvalidArgument], the iOS twin's error): a range
+     * that escapes the piece would silently skip a split and hand back a node
      * covering content outside the span (which [restore] would then revive).
      */
     private fun isolateTextRange(
@@ -1523,8 +1526,11 @@ internal data class CrdtTree(
     ): Pair<CrdtTreeNode, DataSize> {
         val pieceStart = piece.id.offset
         val pieceEnd = pieceStart + piece.value.length
-        require(pieceStart <= from && from < to && to <= pieceEnd) {
-            "isolateTextRange: [$from, $to) escapes piece ${piece.id} [$pieceStart, $pieceEnd)"
+        if (!(pieceStart <= from && from < to && to <= pieceEnd)) {
+            throw YorkieException(
+                ErrInvalidArgument,
+                "isolateTextRange: [$from, $to) escapes piece ${piece.id} [$pieceStart, $pieceEnd)",
+            )
         }
         var diff = DataSize(data = 0, meta = 0)
         var node = piece
@@ -1649,7 +1655,10 @@ internal data class CrdtTree(
         }
 
         val node = if (span.isText) {
-            val spanValue = requireNotNull(span.value)
+            val spanValue = span.value ?: throw YorkieException(
+                ErrInvalidArgument,
+                "text restore span ${span.id} has no value",
+            )
             val relativeOffset = offset - span.id.offset
             CrdtTreeNode.CrdtTreeText(
                 CrdtTreeNodeID(span.id.createdAt, offset),

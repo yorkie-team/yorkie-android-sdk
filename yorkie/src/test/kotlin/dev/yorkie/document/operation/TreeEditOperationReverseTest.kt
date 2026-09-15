@@ -9,6 +9,7 @@ import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.TreeRestoreSpan
+import dev.yorkie.document.crdt.toTreeNode
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.util.DataSize
@@ -437,6 +438,40 @@ class TreeEditOperationReverseTest {
         // at the clamped (end-of-document) position
         assertFailsWith<IllegalArgumentException> {
             staleUndo.execute(root, OpSource.UndoRedo, null)
+        }
+        assertEquals(before, tree.toXml())
+    }
+
+    @Test
+    fun `undo op carrying snapshots refuses a non-zero split level`() {
+        // given: <root><p>hello</p></root> and a copy-reinsert undo op built by
+        // hand with splitLevel = 1. buildFreshNodes would mint delimiter + 1..+2
+        // for the <p>hello</p> snapshot while issueTimeTicket's fallback starts
+        // at delimiter + contents.size + 1 = delimiter + 2 — an overlapping ID.
+        // Mirrors upstream reissueContentIDs' ErrRefused (port 4ec66cc0).
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        makeTreeEditOp(tree, 0, 0, listOf(pNode), 3).execute(root, OpSource.Local, null)
+        val helloNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "hello")
+        makeTreeEditOp(tree, 1, 1, listOf(helloNode), 4).execute(root, OpSource.Local, null)
+        val before = tree.toXml()
+
+        val pos = tree.indexRangeToPosRange(0 to 0).first
+        val splittingUndo = TreeEditOperation(
+            parentCreatedAt = treeTicket,
+            fromPos = pos,
+            toPos = pos,
+            contents = null,
+            splitLevel = 1,
+            executedAt = makeTicket(10),
+            undoFromOffset = 0,
+            undoToOffset = 0,
+            removedNodeSnapshots = listOf(pNode.toTreeNode()),
+        )
+
+        // when / then: refused before the tree is touched
+        assertFailsWith<IllegalStateException> {
+            splittingUndo.execute(root, OpSource.UndoRedo, null)
         }
         assertEquals(before, tree.toXml())
     }

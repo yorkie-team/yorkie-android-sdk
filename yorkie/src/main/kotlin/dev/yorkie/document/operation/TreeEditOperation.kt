@@ -148,6 +148,17 @@ internal data class TreeEditOperation(
         val editContents: List<CrdtTreeNode>? =
             when {
                 isUndoOp && removedNodeSnapshots != null -> {
+                    // Mirrors upstream reissueContentIDs' ErrRefused (port
+                    // 4ec66cc0): buildFreshNodes mints executedAt.delimiter + 1
+                    // .. + countNodes, while issueTimeTicket's fallback starts
+                    // at executedAt.delimiter + contents.size + 1 — the ranges
+                    // overlap once a content has descendants, and the failure
+                    // is a silent duplicate ID. Every snapshot-carrying reverse
+                    // toReverseOperation builds is splitLevel = 0; this catches
+                    // a future one that is not.
+                    check(splitLevel == 0) {
+                        "cannot rebuild snapshot contents on a splitting edit"
+                    }
                     buildFreshNodes(removedNodeSnapshots, executedAt)
                 }
                 else -> contents?.map(CrdtTreeNode::deepCopy)
@@ -383,6 +394,9 @@ internal data class TreeEditOperation(
      * re-removes [insertedSpans], both by ORIGINAL identity, instead of
      * copy-reinsertion. Guarded by `redoSplitLevel == 0` so a split's own
      * boundary-deletion undo stays on the re-split path above (AC10).
+     *
+     * Returns null when the copy-reinsert reverse range would run past the
+     * post-edit tree (the edit had no live effect — see the guard below).
      */
     private fun toReverseOperation(
         tree: CrdtTree,
@@ -393,7 +407,7 @@ internal data class TreeEditOperation(
         mergeLevel: Int = 0,
         removedSpans: List<TreeRestoreSpan> = emptyList(),
         insertedSpans: List<TreeRestoreSpan> = emptyList(),
-    ): TreeEditOperation {
+    ): TreeEditOperation? {
         if (redoSplitLevel == 0 && (removedSpans.isNotEmpty() || insertedSpans.isNotEmpty())) {
             return TreeEditOperation(
                 parentCreatedAt = parentCreatedAt,
@@ -450,6 +464,17 @@ internal data class TreeEditOperation(
         // fromIndex is the live-tree position just before this edit was applied.
         val reverseFromIndex = fromIndex
         val reverseToIndex = fromIndex + insertedSpan
+
+        // Guard (JS tree_edit_operation.ts, port 4ec66cc0): insertedSpan is a
+        // pre-insert measurement, so content tombstoned on the way in (a
+        // removed fromParent) still counts here while adding nothing to the
+        // live tree. A reverse range past the post-edit size would make the
+        // undo throw at indexRangeToPosRange (offsets are never clamped, see
+        // execute); skip the reverse instead — the edit had no live effect.
+        // No op-level path reaches here with that shape today (such an edit
+        // reports empty opInfos; review 5207333774 probe), so this is parity
+        // and a statement of the measurement contract.
+        if (reverseToIndex > tree.size) return null
 
         // Convert deleted nodes to plain TreeNode snapshots so the reverse op
         // can create fresh CrdtTreeNodes with non-conflicting IDs at apply time.

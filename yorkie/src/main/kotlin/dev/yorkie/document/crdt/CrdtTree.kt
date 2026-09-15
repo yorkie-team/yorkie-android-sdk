@@ -778,9 +778,10 @@ internal data class CrdtTree(
         }
 
         // 05. insert the given node at the given position. Cross-change ID
-        // reuse (an earlier change, another actor, or an ID this same edit's
-        // own split is about to create) is dropped as a whole subtree here —
-        // AFTER step 01's range resolution, which can itself split text and
+        // reuse (an earlier change, another actor, or a text piece step 01's
+        // range resolution just split off — it carries the split text's
+        // createdAt, so it is another change's ID) is dropped as a whole
+        // subtree here — AFTER step 01, which can itself split text and
         // create the very ID a content node carries (port 2ed28322).
         // insertedContentSize is measured on the still-detached content, so
         // it reflects the accepted-content span even if the insert loop
@@ -1166,13 +1167,8 @@ internal data class CrdtTree(
      * collide.
      */
     fun registerNode(node: CrdtTreeNode) {
-        val entry = nodeMapByID.floorEntry(node.id)
-        if (entry != null &&
-            entry.value !== node &&
-            entry.key == node.id &&
-            node.isRemoved &&
-            !entry.value.isRemoved
-        ) {
+        val existing = nodeMapByID[node.id]
+        if (existing != null && existing !== node && node.isRemoved && !existing.isRemoved) {
             return
         }
         nodeMapByID[node.id] = node
@@ -1181,13 +1177,18 @@ internal data class CrdtTree(
     /**
      * Filters [contents] before they are spliced into the tree at
      * [editedAt]: a content subtree whose ID was already claimed by a
-     * DIFFERENT change (an earlier change, another actor, or an ID this
-     * same edit's own split is about to create) is dropped as a whole
-     * subtree — silently, never throwing, since such a change may already
-     * be part of a stored history. A subtree whose reused ID belongs to
-     * THIS SAME change/actor is kept: element-split delimiter IDs are
-     * simulated (not carried on the wire pre-field-11), so they
-     * legitimately collide with this edit's own content. Port 2ed28322.
+     * DIFFERENT change is dropped as a whole subtree — silently, never
+     * throwing, since such a change may already be part of a stored
+     * history. "Different" is judged by the ID's lamport/actor against
+     * [editedAt]: an earlier change, another actor, or a text piece this
+     * edit's own step-01 range resolution has just split off (a text split
+     * reuses the split text node's `createdAt` with a new offset, so that
+     * ID belongs to the text's original change, not to this edit). A
+     * subtree whose reused ID belongs to THIS SAME change/actor is kept:
+     * element-split delimiter IDs are minted from this edit's own ticket
+     * and simulated on the applying side (not carried on the wire
+     * pre-field-11), so they legitimately collide with this edit's own
+     * content. Port 2ed28322.
      */
     fun dropDuplicateContents(
         contents: List<CrdtTreeNode>,
@@ -1201,8 +1202,7 @@ internal data class CrdtTree(
                 ) {
                     return@traverseAll
                 }
-                val entry = nodeMapByID.floorEntry(node.id)
-                if (entry != null && entry.key == node.id) {
+                if (nodeMapByID.containsKey(node.id)) {
                     reusedID = node.id
                 }
             }
@@ -1534,8 +1534,7 @@ internal data class CrdtTree(
         // Guarded purge (port 2ed28322): only remove the map entry [node]
         // actually holds — an unconditional remove would unregister a
         // different live node sharing this ID.
-        val entry = nodeMapByID.floorEntry(node.id)
-        if (entry != null && entry.value === node && entry.key == node.id) {
+        if (nodeMapByID[node.id] === node) {
             nodeMapByID.remove(node.id)
         }
 

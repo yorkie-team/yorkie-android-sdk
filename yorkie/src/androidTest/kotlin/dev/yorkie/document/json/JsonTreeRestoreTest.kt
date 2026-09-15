@@ -3,6 +3,9 @@ package dev.yorkie.document.json
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.withTwoClientsAndDocuments
+import dev.yorkie.document.Document
+import dev.yorkie.document.crdt.CrdtTree
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import kotlin.test.assertEquals
@@ -26,6 +29,29 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class JsonTreeRestoreTest {
 
+    /**
+     * The live node-identity sequence of the document's tree, in postorder.
+     * Two replicas converging must match on this, not just on rendered XML:
+     * identical text can hide different text-node segmentation, which is the
+     * divergence the split-aware restore exists to prevent.
+     */
+    private fun identitySequence(document: Document): List<CrdtTreeNodeID> = buildList {
+        (document.getRootObject()["tree"] as CrdtTree).indexTree.traverse { node, _ ->
+            add(
+                node.id,
+            )
+        }
+    }
+
+    private suspend fun assertConverged(d1: Document, d2: Document) {
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("tree").toXml(),
+            d2.getRoot().getAs<JsonTree>("tree").toXml(),
+        )
+        assertEquals(identitySequence(d1), identitySequence(d2))
+        assertEquals(d1.toJson(), d2.toJson())
+    }
+
     @Test
     fun test_overlapping_tree_deletes_both_undo_converge() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
@@ -48,11 +74,7 @@ class JsonTreeRestoreTest {
             c2.syncAsync().await()
             c1.syncAsync().await()
             assertEquals("<root>0189</root>", d1.getRoot().getAs<JsonTree>("tree").toXml())
-            assertEquals(
-                d1.getRoot().getAs<JsonTree>("tree").toXml(),
-                d2.getRoot().getAs<JsonTree>("tree").toXml(),
-            )
-            assertEquals(d1.toJson(), d2.toJson())
+            assertConverged(d1, d2)
 
             // Both undo their own overlapping delete — identity-preserving
             // restore must converge both replicas back to the original
@@ -66,11 +88,7 @@ class JsonTreeRestoreTest {
             c1.syncAsync().await()
 
             assertEquals("<root>0123456789</root>", d1.getRoot().getAs<JsonTree>("tree").toXml())
-            assertEquals(
-                d1.getRoot().getAs<JsonTree>("tree").toXml(),
-                d2.getRoot().getAs<JsonTree>("tree").toXml(),
-            )
-            assertEquals(d1.toJson(), d2.toJson())
+            assertConverged(d1, d2)
         }
     }
 
@@ -113,11 +131,7 @@ class JsonTreeRestoreTest {
                 c2.syncAsync().await()
             }
             assertEquals("<root>0189</root>", d1.getRoot().getAs<JsonTree>("tree").toXml())
-            assertEquals(
-                d1.getRoot().getAs<JsonTree>("tree").toXml(),
-                d2.getRoot().getAs<JsonTree>("tree").toXml(),
-            )
-            assertEquals(d1.toJson(), d2.toJson())
+            assertConverged(d1, d2)
             // The purge is what separates this case from the one above: assert
             // it happened instead of trusting the round count.
             assertEquals(0, d1.garbageLength, "d1 must have purged every tombstone before undo")
@@ -136,11 +150,7 @@ class JsonTreeRestoreTest {
             c1.syncAsync().await()
 
             assertEquals("<root>0123456789</root>", d1.getRoot().getAs<JsonTree>("tree").toXml())
-            assertEquals(
-                d1.getRoot().getAs<JsonTree>("tree").toXml(),
-                d2.getRoot().getAs<JsonTree>("tree").toXml(),
-            )
-            assertEquals(d1.toJson(), d2.toJson())
+            assertConverged(d1, d2)
         }
     }
 }

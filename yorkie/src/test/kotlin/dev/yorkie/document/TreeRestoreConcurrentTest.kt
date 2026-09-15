@@ -9,6 +9,7 @@ import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import kotlin.test.assertEquals
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Ignore
 import org.junit.Rule
@@ -36,6 +37,31 @@ class TreeRestoreConcurrentTest {
     private val actor1 = "000000000000000000000001"
     private val actor2 = "000000000000000000000002"
 
+    /** One overlap relation of the matrix: d1 deletes [r1] while d2 deletes [r2]. */
+    private data class Relation(val label: String, val r1: Pair<Int, Int>, val r2: Pair<Int, Int>)
+
+    // d1's range [5,7) sits inside d2's wider [3,9).
+    private val containedBy = Relation("contained_by", 5 to 7, 3 to 9)
+
+    // Mirror of contained_by: d1 is now the wider range.
+    private val contains = Relation("contains", 3 to 9, 5 to 7)
+
+    // d1's range starts inside d2's range and extends past its end.
+    private val overlapStart = Relation("overlap_start", 5 to 9, 3 to 7)
+
+    // Mirror of overlap_start.
+    private val overlapEnd = Relation("overlap_end", 3 to 7, 5 to 9)
+
+    // Both replicas delete the exact same range.
+    private val identical = Relation("identical", 3 to 7, 3 to 7)
+
+    // The two ranges touch but never overlap.
+    private val adjacent = Relation("adjacent", 3 to 5, 5 to 7)
+
+    /** The six relations; the explicit per-relation tests below use the same vals. */
+    private val overlapRelations =
+        listOf(containedBy, contains, overlapStart, overlapEnd, identical, adjacent)
+
     private fun Document.crdtTree(key: String = "t"): CrdtTree = getRootObject()[key] as CrdtTree
 
     /**
@@ -49,9 +75,10 @@ class TreeRestoreConcurrentTest {
 
     /**
      * Seeds both replicas with `<doc><p>0123456789</p></doc>` and returns
-     * them already cross-synced.
+     * them already cross-synced. [overWire] routes every relayed operation
+     * through the protobuf converters, as a real server does.
      */
-    private suspend fun seed(): Pair<Document, Document> {
+    private suspend fun seed(overWire: Boolean = false): Pair<Document, Document> {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
@@ -63,13 +90,13 @@ class TreeRestoreConcurrentTest {
                 element("doc") { element("p") { text { "0123456789" } } },
             )
         }.await()
-        crossSync(d1, d2)
+        crossSync(d1, d2, overWire)
         return d1 to d2
     }
 
     /**
-     * Drives both replicas' concurrent overlapping deletes ([r1] on [d1],
-     * [r2] on [d2]), cross-syncs, then forces GC on both replicas (the
+     * Drives both replicas' concurrent overlapping deletes ([relation]'s r1
+     * on [d1], r2 on [d2]), cross-syncs, then forces GC on both replicas (the
      * in-process analogue of JS's `settle` twice — `crossSync` passes an
      * empty [dev.yorkie.document.time.VersionVector] so its internal GC is a
      * no-op) so restore takes the recreate path. Asserts the purge was total
@@ -78,12 +105,13 @@ class TreeRestoreConcurrentTest {
     private suspend fun deleteOverlapping(
         d1: Document,
         d2: Document,
-        r1: Pair<Int, Int>,
-        r2: Pair<Int, Int>,
+        relation: Relation,
+        overWire: Boolean = false,
     ) {
+        val (_, r1, r2) = relation
         d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(r1.first, r1.second) }.await()
         d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(r2.first, r2.second) }.await()
-        crossSync(d1, d2)
+        crossSync(d1, d2, overWire)
 
         // Every tombstone is eligible under the max vector, so the purge must
         // be total: one surviving tombstone would send restore down the cheap
@@ -117,16 +145,24 @@ class TreeRestoreConcurrentTest {
         )
     }
 
-    private suspend fun undoBoth(d1: Document, d2: Document) {
+    private suspend fun undoBoth(
+        d1: Document,
+        d2: Document,
+        overWire: Boolean = false,
+    ) {
         d1.history.undoAsync().await()
         d2.history.undoAsync().await()
-        crossSync(d1, d2)
+        crossSync(d1, d2, overWire)
     }
 
-    private suspend fun redoBoth(d1: Document, d2: Document) {
+    private suspend fun redoBoth(
+        d1: Document,
+        d2: Document,
+        overWire: Boolean = false,
+    ) {
         d1.history.redoAsync().await()
         d2.history.redoAsync().await()
-        crossSync(d1, d2)
+        crossSync(d1, d2, overWire)
     }
 
     /**
@@ -135,35 +171,31 @@ class TreeRestoreConcurrentTest {
      * segmentation (live pieces inside its span) instead of a fully purged
      * run: the mixed recreate-around-live path.
      */
-    private suspend fun undoInterleaved(first: Document, second: Document) {
+    private suspend fun undoInterleaved(
+        first: Document,
+        second: Document,
+        overWire: Boolean = false,
+    ) {
         first.history.undoAsync().await()
-        crossSync(first, second)
+        crossSync(first, second, overWire)
         second.history.undoAsync().await()
-        crossSync(first, second)
+        crossSync(first, second, overWire)
     }
-
-    // (label, d1 range, d2 range) — the same six relations as the
-    // per-relation matrix below, for the order/interleaving variants.
-    private val overlapRelations = listOf(
-        Triple("contained_by", 5 to 7, 3 to 9),
-        Triple("contains", 3 to 9, 5 to 7),
-        Triple("overlap_start", 5 to 9, 3 to 7),
-        Triple("overlap_end", 3 to 7, 5 to 9),
-        Triple("identical", 3 to 7, 3 to 7),
-        Triple("adjacent", 3 to 5, 5 to 7),
-    )
 
     /**
      * Runs [block] once per relation in [overlapRelations], collecting each
      * relation's failure instead of stopping at the first, so one red
-     * relation cannot hide the others.
+     * relation cannot hide the others. Cancellation still propagates.
      */
-    private suspend fun forEachRelation(
-        block: suspend (label: String, r1: Pair<Int, Int>, r2: Pair<Int, Int>) -> Unit,
-    ) {
-        for ((label, r1, r2) in overlapRelations) {
-            runCatching { block(label, r1, r2) }
-                .onFailure { errors.addError(AssertionError("$label: ${it.message}", it)) }
+    private suspend fun forEachRelation(block: suspend (Relation) -> Unit) {
+        for (relation in overlapRelations) {
+            try {
+                block(relation)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                errors.addError(AssertionError("${relation.label}: ${e.message}", e))
+            }
         }
     }
 
@@ -174,12 +206,15 @@ class TreeRestoreConcurrentTest {
      * span boundaries — but both replicas agree, which [assertConverged]
      * checks.)
      */
-    private suspend fun assertUndoConvergesToInitial(r1: Pair<Int, Int>, r2: Pair<Int, Int>) {
-        val (d1, d2) = seed()
+    private suspend fun assertUndoConvergesToInitial(
+        relation: Relation,
+        overWire: Boolean = false,
+    ) {
+        val (d1, d2) = seed(overWire)
         val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
-        deleteOverlapping(d1, d2, r1, r2)
+        deleteOverlapping(d1, d2, relation, overWire)
 
-        undoBoth(d1, d2)
+        undoBoth(d1, d2, overWire)
         assertConverged(d1, d2, "after undo")
         assertEquals(
             initial,
@@ -193,15 +228,15 @@ class TreeRestoreConcurrentTest {
      * post-delete state.
      */
     private suspend fun assertUndoRedoConvergesToPostDelete(
-        r1: Pair<Int, Int>,
-        r2: Pair<Int, Int>,
+        relation: Relation,
+        overWire: Boolean = false,
     ) {
-        val (d1, d2) = seed()
+        val (d1, d2) = seed(overWire)
         val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
-        deleteOverlapping(d1, d2, r1, r2)
+        deleteOverlapping(d1, d2, relation, overWire)
         val afterDeletes = d1.getRoot().getAs<JsonTree>("t").toXml()
 
-        undoBoth(d1, d2)
+        undoBoth(d1, d2, overWire)
         assertConverged(d1, d2, "after undo")
         assertEquals(
             initial,
@@ -209,7 +244,7 @@ class TreeRestoreConcurrentTest {
             "undo must restore the initial visible content",
         )
 
-        redoBoth(d1, d2)
+        redoBoth(d1, d2, overWire)
         assertConverged(d1, d2, "after redo")
         assertEquals(
             afterDeletes,
@@ -218,70 +253,75 @@ class TreeRestoreConcurrentTest {
         )
     }
 
-    // contained_by: d1's range [5,7) sits inside d2's wider [3,9).
     @Test
     fun `converges on undo of overlapping deletes contained_by`() = runTest {
-        assertUndoConvergesToInitial(5 to 7, 3 to 9)
+        assertUndoConvergesToInitial(containedBy)
     }
 
     @Test
     fun `converges on undo redo of overlapping deletes contained_by`() = runTest {
-        assertUndoRedoConvergesToPostDelete(5 to 7, 3 to 9)
+        assertUndoRedoConvergesToPostDelete(containedBy)
     }
 
-    // contains: mirror of contained_by, d1 is now the wider range.
     @Test
     fun `converges on undo of overlapping deletes contains`() = runTest {
-        assertUndoConvergesToInitial(3 to 9, 5 to 7)
+        assertUndoConvergesToInitial(contains)
     }
 
     @Test
     fun `converges on undo redo of overlapping deletes contains`() = runTest {
-        assertUndoRedoConvergesToPostDelete(3 to 9, 5 to 7)
+        assertUndoRedoConvergesToPostDelete(contains)
     }
 
-    // overlap_start: d1's range starts inside d2's range and extends past its end.
     @Test
     fun `converges on undo of overlapping deletes overlap_start`() = runTest {
-        assertUndoConvergesToInitial(5 to 9, 3 to 7)
+        assertUndoConvergesToInitial(overlapStart)
     }
 
     @Test
     fun `converges on undo redo of overlapping deletes overlap_start`() = runTest {
-        assertUndoRedoConvergesToPostDelete(5 to 9, 3 to 7)
+        assertUndoRedoConvergesToPostDelete(overlapStart)
     }
 
-    // overlap_end: mirror of overlap_start.
     @Test
     fun `converges on undo of overlapping deletes overlap_end`() = runTest {
-        assertUndoConvergesToInitial(3 to 7, 5 to 9)
+        assertUndoConvergesToInitial(overlapEnd)
     }
 
     @Test
     fun `converges on undo redo of overlapping deletes overlap_end`() = runTest {
-        assertUndoRedoConvergesToPostDelete(3 to 7, 5 to 9)
+        assertUndoRedoConvergesToPostDelete(overlapEnd)
     }
 
-    // identical: both replicas delete the exact same range.
     @Test
     fun `converges on undo of overlapping deletes identical`() = runTest {
-        assertUndoConvergesToInitial(3 to 7, 3 to 7)
+        assertUndoConvergesToInitial(identical)
     }
 
     @Test
     fun `converges on undo redo of overlapping deletes identical`() = runTest {
-        assertUndoRedoConvergesToPostDelete(3 to 7, 3 to 7)
+        assertUndoRedoConvergesToPostDelete(identical)
     }
 
-    // adjacent: the two ranges touch but never overlap.
     @Test
     fun `converges on undo of overlapping deletes adjacent`() = runTest {
-        assertUndoConvergesToInitial(3 to 5, 5 to 7)
+        assertUndoConvergesToInitial(adjacent)
     }
 
     @Test
     fun `converges on undo redo of overlapping deletes adjacent`() = runTest {
-        assertUndoRedoConvergesToPostDelete(3 to 5, 5 to 7)
+        assertUndoRedoConvergesToPostDelete(adjacent)
+    }
+
+    // Everything above relays operations in memory. This routes every
+    // relayed operation through the protobuf converters -- the only path
+    // that exercises restore_spans encode/decode under convergence -- for the
+    // whole matrix, undo and redo, and requires node-identity convergence.
+    @Test
+    fun `converges over the wire on undo and redo for every relation`() = runTest {
+        forEachRelation { relation ->
+            assertUndoRedoConvergesToPostDelete(relation, overWire = true)
+        }
     }
 
     // The convergence-exactness cases above only check the fully-drained end
@@ -294,7 +334,7 @@ class TreeRestoreConcurrentTest {
     fun `undo alone leaves zero garbage and identical docSize on both replicas`() = runTest {
         val (d1, d2) = seed()
         val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
-        deleteOverlapping(d1, d2, 5 to 7, 3 to 9)
+        deleteOverlapping(d1, d2, containedBy)
 
         undoBoth(d1, d2)
 
@@ -315,18 +355,18 @@ class TreeRestoreConcurrentTest {
     // converge under the interleaved order too.
     @Test
     fun `converges when one replica syncs its undo before the other undoes`() = runTest {
-        forEachRelation { label, r1, r2 ->
+        forEachRelation { relation ->
             val (d1, d2) = seed()
             val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
-            deleteOverlapping(d1, d2, r1, r2)
+            deleteOverlapping(d1, d2, relation)
 
             undoInterleaved(d1, d2)
 
-            assertConverged(d1, d2, "$label: after interleaved undo")
+            assertConverged(d1, d2, "${relation.label}: after interleaved undo")
             assertEquals(
                 initial,
                 d1.getRoot().getAs<JsonTree>("t").toXml(),
-                "$label: undo must restore the initial visible content",
+                "${relation.label}: undo must restore the initial visible content",
             )
         }
     }
@@ -337,10 +377,11 @@ class TreeRestoreConcurrentTest {
     // both the forward-interleaved and the batched run node-for-node.
     @Test
     fun `converges on undo of overlapping deletes regardless of undo order`() = runTest {
-        forEachRelation { label, r1, r2 ->
+        forEachRelation { relation ->
+            val label = relation.label
             val (d1, d2) = seed()
             val initial = d1.getRoot().getAs<JsonTree>("t").toXml()
-            deleteOverlapping(d1, d2, r1, r2)
+            deleteOverlapping(d1, d2, relation)
 
             undoInterleaved(d2, d1)
 
@@ -352,7 +393,7 @@ class TreeRestoreConcurrentTest {
             )
 
             val (f1, f2) = seed()
-            deleteOverlapping(f1, f2, r1, r2)
+            deleteOverlapping(f1, f2, relation)
             undoInterleaved(f1, f2)
             assertEquals(
                 identitySequence(f1.crdtTree()),
@@ -361,7 +402,7 @@ class TreeRestoreConcurrentTest {
             )
 
             val (b1, b2) = seed()
-            deleteOverlapping(b1, b2, r1, r2)
+            deleteOverlapping(b1, b2, relation)
             undoBoth(b1, b2)
             assertEquals(
                 identitySequence(b1.crdtTree()),

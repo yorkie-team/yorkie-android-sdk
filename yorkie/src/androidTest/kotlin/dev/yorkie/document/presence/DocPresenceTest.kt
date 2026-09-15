@@ -724,6 +724,7 @@ class DocPresenceTest {
     fun test_receive_document_events_according_to_presence_changes() {
         withTwoClientsAndDocuments(
             syncMode = Realtime,
+            attachDocuments = false,
             detachDocuments = false,
         ) { c1, c2, d1, d2, _ ->
             val d1Events = mutableListOf<PresenceChanged>()
@@ -751,7 +752,24 @@ class DocPresenceTest {
                     }
             }
 
-            delay(1000)
+            // d1's watch stream must be up BEFORE c2 attaches: a peer that is
+            // already watching when the stream connects arrives in the
+            // Initialization frame, which sets onlineClients without an
+            // Others.Watched event (CI flake, PR #361 run 34832086581).
+            awaitWatchConnected(d1) {
+                c1.attachDocument(d1, syncMode = Realtime).await()
+            }
+            c2.attachDocument(d2, syncMode = Realtime).await()
+
+            // Wait for the Watched event itself rather than a fixed delay: a
+            // presence put applied before d1 has c2's initial presence folds
+            // into the Watched event and no PresenceChanged follows.
+            withTimeout(GENERAL_TIMEOUT) {
+                // watched
+                while (d1Events.isEmpty()) {
+                    delay(50)
+                }
+            }
 
             d2.updateAsync { _, presence ->
                 presence.put(mapOf("k1" to "v1"))

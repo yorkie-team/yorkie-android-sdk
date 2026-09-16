@@ -443,6 +443,10 @@ private fun TreeRestoreSpan.toPbTreeSpan(): PbTreeRestoreSpan {
  * a corrupt or hostile payload that would otherwise throw
  * [StringIndexOutOfBoundsException] out of
  * [dev.yorkie.document.crdt.CrdtTree]'s substring call in `recreateFromSpan`.
+ * A zero-length text span with an empty value is deliberately accepted: JS
+ * and iOS validate no tree-span length and share `retombstone`'s
+ * `max(length, 1)` clamp, so rejecting it here alone would make Android fail
+ * to apply a change its peers accept (closing the clamp belongs upstream).
  */
 private fun PbTreeRestoreSpan.toTreeRestoreSpan(): TreeRestoreSpan {
     val anchors = listOf(

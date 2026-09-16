@@ -1,22 +1,34 @@
 package dev.yorkie.document
 
 import dev.yorkie.document.crdt.CrdtTree
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
+import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
+import dev.yorkie.document.crdt.TreeRestoreSpan
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
+import dev.yorkie.issueTime
 import dev.yorkie.util.DataSize
+import dev.yorkie.util.YorkieException
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
  * Ports the GC-symmetry and DocSize-exactness cases from `history_tree_test.ts`
- * (JS SDK fa6cc513) as JVM unit tests (AC9).
+ * (JS SDK fa6cc513, spec 005 AC9) as JVM unit tests, plus the split-aware
+ * restore/retombstone isolate cases (JS SDK 7b2ab7a4, spec 006 AC1-AC4):
+ * isolate boundary mechanics, in-span-only restore/retombstone on straddling
+ * pieces, and pending-pair ordering with DocSize/GC exactness.
  */
 class TreeRestoreConvergenceTest {
 
@@ -480,4 +492,292 @@ class TreeRestoreConvergenceTest {
         )
         assertEquals(identitySequence(d1.crdtTree()), identitySequence(d2.crdtTree()))
     }
+    // --- spec 006 AC1-AC4: isolateTextRange's boundary branches, exercised
+    // through CrdtTree.restore/retombstone directly (its "public", module-
+    // internal entry points -- isolateTextRange itself stays private). A
+    // straddling piece only arises once GC has purged a tombstone and a
+    // narrower restore/retombstone later targets a sub-range of what
+    // survives; building that precisely through a live 2-document undo/redo
+    // sequence is what TreeRestoreConcurrentTest's overlap matrix already
+    // covers end-to-end. These focused cases instead construct the
+    // straddling piece directly (mirrors TreeRestoreTest's direct-CrdtTree
+    // precedent) so each isolate branch and its exact return contract
+    // (untombstoned/pendingGcPairs/diff or pairs/diff) is asserted without
+    // depending on floor-search/GC-eligibility internals.
+
+    /**
+     * Builds a tree holding the single LIVE text piece `<root>[value]</root>`;
+     * returns it with the piece's insertion ticket.
+     */
+    private fun buildLiveText(value: String): Pair<CrdtTree, TimeTicket> {
+        val root = CrdtTreeElement(CrdtTreeNodeID(issueTime(), 0), "root")
+        val tree = CrdtTree(root, issueTime())
+        val insertedAt = issueTime()
+        tree.edit(
+            tree.findPos(0) to tree.findPos(0),
+            listOf(CrdtTreeText(CrdtTreeNodeID(insertedAt, 0), value)),
+            0,
+            issueTime(),
+        )
+        return tree to insertedAt
+    }
+
+    /** The values of the tree's live text pieces, in document order. */
+    private fun liveTextPieces(tree: CrdtTree): List<String> = buildList {
+        tree.indexTree.traverse { node, _ -> if (node.isText) add(node.value) }
+    }
+
+    /** Builds a tree holding `<root>[fullValue]</root>` then deletes `[deleteFrom, deleteTo)`. */
+    private fun buildDeletedRun(
+        fullValue: String,
+        deleteFrom: Int,
+        deleteTo: Int,
+    ): Pair<CrdtTree, TreeRestoreSpan> {
+        val (tree, _) = buildLiveText(fullValue)
+        val result = tree.edit(
+            tree.findPos(deleteFrom) to tree.findPos(deleteTo),
+            null,
+            0,
+            issueTime(),
+        )
+        return tree to result.removedSpans.single()
+    }
+
+    /** Narrows a captured [TreeRestoreSpan] to the absolute `[offset, offset + length)` sub-range. */
+    private fun TreeRestoreSpan.narrowedTo(offset: Int, length: Int): TreeRestoreSpan {
+        val relative = offset - id.offset
+        return copy(
+            id = id.copy(offset = offset),
+            length = length,
+            value = value?.substring(relative, relative + length),
+        )
+    }
+
+    // AC1: an exact-boundary span needs no split at all.
+    @Test
+    fun `isolateTextRange is a no-op when the piece already matches the span exactly`() = runTest {
+        val (tree, span) = buildDeletedRun("0123456789", 3, 9)
+
+        val result = tree.restore(listOf(span))
+
+        assertEquals(listOf("345678"), result.untombstoned.map { it.value })
+        assertTrue(result.recreated.isEmpty())
+        assertTrue(result.pendingGcPairs.isEmpty())
+        assertEquals(DataSize(0, 0), result.diff)
+        assertEquals("<root>0123456789</root>", tree.toXml())
+    }
+
+    // AC1: the span starts inside the piece but ends exactly at its
+    // boundary -- only a left split is needed. The piece is still
+    // tombstoned at isolate time, so the left remainder is a born-removed
+    // pending pair and the split contributes zero diff (CrdtTreeNode.split's
+    // removed-split contract).
+    @Test
+    fun `isolateTextRange splits only the left boundary and buffers the remainder`() = runTest {
+        val (tree, span) = buildDeletedRun("0123456789", 3, 9)
+        val narrow = span.narrowedTo(5, 4) // [5,9) of the same tombstoned run
+
+        val result = tree.restore(listOf(narrow))
+
+        assertEquals(listOf("5678"), result.untombstoned.map { it.value })
+        // CrdtTreeNode.split buffers the RIGHT piece of a removed split -- here
+        // the isolated target itself; the [3,5) left remainder keeps the
+        // original delete's GC pair. This is why executeRestore registers the
+        // pending pairs BEFORE unregistering the untombstoned targets.
+        assertEquals(listOf("5678"), result.pendingGcPairs.map { it.child.value })
+        assertSame(result.untombstoned.single(), result.pendingGcPairs.single().child)
+        assertEquals(DataSize(0, 0), result.diff, "a removed split contributes zero diff")
+        assertEquals("<root>01256789</root>", tree.toXml(), "[3,5) must stay invisible")
+    }
+
+    // AC1: mirror of the above -- the span ends inside the piece but starts
+    // exactly at its boundary, so only a right split is needed.
+    @Test
+    fun `isolateTextRange splits only the right boundary and buffers the remainder`() = runTest {
+        val (tree, span) = buildDeletedRun("0123456789", 3, 9)
+        val narrow = span.narrowedTo(3, 4) // [3,7) of the same tombstoned run
+
+        val result = tree.restore(listOf(narrow))
+
+        assertEquals(listOf("3456"), result.untombstoned.map { it.value })
+        assertEquals(
+            listOf("78"),
+            result.pendingGcPairs.map { it.child.value },
+            "the [7,9) remainder must be buffered for GC",
+        )
+        assertEquals(DataSize(0, 0), result.diff, "a removed split contributes zero diff")
+        assertEquals("<root>01234569</root>", tree.toXml(), "[7,9) must stay invisible")
+    }
+
+    // AC1 (removed straddler, both boundaries) + AC2 (restore isolate is
+    // in-span only): the span sits strictly inside the tombstoned run, so
+    // both a left AND a right split are needed. Only [5,7) is untombstoned;
+    // [3,5) and [7,9) stay invisible. The split-born pieces -- the target
+    // itself and [7,9) -- are buffered as pending pairs (registered by the
+    // caller BEFORE the untombstoned unregister, AC4); [3,5) keeps the
+    // original delete's pair.
+    @Test
+    fun `isolateTextRange splits both boundaries, restoring only the in-span range`() = runTest {
+        val (tree, span) = buildDeletedRun("0123456789", 3, 9)
+        val narrow = span.narrowedTo(5, 2) // [5,7) strictly inside [3,9)
+
+        val result = tree.restore(listOf(narrow))
+
+        assertEquals(listOf("56"), result.untombstoned.map { it.value })
+        assertTrue(result.recreated.isEmpty())
+        // Two removed splits, each buffering its RIGHT piece: first [5,9) (the
+        // target, narrowed to "56" by the second split), then [7,9).
+        assertEquals(
+            listOf("56", "78"),
+            result.pendingGcPairs.map { it.child.value },
+            "the split-born target and the [7,9) remainder must be buffered for GC",
+        )
+        assertEquals(DataSize(0, 0), result.diff, "removed splits contribute zero diff")
+        assertEquals(
+            "<root>012569</root>",
+            tree.toXml(),
+            "only [5,7) becomes visible; [3,5) and [7,9) stay tombstoned",
+        )
+    }
+
+    // AC3: retombstone's isolate mirrors restore's -- a LIVE piece wider
+    // than the redo span is split at both boundaries so only the in-span
+    // range is re-removed; the live splits are real metadata overhead
+    // (nonzero diff), unlike a removed split.
+    @Test
+    fun `retombstone isolates a live straddling piece to only the in-span range`() = runTest {
+        val (tree, insertedAt) = buildLiveText("0123456789")
+        // A span narrower than the single live "0123456789" piece: [3,7).
+        val span = TreeRestoreSpan(
+            id = CrdtTreeNodeID(insertedAt, 3),
+            nodeType = "text",
+            isText = true,
+            length = 4,
+            value = "3456",
+        )
+
+        val (pairs, diff) = tree.retombstone(listOf(span), issueTime())
+
+        assertEquals(1, pairs.size)
+        assertEquals("3456", pairs.single().child.value)
+        assertEquals(
+            DataSize(0, 2 * TIME_TICKET_SIZE),
+            diff,
+            "two live splits each add exactly one node's ticket overhead",
+        )
+        assertEquals(
+            "<root>012789</root>",
+            tree.toXml(),
+            "only [3,7) is re-removed; [0,3) and [7,10) stay visible",
+        )
+    }
+
+    // I2 (review #361): restore isolates EVERY overlapping piece before it
+    // checks isRemoved, so a LIVE straddler is split too. That is the one
+    // restore path with real live overhead (a removed split reports zero and
+    // buffers a pending pair instead); it must reach the caller's diff, or
+    // the split-off pieces' metadata never enters docSize.live and a later
+    // remove drives it negative -- identically on every replica.
+    @Test
+    fun `restore isolates a live straddling piece and reports the split overhead`() = runTest {
+        val (tree, insertedAt) = buildLiveText("0123456789")
+        val span = TreeRestoreSpan(
+            id = CrdtTreeNodeID(insertedAt, 3),
+            nodeType = "text",
+            isText = true,
+            length = 4,
+            value = "3456",
+        )
+
+        val result = tree.restore(listOf(span))
+
+        assertTrue(result.untombstoned.isEmpty(), "a live target is skipped, not revived")
+        assertTrue(result.recreated.isEmpty())
+        assertTrue(result.pendingGcPairs.isEmpty(), "live splits buffer no pending pair")
+        assertEquals(
+            DataSize(0, 2 * TIME_TICKET_SIZE),
+            result.diff,
+            "two live splits each add exactly one node's ticket overhead",
+        )
+        assertEquals("<root>0123456789</root>", tree.toXml(), "visibly unchanged")
+        assertEquals(
+            listOf("012", "3456", "789"),
+            liveTextPieces(tree),
+            "the piece is now segmented at the span boundaries",
+        )
+    }
+
+    // I1 (review #361): a throw mid-restore, after a removed straddler has
+    // already buffered a born-removed piece, must not leave that pair in the
+    // tree-level buffer -- the next edit/style/restore on this tree would
+    // drain it into its own GC accounting. (The server companion drains via
+    // `defer`; restore mirrors it with try/finally.) The failure surfaces as
+    // a typed YorkieException, not an unchecked IllegalArgumentException.
+    @Test
+    fun `restore drains pending GC pairs even when a later span throws`() = runTest {
+        val (tree, span) = buildDeletedRun("0123456789", 3, 9)
+        // [5,15) with no value: isolates the removed [3,9) piece at 5 (its
+        // right part becomes a pending pair), then runs past the piece into a
+        // gap where recreateFromSpan trips on the missing value.
+        val poisoned = span.copy(id = span.id.copy(offset = 5), length = 10, value = null)
+
+        val thrown = assertFailsWith<YorkieException> { tree.restore(listOf(poisoned)) }
+
+        assertEquals(YorkieException.Code.ErrInvalidArgument, thrown.code)
+        assertTrue(tree.drainPendingGcPairs().isEmpty(), "the throw path must drain the buffer")
+    }
+
+    // AC4: executeRestore's ordering (restore's pending pairs registered
+    // BEFORE the untombstoned nodes are unregistered) must keep docSize and
+    // garbageLength exact through a full concurrent-overlap undo+redo+GC
+    // cycle that isolates a removed straddler on both replicas (the
+    // contained_by relation from TreeRestoreConcurrentTest's matrix).
+    @Test
+    fun `executeRestore ordering keeps docSize and garbageLength exact after undo redo GC`() =
+        runTest {
+            val d1 = Document("test-doc")
+            val d2 = Document("test-doc")
+            d1.setActor(actor1)
+            d2.setActor(actor2)
+
+            d1.updateAsync { root, _ ->
+                root.setNewTree("t", element("root") { text { "0123456789" } })
+            }.await()
+            crossSync(d1, d2)
+
+            // contained_by: d1's [5,7) sits inside d2's wider [3,9).
+            d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(5, 7) }.await()
+            d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(3, 9) }.await()
+            crossSync(d1, d2)
+
+            val vector = maxVectorOf(listOf(actor1, actor2))
+            assertTrue(d1.garbageCollect(vector) > 0)
+            assertTrue(d2.garbageCollect(vector) > 0)
+
+            d1.history.undoAsync().await()
+            d2.history.undoAsync().await()
+            crossSync(d1, d2)
+            assertEquals(
+                "<root>0123456789</root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                "undo must restore the initial visible content",
+            )
+
+            d1.history.redoAsync().await()
+            d2.history.redoAsync().await()
+            crossSync(d1, d2)
+            assertEquals(
+                "<root>0129</root>",
+                d1.getRoot().getAs<JsonTree>("t").toXml(),
+                "redo must restore the converged post-delete visible content",
+            )
+
+            val purged1 = d1.garbageCollect(vector)
+            val purged2 = d2.garbageCollect(vector)
+            assertEquals(purged1, purged2, "both replicas must purge the same count")
+            assertEquals(0, d1.garbageLength)
+            assertEquals(0, d2.garbageLength)
+            assertEquals(DataSize(0, 0), d1.getDocSize().gc)
+            assertEquals(DataSize(0, 0), d2.getDocSize().gc)
+        }
 }

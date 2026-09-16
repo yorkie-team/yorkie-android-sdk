@@ -92,4 +92,28 @@ class CrdtPrimitiveTest {
         assertNull(unsupported.value)
         assertEquals(CrdtPrimitive.Type.Null, unsupported.type)
     }
+
+    // T-INT64 (commit 3, e1e13671 / yorkie-js-sdk#1326): JS added a runtime
+    // reject for a `number` outside the int64 range (`BigInt.asUintN(64)`
+    // silently wraps past int64, e.g. 1e19) — not reachable on Android by
+    // typing. Every public entry point is a typed overload (`Int`/`Long`/
+    // `Double`), `setPrimitive(Any?)` is private, `sanitized()` maps other
+    // `Number`s to `Double`, and a Kotlin `Long` cannot hold a value outside
+    // int64 in the first place — no `BigInteger` path exists to add
+    // `util/number.ts`'s `MaxInt64`/`MinInt64` counterparts to. This pins
+    // the parity contract iOS also ported (PrimitiveTests): the int64
+    // boundary classifies as Type.Long and round-trips losslessly through
+    // toBytes()/fromBytes(). JS's two `assert.throws` cases are
+    // unrepresentable here and are not emulated.
+    @Test
+    fun `accepts the int64 boundary losslessly`() {
+        for (bound in listOf(Long.MAX_VALUE, Long.MIN_VALUE)) {
+            val primitive = CrdtPrimitive(bound, TimeTicket.InitialTimeTicket)
+            assertEquals(CrdtPrimitive.Type.Long, primitive.type)
+            assertEquals(
+                bound,
+                CrdtPrimitive.fromBytes(CrdtPrimitive.Type.Long, primitive.toBytes()),
+            )
+        }
+    }
 }

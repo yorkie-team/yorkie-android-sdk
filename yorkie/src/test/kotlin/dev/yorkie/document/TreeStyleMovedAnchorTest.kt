@@ -334,6 +334,92 @@ class TreeStyleMovedAnchorTest {
         assertEquals(d1.toJson(), d2.toJson())
     }
 
+    // T-PIN (commit 1, scenario 9): removeStyle resolves the RAW
+    // findNodesAndSplitText anchors — no advancePastUnknownSplitSiblings —
+    // matching JS tree.ts@v0.7.18, which never advances inside removeStyle
+    // (style()/edit() do). B (the splitter) receives A's removeStyle whose
+    // declared from-anchor sits right after the whole (pre-split) <p>; on
+    // B the raw anchor resolves to the FIRST split product (holding "a"),
+    // so the traversal enters the unknown second split product (holding
+    // "c") and removes its "bold". Expected state is the executed JS
+    // v0.7.18 vitest probe's (spec 011 C10; test/unit/document/
+    // remove_style_raw_anchor_probe_test.ts against the JS worktree,
+    // `pnpm vitest run` exit 0 — see the build report): B ends up
+    // `<r><p><b bold="x">a</b></p><p><b>c</b></p><q>z</q></r>`.
+    //
+    // FINDING (drafted, not filed, as an upstream note per spec 021 AC2):
+    // A (the writer) and B disagree in this exact interleaving — A's own
+    // local execution resolves BEFORE it ever learns of B's split (so its
+    // traversal never reaches the split at all and "c" keeps "bold"),
+    // while B's remote application resolves AFTER the split already
+    // exists. reversedFromAnchorRecovery never fires here (its guard
+    // requires a MERGE-tombstoned declaredParent; a split does not remove
+    // the original parent), so this is a pre-existing, orthogonal JS
+    // defect unrelated to yorkie-js-sdk#1329, present at v0.7.18 (and,
+    // since removeStyle's raw-anchor resolution is unchanged since it was
+    // introduced, likely earlier tags too). Out of scope to fix here — the
+    // JS commit is the behavioral contract for this parity port (lesson
+    // all/003) — so this test pins ONLY B's state, not full A==B
+    // convergence, mirroring the spec's own "on B the applying-replica
+    // state equals the executed JS probe's" wording (not a blanket
+    // toJson() equality assertion like the other cases in this file).
+    //
+    // RED on b0df16bb: the OLD advancing anchor skips past the second
+    // split product entirely, so "c" keeps "bold" on B (converging with A
+    // by accident). GREEN after commit 1.
+    @Test
+    fun `removeStyle resolves raw anchors past an unknown split`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("r") {
+                    element("p") {
+                        element("b") { text { "a" } }
+                        element("b") { text { "c" } }
+                    }
+                    element("q") { text { "z" } }
+                },
+            )
+        }.await()
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(2, 6, mapOf("bold" to "x"))
+        }.await()
+        crossSync(d1, d2)
+
+        // B splits <p> between the two <b> (index 4), element split.
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(4, 4, 1) }.await()
+
+        // Bump A's own lamport clock past B's split ticket via two
+        // throwaway local styles on <q> (self-cancelling: removed again by
+        // the removeStyle below), so findNodesAndSplitText's concurrent-
+        // insert tie-break does not itself jump the raw anchor past the
+        // split product before the raw-anchor difference can be observed.
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(8, 11, mapOf("sentinel" to "y"))
+        }.await()
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(8, 11, mapOf("sentinel" to "y"))
+        }.await()
+
+        // A concurrently removeStyles a range starting right after </p>
+        // (A's view, before the split) and covering <q>.
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").removeStyle(8, 11, listOf("bold", "sentinel"))
+        }.await()
+
+        crossSync(d1, d2)
+
+        assertEquals(
+            "<r><p><b bold=\"x\">a</b></p><p><b>c</b></p><q>z</q></r>",
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+    }
+
     // AC7 (case 7): three-client convergence — d3 concurrently inserts at
     // the same merge anchor while d1 styles and d2 merges; all three agree.
     @Test

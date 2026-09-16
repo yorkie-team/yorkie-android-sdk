@@ -1028,26 +1028,26 @@ internal data class CrdtTree(
 
         // Boundary.Range (port 5c158690): see the matching comment in style().
         val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
-        val (fromParent, fromLeftRaw) = from
+        val (fromParent, fromLeft) = from
         val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
-        val (toParent, toLeftRaw) = to
+        val (toParent, toLeft) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
 
-        // Advance past split siblings the editor did not know about so range
-        // boundaries land after every unseen split product, matching style().
-        // Skip when leftRaw equals the parent (leftmost-child sentinel).
-        val fromLeft = if (fromLeftRaw === fromParent) {
-            fromLeftRaw
-        } else {
-            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector)
-        }
-        val toLeft = if (toLeftRaw === toParent) {
-            toLeftRaw
-        } else {
-            advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
-        }
-
+        // NOTE (iOS 2e6979a0b1, ported RTCOLLABPLATFORM-769): unlike style()
+        // and edit(), removeStyle() resolves the RAW findNodesAndSplitText
+        // anchors and does NOT call advancePastUnknownSplitSiblings. JS
+        // tree.ts@v0.7.18 calls that advance from style() and edit() (and
+        // the split loop) but never from removeStyle(), at this tag or any
+        // earlier one. Android's removeStyle mirrored style()'s advance
+        // since the v0.7.6 sync (0b3eb7f5) — a convergence divergence: for
+        // a remote removeStyle whose anchor precedes an element split the
+        // remover did not know about, an advancing replica traverses a
+        // different node set than a JS (or now iOS) replica for the same
+        // operation history, so attributes are removed on one peer and not
+        // another. Local operations (versionVector == null) were never
+        // affected, since advancePastUnknownSplitSiblings returns early for
+        // them either way.
         val changes = mutableListOf<TreeChange>()
         // Widened to GCPair<*>: drained pending pairs below are
         // GCPair<CrdtTreeNode>, a different type parameter than the

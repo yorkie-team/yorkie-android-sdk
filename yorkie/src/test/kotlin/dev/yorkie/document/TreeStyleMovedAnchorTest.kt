@@ -334,6 +334,182 @@ class TreeStyleMovedAnchorTest {
         assertEquals(d1.toJson(), d2.toJson())
     }
 
+    // T-a (commit 2, ea693307 / yorkie-js-sdk#1329): port
+    // tree_style_moved_anchor_test.ts 'styles the writer insert when a
+    // merge reverses the range' (AC4, AC5, scenario 4).
+    @Test
+    fun `styles the writer insert when a merge reverses the range`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("r") {
+                    element("p") { text { "ab" } }
+                    element("p") { text { "cd" } }
+                },
+            )
+        }.await()
+        crossSync(d1, d2)
+
+        // d1 inserts an empty <p> after the second paragraph, then styles a
+        // range starting after `c` and ending inside its own insert. On d2
+        // the concurrent merge moves `cd` behind the insert, so the
+        // resolved range collapses and would miss the insert entirely.
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(8, 8, element("p")) }.await()
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(6, 9, mapOf("bold" to "x"))
+        }.await()
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 5) }.await()
+
+        crossSync(d1, d2)
+
+        assertEquals(
+            "<r><p bold=\"x\"></p>cd</r>",
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals(d1.toJson(), d2.toJson())
+    }
+
+    // T-b (commit 2, ea693307 / yorkie-js-sdk#1329): port
+    // tree_style_moved_anchor_test.ts 'applies removeStyle to the writer
+    // insert on both replicas' (AC4, AC5, scenario 5). Android cannot
+    // assert the JS literal `{"type":"p","children":[],"attributes":{}}` —
+    // TreeInfo.toJson omits `attributes` when the live map is empty
+    // (pre-existing JSON-rendering difference, out of scope) — so this
+    // asserts node-level on BOTH replicas that the inserted <p>'s attribute
+    // Rht holds a REMOVED node for "bold" (entry/entry, not empty/empty).
+    @Test
+    fun `applies removeStyle to the writer insert on both replicas`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("r") {
+                    element("p") { text { "ab" } }
+                    element("p") { text { "cd" } }
+                },
+            )
+        }.await()
+        crossSync(d1, d2)
+
+        // Same shape as T-a with removeStyle: the removal tombstone must
+        // materialize on both replicas, not only on the writer.
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(8, 8, element("p")) }.await()
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").removeStyle(6, 9, listOf("bold"))
+        }.await()
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 5) }.await()
+
+        crossSync(d1, d2)
+
+        // The merge removes both original paragraphs (only their text
+        // content survives, moved to be direct children of <r>), so the
+        // writer's inserted (initially empty) <p> is the only live <p> left.
+        val insertedOnD1 = requireNotNull(d1.crdtTree().findByType("p"))
+        val insertedOnD2 = requireNotNull(d2.crdtTree().findByType("p"))
+        assertEquals(
+            true,
+            insertedOnD1.getAttrs().getNodeMapByKey()["bold"]?.isRemoved,
+            "the removal tombstone must materialize on the writer",
+        )
+        assertEquals(
+            true,
+            insertedOnD2.getAttrs().getNodeMapByKey()["bold"]?.isRemoved,
+            "the removal tombstone must materialize on the receiver too",
+        )
+        assertEquals(d1.toJson(), d2.toJson())
+    }
+
+    // T-c (commit 2, ea693307 / yorkie-js-sdk#1329): port
+    // tree_style_moved_anchor_test.ts 'keeps a range that stays ordered
+    // away from the insert' (AC4, AC5, scenario 6) — both anchors sit
+    // inside the merged paragraph, so the resolved range moves with the
+    // merge and stays ordered; the recovery must not widen it onto the
+    // insert.
+    @Test
+    fun `keeps a range that stays ordered away from the insert`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("r") {
+                    element("p") { text { "ab" } }
+                    element("p") { text { "cd" } }
+                },
+            )
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(8, 8, element("p")) }.await()
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(6, 7, mapOf("bold" to "x"))
+        }.await()
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 5) }.await()
+
+        crossSync(d1, d2)
+
+        assertEquals("<r><p></p>cd</r>", d1.getRoot().getAs<JsonTree>("t").toXml())
+        assertEquals(d1.toJson(), d2.toJson())
+    }
+
+    // T-d (commit 2, ea693307 / yorkie-js-sdk#1329): port
+    // tree_style_moved_anchor_test.ts 'keeps a reversed range away from an
+    // insert unknown to the styler' (AC4, AC6, scenario 7) — three
+    // clients: d3's insert is unknown to d1's style, so the version-vector
+    // check keeps it unstyled even when the recovered traversal passes it.
+    @Test
+    fun `keeps a reversed range away from an insert unknown to the styler`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        val d3 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+        d3.setActor(actor3)
+
+        d1.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("r") {
+                    element("p") { text { "ab" } }
+                    element("p") { text { "cd" } }
+                },
+            )
+        }.await()
+        threeWaySync(d1, d2, d3)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(8, 8, element("p")) }.await()
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(6, 9, mapOf("bold" to "x"))
+        }.await()
+        d2.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 5) }.await()
+        d3.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(8, 8, element("b")) }.await()
+
+        threeWaySync(d1, d2, d3)
+
+        assertEquals(d1.toJson(), d2.toJson())
+        assertEquals(d2.toJson(), d3.toJson())
+
+        // The inserted <p> (writer's own) is styled; d3's <b> (unknown to
+        // the styler's version vector) is not.
+        val tree1 = d1.crdtTree()
+        val p = requireNotNull(tree1.findByType("p"))
+        val b = tree1.findByType("b")
+        assertEquals("x", boldOf(p))
+        assertNull(boldOf(requireNotNull(b)))
+    }
+
     // T-PIN (commit 1, scenario 9): removeStyle resolves the RAW
     // findNodesAndSplitText anchors — no advancePastUnknownSplitSiblings —
     // matching JS tree.ts@v0.7.18, which never advances inside removeStyle

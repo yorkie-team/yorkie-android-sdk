@@ -237,6 +237,35 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     }
 
     /**
+     * Moves [element] — and, for a [CrdtContainer], every descendant — into
+     * [DocSize.gc] via [moveSizeToGC] and marks it removed for
+     * [garbageCollect], WITHOUT [registerRemovedElement]'s live-meta ticket
+     * refund: [dev.yorkie.document.operation.SetOperation] just registered
+     * these copies at their post-removal size through [registerElement], so
+     * [DocSize.live] never held a pre-removal size to refund.
+     *
+     * Keeps a tombstone nested inside a container restored by an undo
+     * collectable — a JS-literal port of `611e6e43`'s recursive
+     * deregistration would otherwise drop the nested tombstone's createdAt
+     * from [gcElementSetByCreatedAt] while [registerElement] re-books its
+     * copy into live, making it uncollectable (yorkie-js-sdk#1349 item 1).
+     * Android ports the iOS fix (yorkie-ios-sdk `fd15fa3cf6`), a determination
+     * diverging from JS v0.7.17. Kept as a plain method (not called from
+     * [registerRemovedElement]) so a later JS sync landing on top of this
+     * one composes cleanly.
+     */
+    fun adoptRemovedElement(element: CrdtElement) {
+        moveSizeToGC(element)
+        if (element is CrdtContainer) {
+            element.getDescendants { elem, _ ->
+                moveSizeToGC(elem)
+                false
+            }
+        }
+        gcElementSetByCreatedAt.add(element.createdAt)
+    }
+
+    /**
      * Registers the given pair to hash table.
      */
     fun registerGCPair(pair: GCPair<*>) {

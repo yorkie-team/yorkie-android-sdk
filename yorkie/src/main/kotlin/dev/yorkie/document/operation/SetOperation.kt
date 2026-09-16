@@ -1,5 +1,6 @@
 package dev.yorkie.document.operation
 
+import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
@@ -55,6 +56,20 @@ internal data class SetOperation(
                 root.findByCreatedAt(copiedValue.createdAt)?.let(root::deregisterElement)
             }
             root.registerElement(copiedValue, parentObject)
+            if (source == OpSource.UndoRedo && copiedValue is CrdtContainer) {
+                // Divergence 3 (yorkie-js-sdk#1349 item 1, iOS fd15fa3cf6): a
+                // tombstone nested inside the restored container must stay
+                // collectable. Android's object-remove reverse deep-copies
+                // the whole tombstoned subtree (ElementRht.deepCopy keeps
+                // tombstones), so a nested member can still carry removedAt
+                // here even though copiedValue.removedAt was just cleared
+                // above. Adopt every such descendant into gc directly — the
+                // restored container itself is untouched.
+                copiedValue.getDescendants { elem, _ ->
+                    if (elem.removedAt != null) root.adoptRemovedElement(elem)
+                    false
+                }
+            }
             removed?.let(root::registerRemovedElement)
             // When the new value already has a removedAt (i.e. it was the LWW-losing side
             // of a concurrent set), register it as removed so GC can collect it once all

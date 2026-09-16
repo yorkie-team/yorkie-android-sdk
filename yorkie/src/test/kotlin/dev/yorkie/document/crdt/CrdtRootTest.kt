@@ -356,4 +356,50 @@ class CrdtRootTest {
         assertEquals(garbageLengthBefore, root.garbageLength)
         assertEquals(replacement, root.findByCreatedAt(replacement.createdAt))
     }
+
+    // T12 (AC10, Divergence 3): adoptRemovedElement charges gc without a
+    // live refund.
+    @Test
+    fun `adoptRemovedElement charges gc without refunding a live ticket`() {
+        // given: `member` is a live descendant of `container` but already
+        // carries its own removedAt (e.g. a restored container's copy of a
+        // nested tombstone).
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val container = CrdtObject(tick(1), memberNodes = ElementRht())
+        root.rootObject.set(key = "k", value = container, executedAt = tick(1))
+        root.registerElement(container, root.rootObject)
+
+        val member = CrdtPrimitive("v", tick(2))
+        member.remove(tick(3))
+        container.set(key = "m", value = member, executedAt = tick(2))
+        root.registerElement(member, container)
+
+        val gcBefore = root.docSize.gc
+        val liveBefore = root.docSize.live
+        val memberSize = member.getDataSize()
+
+        // when
+        root.adoptRemovedElement(member)
+
+        // then: gc grows and live shrinks by the member's post-removal size
+        // — no extra TIME_TICKET_SIZE refund on top, unlike registerRemovedElement.
+        assertEquals(
+            DataSize(
+                data = gcBefore.data + memberSize.data,
+                meta = gcBefore.meta + memberSize.meta,
+            ),
+            root.docSize.gc,
+        )
+        assertEquals(
+            DataSize(
+                data = liveBefore.data - memberSize.data,
+                meta = liveBefore.meta - memberSize.meta,
+            ),
+            root.docSize.live,
+        )
+        assertEquals(1, root.garbageLength)
+    }
 }

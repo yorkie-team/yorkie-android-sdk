@@ -45,6 +45,21 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     private val gcPairMap: MutableMap<GCChild, GCPair<*>> = IdentityHashMap()
 
     /**
+     * Maps every registered element's [TimeTicket.createdAt] to the EXACT
+     * [DataSize] amount charged to [DocSize.gc] for it (narrowed to
+     * whole-element moves — `acc` and a [GCPair]'s `gcOnlySize` book against
+     * live regardless, so content edited into an already-removed [CrdtText]
+     * or [CrdtTree] stays charged to live). An element reaches gc by more
+     * routes than being removed itself: it can also be swept in as a
+     * descendant of a removed [CrdtContainer]. [moveSizeToGC] is the ONLY
+     * function that adds an entry here, and it records the amount, not a
+     * flag, because [CrdtElement.getDataSize] is not stable — it grows by
+     * one [TimeTicket.TIME_TICKET_SIZE] once [CrdtElement.removedAt] is set,
+     * which can happen strictly after the element's size first moves here.
+     */
+    private val sizeInGC = mutableMapOf<TimeTicket, DataSize>()
+
+    /**
      * `docSize` is a structure that represents the size of the document.
      */
     var docSize: DocSize = DocSize(
@@ -149,16 +164,75 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     }
 
     /**
-     * Registers the given [element] to the hash set.
+     * Moves [element]'s current size from [DocSize.live] to [DocSize.gc], or
+     * tops up its charge in [sizeInGC] if it is already there. This is the
+     * ONLY function that adds a size to gc, and it is idempotent: the same
+     * [element] can be swept in more than once — once by its own removal,
+     * and again if a container above it is removed later — and each
+     * subsequent call charges only the growth in [CrdtElement.getDataSize]
+     * since the last charge (typically one [TimeTicket.TIME_TICKET_SIZE],
+     * from a [CrdtElement.removedAt] ticket set after the first move).
+     *
+     * Returns whether this call moved a size [DocSize.live] was actually
+     * holding — false when [element] was already charged and only topped up.
+     */
+    private fun moveSizeToGC(element: CrdtElement): Boolean {
+        val createdAt = element.createdAt
+        val size = element.getDataSize()
+        val charged = sizeInGC[createdAt]
+        if (charged != null) {
+            docSize = docSize.copy(
+                gc = addDataSizes(
+                    docSize.gc,
+                    DataSize(data = size.data - charged.data, meta = size.meta - charged.meta),
+                ),
+            )
+            sizeInGC[createdAt] = size
+            return false
+        }
+        docSize = docSize.copy(
+            gc = addDataSizes(docSize.gc, size),
+            live = subDataSize(docSize.live, size),
+        )
+        sizeInGC[createdAt] = size
+        return true
+    }
+
+    /**
+     * Moves [element] — and, for a [CrdtContainer], every descendant — from
+     * [DocSize.live] to [DocSize.gc] via [moveSizeToGC], and marks [element]
+     * removed for [garbageCollect] to find later.
+     *
+     * The one-[TimeTicket.TIME_TICKET_SIZE] live-meta refund applies only
+     * when [moveSizeToGC] actually moved a size [DocSize.live] held for
+     * [element] itself AND [element] carries a [CrdtElement.removedAt]
+     * ticket — a descendant swept in by the same call is not itself removed
+     * and never gets this refund; only the outermost removed element's own
+     * tombstone ticket is refunded this way.
+     *
+     * Two pre-existing exceptions to the refund rule are NOT fixed here
+     * (tracked upstream, yorkie-js-sdk#1349 item 3): a snapshot-loaded
+     * tombstone is refunded once per OUTERMOST uncollected ancestor,
+     * over-crediting nested ones; and the LWW-losing side of a concurrent
+     * [dev.yorkie.document.operation.SetOperation] is registered
+     * already-removed, so live never held its ticket to refund. A container
+     * restored over a nested tombstone by an undo goes through
+     * [adoptRemovedElement] instead, which never refunds — [registerElement]
+     * already booked the restored copy at its post-removal size.
      */
     fun registerRemovedElement(element: CrdtElement) {
-        val docSizeLive = subDataSize(docSize.live, element.getDataSize())
-        docSize = docSize.copy(
-            live = docSizeLive.copy(
-                meta = docSizeLive.meta + TimeTicket.TIME_TICKET_SIZE,
-            ),
-            gc = addDataSizes(docSize.gc, element.getDataSize()),
-        )
+        val moved = moveSizeToGC(element)
+        if (element is CrdtContainer) {
+            element.getDescendants { elem, _ ->
+                moveSizeToGC(elem)
+                false
+            }
+        }
+        if (moved && element.removedAt != null) {
+            docSize = docSize.copy(
+                live = docSize.live.copy(meta = docSize.live.meta + TimeTicket.TIME_TICKET_SIZE),
+            )
+        }
         gcElementSetByCreatedAt.add(element.createdAt)
     }
 
@@ -275,7 +349,7 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             val removedAt = pair.element.removedAt
             if (removedAt != null && minSyncedVersionVector.afterOrEqual(removedAt)) {
                 pair.parent?.purge(pair.element)
-                count += garbageCollectInternal(pair.element)
+                count += deregisterElement(pair.element)
             }
         }
 
@@ -307,11 +381,48 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         return count
     }
 
-    private fun garbageCollectInternal(element: CrdtElement): Int {
+    /**
+     * Removes [element] — and, for a [CrdtContainer], every descendant —
+     * from the element table, releasing its accounted size. An element
+     * charged to [DocSize.gc] (present in [sizeInGC]) is released from gc by
+     * exactly the charged amount; an element that was never removed itself
+     * (created inside an already-removed container, never swept in by
+     * [moveSizeToGC]) is released from [DocSize.live] instead. Returns the
+     * number of elements actually deregistered.
+     *
+     * Android's array-remove undo reverses as `Add` + one child `Set` per
+     * member (`RemoveOperation.childSetOps`), re-registering a removed
+     * container's descendants under their ORIGINAL createdAt inside a NEW,
+     * separately-instantiated container, while the OLD tombstoned container
+     * instance still owns the same descendant createdAts in its own member
+     * table. When a later [garbageCollect] purges that old tombstoned
+     * container and walks ITS descendants, this closure would otherwise
+     * delete the live twin's registration by createdAt. Guard (Android-only
+     * divergence forced by this reverse-op shape, not present in JS/iOS): if
+     * the element table's entry for a createdAt no longer points at THIS
+     * instance, a live twin already owns it — no-op, nothing was actually
+     * collected.
+     */
+    @VisibleForTesting
+    fun deregisterElement(element: CrdtElement): Int {
         var count = 0
         val callback = { elem: CrdtElement, _: CrdtContainer? ->
-            deregisterElement(elem)
-            count++
+            val createdAt = elem.createdAt
+            val registered = elementPairMapByCreatedAt[createdAt]
+            if (registered != null && registered.element !== elem) {
+                // Android-only stale-twin no-op — see KDoc above.
+            } else {
+                val charged = sizeInGC[createdAt]
+                if (charged != null) {
+                    docSize = docSize.copy(gc = subDataSize(docSize.gc, charged))
+                    sizeInGC.remove(createdAt)
+                } else {
+                    docSize = docSize.copy(live = subDataSize(docSize.live, elem.getDataSize()))
+                }
+                elementPairMapByCreatedAt.remove(createdAt)
+                gcElementSetByCreatedAt.remove(createdAt)
+                count++
+            }
             false
         }
         callback(element, null)
@@ -319,15 +430,6 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             element.getDescendants(callback)
         }
         return count
-    }
-
-    @VisibleForTesting
-    fun deregisterElement(element: CrdtElement) {
-        docSize = docSize.copy(
-            gc = subDataSize(docSize.gc, element.getDataSize()),
-        )
-        elementPairMapByCreatedAt.remove(element.createdAt)
-        gcElementSetByCreatedAt.remove(element.createdAt)
     }
 
     /**

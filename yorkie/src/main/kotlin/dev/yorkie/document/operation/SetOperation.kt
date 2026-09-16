@@ -42,6 +42,18 @@ internal data class SetOperation(
             val copiedValue = value.deepCopy()
             copiedValue.removedAt = null
             val removed = parentObject.set(key, copiedValue, executedAt)
+            if (source == OpSource.UndoRedo) {
+                // NOTE(yorkie-js-sdk#1349): kept UndoRedo-only for parity —
+                // the same undo reaching a peer as Remote (or replayed as
+                // Local from a snapshot) leaves the peer's ledger stale;
+                // drop this gate when upstream does. Deregisters the
+                // REGISTERED element under the incoming createdAt (the
+                // tombstone being restored, or a member a peer grew on it),
+                // never the incoming copy — copiedValue has not been
+                // registered yet, so findByCreatedAt only ever returns the
+                // previously-registered element here.
+                root.findByCreatedAt(copiedValue.createdAt)?.let(root::deregisterElement)
+            }
             root.registerElement(copiedValue, parentObject)
             removed?.let(root::registerRemovedElement)
             // When the new value already has a removedAt (i.e. it was the LWW-losing side

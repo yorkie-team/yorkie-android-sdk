@@ -7,11 +7,18 @@ import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.helper.maxVectorOf
+import dev.yorkie.util.DataSize
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Covers [CrdtRoot]'s size-accounting internals directly (AC2, AC4, AC10):
+ * [CrdtRoot.registerRemovedElement]'s idempotent top-up, [CrdtRoot.deregisterElement]'s
+ * charged/uncharged/stale-twin accounting, and [CrdtRoot.adoptRemovedElement].
+ */
 class CrdtRootTest {
 
     // TODO(7hong13): maybe need to separate it into multiple unit test functions.
@@ -195,5 +202,158 @@ class CrdtRootTest {
 
         // then
         assertTrue(skipHistoryResult.reverseOps.isEmpty())
+    }
+
+    // T10 (AC2): registerRemovedElement is idempotent.
+    @Test
+    fun `registerRemovedElement tops up an already-charged element instead of moving it twice`() {
+        // given: a container removal sweeps `member` into gc without setting
+        // member's own removedAt (a descendant of a removed container).
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val container = CrdtObject(tick(1), memberNodes = ElementRht())
+        root.rootObject.set(key = "k", value = container, executedAt = tick(1))
+        root.registerElement(container, root.rootObject)
+
+        val member = CrdtPrimitive("v", tick(2))
+        container.set(key = "m", value = member, executedAt = tick(2))
+        root.registerElement(member, container)
+
+        container.remove(tick(3))
+        root.registerRemovedElement(container)
+        val gcAfterContainerRemoval = root.docSize.gc
+
+        // when: member is removed directly afterwards and swept in again —
+        // its getDataSize() grows by exactly one TIME_TICKET_SIZE now that
+        // removedAt is set.
+        member.remove(tick(4))
+        val liveBeforeSecondCall = root.docSize.live
+        root.registerRemovedElement(member)
+
+        // then: gc grows by exactly the one-ticket top-up, live is untouched
+        // by this second call (the size was already moved out on the first).
+        assertEquals(liveBeforeSecondCall, root.docSize.live)
+        assertEquals(
+            DataSize(
+                data = gcAfterContainerRemoval.data,
+                meta = gcAfterContainerRemoval.meta + TimeTicket.TIME_TICKET_SIZE,
+            ),
+            root.docSize.gc,
+        )
+    }
+
+    // T11a (AC4): a charged (removed) container releases exactly its charge from gc.
+    @Test
+    fun `deregisterElement releases exactly the charged amount from gc`() {
+        // given: two independently-removed elements charged to gc.
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val k1 = CrdtPrimitive("v1", tick(1))
+        root.rootObject.set(key = "k1", value = k1, executedAt = tick(1))
+        root.registerElement(k1, root.rootObject)
+        k1.remove(tick(2))
+        root.registerRemovedElement(k1)
+
+        val k2 = CrdtPrimitive("v2", tick(3))
+        root.rootObject.set(key = "k2", value = k2, executedAt = tick(3))
+        root.registerElement(k2, root.rootObject)
+        k2.remove(tick(4))
+        root.registerRemovedElement(k2)
+
+        val chargedForK1 = k1.getDataSize()
+        val gcBefore = root.docSize.gc
+
+        // when
+        val released = root.deregisterElement(k1)
+
+        // then: only k1's charge leaves gc; k2 stays registered untouched.
+        assertEquals(1, released)
+        assertEquals(
+            DataSize(
+                data = gcBefore.data - chargedForK1.data,
+                meta = gcBefore.meta - chargedForK1.meta,
+            ),
+            root.docSize.gc,
+        )
+        assertNull(root.findByCreatedAt(k1.createdAt))
+        assertNotNull(root.findByCreatedAt(k2.createdAt))
+    }
+
+    // T11b (AC4): an element created inside an already-removed container —
+    // never removed itself, never charged to gc — releases from live.
+    @Test
+    fun `deregisterElement releases a never-removed descendant from live, not gc`() {
+        // given: `member` is registered into a container that is ALREADY
+        // removed (e.g. a remote Set landing inside a container this replica
+        // already tombstoned) — it is booked straight into live and never
+        // swept by moveSizeToGC.
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val container = CrdtObject(tick(1), memberNodes = ElementRht())
+        root.rootObject.set(key = "k", value = container, executedAt = tick(1))
+        root.registerElement(container, root.rootObject)
+        container.remove(tick(2))
+        root.registerRemovedElement(container)
+
+        val member = CrdtPrimitive("v", tick(3))
+        container.set(key = "m", value = member, executedAt = tick(3))
+        root.registerElement(member, container)
+
+        val gcBefore = root.docSize.gc
+        val liveBefore = root.docSize.live
+
+        // when
+        val released = root.deregisterElement(member)
+
+        // then
+        assertEquals(1, released)
+        assertEquals(gcBefore, root.docSize.gc)
+        assertEquals(
+            DataSize(
+                data = liveBefore.data - member.getDataSize().data,
+                meta = liveBefore.meta - member.getDataSize().meta,
+            ),
+            root.docSize.live,
+        )
+        assertNull(root.findByCreatedAt(member.createdAt))
+    }
+
+    // T11c (AC4, Divergence 2): deregisterElement no-ops on a stale twin.
+    @Test
+    fun `deregisterElement no-ops when the createdAt is registered to a different instance`() {
+        // given: `replacement` re-registers under the SAME createdAt as
+        // `stale` (mirrors Android's array-remove undo reverse shape
+        // re-registering a child under its original createdAt inside a new
+        // container while the old tombstoned container still owns it).
+        val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
+
+        val stale = CrdtPrimitive("v1", tick(1))
+        root.rootObject.set(key = "k", value = stale, executedAt = tick(1))
+        root.registerElement(stale, root.rootObject)
+
+        val replacement = CrdtPrimitive("v2", tick(1))
+        root.registerElement(replacement, root.rootObject)
+
+        val docSizeBefore = root.docSize
+        val elementMapSizeBefore = root.elementMapSize
+        val garbageLengthBefore = root.garbageLength
+
+        // when
+        val released = root.deregisterElement(stale)
+
+        // then: nothing changes — the live twin's registration survives.
+        assertEquals(0, released)
+        assertEquals(docSizeBefore, root.docSize)
+        assertEquals(elementMapSizeBefore, root.elementMapSize)
+        assertEquals(garbageLengthBefore, root.garbageLength)
+        assertEquals(replacement, root.findByCreatedAt(replacement.createdAt))
     }
 }

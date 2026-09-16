@@ -5,9 +5,12 @@ import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.helper.crossSync
 import dev.yorkie.issueTime
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -19,6 +22,10 @@ class CrdtTreeStyleAnchorTest {
 
     private val actor1 = "000000000000000000000001"
     private val actor2 = "000000000000000000000002"
+
+    // T-U1..T-U3 (commit 2, ea693307 / yorkie-js-sdk#1329) use a foreign-actor
+    // merge ticket, matching tree_test.ts's `otherActor`.
+    private val otherActor = "111111111111111111111111"
 
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)
 
@@ -203,5 +210,92 @@ class CrdtTreeStyleAnchorTest {
 
         assertEquals("<r><p bold=\"x\">cd</p></r>", d1.getRoot().getAs<JsonTree>("tree").toXml())
         assertEquals(d1.toJson(), d2.toJson())
+    }
+
+    // T-U1 (commit 2, ea693307 / yorkie-js-sdk#1329): port tree_test.ts
+    // 'recovers a style range reversed by an unknown merge at the from
+    // anchor' (AC3, scenario 1).
+    @Test
+    fun `recovers a style range reversed by an unknown merge at the from anchor`() {
+        // 01. Create <root><p>ab</p><p>cd</p></root> and insert the
+        // styler's own <p> after the second paragraph.
+        val tree = CrdtTree(CrdtTreeElement(issuePos(), "root"), issueTime())
+        tree.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+        tree.edit(1 to 1, CrdtTreeText(issuePos(), "ab").toList())
+        tree.edit(4 to 4, CrdtTreeElement(issuePos(), "p").toList())
+        tree.edit(5 to 5, CrdtTreeText(issuePos(), "cd").toList())
+        val inserted = CrdtTreeElement(issuePos(), "p")
+        tree.edit(8 to 8, inserted.toList())
+
+        // 02. Capture the styler-view range (from after `c`, to inside the
+        // insert) and a version vector that predates the merge.
+        val fromPos = tree.findPos(6)
+        val toPos = tree.findPos(9)
+        val knownTicket = issueTime()
+        val stylerVV = VersionVector(mapOf(knownTicket.actorID to knownTicket.lamport))
+
+        // 03. Apply a merge from another actor, outside the styler's version
+        // vector: the moved `cd` now resolves after the insert, so the
+        // range collapses. The recovery must still style the insert.
+        val mergeTicket = TimeTicket(knownTicket.lamport + 1, 0u, otherActor)
+        tree.edit(tree.findPos(0) to tree.findPos(5), null, 0, mergeTicket, ::issueTime)
+        tree.style(fromPos to toPos, mapOf("bold" to "x"), issueTime(), stylerVV)
+
+        assertEquals("x", inserted.attributes["bold"])
+    }
+
+    // T-U2 (commit 2, ea693307 / yorkie-js-sdk#1329): port tree_test.ts
+    // 'keeps an ordered from-anchor range off the writer insert' (AC3,
+    // scenario 2) — both anchors move with the merge and stay ordered, so
+    // the recovery must not widen the range onto the insert.
+    @Test
+    fun `keeps an ordered from-anchor range off the writer insert`() {
+        val tree = CrdtTree(CrdtTreeElement(issuePos(), "root"), issueTime())
+        tree.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+        tree.edit(1 to 1, CrdtTreeText(issuePos(), "ab").toList())
+        tree.edit(4 to 4, CrdtTreeElement(issuePos(), "p").toList())
+        tree.edit(5 to 5, CrdtTreeText(issuePos(), "cd").toList())
+        val inserted = CrdtTreeElement(issuePos(), "p")
+        tree.edit(8 to 8, inserted.toList())
+
+        val fromPos = tree.findPos(6)
+        val toPos = tree.findPos(7)
+        val knownTicket = issueTime()
+        val stylerVV = VersionVector(mapOf(knownTicket.actorID to knownTicket.lamport))
+
+        val mergeTicket = TimeTicket(knownTicket.lamport + 1, 0u, otherActor)
+        tree.edit(tree.findPos(0) to tree.findPos(5), null, 0, mergeTicket, ::issueTime)
+        tree.style(fromPos to toPos, mapOf("bold" to "x"), issueTime(), stylerVV)
+
+        assertNull(inserted.attributes["bold"])
+    }
+
+    // T-U3 (commit 2, iOS-only degenerate case): a from == to range at the
+    // same merged anchor must never be recovered onto anything (AC3,
+    // scenario 3). Not a mutation guard for `>` vs `>=` in
+    // reversedFromAnchorRecovery's collapse check — relaxing that threshold
+    // only widens the traversal onto nodes carrying a mergedFrom stamp,
+    // which isInterloper already rejects; a discriminating shape would need
+    // a stamp-free node between the recovered anchor and the range end,
+    // which a degenerate (from == to) range cannot construct.
+    @Test
+    fun `leaves a degenerate from-anchor range unrecovered`() {
+        val tree = CrdtTree(CrdtTreeElement(issuePos(), "root"), issueTime())
+        tree.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+        tree.edit(1 to 1, CrdtTreeText(issuePos(), "ab").toList())
+        tree.edit(4 to 4, CrdtTreeElement(issuePos(), "p").toList())
+        tree.edit(5 to 5, CrdtTreeText(issuePos(), "cd").toList())
+        val inserted = CrdtTreeElement(issuePos(), "p")
+        tree.edit(8 to 8, inserted.toList())
+
+        val pos = tree.findPos(6)
+        val knownTicket = issueTime()
+        val stylerVV = VersionVector(mapOf(knownTicket.actorID to knownTicket.lamport))
+
+        val mergeTicket = TimeTicket(knownTicket.lamport + 1, 0u, otherActor)
+        tree.edit(tree.findPos(0) to tree.findPos(5), null, 0, mergeTicket, ::issueTime)
+        tree.style(pos to pos, mapOf("bold" to "x"), issueTime(), stylerVV)
+
+        assertNull(inserted.attributes["bold"])
     }
 }

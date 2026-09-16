@@ -40,12 +40,32 @@ internal typealias TreeNodePair = Pair<CrdtTreeNode, CrdtTreeNode>
  * Judges whether a node reached [CrdtTree]'s merge target strictly AFTER
  * the merge-source tombstone a style/removeStyle range's declared end
  * anchor names — i.e., whether it is an "interloper" the styling client
- * never saw when it recorded that range. Returned by
- * [CrdtTree.mergedAnchorInterloperGuard]. Port 1c033ff5.
+ * never saw when it recorded that range. Also carries [declaredParent] (the
+ * merge-tombstoned parent the range's end anchor named) and [target] (the
+ * live merge destination), which [CrdtTree.reversedFromAnchorRecovery]
+ * needs to walk the merge target's children when the FROM anchor collapsed
+ * the same way. Returned by [CrdtTree.mergedAnchorInterloperGuard]. Port
+ * 1c033ff5, widened by ea693307 (yorkie-js-sdk#1329).
  */
-private fun interface MergedAnchorInterloperGuard {
-    fun isInterloper(node: CrdtTreeNode): Boolean
-}
+private class MergedAnchorInterloperGuard(
+    val isInterloper: (CrdtTreeNode) -> Boolean,
+    val declaredParent: CrdtTreeNode,
+    val target: CrdtTreeNode,
+)
+
+/**
+ * Carries the from-side recovery [CrdtTree.reversedFromAnchorRecovery]
+ * computes for a style/removeStyle range whose FROM anchor collapsed the
+ * same way [MergedAnchorInterloperGuard] recovers the end anchor: traversal
+ * should start from [fromParent]/[fromLeft] instead of the range's own
+ * resolved anchors, and only nodes [isInterloper] positively identifies may
+ * be touched. Port ea693307 (yorkie-js-sdk#1329).
+ */
+private class FromAnchorRecovery(
+    val fromParent: CrdtTreeNode,
+    val fromLeft: CrdtTreeNode,
+    val isInterloper: (CrdtTreeNode) -> Boolean,
+)
 
 /**
  * [Boundary] selects how [CrdtTree.findNodesAndSplitText] resolves a
@@ -233,6 +253,19 @@ internal data class CrdtTree(
             advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
         }
 
+        // §9.4 from-side recovery (port ea693307, yorkie-js-sdk#1329): when a
+        // concurrent merge unknown to this styler collapsed the resolved
+        // range, re-anchor the traversal start and restrict it to positively
+        // identified interlopers. The to-anchors are unchanged either way.
+        val recovery = reversedFromAnchorRecovery(
+            range.first,
+            fromParent,
+            fromLeft,
+            toParent,
+            toLeft,
+            versionVector,
+        )
+
         val changes = mutableListOf<TreeChange>()
 
         // Widened to GCPair<*>: drained pending pairs below are
@@ -242,10 +275,11 @@ internal data class CrdtTree(
         val prevAttributes = mutableMapOf<String, String>()
         val newAttrKeys = mutableListOf<String>()
         var capturedPrev = false
-        val shouldSkipToken = styleSkipPredicate(range.second, versionVector)
+        val shouldSkipToken =
+            styleSkipPredicate(range.second, versionVector, recovery?.isInterloper)
         traverseInPosRange(
-            fromParent = fromParent,
-            fromLeft = fromLeft,
+            fromParent = recovery?.fromParent ?: fromParent,
+            fromLeft = recovery?.fromLeft ?: fromLeft,
             toParent = toParent,
             toLeft = toLeft,
         ) { (node, tokenType), _ ->
@@ -1048,6 +1082,24 @@ internal data class CrdtTree(
         // another. Local operations (versionVector == null) were never
         // affected, since advancePastUnknownSplitSiblings returns early for
         // them either way.
+
+        // §9.4 from-side recovery (port ea693307, yorkie-js-sdk#1329), on top
+        // of the raw anchors above: when a concurrent merge unknown to this
+        // remover collapsed the resolved range, re-anchor the traversal
+        // start and restrict it to positively identified interlopers. For
+        // removeStyle the recovery materializes the removal tombstone on
+        // both replicas — the Rht arbitrates a concurrent setStyle with an
+        // earlier ticket by LWW even for a key the recovered node never had,
+        // so the converged state is entry/entry rather than empty/empty.
+        val recovery = reversedFromAnchorRecovery(
+            range.first,
+            fromParent,
+            fromLeft,
+            toParent,
+            toLeft,
+            versionVector,
+        )
+
         val changes = mutableListOf<TreeChange>()
         // Widened to GCPair<*>: drained pending pairs below are
         // GCPair<CrdtTreeNode>, a different type parameter than the
@@ -1055,8 +1107,14 @@ internal data class CrdtTree(
         val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         var capturedPrev = false
-        val shouldSkipToken = styleSkipPredicate(range.second, versionVector)
-        traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { (node, tokenType), _ ->
+        val shouldSkipToken =
+            styleSkipPredicate(range.second, versionVector, recovery?.isInterloper)
+        traverseInPosRange(
+            recovery?.fromParent ?: fromParent,
+            recovery?.fromLeft ?: fromLeft,
+            toParent,
+            toLeft,
+        ) { (node, tokenType), _ ->
             val actorID = node.createdAt.actorID
             val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
 
@@ -1398,19 +1456,67 @@ internal data class CrdtTree(
             }
         }
 
-        return MergedAnchorInterloperGuard { node ->
-            var top = node
-            while (top.parent != null && top.parent !== target) {
-                top = requireNotNull(top.parent)
-            }
-            if (top.parent !== target) {
-                false
-            } else if (top.mergedFrom != null) {
-                false
-            } else {
-                top in afterTombstone
-            }
+        return MergedAnchorInterloperGuard(
+            isInterloper = { node ->
+                var top = node
+                while (top.parent != null && top.parent !== target) {
+                    top = requireNotNull(top.parent)
+                }
+                if (top.parent !== target) {
+                    false
+                } else if (top.mergedFrom != null) {
+                    false
+                } else {
+                    top in afterTombstone
+                }
+            },
+            declaredParent = declaredParent,
+            target = target,
+        )
+    }
+
+    /**
+     * Prepares the §9.4 from-side counterpart of [mergedAnchorInterloperGuard]
+     * for a style/removeStyle range whose START position was declared inside
+     * a parent that a merge unknown to the styling client removed. The
+     * resolved range then collapses (from-index past to-index) and the
+     * traversal misses nodes the styling client covered — the merge moved
+     * the anchor child behind the styler's own insert, inverting the range
+     * ([traverseInPosRange] returns early when `fromIndex > toIndex`). The
+     * recovery re-anchors the traversal start just after the last live
+     * sibling before the merge-source tombstone; the caller must style only
+     * nodes the returned [FromAnchorRecovery.isInterloper] positively
+     * identifies as interlopers. Stamped nodes in the span stay out of reach
+     * and fail open unstyled — see the §9.4 known limitations in yorkie's
+     * concurrent-merge-split design doc (not pinned; no upstream test
+     * either). Returns null when [mergedAnchorInterloperGuard] does not
+     * apply, or when the resolved range did not actually collapse (an
+     * ordered range that moved with the merge already covers what the
+     * styling client covered — the recovery must not widen it). Port
+     * ea693307 (yorkie-js-sdk#1329, yorkie#1954 Fix 23).
+     */
+    private fun reversedFromAnchorRecovery(
+        pos: CrdtTreePos,
+        fromParent: CrdtTreeNode,
+        fromLeft: CrdtTreeNode,
+        toParent: CrdtTreeNode,
+        toLeft: CrdtTreeNode,
+        versionVector: VersionVector?,
+    ): FromAnchorRecovery? {
+        val guard = mergedAnchorInterloperGuard(pos, versionVector) ?: return null
+        // Only a collapsed range needs recovery.
+        if (toIndex(fromParent, fromLeft) <= toIndex(toParent, toLeft)) return null
+
+        var anchorLeft: CrdtTreeNode = guard.target
+        for (child in guard.target.allChildren) {
+            if (child === guard.declaredParent) break
+            if (!child.isRemoved) anchorLeft = child
         }
+        return FromAnchorRecovery(
+            fromParent = guard.target,
+            fromLeft = anchorLeft,
+            isInterloper = guard.isInterloper,
+        )
     }
 
     /**
@@ -1419,11 +1525,17 @@ internal data class CrdtTree(
      * [removeStyle] both consult, so a token is skipped either because a
      * concurrent split extended the range unbeknownst to the editor, or
      * because it is a merge interloper the range's declared end never
-     * intended to cover. Port 1c033ff5.
+     * intended to cover. When [recoveredInterloper] is given (the traversal
+     * start was recovered by [reversedFromAnchorRecovery]), a token is ALSO
+     * skipped unless it is a node the recovery positively identifies as an
+     * interloper — the recovered traversal may only touch nodes the
+     * collapsed range lost. Port 1c033ff5, widened by ea693307
+     * (yorkie-js-sdk#1329).
      */
     private fun styleSkipPredicate(
         pos: CrdtTreePos,
         versionVector: VersionVector?,
+        recoveredInterloper: ((CrdtTreeNode) -> Boolean)? = null,
     ): (CrdtTreeNode, TokenType) -> Boolean {
         val anchorGuard = mergedAnchorInterloperGuard(pos, versionVector)
         return { node, tokenType ->
@@ -1431,6 +1543,8 @@ internal data class CrdtTree(
                 versionVector != null &&
                 hasUnknownSplitSibling(node, versionVector)
             ) {
+                true
+            } else if (recoveredInterloper != null && !recoveredInterloper(node)) {
                 true
             } else {
                 anchorGuard != null && anchorGuard.isInterloper(node)

@@ -66,6 +66,20 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
 
     /**
      * Adds a new node with [value] after the last node.
+     *
+     * The anchor must be the last node's POSITION identity
+     * ([last]`.positionCreatedAt`), not its element identity
+     * ([CrdtElement.createdAt]). When the last element was moved here, the
+     * two differ: [insertAfter] resolves `nodeMapByPositionCreatedAt`
+     * first, where the element's `createdAt` still keys its now-dead
+     * original position node (dead positions are retained as stable
+     * anchors). Anchoring on element identity would therefore append after
+     * that stale dead slot instead of the tail, and since each appended
+     * element carries the newest ticket the RGA forward-skip never
+     * advances — so every append lands immediately after the same anchor,
+     * reversing the appended run (yorkie-js-sdk#1332, yorkie#1948). This
+     * path is reached solely via snapshot restore, through
+     * PBJsonArray.toCrdtArray in ElementConverter.kt.
      */
     fun insert(value: CrdtElement) {
         insertAfter(last.positionCreatedAt, value)

@@ -58,6 +58,7 @@ import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrAlreadyAttached
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
@@ -155,6 +156,13 @@ public class Client(
     private val activationJob = SupervisorJob()
 
     private val attachments = ConcurrentHashMap<String, Attachment<out Attachable>>()
+
+    // attachingDocs holds keys with an in-flight attach. attachments is only
+    // populated after the attach round-trip resolves, so this set is needed
+    // to reject a concurrent duplicate attach of the same key. Touched only
+    // inside attachDocument's scope.async, which runs on the single client
+    // dispatcher, so no additional synchronization is needed.
+    private val attachingDocs = mutableSetOf<String>()
 
     // Set immediately when deactivate is requested so the sync loop exits early and
     // suppresses errors from in-flight RPCs. Volatile because the keepalive deactivate
@@ -1103,109 +1111,127 @@ public class Client(
                 YorkieException(ErrDocumentNotDetached, "document($documentKey is not detached"),
             )
 
-            document.mutex.withLock {
-                val clientID = requireClientId()
-                document.setActor(clientID)
-                // The local option wins; absent that, the document's seeded
-                // value is used. The server is authoritative and overwrites
-                // this via the attach response. Mirrors JS SDK PR #1285.
-                val resolvedDisablePresence = disablePresence || document.isPresenceDisabled()
-                if (!resolvedDisablePresence) {
-                    document.updateAsync { _, presence ->
-                        presence.put(initialPresence)
-                    }.await()
-                }
+            // Reject a duplicate attach of the same key on this client. Without this
+            // guard the request reaches the server, which reports the already-attached
+            // key as a misleading ErrClientNotFound; the SDK then deactivates the whole
+            // client. attachments covers the resolved case and attachingDocs covers a
+            // concurrent in-flight attach.
+            checkYorkieError(
+                !attachments.containsKey(documentKey) && documentKey !in attachingDocs,
+                YorkieException(ErrAlreadyAttached, "$documentKey is already attached"),
+            )
+            // Mark the attach in flight synchronously so a concurrent duplicate attach of
+            // the same key is rejected by the guard above before it is enqueued. Cleared
+            // in the finally.
+            attachingDocs += documentKey
 
-                val request = attachDocumentRequest {
-                    clientId = clientID
-                    changePack = document.createChangePack().toPBChangePack()
-                    schema?.let {
-                        schemaKey = it
+            try {
+                document.mutex.withLock {
+                    val clientID = requireClientId()
+                    document.setActor(clientID)
+                    // The local option wins; absent that, the document's seeded
+                    // value is used. The server is authoritative and overwrites
+                    // this via the attach response. Mirrors JS SDK PR #1285.
+                    val resolvedDisablePresence = disablePresence || document.isPresenceDisabled()
+                    if (!resolvedDisablePresence) {
+                        document.updateAsync { _, presence ->
+                            presence.put(initialPresence)
+                        }.await()
                     }
-                    disableGc = disableGC
-                    this.disablePresence = resolvedDisablePresence
-                }
-                val response = service.attachDocument(
-                    request = request,
-                    headers = documentKey.attachmentBasedRequestHeader,
-                ).getOrElse {
-                    ensureActive()
-                    handleConnectException(it) { exception ->
-                        if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
-                            shouldRefreshToken = true
+
+                    val request = attachDocumentRequest {
+                        clientId = clientID
+                        changePack = document.createChangePack().toPBChangePack()
+                        schema?.let {
+                            schemaKey = it
                         }
-                        deactivateInternal()
+                        disableGc = disableGC
+                        this.disablePresence = resolvedDisablePresence
                     }
-                    return@async Result.failure(it)
-                }
-
-                val maxSize = response.maxSizePerDocument
-                if (maxSize > 0) {
-                    document.setMaxSizePerDocument(maxSize)
-                }
-
-                if (response.schemaRulesCount > 0) {
-                    document.setSchemaRules(response.schemaRulesList.fromSchemaRules())
-                }
-
-                val pack = response.changePack.toChangePack()
-                // Record the opt-out decision before applying the attach response
-                // so the first applyChangePack already routes remote changes
-                // through the lamport-only sync path.
-                document.setDisableGC(disableGC)
-                document.setDisablePresence(response.disablePresence)
-                document.applyChangePack(pack)
-
-                // Ordering (spec 009 — closes the PR #358 clearHistory window; JS SDK v0.7.16
-                // reference at packages/sdk/src/client/client.ts:665-793 @ 28a5a42e admits no
-                // interleaving because that block is synchronous, so no JS-observable case
-                // changes): single clearHistory() (wipes pre-attach/offline entries; runs before
-                // the Removed check for develop parity, so a reused Document instance whose
-                // server-side copy was removed cannot undo into an unsyncable state) → Removed
-                // early-return → applyStatus(Attached) → attachment registration → runWatchLoop →
-                // initialRoot updateAsync(skipHistory = true) (never enters history, so it needs
-                // no trailing cleanup) → return. History is already cleared before the initializer
-                // runs, so a user edit made after the Attached event while the initializer is
-                // still suspended keeps its undo entry instead of being silently wiped. On an
-                // initializer throw the document still stays Attached and registered (detachable,
-                // matching JS's no-rollback behavior), and history is already cleared.
-                // Mirrors JS SDK PR #1238 for the history flush itself.
-                document.clearHistory()
-
-                if (document.getStatus() == ResourceStatus.Removed) {
-                    return@async SUCCESS
-                }
-
-                document.applyStatus(ResourceStatus.Attached)
-                attachments[documentKey] = Attachment(
-                    resource = document,
-                    resourceId = response.documentId,
-                    syncMode = syncMode,
-                    disableGC = disableGC,
-                    disablePresence = response.disablePresence,
-                    watchFallbackDelay = options.watchFallbackDelay.inWholeMilliseconds,
-                )
-                // Manual and Polling are stream-less modes; only realtime modes
-                // open a watch stream. Mirrors JS SDK PR #1243.
-                if (syncMode != SyncMode.Manual && syncMode != SyncMode.Polling) {
-                    runWatchLoop(documentKey)
-                }
-
-                val initialRootResult = try {
-                    document.updateAsync(skipHistory = true) { root, _ ->
-                        initialRoot.forEach { (key, initializer) ->
-                            if (key !in root.keys) {
-                                initializer(root, key)
+                    val response = service.attachDocument(
+                        request = request,
+                        headers = documentKey.attachmentBasedRequestHeader,
+                    ).getOrElse {
+                        ensureActive()
+                        handleConnectException(it) { exception ->
+                            if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                                shouldRefreshToken = true
                             }
+                            deactivateInternal()
                         }
-                    }.await()
-                } catch (t: Throwable) {
-                    ensureActive()
-                    Result.failure(t)
+                        return@async Result.failure(it)
+                    }
+
+                    val maxSize = response.maxSizePerDocument
+                    if (maxSize > 0) {
+                        document.setMaxSizePerDocument(maxSize)
+                    }
+
+                    if (response.schemaRulesCount > 0) {
+                        document.setSchemaRules(response.schemaRulesList.fromSchemaRules())
+                    }
+
+                    val pack = response.changePack.toChangePack()
+                    // Record the opt-out decision before applying the attach response
+                    // so the first applyChangePack already routes remote changes
+                    // through the lamport-only sync path.
+                    document.setDisableGC(disableGC)
+                    document.setDisablePresence(response.disablePresence)
+                    document.applyChangePack(pack)
+
+                    // Ordering (spec 009 — closes the PR #358 clearHistory window; JS SDK v0.7.16
+                    // reference at packages/sdk/src/client/client.ts:665-793 @ 28a5a42e admits no
+                    // interleaving because that block is synchronous, so no JS-observable case
+                    // changes): single clearHistory() (wipes pre-attach/offline entries; runs before
+                    // the Removed check for develop parity, so a reused Document instance whose
+                    // server-side copy was removed cannot undo into an unsyncable state) → Removed
+                    // early-return → applyStatus(Attached) → attachment registration → runWatchLoop →
+                    // initialRoot updateAsync(skipHistory = true) (never enters history, so it needs
+                    // no trailing cleanup) → return. History is already cleared before the initializer
+                    // runs, so a user edit made after the Attached event while the initializer is
+                    // still suspended keeps its undo entry instead of being silently wiped. On an
+                    // initializer throw the document still stays Attached and registered (detachable,
+                    // matching JS's no-rollback behavior), and history is already cleared.
+                    // Mirrors JS SDK PR #1238 for the history flush itself.
+                    document.clearHistory()
+
+                    if (document.getStatus() == ResourceStatus.Removed) {
+                        return@async SUCCESS
+                    }
+
+                    document.applyStatus(ResourceStatus.Attached)
+                    attachments[documentKey] = Attachment(
+                        resource = document,
+                        resourceId = response.documentId,
+                        syncMode = syncMode,
+                        disableGC = disableGC,
+                        disablePresence = response.disablePresence,
+                        watchFallbackDelay = options.watchFallbackDelay.inWholeMilliseconds,
+                    )
+                    // Manual and Polling are stream-less modes; only realtime modes
+                    // open a watch stream. Mirrors JS SDK PR #1243.
+                    if (syncMode != SyncMode.Manual && syncMode != SyncMode.Polling) {
+                        runWatchLoop(documentKey)
+                    }
+
+                    val initialRootResult = try {
+                        document.updateAsync(skipHistory = true) { root, _ ->
+                            initialRoot.forEach { (key, initializer) ->
+                                if (key !in root.keys) {
+                                    initializer(root, key)
+                                }
+                            }
+                        }.await()
+                    } catch (t: Throwable) {
+                        ensureActive()
+                        Result.failure(t)
+                    }
+                    if (initialRootResult.isFailure) {
+                        return@async initialRootResult
+                    }
                 }
-                if (initialRootResult.isFailure) {
-                    return@async initialRootResult
-                }
+            } finally {
+                attachingDocs -= documentKey
             }
             SUCCESS
         }

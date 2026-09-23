@@ -149,6 +149,11 @@ public class Document(
     internal var checkPoint = CheckPoint.InitialCheckPoint
         private set
 
+    // epoch is the document's compaction epoch, learned from the server on
+    // applyChangePack and presented back on the next attach/sync so the
+    // server can detect a stale-epoch mismatch after a force compaction.
+    internal var epoch: Long = 0
+
     @Volatile
     private var status = ResourceStatus.Detached
 
@@ -606,6 +611,9 @@ public class Document(
         }
 
         checkPoint = checkPoint.forward(pack.checkPoint)
+        // Learn the document's current compaction epoch from the server so a
+        // subsequent attach/sync (and any persisted envelope) presents it back.
+        epoch = pack.epoch
 
         if (!pack.hasSnapshot) {
             garbageCollect(pack.versionVector)
@@ -842,6 +850,7 @@ public class Document(
             null,
             forceRemove || status == ResourceStatus.Removed,
             changeID.versionVector,
+            epoch,
         )
     }
 

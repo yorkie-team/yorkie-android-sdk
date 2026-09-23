@@ -109,11 +109,21 @@ fun withTwoClientsAndDocuments(
         client2.activateAsync().await()
 
         if (attachDocuments) {
-            client1.attachDocument(
-                document1,
-                syncMode = syncMode,
-                initialPresence = presences.first,
-            ).await()
+            val attach1 = suspend {
+                client1.attachDocument(
+                    document1,
+                    syncMode = syncMode,
+                    initialPresence = presences.first,
+                ).await()
+            }
+            // In realtime mode, document1's watch stream must be registered
+            // server-side before client2 attaches, or client2 arrives in the
+            // Initialization frame instead of as Others.Watched.
+            if (syncMode == Client.SyncMode.Realtime) {
+                awaitWatchConnected(document1) { attach1() }
+            } else {
+                attach1()
+            }
             client2.attachDocument(
                 document2,
                 syncMode = syncMode,
@@ -204,13 +214,19 @@ fun withThreeClientsAndDocuments(
 }
 
 /**
- * Awaits the next [Document.Event.StreamConnectionChanged.Connected] event on
- * [document]. Uses an UNDISPATCHED collector that subscribes before [block]
- * runs, so the event is not missed even if it fires synchronously inside the
- * block.
+ * Awaits the server's acknowledgement of [document]'s watch stream: the
+ * [Document.Event.PresenceChanged.MyPresence.Initialized] event published for
+ * the stream's Initialization frame. Uses an UNDISPATCHED collector that
+ * subscribes before [block] runs, so the event is not missed even if it fires
+ * synchronously inside the block.
  *
- * Use after attaching a peer document when the next assertion depends on the
- * watch stream being established (e.g. expecting a Watched event for the peer).
+ * Not [Document.Event.StreamConnectionChanged.Connected]: the client publishes
+ * that as soon as it SENDS the watch request, before the server registers the
+ * watcher, so a peer attaching right after it can still land in the
+ * Initialization frame (no Others.Watched) on a slow runner.
+ *
+ * Use when the next assertion depends on the watch stream being established
+ * (e.g. expecting a Watched event for a peer that attaches afterwards).
  */
 suspend fun awaitWatchConnected(
     document: Document,
@@ -220,8 +236,8 @@ suspend fun awaitWatchConnected(
     val connected = launch(start = CoroutineStart.UNDISPATCHED) {
         withTimeout(timeoutMs) {
             document.events
-                .filterIsInstance<Document.Event.StreamConnectionChanged>()
-                .first { it == Document.Event.StreamConnectionChanged.Connected }
+                .filterIsInstance<Document.Event.PresenceChanged.MyPresence.Initialized>()
+                .first()
         }
     }
     block()

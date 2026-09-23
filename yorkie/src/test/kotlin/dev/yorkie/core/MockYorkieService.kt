@@ -152,6 +152,21 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.changePack.documentKey == ATTACH_DELAY_DOCUMENT_KEY) {
+            // Simulates a slow attach round-trip so a concurrent second attach of the
+            // same key is enqueued while the first is still in flight.
+            delay(200L)
+            return ResponseMessage.Success(
+                attachDocumentResponse {
+                    changePack = changePack {
+                        documentKey = request.changePack.documentKey
+                    }
+                    documentId = request.changePack.documentKey
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+        }
         if (request.changePack.documentKey == AUTH_ERROR_DOCUMENT_KEY) {
             val errorInfo = ErrorInfo.newBuilder()
                 .putMetadata("code", ErrUnauthenticated.codeString)
@@ -648,6 +663,7 @@ class MockYorkieService(
         internal const val SILENT_WATCH_DOCUMENT_KEY = "SILENT_WATCH_DOCUMENT_KEY"
         internal const val WATCH_SYNC_ERROR_DOCUMENT_KEY = "WATCH_SYNC_ERROR_DOCUMENT_KEY"
         internal const val ATTACH_ERROR_DOCUMENT_KEY = "ATTACH_ERROR_DOCUMENT_KEY"
+        internal const val ATTACH_DELAY_DOCUMENT_KEY = "ATTACH_DELAY_DOCUMENT_KEY"
         internal const val DETACH_ERROR_DOCUMENT_KEY = "DETACH_ERROR_DOCUMENT_KEY"
         internal const val REMOVE_ERROR_DOCUMENT_KEY = "REMOVE_ERROR_DOCUMENT_KEY"
         internal const val AUTH_ERROR_DOCUMENT_KEY = "AUTH_ERROR_DOCUMENT_KEY"

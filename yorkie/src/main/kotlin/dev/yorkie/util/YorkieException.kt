@@ -35,6 +35,10 @@ public data class YorkieException(
         // ErrDocumentRemoved is returned when the document is removed.
         ErrDocumentRemoved("ErrDocumentRemoved"),
 
+        // ErrAlreadyAttached is returned when a document with the same key is
+        // already attached (or being attached) to this client.
+        ErrAlreadyAttached("ErrAlreadyAttached"),
+
         // ErrDocumentSizeExceedsLimit is returned when the document size exceeds the limit.
         ErrDocumentSizeExceedsLimit("ErrDocumentSizeExceedsLimit"),
 

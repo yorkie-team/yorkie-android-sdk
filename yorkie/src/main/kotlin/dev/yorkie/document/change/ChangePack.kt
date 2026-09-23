@@ -19,6 +19,11 @@ internal data class ChangePack(
     val snapshot: ByteString?,
     val isRemoved: Boolean,
     val versionVector: VersionVector,
+    // epoch is the document's compaction epoch. A bidirectional carrier:
+    // server responses set it to the document's current epoch, and an
+    // attach/sync request presents the client's last-known epoch so the
+    // server can detect a stale-epoch mismatch after a force compaction.
+    val epoch: Long = 0,
 ) {
 
     /**

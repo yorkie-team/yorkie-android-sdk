@@ -46,8 +46,11 @@ internal data class SetOperation(
             if (source == OpSource.UndoRedo) {
                 // NOTE(yorkie-js-sdk#1349): kept UndoRedo-only for parity —
                 // the same undo reaching a peer as Remote (or replayed as
-                // Local from a snapshot) leaves the peer's ledger stale;
-                // drop this gate when upstream does. Deregisters the
+                // Local from a snapshot) leaves a stale createdAt in the
+                // peer's gc element set (garbageLength over-counts; sizes
+                // agree since CrdtRoot.registerElement releases a replaced
+                // instance's gc charge); drop this gate when upstream does.
+                // Deregisters the
                 // REGISTERED element under the incoming createdAt (the
                 // tombstone being restored, or a member a peer grew on it),
                 // never the incoming copy — copiedValue has not been

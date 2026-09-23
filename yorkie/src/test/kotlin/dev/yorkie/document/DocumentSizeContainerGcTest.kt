@@ -5,6 +5,7 @@ import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonObject
+import dev.yorkie.document.json.JsonText
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
@@ -350,10 +351,14 @@ class DocumentSizeContainerGcTest {
      * behaviour: the Divergence-1 deregister block in
      * [dev.yorkie.document.operation.SetOperation.execute] runs only for
      * `OpSource.UndoRedo`, so the same undo reaching a peer as `Remote`
-     * leaves the peer's ledger stale — `garbageLength` counts a tombstone
-     * that is no longer collectable, and a later removal of the same
-     * container never debits live for it. Kept for parity with iOS and JS;
-     * drop this pin (and the gate it pins) when upstream does.
+     * leaves the peer's gc element set stale — `garbageLength` counts a
+     * tombstone that is no longer collectable. Kept for parity with iOS and
+     * JS; drop this pin (and the gate it pins) when upstream does.
+     *
+     * Sizes are NOT stale on Android (divergence from JS/iOS, where a later
+     * removal of the same container never debits live for it):
+     * `CrdtRoot.registerElement` releases the replaced tombstone's gc charge
+     * when the restored copy takes its createdAt, so both replicas end empty.
      */
     @Test
     fun `remote undo leaves the peer's ledger stale (yorkie-js-sdk#1349 item 2)`() = runTest {
@@ -384,7 +389,85 @@ class DocumentSizeContainerGcTest {
         d1.garbageCollect(vector)
         d2.garbageCollect(vector)
         assertEquals(emptyDocSize, d2.getDocSize())
-        assertEquals(DataSize(2, 120), d1.getDocSize().live)
-        assertEquals(DataSize(0, 0), d1.getDocSize().gc)
+        assertEquals(emptyDocSize, d1.getDocSize())
+    }
+
+    // T10: remote undo of an array-member removal (Android reverse shape) --
+
+    /**
+     * Both replicas converge after the undo of an array-member removal
+     * reaches the peer as `Remote`: the peer never runs `SetOperation`'s
+     * `UndoRedo` deregister, so the old tombstoned member's gc charge must
+     * be released when the restored member takes its createdAt, and must
+     * not shadow the restored member's own later removal.
+     */
+    @Test
+    fun `remote undo of an array member removal converges`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+        val built = DataSize(data = 2, meta = 144)
+        val vector = maxVectorOf(listOf(actor1, actor2))
+
+        d1.updateAsync { root, _ ->
+            root.setNewArray("k").putNewObject().apply { this["a"] = "1" }
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonArray>("k").removeAt(0) }.await()
+        crossSync(d1, d2)
+
+        d1.history.undoAsync().await()
+        crossSync(d1, d2)
+        assertJsonContentEquals("""{"k":[{"a":"1"}]}""", d2.toJson())
+
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(DocSize(live = built, gc = DataSize(0, 0)), d1.getDocSize())
+        assertEquals(d1.getDocSize(), d2.getDocSize())
+        assertEquals(0, d2.garbageLength)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonArray>("k").removeAt(0) }.await()
+        crossSync(d1, d2)
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(DocSize(live = DataSize(0, 72), gc = DataSize(0, 0)), d1.getDocSize())
+        assertEquals(d1.getDocSize(), d2.getDocSize())
+    }
+
+    // T11 (upstream parity pin, yorkie-js-sdk#1349) -----------------------
+
+    /**
+     * Pins UPSTREAM drift, not desired behaviour (iOS reproduces it
+     * exactly): text removed on one replica while the other concurrently
+     * removes the enclosing container is debited from live twice on the
+     * container-remover — once by the container's whole-size sweep, again
+     * by the text node's GC pair — so live goes negative and the replicas
+     * diverge. Update this pin when upstream fixes it.
+     */
+    @Test
+    fun `removing text inside a concurrently removed container drives live negative`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewObject("k").setNewText("t").edit(0, 0, "hello")
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.remove("k") }.await()
+        d2.updateAsync { root, _ ->
+            root.getAs<JsonObject>("k").getAs<JsonText>("t").edit(0, 5, "")
+        }.await()
+        crossSync(d1, d2)
+
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(DocSize(live = DataSize(-10, 0), gc = DataSize(0, 0)), d1.getDocSize())
+        assertEquals(emptyDocSize, d2.getDocSize())
     }
 }

@@ -1,6 +1,5 @@
 package dev.yorkie.document.crdt
 
-import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
@@ -56,6 +55,14 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * flag, because [CrdtElement.getDataSize] is not stable — it grows by
      * one [TimeTicket.TIME_TICKET_SIZE] once [CrdtElement.removedAt] is set,
      * which can happen strictly after the element's size first moves here.
+     * An entry is released when its instance is deregistered, or when
+     * [registerOne] replaces that instance under the same createdAt.
+     *
+     * Known upstream drift (yorkie-js-sdk#1349, iOS identical): content
+     * REMOVED from a [CrdtText]/[CrdtTree] inside an already-removed
+     * container is debited from live twice — once in the container's
+     * whole-size sweep here, again by [registerGCPair] — so
+     * [DocSize.live] can go negative and replicas diverge.
      */
     private val sizeInGC = mutableMapOf<TimeTicket, DataSize>()
 
@@ -144,23 +151,37 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * Registers the given [element] to the hash table.
      */
     fun registerElement(element: CrdtElement, parent: CrdtContainer?) {
-        elementPairMapByCreatedAt[element.createdAt] = CrdtElementPair(element, parent)
-
-        docSize = docSize.copy(
-            live = addDataSizes(docSize.live, element.getDataSize()),
-        )
-
+        registerOne(element, parent)
         if (element is CrdtContainer) {
             element.getDescendants { elem, par ->
-                elementPairMapByCreatedAt[elem.createdAt] = CrdtElementPair(elem, par)
-
-                docSize = docSize.copy(
-                    live = addDataSizes(docSize.live, elem.getDataSize()),
-                )
-
+                registerOne(elem, par)
                 false
             }
         }
+    }
+
+    /**
+     * Registers one element and books its size into [DocSize.live]. If the
+     * createdAt was held by a DIFFERENT instance that is charged to gc, that
+     * charge is released first: the replaced instance is either dropped
+     * from the tree (an object-remove undo's `Set` over the tombstone) or a
+     * stale twin inside an old tombstoned container (an array-remove undo),
+     * and either way it can no longer be released by createdAt without
+     * hitting the new registration. This is what `SetOperation`'s
+     * `UndoRedo` deregister does on the undoing replica; doing it here
+     * makes a peer receiving the same undo as `Remote` agree on sizes
+     * (Android-only divergence from yorkie-js-sdk#1349 item 2 — the stale
+     * [gcElementSetByCreatedAt] entry is left as upstream leaves it).
+     */
+    private fun registerOne(element: CrdtElement, parent: CrdtContainer?) {
+        val createdAt = element.createdAt
+        val prev = elementPairMapByCreatedAt.put(createdAt, CrdtElementPair(element, parent))
+        if (prev != null && prev.element !== element) {
+            sizeInGC.remove(createdAt)?.let { charged ->
+                docSize = docSize.copy(gc = subDataSize(docSize.gc, charged))
+            }
+        }
+        docSize = docSize.copy(live = addDataSizes(docSize.live, element.getDataSize()))
     }
 
     /**
@@ -428,25 +449,22 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * container and walks ITS descendants, this closure would otherwise
      * delete the live twin's registration by createdAt. Guard (Android-only
      * divergence forced by this reverse-op shape, not present in JS/iOS): if
-     * the element table's entry for a createdAt no longer points at THIS
-     * instance, a live twin already owns it — no-op, nothing was actually
-     * collected.
+     * the element table's entry for a createdAt does not point at THIS
+     * instance (a live twin owns it, or nothing does), no-op — nothing was
+     * actually collected, and a twin's registration already released this
+     * instance's gc charge ([registerOne]).
      */
-    @VisibleForTesting
     fun deregisterElement(element: CrdtElement): Int {
         var count = 0
         val callback = { elem: CrdtElement, _: CrdtContainer? ->
             val createdAt = elem.createdAt
             val registered = elementPairMapByCreatedAt[createdAt]
-            if (registered != null && registered.element !== elem) {
-                // Android-only stale-twin no-op — see KDoc above.
-            } else {
-                val charged = sizeInGC[createdAt]
-                if (charged != null) {
-                    docSize = docSize.copy(gc = subDataSize(docSize.gc, charged))
-                    sizeInGC.remove(createdAt)
+            if (registered?.element === elem) {
+                val charged = sizeInGC.remove(createdAt)
+                docSize = if (charged != null) {
+                    docSize.copy(gc = subDataSize(docSize.gc, charged))
                 } else {
-                    docSize = docSize.copy(live = subDataSize(docSize.live, elem.getDataSize()))
+                    docSize.copy(live = subDataSize(docSize.live, elem.getDataSize()))
                 }
                 elementPairMapByCreatedAt.remove(createdAt)
                 gcElementSetByCreatedAt.remove(createdAt)

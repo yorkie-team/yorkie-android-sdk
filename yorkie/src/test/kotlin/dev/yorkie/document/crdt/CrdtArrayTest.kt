@@ -1,9 +1,14 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.api.toByteString
 import dev.yorkie.api.toCrdtArray
+import dev.yorkie.api.toCrdtObject
 import dev.yorkie.api.toPBJsonArray
 import dev.yorkie.api.toPBTimeTicket
+import dev.yorkie.document.Document
+import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.time.TimeTicket
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -262,6 +267,51 @@ class CrdtArrayTest {
         assertEquals(2, restored.length)
         assertEquals(0, (restored[0] as CrdtPrimitive).value)
         assertEquals(1, (restored[1] as CrdtPrimitive).value)
+    }
+
+    // T-ARR (commit 4, 1001be1d / yorkie-js-sdk#1332, yorkie#1948): pins
+    // that a snapshot round-trip preserves array order when the last
+    // element was moved before further elements were appended after it —
+    // the parity guard for RgaTreeList.insert's position-identity anchor
+    // (KDoc above; body unchanged, Android already anchors correctly).
+    // The JS regression (array_move_snapshot_test.ts) has no Android twin:
+    // `should preserve moves across a protobuf round-trip` above moves a
+    // non-last element and never appends after the move.
+    @Test
+    fun `preserves order of a moved-then-appended array across a snapshot`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewArray("list").apply {
+                put(14)
+                put(15)
+            }
+        }.await()
+        assertEquals("[14,15]", document.getRoot().getAs<JsonArray>("list").toJson())
+
+        // Move the last element (15) after the other (14), then back —
+        // last element moved, two dead position nodes left behind.
+        document.updateAsync { root, _ ->
+            root.getAs<JsonArray>("list").moveAfterByIndex(1, 0)
+        }.await()
+        document.updateAsync { root, _ ->
+            root.getAs<JsonArray>("list").moveAfterByIndex(1, 0)
+        }.await()
+        assertEquals("[14,15]", document.getRoot().getAs<JsonArray>("list").toJson())
+
+        // Append after the (moved) last element via RgaTreeList.insert's
+        // position-identity anchor.
+        document.updateAsync { root, _ ->
+            root.getAs<JsonArray>("list").apply {
+                put(26)
+                put(66)
+            }
+        }.await()
+
+        val source = document.getRootObject()
+        val restored = source.toByteString().toCrdtObject()
+
+        assertEquals(source.toJson(), restored.toJson())
+        assertEquals("[14,15,26,66]", restored["list"].toJson())
     }
 
     private fun createTimeTicket(): TimeTicket {

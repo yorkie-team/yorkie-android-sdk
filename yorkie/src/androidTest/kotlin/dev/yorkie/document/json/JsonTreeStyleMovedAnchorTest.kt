@@ -55,4 +55,41 @@ class JsonTreeStyleMovedAnchorTest {
             assertTreesXmlEquals("<r><x></x>cd</r>", d1, d2)
         }
     }
+
+    // AC7 (commit 2, ea693307 / yorkie-js-sdk#1329): port
+    // tree_style_moved_anchor_test.ts 'styles the writer insert when a
+    // merge reverses the range' (scenario 8) against the real server —
+    // reversedFromAnchorRecovery must re-anchor the traversal start when a
+    // concurrent merge collapses the from-anchor, not just skip interlopers
+    // at the (already-working) to-anchor like the headline case above.
+    @Test
+    fun test_style_recovers_a_range_reversed_by_a_merge_at_the_from_anchor() {
+        withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.setNewTree(
+                        "t",
+                        element("r") {
+                            element("p") { text { "ab" } }
+                            element("p") { text { "cd" } }
+                        },
+                    )
+                },
+                Updater(c2, d2),
+            )
+            assertTreesXmlEquals("<r><p>ab</p><p>cd</p></r>", d1, d2)
+
+            updateAndSync(
+                Updater(c1, d1) { root, _ ->
+                    root.rootTree().edit(8, 8, element("p"))
+                    root.rootTree().style(6, 9, mapOf("bold" to "x"))
+                },
+                Updater(c2, d2) { root, _ ->
+                    root.rootTree().edit(0, 5)
+                },
+            )
+
+            assertTreesXmlEquals("<r><p bold=\"x\"></p>cd</r>", d1, d2)
+        }
+    }
 }

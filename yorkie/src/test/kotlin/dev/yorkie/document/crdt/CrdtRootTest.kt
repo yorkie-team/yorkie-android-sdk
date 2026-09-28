@@ -8,16 +8,20 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
+import dev.yorkie.util.addDataSizes
+import dev.yorkie.util.subDataSize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * Covers [CrdtRoot]'s size-accounting internals directly (AC2, AC4, AC10):
  * [CrdtRoot.registerRemovedElement]'s idempotent top-up, [CrdtRoot.deregisterElement]'s
- * charged/uncharged/stale-twin accounting, and [CrdtRoot.adoptRemovedElement].
+ * charged/uncharged/stale-twin accounting, and [CrdtRoot.registerElement]'s
+ * adoption of already tombstoned elements.
  */
 class CrdtRootTest {
 
@@ -324,46 +328,43 @@ class CrdtRootTest {
         assertNull(root.findByCreatedAt(member.createdAt))
     }
 
-    // T11c (AC4, Divergence 2): deregisterElement no-ops on a stale twin.
+    // T11c (AC4, Divergence 2): deregisterElement leaves a live twin's
+    // registration alone.
     @Test
-    fun `deregisterElement no-ops when the createdAt is registered to a different instance`() {
-        // given: `replacement` re-registers under the SAME createdAt as
-        // `stale` (mirrors Android's array-remove undo reverse shape
-        // re-registering a child under its original createdAt inside a new
-        // container while the old tombstoned container still owns it).
+    fun `deregisterElement keeps the registration of a twin under the same createdAt`() {
+        // given: `replacement` is a deep copy of `stale` — identical fields,
+        // same createdAt — as an undo restores it, and takes over the slot.
         val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
         val actor = "000000000000000000000001"
         fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
 
-        val stale = CrdtPrimitive("v1", tick(1))
+        val stale = CrdtPrimitive("v", tick(1))
         root.rootObject.set(key = "k", value = stale, executedAt = tick(1))
         root.registerElement(stale, root.rootObject)
 
-        val replacement = CrdtPrimitive("v2", tick(1))
+        val replacement = stale.deepCopy()
         root.registerElement(replacement, root.rootObject)
 
-        val docSizeBefore = root.docSize
+        val liveBefore = root.docSize.live
         val elementMapSizeBefore = root.elementMapSize
-        val garbageLengthBefore = root.garbageLength
 
         // when
         val released = root.deregisterElement(stale)
 
-        // then: nothing changes — the live twin's registration survives.
+        // then: the stale instance releases its own size and is not counted;
+        // the twin keeps the slot.
         assertEquals(0, released)
-        assertEquals(docSizeBefore, root.docSize)
+        assertEquals(subDataSize(liveBefore, stale.getDataSize()), root.docSize.live)
         assertEquals(elementMapSizeBefore, root.elementMapSize)
-        assertEquals(garbageLengthBefore, root.garbageLength)
-        assertEquals(replacement, root.findByCreatedAt(replacement.createdAt))
+        assertSame(replacement, root.findByCreatedAt(replacement.createdAt))
     }
 
-    // T12 (AC10, Divergence 3): adoptRemovedElement charges gc without a
-    // live refund.
+    // T12 (AC10, yorkie-js-sdk#1350): registerElement books an already
+    // tombstoned element into gc without a live refund.
     @Test
-    fun `adoptRemovedElement charges gc without refunding a live ticket`() {
-        // given: `member` is a live descendant of `container` but already
-        // carries its own removedAt (e.g. a restored container's copy of a
-        // nested tombstone).
+    fun `registerElement adopts an already tombstoned element into gc without a refund`() {
+        // given: `member` already carries its own removedAt when it is
+        // registered (e.g. a restored container's copy of a nested tombstone).
         val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
         val actor = "000000000000000000000001"
         fun tick(lamport: Long) = TimeTicket(lamport, TimeTicket.INITIAL_DELIMITER, actor)
@@ -375,31 +376,17 @@ class CrdtRootTest {
         val member = CrdtPrimitive("v", tick(2))
         member.remove(tick(3))
         container.set(key = "m", value = member, executedAt = tick(2))
-        root.registerElement(member, container)
 
         val gcBefore = root.docSize.gc
         val liveBefore = root.docSize.live
-        val memberSize = member.getDataSize()
 
         // when
-        root.adoptRemovedElement(member)
+        root.registerElement(member, container)
 
-        // then: gc grows and live shrinks by the member's post-removal size
-        // — no extra TIME_TICKET_SIZE refund on top, unlike registerRemovedElement.
-        assertEquals(
-            DataSize(
-                data = gcBefore.data + memberSize.data,
-                meta = gcBefore.meta + memberSize.meta,
-            ),
-            root.docSize.gc,
-        )
-        assertEquals(
-            DataSize(
-                data = liveBefore.data - memberSize.data,
-                meta = liveBefore.meta - memberSize.meta,
-            ),
-            root.docSize.live,
-        )
+        // then: its post-removal size lands in gc and nothing in live — no
+        // extra TIME_TICKET_SIZE refund, unlike registerRemovedElement.
+        assertEquals(addDataSizes(gcBefore, member.getDataSize()), root.docSize.gc)
+        assertEquals(liveBefore, root.docSize.live)
         assertEquals(1, root.garbageLength)
     }
 }

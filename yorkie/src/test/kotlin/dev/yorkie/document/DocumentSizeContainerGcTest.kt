@@ -10,7 +10,9 @@ import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
+import dev.yorkie.util.addDataSizes
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -196,7 +198,9 @@ class DocumentSizeContainerGcTest {
      * `createdAt` vs `createdAt` and can tie on an undo restore, while
      * Android `ElementRht.set` compares `getPositionedAt() < executedAt`
      * (`ElementRht.kt:31`), so the tie cannot occur here. This case runs
-     * un-quarantined on Android.
+     * un-quarantined on Android, and both replicas are asserted: d2 applies
+     * the undo as `Remote` over a tombstone holding the member it wrote,
+     * which the restored copy does not carry.
      */
     @Test
     fun `restoring a container over a diverged tombstone`() = runTest {
@@ -216,9 +220,16 @@ class DocumentSizeContainerGcTest {
         d1.history.undoAsync().await()
         assertJsonContentEquals("""{"k":{"a":"1"}}""", d1.toJson())
         assertEquals(built, d1.getDocSize())
+        crossSync(d1, d2)
+        assertJsonContentEquals("""{"k":{"a":"1"}}""", d2.toJson())
 
-        d1.garbageCollect(maxVectorOf(listOf(actor1, actor2)))
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
         assertEquals(0, d1.garbageLength)
+        assertEquals(0, d2.garbageLength)
+        assertEquals(built, d1.getDocSize())
+        assertEquals(d1.getDocSize(), d2.getDocSize())
     }
 
     // T6: undoing the removal of an array container (Android reverse shape) --
@@ -299,16 +310,16 @@ class DocumentSizeContainerGcTest {
         assertEquals(DataSize(0, 0), document.getDocSize().gc)
     }
 
-    // T8 (iOS-only, Divergence 3): undoing the removal of a container ------
+    // T8 (yorkie-js-sdk#1349 item 1): undoing the removal of a container --
     // holding a tombstone
 
     /**
      * Pins that a tombstone nested inside a restored container stays
-     * collectable (yorkie-js-sdk#1349 item 1; iOS `fd15fa3cf6`
-     * `adoptRemovedElement`). A JS-literal port of `611e6e43` (the recursive
-     * deregister alone, without the adopt walk) regresses this relative to
-     * current Android: it collects 0 and settles at 4 live elements instead
-     * of collecting the tombstone back to a fresh-built `{k:{a:'1'}}`.
+     * collectable (yorkie-js-sdk#1349 item 1, fixed upstream by #1350:
+     * [dev.yorkie.document.crdt.CrdtRoot.registerElement] adopts every
+     * already tombstoned element of the copy). A JS-literal port of the
+     * v0.7.17 recursive deregister alone regresses this: it collects 0 and
+     * settles at 4 live elements instead of a fresh-built `{k:{a:'1'}}`.
      */
     @Test
     fun `undoing the removal of a container holding a tombstone`() = runTest {
@@ -344,24 +355,17 @@ class DocumentSizeContainerGcTest {
         assertEquals(0, document.garbageLength)
     }
 
-    // T9 (yorkie-js-sdk#1349 item 2, parity pin, two replicas) -------------
+    // T9 (yorkie-js-sdk#1349 item 2, fixed by #1341, two replicas) -------
 
     /**
-     * Pins the PARITY state of yorkie-js-sdk#1349 item 2, not desired
-     * behaviour: the Divergence-1 deregister block in
-     * [dev.yorkie.document.operation.SetOperation.execute] runs only for
-     * `OpSource.UndoRedo`, so the same undo reaching a peer as `Remote`
-     * leaves the peer's gc element set stale — `garbageLength` counts a
-     * tombstone that is no longer collectable. Kept for parity with iOS and
-     * JS; drop this pin (and the gate it pins) when upstream does.
-     *
-     * Sizes are NOT stale on Android (divergence from JS/iOS, where a later
-     * removal of the same container never debits live for it):
-     * `CrdtRoot.registerElement` releases the replaced tombstone's gc charge
-     * when the restored copy takes its createdAt, so both replicas end empty.
+     * The same undo reaching a peer as `Remote` retires the tombstone's
+     * stale gc entry there too
+     * ([dev.yorkie.document.crdt.CrdtRoot.unregisterRemovedElementPair] is
+     * not gated on the op source), so both replicas count no garbage after
+     * the undo and both end empty after a later removal.
      */
     @Test
-    fun `remote undo leaves the peer's ledger stale (yorkie-js-sdk#1349 item 2)`() = runTest {
+    fun `remote undo retires the tombstone on the peer too`() = runTest {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
@@ -378,9 +382,9 @@ class DocumentSizeContainerGcTest {
 
         assertJsonContentEquals("""{"k":{"a":"1"}}""", d1.toJson())
         assertJsonContentEquals("""{"k":{"a":"1"}}""", d2.toJson())
-
-        assertEquals(2, d1.garbageLength)
-        assertEquals(0, d1.garbageCollect(maxVectorOf(listOf(actor1, actor2))))
+        assertEquals(0, d1.garbageLength)
+        assertEquals(0, d2.garbageLength)
+        assertEquals(d2.getDocSize(), d1.getDocSize())
 
         d1.updateAsync { root, _ -> root.remove("k") }.await()
         crossSync(d1, d2)
@@ -436,18 +440,19 @@ class DocumentSizeContainerGcTest {
         assertEquals(d1.getDocSize(), d2.getDocSize())
     }
 
-    // T11 (upstream parity pin, yorkie-js-sdk#1349) -----------------------
+    // T11: removing text inside a concurrently removed container --------
 
     /**
-     * Pins UPSTREAM drift, not desired behaviour (iOS reproduces it
-     * exactly): text removed on one replica while the other concurrently
-     * removes the enclosing container is debited from live twice on the
-     * container-remover — once by the container's whole-size sweep, again
-     * by the text node's GC pair — so live goes negative and the replicas
-     * diverge. Update this pin when upstream fixes it.
+     * d2 removes text while d1 concurrently removes the enclosing
+     * container. d1 swept the text's full size into gc before the removal
+     * reached it, so the removed nodes are debited from live a second time
+     * there; until GC the two replicas split live/gc differently (d1's live
+     * is transiently negative) but their totals — what the size limit reads
+     * — agree. Collection releases the text's drift from live
+     * (Android-only, beyond JS main), so both end empty.
      */
     @Test
-    fun `removing text inside a concurrently removed container drives live negative`() = runTest {
+    fun `removing text inside a concurrently removed container converges after gc`() = runTest {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
@@ -463,11 +468,161 @@ class DocumentSizeContainerGcTest {
             root.getAs<JsonObject>("k").getAs<JsonText>("t").edit(0, 5, "")
         }.await()
         crossSync(d1, d2)
+        assertEquals(d1.getDocSize().total(), d2.getDocSize().total())
 
         val vector = maxVectorOf(listOf(actor1, actor2))
         d1.garbageCollect(vector)
         d2.garbageCollect(vector)
-        assertEquals(DocSize(live = DataSize(-10, 0), gc = DataSize(0, 0)), d1.getDocSize())
+        assertEquals(emptyDocSize, d1.getDocSize())
         assertEquals(emptyDocSize, d2.getDocSize())
     }
+
+    // T12: remote undo over a member a peer grew on the tombstone -------
+
+    /**
+     * d2 writes `k.b` while d1 removes `k`; d1's undo restores a copy
+     * without `b`. On d2 (applying the undo as `Remote`) the orphaned `b`
+     * must be released, not left charged to gc. Three rounds, then every
+     * key removed: both replicas stay equal throughout and end empty.
+     */
+    @Test
+    fun `remote undo over a member a peer grew on the tombstone converges`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+        val vector = maxVectorOf(listOf(actor1, actor2))
+
+        repeat(3) { i ->
+            d1.updateAsync { root, _ -> root.setNewObject("k$i")["a"] = "1" }.await()
+            crossSync(d1, d2)
+            d1.updateAsync { root, _ -> root.remove("k$i") }.await()
+            d2.updateAsync { root, _ -> root.getAs<JsonObject>("k$i")["b"] = "2" }.await()
+            crossSync(d1, d2)
+            d1.history.undoAsync().await()
+            crossSync(d1, d2)
+            d1.garbageCollect(vector)
+            d2.garbageCollect(vector)
+            assertEquals(d1.getDocSize(), d2.getDocSize())
+            assertEquals(DataSize(0, 0), d2.getDocSize().gc)
+            assertEquals(0, d2.garbageLength)
+        }
+
+        repeat(3) { i -> d1.updateAsync { root, _ -> root.remove("k$i") }.await() }
+        crossSync(d1, d2)
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(emptyDocSize, d1.getDocSize())
+        assertEquals(emptyDocSize, d2.getDocSize())
+    }
+
+    // T13: inserting text inside a concurrently removed container --------
+
+    /**
+     * d2 inserts into `k.t` while d1 removes `k`. d1 books the inserted
+     * bytes into live after its sweep; collection releases that drift
+     * (Android-only, beyond JS main), so both replicas end empty.
+     */
+    @Test
+    fun `inserting text inside a concurrently removed container converges after gc`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewObject("k").setNewText("t").edit(0, 0, "hi")
+        }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.remove("k") }.await()
+        d2.updateAsync { root, _ ->
+            root.getAs<JsonObject>("k").getAs<JsonText>("t").edit(2, 2, "world")
+        }.await()
+        crossSync(d1, d2)
+        assertEquals(d1.getDocSize().total(), d2.getDocSize().total())
+
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(emptyDocSize, d1.getDocSize())
+        assertEquals(emptyDocSize, d2.getDocSize())
+    }
+
+    // T14: undoing the removal of an array of arrays (single AddOperation) -
+
+    /**
+     * An array item that is not an object reverses as ONE
+     * [dev.yorkie.document.operation.AddOperation] carrying the whole
+     * subtree, tombstones included; registration adopts them, so the
+     * replicas agree right after the undo and collection settles live at a
+     * fresh build's.
+     */
+    @Test
+    fun `undoing the removal of an array of arrays adopts its tombstones`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ ->
+            root.setNewArray("k").putNewArray().apply {
+                put("a")
+                put("b")
+            }
+        }.await()
+        d1.updateAsync { root, _ -> (root.getAs<JsonArray>("k")[0] as JsonArray).removeAt(1) }
+            .await()
+        crossSync(d1, d2)
+        val builtLive = d1.getDocSize().live
+
+        d1.updateAsync { root, _ -> root.getAs<JsonArray>("k").removeAt(0) }.await()
+        crossSync(d1, d2)
+        d1.history.undoAsync().await()
+        crossSync(d1, d2)
+        assertJsonContentEquals("""{"k":[["a"]]}""", d2.toJson())
+        assertEquals(builtLive, d1.getDocSize().live)
+        assertEquals(d1.getDocSize(), d2.getDocSize())
+
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(DocSize(live = builtLive, gc = DataSize(0, 0)), d1.getDocSize())
+        assertEquals(d1.getDocSize(), d2.getDocSize())
+        assertEquals(0, d2.garbageLength)
+    }
+
+    // T15 (upstream parity pin): application order of remove vs. add -----
+
+    /**
+     * Pins JS-main behaviour, not a desired end state: a member added into
+     * an already-removed container is booked into live on the replica that
+     * applied the removal first, and swept into gc on the other. The split
+     * differs until GC; the totals the size limit reads agree throughout,
+     * and collection makes both equal.
+     */
+    @Test
+    fun `adding into a concurrently removed container splits live and gc until gc`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ -> root.setNewObject("k")["a"] = "1" }.await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.remove("k") }.await()
+        d2.updateAsync { root, _ -> root.getAs<JsonObject>("k")["c"] = "3" }.await()
+        crossSync(d1, d2)
+        assertNotEquals(d1.getDocSize(), d2.getDocSize())
+        assertEquals(d1.getDocSize().total(), d2.getDocSize().total())
+
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+        assertEquals(emptyDocSize, d1.getDocSize())
+        assertEquals(emptyDocSize, d2.getDocSize())
+    }
+
+    private fun DocSize.total() = addDataSizes(live, gc)
 }

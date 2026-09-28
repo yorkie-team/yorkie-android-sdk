@@ -757,34 +757,21 @@ class DocumentSizeTest {
 
     /**
      * AC8: `deepCopy()` of a root holding a removed non-empty container
-     * matches the live root's `gc` exactly (the container's descendants are
-     * now swept in there too, spec 020). `live` does NOT match ticket-for-
-     * ticket — a PRE-EXISTING, out-of-scope drift, not touched by spec 020:
-     * the constructor replays [dev.yorkie.document.crdt.CrdtRoot.registerRemovedElement]
-     * for every outermost uncollected tombstone found while walking the
-     * copied tree, refunding one [TimeTicket.TIME_TICKET_SIZE] that the
-     * live root's incremental history never separately credited. Tracked
-     * upstream (yorkie-js-sdk#1349 item 3); the evaluator must not count
-     * this as a port defect.
+     * reports exactly the live root's [DocSize]. Before yorkie-js-sdk#1350
+     * the constructor replayed
+     * [dev.yorkie.document.crdt.CrdtRoot.registerRemovedElement] for every
+     * tombstone it found, refunding one [TimeTicket.TIME_TICKET_SIZE] of
+     * live meta the incremental history never credited (#1349 item 3);
+     * registration now adopts tombstones without a refund.
      */
     @Test
-    fun `deep copy of a removed non-empty container matches gc but not the live-meta drift`() =
-        runTest {
-            document.updateAsync { root, _ ->
-                root.setNewObject("k")["a"] = "1"
-            }.await()
-            document.updateAsync { root, _ -> root.remove("k") }.await()
+    fun `deep copy of a removed non-empty container matches the live root`() = runTest {
+        document.updateAsync { root, _ ->
+            root.setNewObject("k")["a"] = "1"
+        }.await()
+        document.updateAsync { root, _ -> root.remove("k") }.await()
 
-            val clone = requireNotNull(document.clone).root.deepCopy()
-            val live = document.getDocSize()
-
-            assertEquals(live.gc, clone.docSize.gc)
-            assertEquals(
-                DataSize(
-                    data = live.live.data,
-                    meta = live.live.meta + TimeTicket.TIME_TICKET_SIZE,
-                ),
-                clone.docSize.live,
-            )
-        }
+        val clone = requireNotNull(document.clone).root.deepCopy()
+        assertEquals(document.getDocSize(), clone.docSize)
+    }
 }

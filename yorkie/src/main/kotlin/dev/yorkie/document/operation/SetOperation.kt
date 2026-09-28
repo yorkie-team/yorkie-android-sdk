@@ -1,6 +1,5 @@
 package dev.yorkie.document.operation
 
-import dev.yorkie.document.crdt.CrdtContainer
 import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
@@ -43,43 +42,16 @@ internal data class SetOperation(
             val copiedValue = value.deepCopy()
             copiedValue.removedAt = null
             val removed = parentObject.set(key, copiedValue, executedAt)
-            if (source == OpSource.UndoRedo) {
-                // NOTE(yorkie-js-sdk#1349): kept UndoRedo-only for parity —
-                // the same undo reaching a peer as Remote (or replayed as
-                // Local from a snapshot) leaves a stale createdAt in the
-                // peer's gc element set (garbageLength over-counts; sizes
-                // agree since CrdtRoot.registerElement releases a replaced
-                // instance's gc charge); drop this gate when upstream does.
-                // Deregisters the
-                // REGISTERED element under the incoming createdAt (the
-                // tombstone being restored, or a member a peer grew on it),
-                // never the incoming copy — copiedValue has not been
-                // registered yet, so findByCreatedAt only ever returns the
-                // previously-registered element here.
-                root.findByCreatedAt(copiedValue.createdAt)?.let(root::deregisterElement)
-            }
+            // An undo of a removal restores a copy under the tombstone's
+            // createdAt; retire the tombstone's stale GC entry on EVERY
+            // replica — this is a condition on the tree, not on who applies
+            // it (yorkie-js-sdk#1341). An ordinary set carries a fresh
+            // createdAt, so this is one map miss. Tombstones inside the copy,
+            // and the losing side of a concurrent set, are booked into gc by
+            // registerElement itself (yorkie-js-sdk#1350).
+            root.unregisterRemovedElementPair(copiedValue.createdAt)
             root.registerElement(copiedValue, parentObject)
-            if (source == OpSource.UndoRedo && copiedValue is CrdtContainer) {
-                // Divergence 3 (yorkie-js-sdk#1349 item 1, iOS fd15fa3cf6): a
-                // tombstone nested inside the restored container must stay
-                // collectable. Android's object-remove reverse deep-copies
-                // the whole tombstoned subtree (ElementRht.deepCopy keeps
-                // tombstones), so a nested member can still carry removedAt
-                // here even though copiedValue.removedAt was just cleared
-                // above. Adopt every such descendant into gc directly — the
-                // restored container itself is untouched.
-                copiedValue.getDescendants { elem, _ ->
-                    if (elem.removedAt != null) root.adoptRemovedElement(elem)
-                    false
-                }
-            }
             removed?.let(root::registerRemovedElement)
-            // When the new value already has a removedAt (i.e. it was the LWW-losing side
-            // of a concurrent set), register it as removed so GC can collect it once all
-            // peers have seen the winning value.
-            if (copiedValue.isRemoved) {
-                root.registerRemovedElement(copiedValue)
-            }
 
             val reverseOps = if (source.producesReverseOps) {
                 val reverseOp = if (previousValue != null) {

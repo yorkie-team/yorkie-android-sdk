@@ -645,7 +645,7 @@ class DocumentTest {
             }
 
             client.activateAsync().await()
-            val actorID = client.requireClientId()
+            val actorID = client.requireActorId()
 
             // 1. Can receive DocumentStatus.Attached event when attached
             client.attachDocument(document, syncMode = Manual).await()
@@ -709,8 +709,8 @@ class DocumentTest {
 
             client1.activateAsync().await()
             client2.activateAsync().await()
-            val c1ID = client1.requireClientId()
-            val c2ID = client2.requireClientId()
+            val c1ID = client1.requireActorId()
+            val c2ID = client2.requireActorId()
 
             // 1. Can receive DocumentStatus.Attached event when attached
             client1.attachDocument(document1, syncMode = Manual).await()
@@ -774,7 +774,7 @@ class DocumentTest {
             assertEquals(c1ID, document3StatusChangedList[0].actorID)
 
             client2.activateAsync().await()
-            val c2IDAfterReactivate = client2.requireClientId()
+            val c2IDAfterReactivate = client2.requireActorId()
             client2.attachDocument(document4, syncMode = Manual).await()
 
             delay(100L)
@@ -842,8 +842,8 @@ class DocumentTest {
 
             client1.activateAsync().await()
             client2.activateAsync().await()
-            val c1ID = client1.requireClientId()
-            val c2ID = client2.requireClientId()
+            val c1ID = client1.requireActorId()
+            val c2ID = client2.requireActorId()
 
             // 1. Can receive DocumentStatus.Attached event when attached
             client1.attachDocument(document1, syncMode = Manual).await()

@@ -458,7 +458,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId(), 1L),
+                        Pair(c1.requireActorId(), 1L),
                     ),
                 ),
             )
@@ -473,7 +473,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId(), 1L),
+                        Pair(c1.requireActorId(), 1L),
                     ),
                 ),
             )
@@ -485,8 +485,8 @@ class GCTest {
                 versionVectorHelper(
                     d2.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId(), 1L),
-                        Pair(c2.requireClientId(), 2L),
+                        Pair(c1.requireActorId(), 1L),
+                        Pair(c2.requireActorId(), 2L),
                     ),
                 ),
             )
@@ -506,7 +506,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId(), 2L),
+                        Pair(c1.requireActorId(), 2L),
                     ),
                 ),
             )
@@ -520,7 +520,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId(), 2L),
+                        Pair(c1.requireActorId(), 2L),
                     ),
                 ),
             )
@@ -541,7 +541,7 @@ class GCTest {
                 versionVectorHelper(
                     d1.getVersionVector(),
                     arrayOf(
-                        Pair(c1.requireClientId(), 2L),
+                        Pair(c1.requireActorId(), 2L),
                     ),
                 ),
             )
@@ -723,8 +723,8 @@ class GCTest {
 
             // Actual garbage-collected nodes
             val actors = listOf(
-                c1.requireClientId(),
-                c2.requireClientId(),
+                c1.requireActorId(),
+                c2.requireActorId(),
             )
             assertEquals(d1.garbageCollect(maxVectorOf(actors)), gcNodeLength)
             assertEquals(d2.garbageCollect(maxVectorOf(actors)), gcNodeLength)
@@ -989,7 +989,7 @@ class GCTest {
                 versionVectorHelper(
                     doc1.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId(), 1L),
+                        Pair(client1.requireActorId(), 1L),
                     ),
                 ),
             )
@@ -999,8 +999,8 @@ class GCTest {
                 versionVectorHelper(
                     doc2.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId(), 1L),
-                        Pair(client2.requireClientId(), 2L),
+                        Pair(client1.requireActorId(), 1L),
+                        Pair(client2.requireActorId(), 2L),
                     ),
                 ),
             )
@@ -1010,8 +1010,8 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId(), 1L),
-                        Pair(client3.requireClientId(), 2L),
+                        Pair(client1.requireActorId(), 1L),
+                        Pair(client3.requireActorId(), 2L),
                     ),
                 ),
             )
@@ -1036,8 +1036,8 @@ class GCTest {
                 versionVectorHelper(
                     doc1.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId(), 2001L),
-                        Pair(client2.requireClientId(), 2000L),
+                        Pair(client1.requireActorId(), 2001L),
+                        Pair(client2.requireActorId(), 2000L),
                     ),
                 ),
             )
@@ -1047,8 +1047,8 @@ class GCTest {
                 versionVectorHelper(
                     doc2.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId(), 1998L),
-                        Pair(client2.requireClientId(), 2000L),
+                        Pair(client1.requireActorId(), 1998L),
+                        Pair(client2.requireActorId(), 2000L),
                     ),
                 ),
             )
@@ -1058,8 +1058,8 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId(), 1L),
-                        Pair(client3.requireClientId(), 2L),
+                        Pair(client1.requireActorId(), 1L),
+                        Pair(client3.requireActorId(), 2L),
                     ),
                 ),
             )
@@ -1074,10 +1074,10 @@ class GCTest {
                 versionVectorHelper(
                     doc3.getVersionVector(),
                     arrayOf(
-                        Pair(client1.requireClientId(), 1998L),
-                        Pair(client2.requireClientId(), 2000L),
+                        Pair(client1.requireActorId(), 1998L),
+                        Pair(client2.requireActorId(), 2000L),
                         Pair(ActorID.INITIAL_ACTOR_ID, 2002L),
-                        Pair(client3.requireClientId(), 2003L),
+                        Pair(client3.requireActorId(), 2003L),
                     ),
                 ),
             )

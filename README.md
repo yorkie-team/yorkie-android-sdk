@@ -110,6 +110,23 @@ never applies there: it takes effect only on the client that issued it, and the 
 diverge for good, with no error on either side. Every other SDK feature works against earlier
 servers and peers. Upgrade every participant before relying on undo/redo in a mixed fleet.
 
+Offline local persistence and the stable actor (v0.7.20 sync): resuming a persisted document
+re-pushes its un-acknowledged changes against the persisted checkpoint and epoch, and watch peers
+are keyed by the stable actor — both need Yorkie server >= 0.7.20 (yorkie#1969, #1970). Against an
+older server the SDK falls back to the session id as the actor and never resumes.
+
+| Participant | Minimum version |
+|-------------|-----------------|
+| Yorkie server (self-hosted or hosted) | 0.7.20 |
+| yorkie-js-sdk peers | 0.7.20 |
+| yorkie-ios-sdk peers | 0.7.20 (PR #274) |
+| yorkie-android-sdk peers | this release |
+
+**Behavioural change:** peers in presence/watch events are now keyed by the stable actor, not the
+per-session client id. An app that identified itself among `presences` via
+`Status.Activated.clientId` / `Client.requireClientId()` must switch to
+`Status.Activated.actorId` / `Client.requireActorId()`.
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting patches and the contribution workflow.

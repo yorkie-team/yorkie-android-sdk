@@ -6,10 +6,10 @@ import dev.yorkie.document.time.VersionVector
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 
@@ -109,26 +109,8 @@ fun withTwoClientsAndDocuments(
         client2.activateAsync().await()
 
         if (attachDocuments) {
-            val attach1 = suspend {
-                client1.attachDocument(
-                    document1,
-                    syncMode = syncMode,
-                    initialPresence = presences.first,
-                ).await()
-            }
-            // In realtime mode, document1's watch stream must be registered
-            // server-side before client2 attaches, or client2 arrives in the
-            // Initialization frame instead of as Others.Watched.
-            if (syncMode == Client.SyncMode.Realtime) {
-                awaitWatchConnected(document1) { attach1() }
-            } else {
-                attach1()
-            }
-            client2.attachDocument(
-                document2,
-                syncMode = syncMode,
-                initialPresence = presences.second,
-            ).await()
+            attachAndAwaitWatch(client1, document1, syncMode, presences.first)
+            attachAndAwaitWatch(client2, document2, syncMode, presences.second)
         }
 
         callback.invoke(this, client1, client2, document1, document2, key)
@@ -172,18 +154,9 @@ fun withThreeClientsAndDocuments(
         client2.activateAsync().await()
         client3.activateAsync().await()
 
-        client1.attachDocument(
-            document = document1,
-            syncMode = syncMode,
-        ).await()
-        client2.attachDocument(
-            document = document2,
-            syncMode = syncMode,
-        ).await()
-        client3.attachDocument(
-            document = document3,
-            syncMode = syncMode,
-        ).await()
+        attachAndAwaitWatch(client1, document1, syncMode)
+        attachAndAwaitWatch(client2, document2, syncMode)
+        attachAndAwaitWatch(client3, document3, syncMode)
 
         callback.invoke(
             this,
@@ -214,34 +187,63 @@ fun withThreeClientsAndDocuments(
 }
 
 /**
- * Awaits the server's acknowledgement of [document]'s watch stream: the
- * [Document.Event.PresenceChanged.MyPresence.Initialized] event published for
- * the stream's Initialization frame. Uses an UNDISPATCHED collector that
- * subscribes before [block] runs, so the event is not missed even if it fires
- * synchronously inside the block.
+ * Attaches [document] with [client] and, for every sync mode that opens a
+ * watch stream (all but [Client.SyncMode.Manual] and
+ * [Client.SyncMode.Polling], mirroring [Client]'s own condition), waits for
+ * the server to register that stream via [awaitWatchConnected]. A peer
+ * attaching after this returns arrives as Others.Watched instead of inside
+ * [document]'s Initialization frame.
+ */
+suspend fun attachAndAwaitWatch(
+    client: Client,
+    document: Document,
+    syncMode: Client.SyncMode,
+    initialPresence: Map<String, String> = emptyMap(),
+) {
+    val attach = suspend {
+        client.attachDocument(
+            document,
+            syncMode = syncMode,
+            initialPresence = initialPresence,
+        ).await()
+    }
+    if (syncMode != Client.SyncMode.Manual && syncMode != Client.SyncMode.Polling) {
+        awaitWatchConnected(document) { attach() }
+    } else {
+        attach()
+    }
+}
+
+/**
+ * Runs [block] and waits until the server has registered [document]'s watch
+ * stream, failing with a timeout after [timeoutMs].
  *
- * Not [Document.Event.StreamConnectionChanged.Connected]: the client publishes
- * that as soon as it SENDS the watch request, before the server registers the
- * watcher, so a peer attaching right after it can still land in the
- * Initialization frame (no Others.Watched) on a slow runner.
+ * The signal is a [Document.Event.PresenceChanged.MyPresence.Initialized]
+ * event observed while this client is in [document]'s online clients.
+ * [Client] publishes Initialized for the stream's Initialization frame —
+ * after setting the online clients to the server's subscriber list, which
+ * includes this client — and ALSO when a stream fails or closes, after
+ * clearing them. Neither
+ * [Document.Event.StreamConnectionChanged.Connected] (published when the
+ * request is SENT, before the server registers the watcher) nor
+ * Initialized alone means registered.
  *
- * Use when the next assertion depends on the watch stream being established
- * (e.g. expecting a Watched event for a peer that attaches afterwards).
+ * The collector subscribes before [block] runs, so the event is not missed.
+ * The timeout surfaces from [kotlinx.coroutines.Deferred.await] in this
+ * scope, so a missing stream fails the test instead of returning silently.
  */
 suspend fun awaitWatchConnected(
     document: Document,
     timeoutMs: Long = GENERAL_TIMEOUT,
     block: suspend () -> Unit,
 ) = coroutineScope {
-    val connected = launch(start = CoroutineStart.UNDISPATCHED) {
-        withTimeout(timeoutMs) {
-            document.events
-                .filterIsInstance<Document.Event.PresenceChanged.MyPresence.Initialized>()
-                .first()
-        }
+    val registered = async(start = CoroutineStart.UNDISPATCHED) {
+        document.events
+            .filterIsInstance<Document.Event.PresenceChanged.MyPresence.Initialized>()
+            .first { document.changeID.actor in document.getOnlineClients() }
     }
     block()
-    connected.join()
+    withTimeout(timeoutMs) { registered.await() }
 }
 
 fun versionVectorHelper(

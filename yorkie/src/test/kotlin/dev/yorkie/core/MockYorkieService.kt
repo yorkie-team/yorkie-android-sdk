@@ -57,6 +57,7 @@ import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.channelEvent
 import dev.yorkie.api.v1.channelInit
 import dev.yorkie.api.v1.channelWatchEvent
+import dev.yorkie.api.v1.checkpoint
 import dev.yorkie.api.v1.createRevisionResponse
 import dev.yorkie.api.v1.deactivateClientResponse
 import dev.yorkie.api.v1.detachChannelResponse
@@ -121,6 +122,54 @@ class MockYorkieService(
     /** Suspends each refresh for this long, to simulate an in-flight RPC. */
     var refreshChannelDelayMs = 0L
 
+    /**
+     * Stable actor to include in [ActivateClientResponse.actor_id]. Null (the default) omits the
+     * field, matching a pre-0.7.20 server — `requireActorId() == requireClientId()`. Set to
+     * [TEST_STABLE_ACTOR_ID] (or any 24-hex string) to exercise the distinct-actor path.
+     */
+    var activateResponseActorId: String? = null
+
+    /**
+     * Single-shot: the next [attachDocument] call for this document key fails with
+     * [YorkieException.Code.ErrEpochMismatch]; consumed after firing, so a retry attach succeeds.
+     */
+    val epochMismatchOnAttachOnceKeys = mutableSetOf<String>()
+
+    /**
+     * Single-shot: the next [attachDocument] call for this document key fails with
+     * [YorkieException.Code.ErrInvalidServerSeq] in the real yorkie 0.7.20 server shape (Connect
+     * `INVALID_ARGUMENT`, "checkpoint serverSeq exceeds server state") — round-2 QA HIGH-1/
+     * MEDIUM-2: the server checks the seeded epoch FIRST and only returns `ErrEpochMismatch` once
+     * epochs already match, so a never-yet-compacted (epoch-0) envelope hits this code instead.
+     * Consumed after firing, so a retry attach succeeds.
+     */
+    val invalidServerSeqOnAttachOnceKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose next attach fails with the REAL 0.7.20 wire shape of
+     * `ErrInvalidServerSeq`: bare `INVALID_ARGUMENT` + fixed message, no `ErrorInfo`.
+     */
+    val invalidServerSeqBareOnAttachOnceKeys = mutableSetOf<String>()
+
+    /** Replaces the watch-init `clientIds` list (e.g. `emptyList()` to omit the subscriber). */
+    var watchInitClientIdsOverride: List<String>? = null
+
+    /**
+     * Forces [attachDocument]'s response `document_id` for this document key — simulates a
+     * server-assigned id differing from a persisted one (tier-3 purge probe).
+     */
+    val attachDocumentIdOverride = mutableMapOf<String, String>()
+
+    /**
+     * Forces [attachDocument]'s response `changePack.checkpoint.server_seq` to 0 for this document
+     * key (tier-3 purge probe).
+     */
+    val attachServerSeqResetKeys = mutableSetOf<String>()
+
+    /** The `actor_id` most recently sent on a document/channel [WatchRequest], for assertions. */
+    var lastDocumentWatchActorId: String? = null
+    var lastChannelWatchActorId: String? = null
+
     override suspend fun activateClient(
         request: ActivateClientRequest,
         headers: Headers,
@@ -128,6 +177,7 @@ class MockYorkieService(
         return ResponseMessage.Success(
             activateClientResponse {
                 clientId = TEST_ACTOR_ID
+                activateResponseActorId?.let { actorId = it }
             },
             emptyMap(),
             emptyMap(),
@@ -184,10 +234,70 @@ class MockYorkieService(
                 trailers = emptyMap(),
             )
         }
+        if (request.changePack.documentKey in epochMismatchOnAttachOnceKeys) {
+            epochMismatchOnAttachOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrEpochMismatch.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in invalidServerSeqOnAttachOnceKeys) {
+            invalidServerSeqOnAttachOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrInvalidServerSeq.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.INVALID_ARGUMENT
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in invalidServerSeqBareOnAttachOnceKeys) {
+            invalidServerSeqBareOnAttachOnceKeys.remove(request.changePack.documentKey)
+            // The real yorkie 0.7.20 server shape: a bare INVALID_ARGUMENT with the fixed
+            // message and NO ErrorInfo detail (spec 025 round-2 HIGH-1).
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.INVALID_ARGUMENT
+                every { message } returns "checkpoint serverSeq exceeds server state"
+                every { unpackedDetails(ErrorInfo::class) } returns emptyList()
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        val forcedDocumentId = attachDocumentIdOverride[request.changePack.documentKey]
+        val forceSeqReset = request.changePack.documentKey in attachServerSeqResetKeys
+        val resetCheckpoint = if (forceSeqReset) {
+            checkpoint {
+                serverSeq = 0
+                clientSeq = 0
+            }
+        } else {
+            null
+        }
         return ResponseMessage.Success(
             attachDocumentResponse {
                 changePack = changePack {
                     documentKey = request.changePack.documentKey
+                    resetCheckpoint?.let { checkpoint = it }
                     changes.add(
                         Change(
                             ChangeID(0u, 0, TEST_ACTOR_ID, VersionVector.INITIAL_VERSION_VECTOR),
@@ -202,7 +312,7 @@ class MockYorkieService(
                         ).toPBChange(),
                     )
                 }
-                documentId = changePack.documentKey
+                documentId = forcedDocumentId ?: changePack.documentKey
             },
             emptyMap(),
             emptyMap(),
@@ -330,6 +440,11 @@ class MockYorkieService(
                     val isDocumentWatch = input.resourcesList.any {
                         it.resourceCase == ResourceDescriptor.ResourceCase.DOCUMENT
                     }
+                    if (isDocumentWatch) {
+                        lastDocumentWatchActorId = input.actorId
+                    } else {
+                        lastChannelWatchActorId = input.actorId
+                    }
                     CoroutineScope(Dispatchers.Default).launch {
                         if (responseChannel.isClosedForSend) return@launch
                         if (isDocumentWatch) {
@@ -353,7 +468,12 @@ class MockYorkieService(
                                 resourceInit {
                                     documentInit = documentInit {
                                         this.documentId = documentId
-                                        clientIds.add(TEST_ACTOR_ID)
+                                        // The 0.7.20 server lists watchers by their
+                                        // stable actor.
+                                        clientIds.addAll(
+                                            watchInitClientIdsOverride
+                                                ?: listOf(activateResponseActorId ?: TEST_ACTOR_ID),
+                                        )
                                     }
                                 },
                             )
@@ -669,6 +789,7 @@ class MockYorkieService(
         internal const val AUTH_ERROR_DOCUMENT_KEY = "AUTH_ERROR_DOCUMENT_KEY"
         internal const val EPOCH_MISMATCH_DOCUMENT_KEY = "EPOCH_MISMATCH_DOCUMENT_KEY"
         internal val TEST_ACTOR_ID = "0000000000ffff0000000000"
+        internal val TEST_STABLE_ACTOR_ID = "0000000000ffff0000000001"
         internal const val MOCK_SESSION_ID = "mock-session-id"
         internal const val TEST_USER_ID = "TEST_USER_ID"
 

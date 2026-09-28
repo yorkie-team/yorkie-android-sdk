@@ -2,6 +2,7 @@ package dev.yorkie.core
 
 import android.util.Log
 import androidx.annotation.VisibleForTesting
+import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
 import com.connectrpc.ServerOnlyStreamInterface
@@ -17,6 +18,7 @@ import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.toRevisionSummary
 import dev.yorkie.api.v1.ActivateClientRequest
+import dev.yorkie.api.v1.AttachDocumentResponse
 import dev.yorkie.api.v1.DocEventType
 import dev.yorkie.api.v1.WatchResponse
 import dev.yorkie.api.v1.YorkieServiceClient
@@ -45,10 +47,12 @@ import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
+import dev.yorkie.document.change.Change
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
 import dev.yorkie.document.presence.Presences.Companion.asPresences
+import dev.yorkie.document.toDroppedChange
 import dev.yorkie.presence.Channel
 import dev.yorkie.presence.ChannelEvent
 import dev.yorkie.presence.Presence
@@ -63,6 +67,8 @@ import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
 import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
+import dev.yorkie.util.YorkieException.Code.ErrInvalidServerSeq
 import dev.yorkie.util.YorkieException.Code.ErrSessionNotFound
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
 import dev.yorkie.util.checkYorkieError
@@ -105,7 +111,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -191,6 +199,129 @@ public class Client(
     private val Attachable.mutex
         get() = mutexForAttachments.getOrPut(getKey()) { Mutex() }
 
+    // Per-store-key FIFO of pending persist writes (spec 025). Mutated only on the
+    // client's single dispatcher (the persist collector launched in attachDocument and
+    // the persist-after-sync call in syncInternal); read from the caller's thread by
+    // close()'s runBlocking drain, hence a concurrent map (round-6 QA LOW-1).
+    private val persistQueues = ConcurrentHashMap<String, Job>()
+
+    /**
+     * Derives the [DocStore] key for [docKey]: `<apiKey>/<clientKey>/<docKey>`. Ported from JS
+     * `client.ts` (`2291bf67`/#1338); `apiKey` may be null on Android (`options.apiKey ?: ""` —
+     * determination, recorded in the build report).
+     */
+    private fun storeKey(docKey: String) = "${options.apiKey ?: ""}/${options.key}/$docKey"
+
+    /**
+     * Snapshots [attachment]'s document via [Document.toBytes] EAGERLY (on the client dispatcher,
+     * before any suspension), then chains the store write after any already-enqueued write for the
+     * same store key so concurrent enqueues cannot land bytes out of order: because the snapshot is
+     * taken before the write is chained, the order in which [enqueuePersist] is called equals the
+     * order in which [DocStore.save] is invoked, so the LAST call to complete stores the LAST
+     * snapshot taken. Errors are logged, never thrown (JS `persistToStore`, `client.ts`).
+     *
+     * The job body runs on [Dispatchers.IO] under [NonCancellable] (spec 025 MEDIUM-1, amended
+     * round 5 per a cross-judge HIGH finding): Kotlin's structured concurrency cancels a child
+     * job immediately on `scope.cancel()`, which is not JS promise semantics — an in-flight
+     * `store.save` for the last local edit must not be interrupted mid-write just because [close]
+     * moved on. Running on [Dispatchers.IO] (rather than the client's own single-thread
+     * [dispatcher]) matters specifically for [close]: that dispatcher is shut down right after the
+     * bounded drain below gives up on a slow write, and a write still suspended at that point would
+     * be permanently rejected on its next resumption if it depended on the now-closed dispatcher —
+     * [NonCancellable] alone only suppresses cooperative cancellation checks, it does not protect a
+     * suspended continuation from a dispatcher that refuses to run it at all. [drainPersist]/
+     * [drainAllPersists] give a caller a bounded chance to OBSERVE completion before tearing down;
+     * the write itself keeps running on [Dispatchers.IO] independently of that bound and of the
+     * client dispatcher's lifecycle.
+     */
+    private suspend fun enqueuePersist(attachment: Attachment<out Attachable>) {
+        if (!attachment.persistsToStore) return
+        val store = options.docStore ?: return
+        val document = attachment.resource as? Document ?: return
+        val key = storeKey(document.getKey())
+        val bytes = document.toBytes()
+        val previous = persistQueues[key]
+        val job = scope.launch(Dispatchers.IO) {
+            withContext(NonCancellable) {
+                previous?.join()
+                runCatching { store.save(key, bytes) }
+                    .onFailure { logError("PS", "persist $key failed", it) }
+            }
+        }
+        persistQueues[key] = job
+    }
+
+    /**
+     * Waits for [key]'s persist chain to become quiescent, bounded to 5s (spec 025 MEDIUM-1).
+     * A persist is enqueued asynchronously off a buffered [Document.events] emission that the
+     * persist-subscription collector (started in `attachDocument`) may not have processed yet —
+     * an edit's `updateAsync(...).await()` returning does not itself guarantee the collector has
+     * run — so this re-checks [persistQueues] for [key] until a pass finds nothing new, instead
+     * of joining whatever happens to be registered right now. Called from [detachInternal] before
+     * it cancels the persist subscription and releases the lease, so a write enqueued for the
+     * last local edit is not silently dropped by the caller moving on.
+     */
+    private suspend fun drainPersist(key: String) {
+        withTimeoutOrNull(5_000) {
+            var last: Job? = null
+            var first = true
+            while (true) {
+                val current = persistQueues[key]
+                current?.join()
+                val settled = !first && current === last
+                last = current
+                first = false
+                if (settled) break
+                delay(10)
+            }
+        }
+    }
+
+    /**
+     * [drainPersist] for every store key with a pending write. [close] runs this bounded (by its
+     * own [withTimeoutOrNull] at the call site) before cancelling the client scope, so an abrupt
+     * close still flushes the last edit instead of dropping it mid-write (spec 025 MEDIUM-1).
+     */
+    private suspend fun drainAllPersists() {
+        var last: Map<String, Job> = emptyMap()
+        var first = true
+        while (true) {
+            val current = persistQueues.toMap()
+            current.values.forEach { it.join() }
+            val settled = !first && current == last
+            last = current
+            first = false
+            if (settled) break
+            delay(10)
+        }
+    }
+
+    /**
+     * Removes [docKey]'s envelope from the configured [DocStore], if any. Called only from the
+     * three recovery paths (restore failure, tier-3 purge, epoch re-anchor) — never from teardown,
+     * which is JS parity (`client.ts`, recorded determination). Failures are logged, never thrown.
+     */
+    private suspend fun removeFromStore(docKey: String) {
+        val store = options.docStore ?: return
+        runCatching { store.remove(storeKey(docKey)) }
+            .onFailure { logDebug("PS", "store remove $docKey failed: ${it.message}") }
+    }
+
+    /**
+     * Publishes a [Document.Event.LocalChangesDropped] for [changes] projected via
+     * [Change.toDroppedChange], so an app can react to un-pushed local edits that were discarded
+     * without reaching the server (JS `emitLocalChangesDropped`, `client.ts`).
+     */
+    private suspend fun emitLocalChangesDropped(
+        document: Document,
+        reason: Document.Event.Reason,
+        changes: List<Change>,
+    ) {
+        document.publishEvent(
+            Document.Event.LocalChangesDropped(reason, changes.map { it.toDroppedChange() }),
+        )
+    }
+
     private val streamTimeout = with(streamClient) {
         callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
     }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
@@ -260,11 +391,58 @@ public class Client(
                 }
                 return@async Result.failure(it)
             }
-            _status.emit(Status.Activated(activateResponse.clientId))
+            // The stable actor is derived from the project and client key on the server;
+            // a pre-0.7.20 server never sets actor_id, so the session client id is the
+            // fallback (JS `client.ts`: `res.actorId || res.clientId`). A malformed
+            // actor_id (e.g. a partial rollout / proxy bug) also falls back, logging a
+            // warning rather than stamping local changes with an unusable actor.
+            val sessionClientId = activateResponse.clientId
+            val rawActor = activateResponse.actorId.ifEmpty { sessionClientId }
+            val actor = if (isValidActorId(rawActor)) {
+                rawActor
+            } else {
+                logDebug("AC", "invalid actor_id \"$rawActor\"; falling back to the session id")
+                sessionClientId
+            }
+            _status.emit(Status.Activated(sessionClientId, actorId = actor))
             deactivating = false
             runSyncLoop()
             SUCCESS
         }
+    }
+
+    /**
+     * Checks whether [value] is a syntactically valid 24-hex-character [ActorID] (the shape
+     * `toActorID()`/`toByteString()` decode). Used only to guard a server-supplied `actor_id`
+     * before stamping it into document changes; not a full round-trip decode.
+     */
+    private fun isValidActorId(value: String) = ActorIdRegex.matches(value)
+
+    /**
+     * Classifies [e] as the store-path attach recovery trigger (spec 025 HIGH-1): the server
+     * compacted/purged the document since the persisted envelope was written, so a re-anchor
+     * (not a propagated failure) is the correct response.
+     *
+     * Matches on the [YorkieException.Code.ErrEpochMismatch] / [ErrInvalidServerSeq]
+     * `ErrorInfo` metadata `code` when present (the mock, and any server that attaches one).
+     * The live yorkie 0.7.20 server does NOT attach an `ErrorInfo` detail for
+     * `ErrInvalidServerSeq` on this path — verified empirically this round (a real
+     * compacted-resume attach failure's [ConnectException.details] and
+     * `unpackedDetails(ErrorInfo::class)` are both empty; the wire response is an 81-byte
+     * bare `{"code":"invalid_argument","message":"..."}` JSON body with no room for one) — so
+     * this also falls back to the connect status code plus the server's fixed message text for
+     * that case.
+     */
+    private fun isCompactionReanchorError(e: ConnectException): Boolean {
+        val code = errorCodeOf(e)
+        if (code == ErrEpochMismatch.codeString || code == ErrInvalidServerSeq.codeString) {
+            return true
+        }
+        return e.code == Code.INVALID_ARGUMENT &&
+            e.message.orEmpty().contains(
+                "checkpoint serverseq exceeds server state",
+                ignoreCase = true,
+            )
     }
 
     /**
@@ -432,6 +610,14 @@ public class Client(
                             return@runCatching
                         }
                         resource.applyChangePack(responsePack)
+                        // An ack-only push advances the checkpoint and drops the
+                        // pushed changes from localChanges without emitting any
+                        // LocalChange/Snapshot event, so the event-driven persist
+                        // subscription alone would leave a stale envelope in the
+                        // store. Gated on persistsToStore like the other site.
+                        if (attachment.persistsToStore) {
+                            enqueuePersist(attachment)
+                        }
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,
                         )
@@ -506,9 +692,17 @@ public class Client(
                             return@runCatching
                         }
                         if (response.clientId.isNotEmpty() && !isActive) {
-                            _status.emit(Status.Activated(response.clientId))
+                            // RefreshChannel carries no stable actor (channels are
+                            // session-scoped, [C-1]); fall back to the session id,
+                            // matching JS `client.ts` RefreshChannel lazy activation.
+                            _status.emit(
+                                Status.Activated(response.clientId, actorId = response.clientId),
+                            )
                         }
                         if (isActive) {
+                            // [C-1]: channels keep the session id as their actor
+                            // (JS `refreshChannel` stamps `this.id`, never the
+                            // stable actor) — do not change to requireActorId().
                             resource.setActor(requireClientId())
                         }
                         if (response.sessionId.isNotEmpty()) {
@@ -682,6 +876,12 @@ public class Client(
                                 documentId = attachment.resourceId
                             }
                         }
+                        // Declares the stable actor so the server keys watch peer
+                        // ids and watched/unwatched events by the same actor
+                        // stamped into presence changes ([C-1]: the document
+                        // watch only — the channel watch below carries no
+                        // stable actor, JS `client.ts` createChannelWatchStream).
+                        actorId = requireActorId()
                     },
                 )
 
@@ -718,7 +918,9 @@ public class Client(
                     ),
                 )
                 document.setOnlineClients(clientIDs.toSet())
-                val selfId = requireClientId()
+                // Presences are keyed by the stable actor (JS applyWatchInit compares
+                // against changeID.getActorID()), so the self-guard must use it too.
+                val selfId = requireActorId()
                 for (clientID in document.allPresences.value.keys) {
                     if (clientID != selfId && clientID !in clientIDs) {
                         document.clearPresence(clientID)
@@ -1127,107 +1329,317 @@ public class Client(
 
             try {
                 document.mutex.withLock {
-                    val clientID = requireClientId()
-                    document.setActor(clientID)
-                    // The local option wins; absent that, the document's seeded
-                    // value is used. The server is authoritative and overwrites
-                    // this via the attach response. Mirrors JS SDK PR #1285.
-                    val resolvedDisablePresence = disablePresence || document.isPresenceDisabled()
-                    if (!resolvedDisablePresence) {
-                        document.updateAsync { _, presence ->
-                            presence.put(initialPresence)
-                        }.await()
-                    }
+                    var sessionLockHandle: SessionLockHandle? = null
+                    var persistsToStore = options.docStore != null
+                    var registered = false
+                    try {
+                        // Actor-before-elements: setActor rewrites localChanges/changeID
+                        // only, never root elements, so it must run before restoreFromBytes
+                        // — whose actor guard compares against this value.
+                        document.setActor(requireActorId())
 
-                    val request = attachDocumentRequest {
-                        clientId = clientID
-                        changePack = document.createChangePack().toPBChangePack()
-                        schema?.let {
-                            schemaKey = it
+                        // (1) Lease — store path only; contention fails fast (does not
+                        // suspend waiting for the lock to free up).
+                        if (options.docStore != null) {
+                            val lockName = "yorkie-session:${storeKey(documentKey)}"
+                            sessionLockHandle = options.sessionLock.acquire(lockName)
+                                ?: throw YorkieException(
+                                    ErrInvalidArgument,
+                                    "document \"$documentKey\" is already open in another " +
+                                        "session under offline persistence; only one active " +
+                                        "session per document is allowed to avoid silent " +
+                                        "edit loss",
+                                )
                         }
-                        disableGc = disableGC
-                        this.disablePresence = resolvedDisablePresence
-                    }
-                    val response = service.attachDocument(
-                        request = request,
-                        headers = documentKey.attachmentBasedRequestHeader,
-                    ).getOrElse {
-                        ensureActive()
-                        handleConnectException(it) { exception ->
-                            if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
-                                shouldRefreshToken = true
-                            }
-                            deactivateInternal()
-                        }
-                        return@async Result.failure(it)
-                    }
 
-                    val maxSize = response.maxSizePerDocument
-                    if (maxSize > 0) {
-                        document.setMaxSizePerDocument(maxSize)
-                    }
-
-                    if (response.schemaRulesCount > 0) {
-                        document.setSchemaRules(response.schemaRulesList.fromSchemaRules())
-                    }
-
-                    val pack = response.changePack.toChangePack()
-                    // Record the opt-out decision before applying the attach response
-                    // so the first applyChangePack already routes remote changes
-                    // through the lamport-only sync path.
-                    document.setDisableGC(disableGC)
-                    document.setDisablePresence(response.disablePresence)
-                    document.applyChangePack(pack)
-
-                    // Ordering (spec 009 — closes the PR #358 clearHistory window; JS SDK v0.7.16
-                    // reference at packages/sdk/src/client/client.ts:665-793 @ 28a5a42e admits no
-                    // interleaving because that block is synchronous, so no JS-observable case
-                    // changes): single clearHistory() (wipes pre-attach/offline entries; runs before
-                    // the Removed check for develop parity, so a reused Document instance whose
-                    // server-side copy was removed cannot undo into an unsyncable state) → Removed
-                    // early-return → applyStatus(Attached) → attachment registration → runWatchLoop →
-                    // initialRoot updateAsync(skipHistory = true) (never enters history, so it needs
-                    // no trailing cleanup) → return. History is already cleared before the initializer
-                    // runs, so a user edit made after the Attached event while the initializer is
-                    // still suspended keeps its undo entry instead of being silently wiped. On an
-                    // initializer throw the document still stays Attached and registered (detachable,
-                    // matching JS's no-rollback behavior), and history is already cleared.
-                    // Mirrors JS SDK PR #1238 for the history flush itself.
-                    document.clearHistory()
-
-                    if (document.getStatus() == ResourceStatus.Removed) {
-                        return@async SUCCESS
-                    }
-
-                    document.applyStatus(ResourceStatus.Attached)
-                    attachments[documentKey] = Attachment(
-                        resource = document,
-                        resourceId = response.documentId,
-                        syncMode = syncMode,
-                        disableGC = disableGC,
-                        disablePresence = response.disablePresence,
-                        watchFallbackDelay = options.watchFallbackDelay.inWholeMilliseconds,
-                    )
-                    // Manual and Polling are stream-less modes; only realtime modes
-                    // open a watch stream. Mirrors JS SDK PR #1243.
-                    if (syncMode != SyncMode.Manual && syncMode != SyncMode.Polling) {
-                        runWatchLoop(documentKey)
-                    }
-
-                    val initialRootResult = try {
-                        document.updateAsync(skipHistory = true) { root, _ ->
-                            initialRoot.forEach { (key, initializer) ->
-                                if (key !in root.keys) {
-                                    initializer(root, key)
+                        // (2) attachOnce — restore + RPC + apply; retried once on an
+                        // epoch re-anchor. A local suspend fun (not inline), so it
+                        // cannot `return@async`; RPC failures propagate as thrown
+                        // ConnectExceptions for the outer try/catch to classify.
+                        suspend fun attachOnce(reanchor: Boolean): AttachDocumentResponse {
+                            var restored = false
+                            if (options.docStore != null && !reanchor) {
+                                val bytes = try {
+                                    options.docStore.load(storeKey(documentKey))
+                                } catch (e: Throwable) {
+                                    ensureActive()
+                                    logDebug("AD", "store load failed; fresh attach: ${e.message}")
+                                    // A store that could not be READ this session must not
+                                    // be WRITTEN either (iOS review fix, adopted): the
+                                    // unreadable envelope survives for a session that can.
+                                    persistsToStore = false
+                                    null
+                                }
+                                if (bytes != null) {
+                                    try {
+                                        document.restoreFromBytes(bytes)
+                                        // An envelope persisted before the document was ever
+                                        // attached carries the initial actor; re-stamp so the
+                                        // restored pending changes go out under the stable
+                                        // actor (no-op when the envelope already matches).
+                                        document.setActor(requireActorId())
+                                        restored = true
+                                    } catch (e: Throwable) {
+                                        ensureActive()
+                                        // C-3: Document.fromBytes throws YorkieException
+                                        // (ErrInvalidArgument) for BOTH a rejected actor
+                                        // guard and a corrupt envelope, so classify by
+                                        // re-decoding: if the bytes still decode outside
+                                        // the guard, the failure came from the guard.
+                                        val redecoded = runCatching {
+                                            Document.fromBytes(documentKey, bytes)
+                                        }
+                                        val reason = if (redecoded.isSuccess) {
+                                            Document.Event.Reason.ActorMismatch
+                                        } else {
+                                            Document.Event.Reason.RestoreFailed
+                                        }
+                                        val recovered = redecoded.getOrNull()
+                                            ?.let { doc ->
+                                                doc.pendingChanges().also { doc.close() }
+                                            }
+                                            .orEmpty()
+                                        emitLocalChangesDropped(document, reason, recovered)
+                                        removeFromStore(documentKey)
+                                        // Fall through: restoreFromBytes is all-or-nothing,
+                                        // so the document is untouched; continue fresh.
+                                    }
                                 }
                             }
-                        }.await()
-                    } catch (t: Throwable) {
+
+                            // (3) Presence seed AFTER restore, gated on !restored: a
+                            // restored document already carries its own presence: seeding
+                            // it again would append a spurious local change.
+                            val resolvedDisablePresence =
+                                disablePresence || document.isPresenceDisabled()
+                            if (!resolvedDisablePresence && !restored) {
+                                document.updateAsync { _, presence ->
+                                    presence.put(initialPresence)
+                                }.await()
+                            }
+
+                            // (4) Snapshot pre-attach state for the tier-3 guard below,
+                            // before the RPC can mutate the document.
+                            val persistedDocId = document.docId
+                            val hadLocalState = restored && document.checkPoint.serverSeq > 0L
+                            val persistedPending = if (restored) {
+                                document.pendingChanges()
+                            } else {
+                                emptyList()
+                            }
+
+                            // (5) RPC — presents the restored checkpoint + epoch, if any.
+                            val request = attachDocumentRequest {
+                                clientId = requireClientId()
+                                changePack = document.createChangePack().toPBChangePack()
+                                schema?.let {
+                                    schemaKey = it
+                                }
+                                disableGc = disableGC
+                                this.disablePresence = resolvedDisablePresence
+                            }
+                            val response = service.attachDocument(
+                                request = request,
+                                headers = documentKey.attachmentBasedRequestHeader,
+                            ).getOrThrow()
+
+                            val maxSize = response.maxSizePerDocument
+                            if (maxSize > 0) {
+                                document.setMaxSizePerDocument(maxSize)
+                            }
+                            if (response.schemaRulesCount > 0) {
+                                document.setSchemaRules(response.schemaRulesList.fromSchemaRules())
+                            }
+                            val pack = response.changePack.toChangePack()
+
+                            // (6) Tier-3 silent-purge guard: a store-backed restore whose
+                            // server response no longer matches the persisted state means
+                            // the server-side document was purged or force-compacted out
+                            // from under the stored envelope between sessions.
+                            if (options.docStore != null && restored) {
+                                val idChanged = persistedDocId != "" &&
+                                    response.documentId != persistedDocId
+                                val seqRegressed = hadLocalState &&
+                                    pack.checkPoint.serverSeq == 0L
+                                if (idChanged || seqRegressed) {
+                                    logDebug(
+                                        "AD",
+                                        "server purged $documentKey; dropping persisted state",
+                                    )
+                                    emitLocalChangesDropped(
+                                        document,
+                                        Document.Event.Reason.DocumentPurged,
+                                        persistedPending,
+                                    )
+                                    removeFromStore(documentKey)
+                                    document.resetForReanchor()
+                                    document.setActor(requireActorId())
+                                    document.setDisableGC(disableGC)
+                                    document.setDisablePresence(response.disablePresence)
+                                    document.applyChangePack(pack)
+                                    document.setDocId(response.documentId)
+                                    return response
+                                }
+                            }
+
+                            // (7) Normal apply.
+                            document.setDisableGC(disableGC)
+                            document.setDisablePresence(response.disablePresence)
+                            document.applyChangePack(pack)
+                            document.setDocId(response.documentId)
+                            return response
+                        }
+
+                        val response = try {
+                            attachOnce(reanchor = false)
+                        } catch (e: ConnectException) {
+                            ensureActive()
+                            if (options.docStore != null && isCompactionReanchorError(e)) {
+                                // Store path only: a stale-epoch (ErrEpochMismatch) OR a
+                                // stale checkpoint serverSeq (ErrInvalidServerSeq) attach
+                                // both mean the server compacted/purged the document since
+                                // this envelope was written.
+                                //
+                                // Determination (round-2 QA HIGH-1, verified against yorkie
+                                // 0.7.20 server/packs/pushpull.go:285-320): the server checks
+                                // the seeded epoch FIRST and only returns ErrEpochMismatch
+                                // once epochs already match; an envelope written before the
+                                // client learned the epoch (or never compacted before this
+                                // session) instead hits ErrInvalidServerSeq ("checkpoint
+                                // serverSeq exceeds server state"). The JS SDK recovers on
+                                // ErrEpochMismatch only and is left permanently stuck on this
+                                // path; Android re-anchors on both codes (upstream note
+                                // drafted, not filed).
+                                //
+                                // Never deactivates the client (matches the sync-loop
+                                // ErrEpochMismatch handling — handleConnectException's error
+                                // callback is not invoked for either code); without a store
+                                // both codes propagate unchanged (today's behaviour,
+                                // scenario 3).
+                                logDebug(
+                                    "AD",
+                                    "stale epoch/checkpoint (${errorCodeOf(e)}) on resume; " +
+                                        "re-anchoring $documentKey",
+                                )
+                                emitLocalChangesDropped(
+                                    document,
+                                    Document.Event.Reason.EpochReanchor,
+                                    document.pendingChanges(),
+                                )
+                                removeFromStore(documentKey)
+                                document.resetForReanchor()
+                                document.setActor(requireActorId())
+                                attachOnce(reanchor = true)
+                            } else {
+                                throw e
+                            }
+                        }
+
+                        // Ordering (spec 009 — closes the PR #358 clearHistory window; JS SDK
+                        // v0.7.16 reference at packages/sdk/src/client/client.ts:665-793 @
+                        // 28a5a42e admits no interleaving because that block is synchronous, so
+                        // no JS-observable case changes): single clearHistory() (wipes
+                        // pre-attach/offline entries; runs before the Removed check for develop
+                        // parity, so a reused Document instance whose server-side copy was
+                        // removed cannot undo into an unsyncable state) → Removed early-return
+                        // (releases the lease — this Attachment will never exist to own it) →
+                        // applyStatus(Attached) → attachment registration (hands the lease off)
+                        // → persist subscription → runWatchLoop → initialRoot
+                        // updateAsync(skipHistory = true) (never enters history, so it needs no
+                        // trailing cleanup) → return. History is already cleared before the
+                        // initializer runs, so a user edit made after the Attached event while
+                        // the initializer is still suspended keeps its undo entry instead of
+                        // being silently wiped. On an initializer throw the document still stays
+                        // Attached and registered (detachable, matching JS's no-rollback
+                        // behavior; the lease is NOT released here — it belongs to the
+                        // Attachment now, two-tier rule), and history is already cleared.
+                        // Mirrors JS SDK PR #1238 for the history flush itself.
+                        document.clearHistory()
+
+                        if (document.getStatus() == ResourceStatus.Removed) {
+                            // Pre-registration: no Attachment will ever exist to release
+                            // this lease (JS `client.ts` mirrors this early return).
+                            sessionLockHandle?.release()
+                            return@async SUCCESS
+                        }
+
+                        document.applyStatus(ResourceStatus.Attached)
+                        val attachment = Attachment(
+                            resource = document,
+                            resourceId = response.documentId,
+                            syncMode = syncMode,
+                            disableGC = disableGC,
+                            disablePresence = response.disablePresence,
+                            watchFallbackDelay = options.watchFallbackDelay.inWholeMilliseconds,
+                        )
+                        // The lease and the persist gate now belong to the attachment;
+                        // detachInternal is the only remaining release site.
+                        attachment.sessionLockHandle = sessionLockHandle
+                        attachment.persistsToStore = options.docStore != null && persistsToStore
+                        attachments[documentKey] = attachment
+                        registered = true
+
+                        // (8) Persist on local change and on a local presence change. A
+                        // presence-only local change appends to localChanges but never
+                        // emits LocalChange, so both event shapes are subscribed.
+                        if (attachment.persistsToStore) {
+                            // UNDISPATCHED: the collector is subscribed before this flow
+                            // continues, so the initialRoot LocalChange below cannot be missed.
+                            attachment.persistJob = scope.launch(
+                                start = CoroutineStart.UNDISPATCHED,
+                            ) {
+                                document.events
+                                    .filter {
+                                        it is Document.Event.LocalChange ||
+                                            it is Document.Event.PresenceChanged.MyPresence
+                                                .PresenceChanged
+                                    }
+                                    .collect { enqueuePersist(attachment) }
+                            }
+                        }
+
+                        // Manual and Polling are stream-less modes; only realtime modes
+                        // open a watch stream. Mirrors JS SDK PR #1243.
+                        if (syncMode != SyncMode.Manual && syncMode != SyncMode.Polling) {
+                            runWatchLoop(documentKey)
+                        }
+
+                        val initialRootResult = try {
+                            document.updateAsync(skipHistory = true) { root, _ ->
+                                initialRoot.forEach { (key, initializer) ->
+                                    if (key !in root.keys) {
+                                        initializer(root, key)
+                                    }
+                                }
+                            }.await()
+                        } catch (t: Throwable) {
+                            ensureActive()
+                            Result.failure(t)
+                        }
+                        if (initialRootResult.isFailure) {
+                            // Post-registration: the Attachment owns the lease now; do
+                            // NOT release it here (two-tier rule) — detachInternal will.
+                            return@async initialRootResult
+                        }
+                    } catch (e: Throwable) {
                         ensureActive()
-                        Result.failure(t)
-                    }
-                    if (initialRootResult.isFailure) {
-                        return@async initialRootResult
+                        (e as? ConnectException)?.let { exception ->
+                            handleConnectException(exception) { ex ->
+                                if (errorCodeOf(ex) == ErrUnauthenticated.codeString) {
+                                    shouldRefreshToken = true
+                                }
+                                deactivateInternal()
+                            }
+                        }
+                        return@async Result.failure(e)
+                    } finally {
+                        // Pre-registration failure (including a cancellation rethrown by
+                        // ensureActive above): no Attachment exists to own the lease, so
+                        // release it here. Idempotent, so a lease already released above
+                        // (the Removed early return) is unaffected.
+                        if (!registered) {
+                            sessionLockHandle?.release()
+                        }
                     }
                 }
             } finally {
@@ -1444,9 +1856,32 @@ public class Client(
     )
     public fun detachPresence(presence: Presence) = detachChannel(presence)
 
-    private fun detachInternal(key: String) {
+    private suspend fun detachInternal(key: String) {
         val attachment = attachments[key] ?: return
         attachment.cancelWatchJob()
+        // MEDIUM-1: drain this attachment's persist chain (bounded to 5s) BEFORE
+        // cancelling the persist subscription below — the collector is still
+        // running during this wait and can still react to an already-published
+        // but not-yet-processed LocalChange/PresenceChanged event, so an edit made
+        // just before detach/deactivate/remove is not silently dropped. Suspend is
+        // required for the drain; every caller (detachDocument, syncInternal's
+        // Removed path, deactivateInternal's inline forEach, removeDocument) already
+        // runs on a suspend context.
+        if (attachment.persistsToStore) {
+            (attachment.resource as? Document)?.let { drainPersist(storeKey(it.getKey())) }
+        }
+        // Cancel the persist subscription and release the session lease here —
+        // the single choke point for detachDocument, syncInternal's Removed
+        // path, deactivateInternal, and removeDocument. Both calls are
+        // non-suspending (release() by contract) so the NonCancellable/
+        // GlobalScope keepalive paths cannot skip them. No store removal here
+        // (JS parity, recorded determination): the persisted envelope is
+        // re-validated on the next resume by the actor guard, epoch check,
+        // and tier-3 purge guard.
+        attachment.persistJob?.cancel()
+        attachment.persistJob = null
+        attachment.sessionLockHandle?.release()
+        attachment.sessionLockHandle = null
         attachments.remove(key)
         mutexForAttachments.remove(key)
     }
@@ -1829,6 +2264,24 @@ public class Client(
     }
 
     /**
+     * The stable actor stamped into this client's document changes, or null while deactivated.
+     * Equal to [requireClientId] against a pre-0.7.20 server, which never sends `actor_id`.
+     */
+    public val actorId: String?
+        get() = (status.value as? Status.Activated)?.actorId
+
+    /**
+     * Returns the stable actor stamped into this client's document changes, throwing if the
+     * client is not active. See [actorId].
+     */
+    public fun requireActorId(): String {
+        if (status.value is Status.Deactivated) {
+            throw YorkieException(ErrClientNotActivated, "client is not active")
+        }
+        return (status.value as Status.Activated).actorId
+    }
+
+    /**
      * Changes the sync mode of the [document].
      */
     public fun changeSyncMode(document: Document, syncMode: SyncMode) {
@@ -1882,7 +2335,31 @@ public class Client(
         }
     }
 
+    /**
+     * Closes this [Client] locally: releases its dispatcher and HTTP resources. This is an
+     * abrupt teardown — it sends no detach/deactivate RPC and releases no session lease.
+     * [detachDocument]/[deactivateAsync] before [close] remains the durable, server-acked path.
+     *
+     * An abrupt [close] still drains any in-flight/chained persist write, bounded to 5s, before
+     * cancelling the client scope (spec 025 MEDIUM-1): Kotlin's structured-concurrency
+     * cancellation is not JS promise semantics — a `store.save` for the last local edit is not
+     * automatically awaited — so without this drain an edit made just before [close] could be
+     * silently dropped. This 5s wait is a bounded OBSERVATION window, not the write's own
+     * deadline: [enqueuePersist] runs the actual write on [Dispatchers.IO] (round 5 amendment), so
+     * a write slower than 5s still completes on its own after [close] returns — it is just no
+     * longer awaited by this call. Cancelling the client [scope] and closing the client's own
+     * single-thread [dispatcher] below does not affect that write, because it never depended on
+     * either.
+     *
+     * The drain runs only when [Options.docStore] is configured, so a client without a store
+     * keeps the previous non-blocking [close]. With a store, [close] blocks the calling thread
+     * for up to 5s: call it from a background thread or coroutine, not from a UI lifecycle
+     * callback.
+     */
     override fun close() {
+        if (options.docStore != null) {
+            runBlocking { withTimeoutOrNull(5_000) { drainAllPersists() } }
+        }
         scope.cancel()
         (dispatcher as? Closeable)?.close()
         unaryClient.dispatcher.executorService.shutdown()
@@ -1901,8 +2378,17 @@ public class Client(
         /**
          * Means that the client is activated. If the client is activated,
          * all [Document]s of the client are ready to be used.
+         *
+         * @property clientId The per-session id used for RPC row lookups (activate/deactivate,
+         * attach/detach requests). Never used to key document changes.
+         * @property actorId The stable actor stamped into document changes and declared on the
+         * document watch stream. Equal to [clientId] against a pre-0.7.20 server, which never
+         * sends `actor_id` (see [Client.activateAsync]).
          */
-        public class Activated internal constructor(public val clientId: String) : Status
+        public class Activated internal constructor(
+            public val clientId: String,
+            public val actorId: String = clientId,
+        ) : Status
 
         /**
          * Means that the client is not activated. It is the initial status of the client.
@@ -2005,6 +2491,25 @@ public class Client(
          * the existing retry/backoff path instead.
          */
         public val watchFallbackDelay: Duration = 10_000.milliseconds,
+        /**
+         * Backing store for offline local persistence. When set, [attachDocument] resumes a
+         * previously [Document.toBytes]-persisted envelope before contacting the server, and the
+         * document is persisted again on every local change, local presence change, and
+         * successful sync. Unset (the default) disables persistence entirely — no load, no lease,
+         * no writes. Ported from JS `client.ts`'s `store` option (`2291bf67`/#1338).
+         */
+        public val docStore: DocStore? = null,
+        /**
+         * Single-active-session guard used when [docStore] is set, to prevent two sessions from
+         * concurrently resuming the same persisted document under the same stable actor (which
+         * would mint colliding `clientSeq` values and silently lose edits). Defaults to
+         * [NoopSessionLock]: unlike a browser with multiple tabs, an Android app is one process
+         * per store by default, so the hazard this guards against is reachable only when [docStore]
+         * is itself shared across processes. Ignored when [docStore] is unset. Ported from JS
+         * `client.ts`'s `sessionLock` option; JS's browser-only `deactivateOnUnload` auto-default
+         * has no Android analog (no page-unload event) and is not ported.
+         */
+        public val sessionLock: SessionLock = NoopSessionLock,
     ) {
         @Deprecated(
             "Renamed to channelHeartbeatInterval",
@@ -2051,5 +2556,10 @@ public class Client(
     companion object {
         private const val BROADCAST_MAX_BACK_OFF = 20_000L
         private const val BROADCAST_INITIAL_RETRY_INTERVAL = 1_000
+
+        // 24 lowercase hex characters — the shape ActorID.toActorID()/toByteString()
+        // decode (12 bytes). Guards a server-supplied activate_client_response.actor_id
+        // before it is stamped into document changes.
+        private val ActorIdRegex = Regex("[0-9a-f]{24}")
     }
 }

@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import com.google.common.collect.MapMaker
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
@@ -59,8 +60,16 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * is still a tombstone, so one slot per createdAt cannot hold both
      * charges. A zero amount means RELEASED: the element was orphaned by a
      * restore ([release]) and is held by neither side.
+     *
+     * Keys are held WEAKLY (yorkie-js-sdk#1395, a JS `WeakMap`): a released
+     * tombstone leaves [gcElementSetByCreatedAt] in the same call, so nothing
+     * ever collects or deregisters it, and a strong map would keep the record
+     * and the whole orphaned subtree alive for the life of the document —
+     * one subtree per remove/undo. The map is only read through its key,
+     * never iterated or counted, so the record's useful lifetime is the
+     * element's. [MapMaker.weakKeys] compares keys by identity.
      */
-    private val sizeInGC: MutableMap<CrdtElement, DataSize> = IdentityHashMap()
+    private val sizeInGC: MutableMap<CrdtElement, DataSize> = MapMaker().weakKeys().makeMap()
 
     /**
      * `docSize` is a structure that represents the size of the document.

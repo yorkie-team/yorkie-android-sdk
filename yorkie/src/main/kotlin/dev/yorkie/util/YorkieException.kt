@@ -67,6 +67,15 @@ public data class YorkieException(
         // and the client's epoch no longer matches the server's epoch.
         ErrEpochMismatch("ErrEpochMismatch"),
 
+        // ErrInvalidServerSeq is returned when a checkpoint's serverSeq exceeds
+        // the server's document state. The server checks the seeded epoch
+        // FIRST and only returns ErrEpochMismatch once epochs already match
+        // (server/packs/pushpull.go:285-320 in yorkie 0.7.20); an envelope
+        // written before the client learned the epoch — or a document never
+        // compacted before this session — instead hits this code after a
+        // compaction or purge (round-2 QA HIGH-1, spec 025).
+        ErrInvalidServerSeq("ErrInvalidServerSeq"),
+
         // ErrSessionNotFound is returned when the server no longer recognizes
         // a channel session_id (e.g. reclaimed after TTL). Treated as
         // "session expired": the next refresh retries as a first call

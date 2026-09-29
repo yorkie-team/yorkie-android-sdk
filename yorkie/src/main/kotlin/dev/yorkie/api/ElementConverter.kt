@@ -591,7 +591,18 @@ internal fun CounterType.toPBCounterType(): PBValueType {
     }
 }
 
-internal fun CrdtTree.toPBTree(): PBJsonElement {
+/**
+ * Converts this [CrdtTree] to its wire representation.
+ *
+ * [includeRemovedAt] gates the wrapper's own top-level `removedAt`
+ * (RTCOLLABPLATFORM-772), so a reverse op's restored value can omit it on the
+ * wire. Callers that need to omit it must pass `false` here rather than calling
+ * `copy(removedAt = null)` first: [CrdtTree] is a data class with an `init` block that
+ * rebuilds `nodeMapByID` and calls `rebuildMergeState` (writing `mergedInto` into shared
+ * nodes) on every construction, so a throwaway copy re-runs that O(n) work and its side
+ * effects just to serialize.
+ */
+internal fun CrdtTree.toPBTree(includeRemovedAt: Boolean = true): PBJsonElement {
     val crdtTree = this
     return jSONElement {
         tree = tree {
@@ -600,8 +611,10 @@ internal fun CrdtTree.toPBTree(): PBJsonElement {
             crdtTree.movedAt?.toPBTimeTicket()?.let {
                 movedAt = it
             }
-            crdtTree.removedAt?.toPBTimeTicket()?.let {
-                removedAt = it
+            if (includeRemovedAt) {
+                crdtTree.removedAt?.toPBTimeTicket()?.let {
+                    removedAt = it
+                }
             }
         }
     }
@@ -666,8 +679,40 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
     return jSONElementSimple {
         createdAt = element.createdAt.toPBTimeTicket()
         when (element) {
-            is CrdtObject -> type = PBValueType.VALUE_TYPE_JSON_OBJECT
-            is CrdtArray -> type = PBValueType.VALUE_TYPE_JSON_ARRAY
+            is CrdtObject -> {
+                type = PBValueType.VALUE_TYPE_JSON_OBJECT
+                // Also send the object's members (RTCOLLABPLATFORM-772),
+                // matching JS `toElementSimple` (`converter.ts:293-307` @
+                // v0.7.21) and Go `toJSONElementSimple` (`to_pb.go:577-598` @
+                // v0.7.21). Without this, a SetOperation/AddOperation/
+                // ArraySetOperation whose value is a non-empty object loses
+                // every member on the wire — the peer, and the server's
+                // stored document, both receive `{}`. The decoder already
+                // accepts a non-empty payload here (`PBJsonElementSimple.
+                // toCrdtElement` below); only the encoder was missing it.
+                //
+                // Also strip the value's OWN top-level removedAt, via a
+                // shallow `copy()` (a data class, so nested members and their
+                // tombstones are untouched). A reverse op's value is built with
+                // `deepCopy()` AFTER the delete that produces it
+                // (`RemoveOperation.kt`, `ArraySetOperation.kt`), so the copy
+                // carries the removal ticket; JS builds it BEFORE the delete
+                // (`remove_operation.ts:97-99`, `array_set_operation.ts:75-80`),
+                // so it never has one. Go, JS and iOS decode the field and
+                // keep it, applying the "restored" container as a tombstone;
+                // only Android's own receivers clear it on execute
+                // (`SetOperation.kt:43`, `AddOperation.kt:37`,
+                // `ArraySetOperation.kt:42`), which hid the defect from
+                // every Android-decoder test. Stripping it here — the one
+                // choke point every container-valued op funnels through —
+                // makes the wire bytes JS-identical.
+                value = element.copy(removedAt = null).toByteString()
+            }
+            is CrdtArray -> {
+                type = PBValueType.VALUE_TYPE_JSON_ARRAY
+                // Same gap, same fix, for arrays — see the CrdtObject note above.
+                value = element.copy(removedAt = null).toByteString()
+            }
             is CrdtText -> type = PBValueType.VALUE_TYPE_TEXT
             is CrdtPrimitive -> {
                 type = element.type.toPBValueType()
@@ -681,7 +726,12 @@ internal fun CrdtElement.toPBJsonElementSimple(): PBJsonElementSimple {
 
             is CrdtTree -> {
                 type = PBValueType.VALUE_TYPE_TREE
-                value = element.toPBTree().toByteString()
+                // Same top-level-removedAt strip as CrdtObject/CrdtArray
+                // above — pre-existing for Tree, fixed by the same one-line
+                // change. Uses toPBTree's own
+                // includeRemovedAt = false rather than `copy(removedAt = null)`:
+                // see that function's KDoc for why a throwaway copy is avoided.
+                value = element.toPBTree(includeRemovedAt = false).toByteString()
             }
 
             else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $element")

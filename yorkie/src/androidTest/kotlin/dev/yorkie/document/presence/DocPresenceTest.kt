@@ -361,7 +361,9 @@ class DocPresenceTest {
             val c1ID = c1.requireClientId()
             val c2ID = c2.requireClientId()
 
-            c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
+            awaitWatchConnected(d1) {
+                c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
+            }
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
@@ -428,10 +430,12 @@ class DocPresenceTest {
             val c2ID = c2.requireClientId()
             val c3ID = c3.requireClientId()
 
-            c1.attachDocument(
-                d1,
-                initialPresence = mapOf("name" to "a1", "cursor" to cursor),
-            ).await()
+            awaitWatchConnected(d1) {
+                c1.attachDocument(
+                    d1,
+                    initialPresence = mapOf("name" to "a1", "cursor" to cursor),
+                ).await()
+            }
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
@@ -534,10 +538,12 @@ class DocPresenceTest {
             val c2ID = c2.requireClientId()
             val c3ID = c3.requireClientId()
 
-            c1.attachDocument(
-                d1,
-                initialPresence = mapOf("name" to "a1", "cursor" to cursor),
-            ).await()
+            awaitWatchConnected(d1) {
+                c1.attachDocument(
+                    d1,
+                    initialPresence = mapOf("name" to "a1", "cursor" to cursor),
+                ).await()
+            }
 
             val d1CollectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<Others>().collect(d1Events::add)
@@ -864,7 +870,9 @@ class DocPresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
+            awaitWatchConnected(d1) {
+                c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
+            }
             val d1PresenceEvents = mutableListOf<Others>()
             val d1ConnectionEvents = mutableListOf<StreamConnectionChanged>()
             val jobs = listOf(
@@ -923,7 +931,9 @@ class DocPresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
+            awaitWatchConnected(d1) {
+                c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
+            }
 
             val d1PresenceEvents = mutableListOf<Others>()
             val d1ConnectionEvents = mutableListOf<StreamConnectionChanged>()

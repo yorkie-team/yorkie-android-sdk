@@ -6,6 +6,7 @@ import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.helper.crossSync
+import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.YorkieException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -13,14 +14,15 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Pins defects (b) and (c) (RTCOLLABPLATFORM-772) on the array-set / move
- * path: (b) `RgaTreeList.set` must anchor on the target element's creation
+ * Pins two clone-parity requirements (RTCOLLABPLATFORM-772) on the array-set
+ * / move path: `RgaTreeList.set` must anchor on the target element's creation
  * time, exactly like the op every peer replays
  * (`ArraySetOperation.execute` -> `CrdtArray.insertAfter`), so the clone
  * [Document.getRoot] exposes does not diverge from the root after a set
- * targets a moved element; (c) a local array move must register its dead
+ * targets a moved element; and a local array move must register its dead
  * position node on the clone via `context.registerGCPair`, or the clone's
- * `docSize`/`garbageLength` drifts from the root and a later GC reopens (b).
+ * `docSize`/`garbageLength` drifts from the root and a later GC reopens the
+ * anchor divergence.
  */
 class ArrayCloneParityTest {
 
@@ -98,5 +100,78 @@ class ArrayCloneParityTest {
             )
         }
         assertEquals(YorkieException.Code.ErrInvalidArgument, thrown.code)
+    }
+
+    @Test
+    fun `a local move registers its dead position on the clone`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewArray("arr").apply {
+                put(0)
+                put(1)
+                put(2)
+            }
+        }.await()
+
+        document.updateAsync { root, _ ->
+            root.getAs<JsonArray>("arr").moveAfterByIndex(0, 2)
+        }.await()
+
+        assertEquals(1, document.garbageLength)
+        assertEquals(document.garbageLength, requireNotNull(document.clone).root.garbageLength)
+        assertEquals(document.getDocSize(), requireNotNull(document.clone).root.docSize)
+    }
+
+    @Test
+    fun `a local moveFront registers its dead position on the clone`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewArray("arr").apply {
+                put(0)
+                put(1)
+                put(2)
+            }
+        }.await()
+
+        document.updateAsync { root, _ ->
+            val arr = root.getAs<JsonArray>("arr")
+            arr.moveFront(arr[2].id)
+        }.await()
+
+        assertEquals(1, document.garbageLength)
+        assertEquals(document.garbageLength, requireNotNull(document.clone).root.garbageLength)
+        assertEquals(document.getDocSize(), requireNotNull(document.clone).root.docSize)
+    }
+
+    /**
+     * Determination (critic Medium, JS-shared parity): where a set on a moved
+     * element lands depends on whether this replica has collected the move's
+     * dead position node yet. `buildMovedArray` leaves `arr` at `[0,2,1]`
+     * either way, but `arr[1] = 99` resolves index 1 against the clone's
+     * CURRENT [RgaTreeList] node map at call time — before GC that map still
+     * carries the moved element's dead original-slot node (`markDead`, not yet
+     * purged), and after GC that node is physically gone
+     * ([Document.garbageCollect] purges both `clone.root` and `root`). The
+     * result is `{"arr":[0,1,99]}` in the not-yet-collected test above and
+     * `{"arr":[0,99,1]}` here for the exact same input sequence, so two
+     * replicas with different GC state can genuinely diverge on this. JS
+     * `rga_tree_list.ts` has the same dependence, so this is parity, not a
+     * regression; pinned here rather than treated as a bug (RTCOLLABPLATFORM-772,
+     * not filed upstream yet).
+     */
+    @Test
+    fun `set after a collected move keeps the clone in step with the root`() = runTest {
+        val document = Document("")
+        buildMovedArray(document)
+
+        document.garbageCollect(maxVectorOf(listOf(document.changeID.actor)))
+
+        document.updateAsync { root, _ -> root.getAs<JsonArray>("arr")[1] = 99 }.await()
+
+        assertJsonContentEquals("""{"arr":[0,99,1]}""", document.toJson())
+        assertJsonContentEquals(
+            """{"arr":[0,99,1]}""",
+            requireNotNull(document.clone).root.toJson(),
+        )
     }
 }

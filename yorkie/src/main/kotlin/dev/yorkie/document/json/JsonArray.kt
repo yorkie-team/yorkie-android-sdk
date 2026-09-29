@@ -6,6 +6,7 @@ import dev.yorkie.document.crdt.CrdtElement
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.GCPair
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.MoveOperation
@@ -217,7 +218,14 @@ public class JsonArray internal constructor(
                 executedAt = executedAt,
             ),
         )
-        target.moveAfter(prevPosCreatedAt, createdAt, executedAt)
+        // Register the displaced dead position node on the clone, the local twin of
+        // MoveOperation.execute's root-side registration: without it, the clone's
+        // docSize/garbageLength drifts from the root, and the clone keeps a node the
+        // root purges on GC, which re-diverges a later set's anchor resolution.
+        val deadNode = target.moveAfter(prevPosCreatedAt, createdAt, executedAt)
+        if (deadNode != null) {
+            context.registerGCPair(GCPair(target.getRGATreeList(), deadNode))
+        }
     }
 
     /**
@@ -314,7 +322,11 @@ public class JsonArray internal constructor(
                 executedAt = ticket,
             ),
         )
-        target.moveAfter(prevPosCreatedAt, targetElem.createdAt, ticket)
+        // Register the displaced dead position node on the clone (see moveInternal).
+        val deadNode = target.moveAfter(prevPosCreatedAt, targetElem.createdAt, ticket)
+        if (deadNode != null) {
+            context.registerGCPair(GCPair(target.getRGATreeList(), deadNode))
+        }
     }
 
     override fun contains(element: JsonElement): Boolean {

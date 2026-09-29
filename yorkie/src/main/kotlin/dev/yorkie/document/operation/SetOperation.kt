@@ -42,14 +42,16 @@ internal data class SetOperation(
             val copiedValue = value.deepCopy()
             copiedValue.removedAt = null
             val removed = parentObject.set(key, copiedValue, executedAt)
+            // An undo of a removal restores a copy under the tombstone's
+            // createdAt; retire the tombstone's stale GC entry on EVERY
+            // replica — this is a condition on the tree, not on who applies
+            // it (yorkie-js-sdk#1341). An ordinary set carries a fresh
+            // createdAt, so this is one map miss. Tombstones inside the copy,
+            // and the losing side of a concurrent set, are booked into gc by
+            // registerElement itself (yorkie-js-sdk#1350).
+            root.unregisterRemovedElementPair(copiedValue.createdAt)
             root.registerElement(copiedValue, parentObject)
             removed?.let(root::registerRemovedElement)
-            // When the new value already has a removedAt (i.e. it was the LWW-losing side
-            // of a concurrent set), register it as removed so GC can collect it once all
-            // peers have seen the winning value.
-            if (copiedValue.isRemoved) {
-                root.registerRemovedElement(copiedValue)
-            }
 
             val reverseOps = if (source.producesReverseOps) {
                 val reverseOp = if (previousValue != null) {

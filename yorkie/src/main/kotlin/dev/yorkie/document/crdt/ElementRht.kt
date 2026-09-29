@@ -88,6 +88,10 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "fail to find ${element.createdAt}",
             )
+        // The slot names a creation time, not an element: an undo re-points
+        // it at a restored copy, so unlinking whatever it answers with would
+        // delete a live member on a tombstone's behalf (yorkie-js-sdk#1341).
+        if (node.value !== element) return
 
         val nodeByKey = nodeMapByKey[node.strKey]
         if (node == nodeByKey) {

@@ -329,6 +329,8 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "can't find the given node createdAt: ${element.createdAt}",
             )
+        // Same identity guard as ElementRht.purge (yorkie-js-sdk#1341).
+        if (entry.element !== element) return
         release(entry.positionNode)
         elementMapByCreatedAt.remove(element.createdAt)
     }

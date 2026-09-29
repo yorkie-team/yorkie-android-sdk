@@ -254,8 +254,14 @@ public class JsonArray internal constructor(
             ),
         )
 
-        target.set(prevElement.createdAt, element, createdAt)
+        // Register the element this set displaced on the clone too, the local
+        // twin of ArraySetOperation.execute's root-side registration (see its
+        // NOTE comments): without it, the clone's docSize diverges from the
+        // root, since the root path was fixed to charge the displaced element
+        // to gc while the clone kept discarding it.
+        val removed = target.set(prevElement.createdAt, element, createdAt)
         context.registerElement(element, target)
+        context.registerRemovedElement(removed)
 
         return target.toJsonElement(context)
     }

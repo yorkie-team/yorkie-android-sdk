@@ -48,7 +48,12 @@ internal data class ArraySetOperation(
         val reverseOp = if (source.producesReverseOps) {
             previousValue?.let {
                 ArraySetOperation(
-                    createdAt = createdAt,
+                    // Targets the element this op INSTALLED (`value`'s own createdAt,
+                    // preserved by deepCopy), not the element it displaced: undo must
+                    // remove the installed element and restore the displaced one,
+                    // which is exactly what `value` (this reverse's own installed
+                    // value) carries as its creation identity (JS `28f4ad26`/#1059).
+                    createdAt = value.createdAt,
                     value = it.deepCopy(),
                     parentCreatedAt = parentCreatedAt,
                     executedAt = executedAt,

@@ -381,6 +381,19 @@ public class Document(
                 // it, but it is never itself pushed onto the undo stack.
                 reconcileHistoryEdits(localResult)
             } else {
+                // NOTE(hackerwins, document.ts:855-864 @ v0.7.21): a local Set
+                // replaces an array element with a new value. Pending undo/redo
+                // entries may still reference the replaced element's old
+                // createdAt, so they are reconciled to the newly installed
+                // value's createdAt here, before this change's own reverse ops
+                // are pushed. Not run for a skipHistory write: that write is
+                // treated like a remote change and must not retarget pending
+                // entries, per the skipHistory contract on this function.
+                for (op in change.operations) {
+                    if (op is ArraySetOperation) {
+                        internalHistory.reconcileCreatedAt(op.createdAt, op.value.createdAt)
+                    }
+                }
                 val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
                 if (reverseHistoryOps.isNotEmpty()) {
                     internalHistory.pushUndo(reverseHistoryOps)
@@ -441,9 +454,16 @@ public class Document(
                         // Reconcile createdAt for ArraySet and Add operations
                         if (op is ArraySetOperation) {
                             val prev = op.createdAt
+                            val prevValueId = op.value.createdAt
                             op.value.createdAt = ticket
                             internalHistory.reconcileCreatedAt(prev, ticket)
                             reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                            // The value is re-issued under a new id here too: member ops
+                            // built in the same update (`setNewObject(i)["k"] = v`) name
+                            // the value's OLD id as their parent, not the target slot's id
+                            // reconciled just above, so both must be retargeted.
+                            internalHistory.reconcileCreatedAt(prevValueId, ticket)
+                            reconcileOpsCreatedAt(ops, index + 1, prevValueId, ticket)
                         } else if (op is AddOperation) {
                             val prev = op.value.createdAt
                             op.value.createdAt = ticket

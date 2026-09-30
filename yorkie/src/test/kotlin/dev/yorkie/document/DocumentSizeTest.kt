@@ -1,5 +1,9 @@
 package dev.yorkie.document
 
+import dev.yorkie.api.toCrdtElement
+import dev.yorkie.api.toPBJsonObject
+import dev.yorkie.document.crdt.CrdtObject
+import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.Rht
@@ -11,6 +15,7 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import java.util.Date
 import kotlin.test.Test
@@ -773,5 +778,37 @@ class DocumentSizeTest {
 
         val clone = requireNotNull(document.clone).root.deepCopy()
         assertEquals(document.getDocSize(), clone.docSize)
+    }
+
+    /**
+     * Pins yorkie-js-sdk `649fe5c6` (v0.7.22, yorkie-js-sdk#1350) case 3:
+     * "rebuilding a document that holds a tombstone". A [CrdtRoot] rebuilt
+     * from the encoded root (`toPBJsonObject().toCrdtElement()`, the same
+     * path a snapshot decode takes) reports the same [DocSize][dev.yorkie.util.DocSize]
+     * as the live document, a deep copy agrees too, and the rebuilt root's
+     * tombstone is still collectable. Already on Android via `b55bfc02`;
+     * RED not constructible (production code already present). Parity
+     * unverified -- JS not executed this session.
+     */
+    @Test
+    fun `rebuilding a document that holds a tombstone`() = runTest {
+        document.updateAsync { root, _ ->
+            root.setNewObject("k").apply {
+                this["a"] = "1"
+                this["b"] = "2"
+            }
+        }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonObject>("k").remove("b") }.await()
+
+        val rebuilt =
+            CrdtRoot(document.getRootObject().toPBJsonObject().toCrdtElement() as CrdtObject)
+        assertEquals(document.getDocSize(), rebuilt.docSize)
+        assertEquals(
+            document.getDocSize(),
+            CrdtRoot(document.getRootObject().deepCopy() as CrdtObject).docSize,
+        )
+        assertEquals(1, rebuilt.garbageLength)
+        assertEquals(1, rebuilt.garbageCollect(maxVectorOf(listOf(document.changeID.actor))))
+        assertEquals(DataSize(0, 0), rebuilt.docSize.gc)
     }
 }

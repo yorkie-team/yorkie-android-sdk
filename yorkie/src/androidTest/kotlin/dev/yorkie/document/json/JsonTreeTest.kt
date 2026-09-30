@@ -1783,7 +1783,7 @@ class JsonTreeTest {
             assertTreesXmlEquals("<doc><p>ahello</p></doc>", d1, d2)
             val selectionType = object : TypeToken<TreePosStructRange>() {}.type
             val selection = gson.fromJson<TreePosStructRange>(
-                d1.allPresences.value[c1.requireClientId()]!!["selection"],
+                d1.allPresences.value[c1.requireActorId()]!!["selection"],
                 selectionType,
             )
             assertEquals(2 to 2, d1.getRoot().rootTree().posRangeToIndexRange(selection))

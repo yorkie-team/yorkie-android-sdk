@@ -1,6 +1,7 @@
 package dev.yorkie.api
 
 import com.google.protobuf.kotlin.toByteStringUtf8
+import dev.yorkie.api.v1.changePack
 import dev.yorkie.api.v1.jSONElement
 import dev.yorkie.api.v1.operation
 import dev.yorkie.document.Document
@@ -204,6 +205,33 @@ class ConverterTest {
         assertEquals(changePack.checkPoint, converted.checkPoint)
         assertEquals(changePack.changes, converted.changes)
         assertEquals(changePack.snapshot, converted.snapshot)
+    }
+
+    @Test
+    fun `should convert ChangePack epoch both directions`() {
+        val changePack = ChangePack(
+            "key",
+            CheckPoint.InitialCheckPoint,
+            emptyList(),
+            null,
+            isRemoved = false,
+            VersionVector.INITIAL_VERSION_VECTOR,
+            epoch = 7,
+        )
+        val converted = changePack.toPBChangePack().toChangePack()
+
+        assertEquals(7L, converted.epoch)
+        assertEquals(changePack.documentKey, converted.documentKey)
+        assertEquals(changePack.checkPoint, converted.checkPoint)
+    }
+
+    @Test
+    fun `should decode a ChangePack without epoch as 0`() {
+        val pbChangePack = changePack {
+            documentKey = "key"
+        }
+
+        assertEquals(0L, pbChangePack.toChangePack().epoch)
     }
 
     @Test

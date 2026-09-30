@@ -2,7 +2,14 @@ package dev.yorkie.document
 
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
+import dev.yorkie.api.PBChangePack
+import dev.yorkie.api.snapshotToBytes
+import dev.yorkie.api.toByteString
+import dev.yorkie.api.toChangeID
+import dev.yorkie.api.toChanges
+import dev.yorkie.api.toPBChanges
 import dev.yorkie.api.toSnapshot
+import dev.yorkie.api.v1.changePack
 import dev.yorkie.core.Attachable
 import dev.yorkie.core.ResourceEvent
 import dev.yorkie.core.ResourceStatus
@@ -40,6 +47,7 @@ import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.schema.Rule
 import dev.yorkie.document.schema.validateYorkieRuleset
+import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
@@ -52,7 +60,10 @@ import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.totalDocSize
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -148,6 +159,24 @@ public class Document(
     @VisibleForTesting
     internal var checkPoint = CheckPoint.InitialCheckPoint
         private set
+
+    // epoch is the document's compaction epoch, learned from the server on
+    // applyChangePack and presented back on the next attach/sync so the
+    // server can detect a stale-epoch mismatch after a force compaction.
+    internal var epoch: Long = 0
+
+    // docId is the server-assigned id recorded on attach. Empty before the
+    // first attach, or when rehydrated from a legacy envelope that predates
+    // docId support. The copy persisted in a byte envelope.
+    internal var docId: String = ""
+        private set
+
+    /**
+     * Records the server-assigned document id.
+     */
+    internal fun setDocId(id: String) {
+        docId = id
+    }
 
     @Volatile
     private var status = ResourceStatus.Detached
@@ -606,6 +635,9 @@ public class Document(
         }
 
         checkPoint = checkPoint.forward(pack.checkPoint)
+        // Learn the document's current compaction epoch from the server so a
+        // subsequent attach/sync (and any persisted envelope) presents it back.
+        epoch = pack.epoch
 
         if (!pack.hasSnapshot) {
             garbageCollect(pack.versionVector)
@@ -842,6 +874,7 @@ public class Document(
             null,
             forceRemove || status == ResourceStatus.Removed,
             changeID.versionVector,
+            epoch,
         )
     }
 
@@ -893,6 +926,114 @@ public class Document(
      */
     override fun hasLocalChanges(): Boolean {
         return localChanges.isNotEmpty()
+    }
+
+    /**
+     * Returns the currently pending (un-pushed) local changes. iOS
+     * `getPendingChangeStructs` returns [Change]; Android's struct layer
+     * exists only for JS's JSON encoding, which this SDK does not need.
+     */
+    internal fun pendingChanges(): List<Change> = localChanges.toList()
+
+    /**
+     * Serializes this document's full restorable state — root, presences,
+     * checkpoint, changeID, pending changes, compaction epoch, and docId —
+     * into a self-contained byte envelope. The reverse of [Companion.fromBytes].
+     */
+    public suspend fun toBytes(): ByteArray = withContext(dispatcher) {
+        val snapshotBlob = snapshotToBytes(root.rootObject, _presences.value).toByteArray()
+        val checkpointBlob = checkPoint.toCheckpointBytes()
+        val changeIDBlob = changeID.toByteString().toByteArray()
+        // Pending changes are carried as a serialized PBChangePack used purely
+        // as a changes container (iOS a77ff589da precedent): Android has no
+        // struct layer like JS's toStruct, but already round-trips Change
+        // through protobuf. The envelope is local-only and never crosses SDKs.
+        val pendingChangesBlob =
+            changePack { changes.addAll(localChanges.toList().toPBChanges()) }.toByteArray()
+        // Appended after pending changes so a four-blob legacy envelope still
+        // decodes: fromBytes treats a missing epoch blob as 0.
+        val epochBlob = epoch.toString().toByteArray(Charsets.UTF_8)
+        // Appended last so an envelope written before docID support (five
+        // blobs) still decodes: fromBytes treats a missing docID blob as "".
+        val docIdBlob = docId.toByteArray(Charsets.UTF_8)
+        packBlobs(
+            listOf(
+                snapshotBlob,
+                checkpointBlob,
+                changeIDBlob,
+                pendingChangesBlob,
+                epochBlob,
+                docIdBlob,
+            ),
+        )
+    }
+
+    /**
+     * Rehydrates this document's full state from a previously [toBytes]
+     * envelope, in place. All-or-nothing: the actor guard runs before any
+     * field write, so a rejected restore leaves this document completely
+     * untouched. The caller must [setActor] first — setActor does not
+     * rewrite root element actors (a documented JS/iOS limitation), so
+     * restoring under a stale actor risks diverging the CRDT.
+     *
+     * A successful (matching-actor) restore replaces any local edits already made on this
+     * document before its first attach with the persisted envelope's own pending changes, with
+     * no [Document.Event.LocalChangesDropped] event — that event only fires on the failure
+     * paths (actor mismatch, corrupt envelope, tier-3 purge, epoch re-anchor). This is JS parity
+     * (`document.ts`'s `restoreFromBytes`), not an Android-specific gap.
+     */
+    internal suspend fun restoreFromBytes(bytes: ByteArray): Unit = withContext(dispatcher) {
+        val currentActor = changeID.actor
+        val restored = fromBytes(key, bytes, options)
+        try {
+            restoreFrom(restored, currentActor)
+        } finally {
+            // The decoded instance owns a dispatcher and scope of its own; only its
+            // fields are kept.
+            restored.close()
+        }
+    }
+
+    private fun restoreFrom(restored: Document, currentActor: String) {
+        val restoredActor = restored.changeID.actor
+        checkYorkieError(
+            currentActor == ActorID.INITIAL_ACTOR_ID ||
+                restoredActor == ActorID.INITIAL_ACTOR_ID ||
+                currentActor == restoredActor,
+            YorkieException(
+                ErrInvalidArgument,
+                "persisted actor \"$restoredActor\" does not match the current stable actor " +
+                    "\"$currentActor\"; the store was reused under a different client identity, " +
+                    "restoring would diverge the CRDT",
+            ),
+        )
+        root = restored.root
+        _presences.value = restored._presences.value
+        checkPoint = restored.checkPoint
+        changeID = restored.changeID
+        localChanges.clear()
+        localChanges.addAll(restored.localChanges)
+        epoch = restored.epoch
+        docId = restored.docId
+        clone = null
+        // Reverse-ops reference the pre-restore root/changeID.
+        clearHistory()
+    }
+
+    /**
+     * Mirrors constructing a brand-new Document instance without forcing the
+     * caller to swap the object reference it already holds.
+     */
+    internal suspend fun resetForReanchor(): Unit = withContext(dispatcher) {
+        changeID = ChangeID.InitialChangeID
+        checkPoint = CheckPoint.InitialCheckPoint
+        localChanges.clear()
+        epoch = 0
+        docId = ""
+        root = CrdtRoot(CrdtObject(createdAt = InitialTimeTicket, memberNodes = ElementRht()))
+        _presences.value = UninitializedPresences
+        clone = null
+        clearHistory()
     }
 
     override fun publish(event: ResourceEvent) {
@@ -1159,6 +1300,39 @@ public class Document(
         }
 
         /**
+         * Indicates that local changes were discarded without reaching the
+         * server. Emitted only by the store-backed client (spec 025); this
+         * type exists here so an app can react to the event regardless of
+         * which layer raises it.
+         */
+        public data class LocalChangesDropped(
+            val reason: Reason,
+            val changes: List<DroppedChange>,
+        ) : Event
+
+        /**
+         * The reason [LocalChangesDropped] was raised.
+         */
+        public enum class Reason(val value: String) {
+            ActorMismatch("actor-mismatch"),
+            RestoreFailed("restore-failed"),
+            EpochReanchor("epoch-reanchor"),
+            DocumentPurged("document-purged"),
+        }
+
+        /**
+         * The app-readable projection of a dropped [Change]. [Change]'s own
+         * fields are internal, so this projection is what an app handling
+         * [LocalChangesDropped] can actually read.
+         */
+        public data class DroppedChange(
+            val id: ChangeID,
+            val message: String?,
+            val operationCount: Int,
+            val hasPresenceChange: Boolean,
+        )
+
+        /**
          * Represents the modification made during a document update and the message passed.
          */
         public data class ChangeInfo(
@@ -1196,4 +1370,182 @@ public class Document(
 
         fun deepCopy() = copy(root = root.deepCopy(), presences = presences.asPresences())
     }
+
+    public companion object {
+
+        private val ServerSeqRegex = Regex(""""serverSeq"\s*:\s*"(-?\d+)"""")
+        private val ClientSeqRegex = Regex(""""clientSeq"\s*:\s*(\d+)""")
+
+        /**
+         * Rebuilds a [Document] from a byte envelope produced by [toBytes].
+         * The envelope carries at least four blobs (snapshot, checkpoint,
+         * changeID, pending changes); a missing epoch blob decodes as `0`
+         * and a missing docId blob decodes as `""`, so a legacy four- or
+         * five-blob envelope still decodes. Blobs beyond the sixth are
+         * ignored rather than rejected, so an app downgrade cannot discard
+         * un-pushed edits carried in an envelope written by a newer SDK.
+         *
+         * Framing, checkpoint, and epoch corruption surface as
+         * [YorkieException] with [ErrInvalidArgument]. A protobuf-level
+         * decode failure inside the snapshot, changeID, or pending-changes
+         * blobs surfaces as the protobuf parser's own exception instead —
+         * shared with the JS SDK's `JSON.parse`/protobuf errors and iOS's
+         * decode errors, and handled by the store-backed attach path as a
+         * restore failure.
+         */
+        public suspend fun fromBytes(
+            key: String,
+            bytes: ByteArray,
+            options: Options = Options(),
+        ): Document {
+            val blobs = unpackBlobs(bytes)
+            checkYorkieError(
+                blobs.size >= 4,
+                YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt envelope: expected at least 4 blobs, got ${blobs.size}",
+                ),
+            )
+
+            val doc = Document(key, options)
+            withContext(doc.dispatcher) {
+                // toSnapshot()/toChangeID() are internal ByteString-receiver
+                // converters; convert only at this boundary, per the envelope's
+                // public/internal ByteArray contract.
+                val (snapshotRoot, snapshotPresences) = ByteString.copyFrom(blobs[0]).toSnapshot()
+                doc.root = CrdtRoot(snapshotRoot)
+                doc._presences.value = snapshotPresences.asPresences()
+
+                doc.checkPoint = blobs[1].toCheckPoint()
+
+                doc.changeID = ByteString.copyFrom(blobs[2]).toChangeID()
+
+                doc.localChanges.clear()
+                doc.localChanges.addAll(PBChangePack.parseFrom(blobs[3]).changesList.toChanges())
+
+                // A missing epoch blob (legacy four-blob envelope) decodes as 0.
+                doc.epoch = if (blobs.size > 4) {
+                    runCatching {
+                        String(blobs[4], Charsets.UTF_8).toLong()
+                    }.getOrElse {
+                        throw YorkieException(
+                            ErrInvalidArgument,
+                            "corrupt envelope: invalid epoch blob",
+                        )
+                    }
+                } else {
+                    0
+                }
+                // A missing docId blob (legacy five-blob envelope) decodes as "".
+                doc.docId = if (blobs.size > 5) {
+                    String(blobs[5], Charsets.UTF_8)
+                } else {
+                    ""
+                }
+            }
+            return doc
+        }
+
+        private fun ByteArray.toCheckPoint(): CheckPoint {
+            val json = String(this, Charsets.UTF_8)
+            val serverSeq = ServerSeqRegex.find(json)?.groupValues?.get(1)
+                ?: throw YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt envelope: invalid checkpoint blob",
+                )
+            val clientSeq = ClientSeqRegex.find(json)?.groupValues?.get(1)
+                ?: throw YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt envelope: invalid checkpoint blob",
+                )
+            val serverSeqLong = serverSeq.toLongOrNull()
+                ?: throw YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt envelope: invalid checkpoint blob",
+                )
+            val clientSeqUInt = clientSeq.toUIntOrNull()
+                ?: throw YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt envelope: invalid checkpoint blob",
+                )
+            return CheckPoint(serverSeqLong, clientSeqUInt)
+        }
+    }
+}
+
+/**
+ * Projects this [Change] into a [Document.Event.DroppedChange] for an
+ * app-visible [Document.Event.LocalChangesDropped] event.
+ */
+internal fun Change.toDroppedChange(): Document.Event.DroppedChange {
+    return Document.Event.DroppedChange(
+        id = id,
+        message = message,
+        operationCount = operations.size,
+        hasPresenceChange = hasPresenceChange,
+    )
+}
+
+/**
+ * Encodes this [CheckPoint] into the byte-envelope checkpoint blob shape:
+ * `{"serverSeq":"<serverSeq>","clientSeq":<clientSeq>}` — serverSeq quoted
+ * as a decimal string, clientSeq an unquoted number (JS `getServerSeq()
+ * .toString()` shape). The yorkie module has no JSON dependency, so this is
+ * hand-written and parsed back with a small strict extractor (`Document
+ * .Companion.toCheckPoint`) rather than pulling in a JSON library for one
+ * literal.
+ */
+private fun CheckPoint.toCheckpointBytes(): ByteArray {
+    return """{"serverSeq":"$serverSeq","clientSeq":$clientSeq}""".toByteArray(Charsets.UTF_8)
+}
+
+/**
+ * Packs [blobs] into a single envelope: each blob is prefixed by its length
+ * as a 4-byte little-endian uint32, concatenated with no header and no
+ * count. JS `document.ts` `packBlobs` framing, byte-identical.
+ */
+private fun packBlobs(blobs: List<ByteArray>): ByteArray {
+    val output = ByteArrayOutputStream()
+    blobs.forEach { blob ->
+        val length = ByteBuffer.allocate(
+            4,
+        ).order(ByteOrder.LITTLE_ENDIAN).putInt(blob.size).array()
+        output.write(length)
+        output.write(blob)
+    }
+    return output.toByteArray()
+}
+
+/**
+ * Unpacks an envelope produced by [packBlobs] back into its blobs. Walks the
+ * length-prefixed framing and throws [YorkieException] with
+ * [ErrInvalidArgument] on a truncated length prefix or a blob length that
+ * exceeds the remaining bytes. JS `document.ts` `unpackBlobs`.
+ */
+private fun unpackBlobs(bytes: ByteArray): List<ByteArray> {
+    val blobs = mutableListOf<ByteArray>()
+    var offset = 0
+    while (offset < bytes.size) {
+        checkYorkieError(
+            offset + 4 <= bytes.size,
+            YorkieException(ErrInvalidArgument, "corrupt envelope: truncated length prefix"),
+        )
+        // Read as unsigned uint32 (matches JS DataView#getUint32): a signed
+        // Int read would let a high-bit-set prefix (e.g. 0xFFFFFFFF) pass the
+        // bounds check via negative/overflowed arithmetic and blow up in
+        // copyOfRange instead of surfacing the contracted YorkieException.
+        val length = ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int
+            .toLong() and 0xFFFF_FFFFL
+        offset += 4
+        checkYorkieError(
+            offset.toLong() + length <= bytes.size,
+            YorkieException(
+                ErrInvalidArgument,
+                "corrupt envelope: blob length exceeds remaining bytes",
+            ),
+        )
+        blobs += bytes.copyOfRange(offset, offset + length.toInt())
+        offset += length.toInt()
+    }
+    return blobs
 }

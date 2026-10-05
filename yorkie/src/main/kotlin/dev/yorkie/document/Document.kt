@@ -1391,8 +1391,15 @@ public class Document(
 
     public companion object {
 
-        private val ServerSeqRegex = Regex(""""serverSeq"\s*:\s*"(-?\d+)"""")
-        private val ClientSeqRegex = Regex(""""clientSeq"\s*:\s*(\d+)""")
+        // Anchored start-to-end (spec 029 M6): the two formerly-separate, unanchored regexes
+        // each matched anywhere in the blob, so a trailing/embedded garbage tail past a
+        // syntactically valid prefix — e.g. "...,"clientSeq":12abc}" or leading/trailing noise
+        // around an otherwise-canonical blob — was silently accepted (find() only needs ONE
+        // match anywhere, never checked what surrounds it). Mirrors the writer's exact shape
+        // (toCheckpointBytes below) and JS's JSON.stringify output byte-for-byte.
+        private val CheckpointRegex = Regex(
+            """^\s*\{\s*"serverSeq"\s*:\s*"(-?\d+)"\s*,\s*"clientSeq"\s*:\s*(\d+)\s*\}\s*$""",
+        )
 
         /**
          * Rebuilds a [Document] from a byte envelope produced by [toBytes].
@@ -1490,22 +1497,17 @@ public class Document(
 
         private fun ByteArray.toCheckPoint(): CheckPoint {
             val json = String(this, Charsets.UTF_8)
-            val serverSeq = ServerSeqRegex.find(json)?.groupValues?.get(1)
+            val match = CheckpointRegex.find(json)
                 ?: throw YorkieException(
                     ErrInvalidArgument,
                     "corrupt envelope: invalid checkpoint blob",
                 )
-            val clientSeq = ClientSeqRegex.find(json)?.groupValues?.get(1)
+            val serverSeqLong = match.groupValues[1].toLongOrNull()
                 ?: throw YorkieException(
                     ErrInvalidArgument,
                     "corrupt envelope: invalid checkpoint blob",
                 )
-            val serverSeqLong = serverSeq.toLongOrNull()
-                ?: throw YorkieException(
-                    ErrInvalidArgument,
-                    "corrupt envelope: invalid checkpoint blob",
-                )
-            val clientSeqUInt = clientSeq.toUIntOrNull()
+            val clientSeqUInt = match.groupValues[2].toUIntOrNull()
                 ?: throw YorkieException(
                     ErrInvalidArgument,
                     "corrupt envelope: invalid checkpoint blob",

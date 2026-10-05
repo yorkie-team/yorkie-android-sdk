@@ -1583,6 +1583,100 @@ class ClientPersistenceTest {
             client.close()
         }
 
+    // --- #1355 (AC6, scenarios 13, 14) --------------------------------------
+
+    @Test
+    fun `U13 a log that does not start where the snapshot ends is a log discontinuity`() = runTest {
+        val store = MemoryDocStore()
+        val docKey = "first-entry-loss-doc"
+        val (snapshot, changes) = snapshotAndLog(docKey, editCount = 3)
+        store.saveSnapshot(storeKeyFor(docKey), snapshot)
+        // Drops changes[0] (clientSeq 1): the log no longer starts where the snapshot
+        // ends. GREEN at commit 6's tip already (the pre-#1355 startsRight check) — a
+        // regression pin, not a #1355 RED (the #1355 commit message records this
+        // behaviour "had no test that failed when reverted").
+        store.appendChange(storeKeyFor(docKey), changes[1])
+        store.appendChange(storeKeyFor(docKey), changes[2])
+
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val document = Document(docKey)
+        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
+        }
+
+        val result =
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        assertTrue(result.isSuccess)
+        val dropped = droppedDeferred.await()
+        assertEquals(Document.Event.Reason.LogDiscontinuity, dropped.reason)
+        assertFalse(document.toJson().contains("\"r0\""))
+        assertFreshBase(store, storeKeyFor(docKey), snapshot)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `U14 a meta counter the log cannot reach is a log discontinuity`() = runTest {
+        // Direct fixture (not a live ack+in-flight-edit dance): a snapshot with two edits'
+        // worth of local history, a log holding only the FIRST of the two (the second —
+        // minted "during" a sync, #1355 — never lands), and meta whose checkpoint acks just
+        // the first entry while the changeID counter already reflects both.
+        val store = MemoryDocStore()
+        val docKey = "counter-ahead-doc"
+        val (snapshot, changes) = snapshotAndLog(docKey, editCount = 2)
+        store.saveSnapshot(storeKeyFor(docKey), snapshot)
+        store.appendChange(storeKeyFor(docKey), changes[0])
+
+        val metaSource = Document(docKey)
+        metaSource.setActor(TEST_ACTOR_ID)
+        metaSource.updateAsync { root, _ -> root["m0"] = 0 }.await()
+        metaSource.updateAsync { root, _ -> root["m1"] = 1 }.await()
+        metaSource.applyChangePack(
+            ChangePack(
+                docKey,
+                CheckPoint(0, 1u),
+                emptyList(),
+                null,
+                false,
+                INITIAL_VERSION_VECTOR,
+            ),
+        )
+        // Precondition (decode to assert it): the meta's counter outruns its own checkpoint.
+        assertTrue(metaSource.changeID.clientSeq > metaSource.checkPoint.clientSeq)
+        store.saveMeta(storeKeyFor(docKey), metaSource.metaToBytes())
+
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val document = Document(docKey)
+        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
+        }
+
+        // RED at commit 6's tip (validates against ackedWatermark(1) alone, which the
+        // surviving log entry DOES reach — the loss is silently accepted); GREEN after
+        // commit 7 (headerWatermark also covers the document's own changeID counter(2)).
+        val result = client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        assertTrue(result.isSuccess)
+        val dropped = droppedDeferred.await()
+        assertEquals(Document.Event.Reason.LogDiscontinuity, dropped.reason)
+
+        // The next edit is pushable — no ErrInvalidClientSeq wedge, no re-anchor needed.
+        document.updateAsync { root, _ -> root["after"] = true }.await()
+        assertEquals(
+            document.checkPoint.clientSeq + 1u,
+            document.pendingChanges().last().id.clientSeq,
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
     @Test
     fun `U14b a live 1355 inflight edit then newest entry dropped is a discontinuity`() = runTest {
         // Round-3 cross-judge LOW-2: the live-mechanism twin of U14's hand-built fixture,

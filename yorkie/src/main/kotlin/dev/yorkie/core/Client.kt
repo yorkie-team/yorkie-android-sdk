@@ -600,6 +600,20 @@ public class Client(
             )
         } else {
             val ackedWatermark = document.checkPoint.clientSeq
+            // #1355 (8cf346ae): meta carries TWO positions — the acked checkpoint and changeID
+            // (how many changes this client has minted). They differ whenever an edit is minted
+            // while a sync is in flight: the push already captured only the earlier changes, so
+            // the checkpoint advances past them, but changeID already counts the in-flight edit
+            // too. Validating against the checkpoint alone would accept the loss of exactly that
+            // trailing log entry — restoreAppendedChanges refuses to pull the counter back, so
+            // the next edit mints a clientSeq gap, and every subsequent push takes
+            // ErrInvalidClientSeq with no re-anchor: the document never syncs again. Reading
+            // AFTER meta and taking the max means an empty log also validates against the right
+            // watermark; with no meta this reduces to the checkpoint comparison.
+            val headerWatermark = maxOf(
+                ackedWatermark,
+                document.changeID.clientSeq,
+            )
             val fresh = stored.changes.filter {
                 it.clientSeq > snapshotWatermark
             }
@@ -607,7 +621,7 @@ public class Client(
                 fresh.lastOrNull()?.clientSeq
                     ?: snapshotWatermark
             val backsTheHeader =
-                lastReplayable >= ackedWatermark
+                lastReplayable >= headerWatermark
             if (fresh.isNotEmpty() || !backsTheHeader) {
                 // Each decode failure (a corrupt/zero-length
                 // entry) is caught in its OWN try — a corrupt

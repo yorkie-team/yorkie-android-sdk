@@ -48,6 +48,23 @@ internal class Attachment<R : Attachable>(
     var cancelled: Boolean = false
 
     /**
+     * The [SessionLockHandle] leased for this attachment's document while a [Client.Options.docStore]
+     * is configured, or null otherwise. Held for the attachment's lifetime and released exactly once
+     * — from `Client.detachInternal`, the single teardown choke point — so a re-attach does not stack
+     * a second lease. Ported from JS `attachment.ts` (`2291bf67`/#1338).
+     */
+    var sessionLockHandle: SessionLockHandle? = null
+
+    /**
+     * Gates every persist call for this attachment. False by default (and for a client without a
+     * [Client.Options.docStore]); set true once this attachment's document has successfully attached
+     * through a configured store. Cleared for the remainder of the session if the store could not be
+     * READ at attach time — a store that failed to read must not be written either, so the unreadable
+     * envelope survives for a session that can read it (iOS review fix, adopted).
+     */
+    var persistsToStore: Boolean = false
+
+    /**
      * Set before detaching so an in-flight refresh that resumes from its
      * network await drops its side effects instead of resurrecting the
      * session. The mutex alone cannot do this: it only delays new acquirers,

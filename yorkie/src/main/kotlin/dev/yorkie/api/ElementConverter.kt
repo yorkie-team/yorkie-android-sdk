@@ -17,6 +17,7 @@ import dev.yorkie.api.v1.nodeAttr
 import dev.yorkie.api.v1.rGANode
 import dev.yorkie.api.v1.rHTNode
 import dev.yorkie.api.v1.removedAtOrNull
+import dev.yorkie.api.v1.snapshot
 import dev.yorkie.api.v1.textNode
 import dev.yorkie.api.v1.textNodeID
 import dev.yorkie.api.v1.textNodePos
@@ -81,6 +82,17 @@ internal fun ByteString?.toSnapshot(): Pair<CrdtObject, Map<String, P>> {
         val snapshot = PBSnapshot.parseFrom(this)
         snapshot.root.toCrdtElement() as CrdtObject to snapshot.presencesMap.toPresences()
     }
+}
+
+/**
+ * Encodes [root] and [presences] into a [Snapshot][PBSnapshot] binary; the
+ * reverse of [ByteString?.toSnapshot].
+ */
+internal fun snapshotToBytes(root: CrdtObject, presences: Map<String, P>): ByteString {
+    return snapshot {
+        this.root = root.toPBJsonObject()
+        this.presences.putAll(presences.mapValues { it.value.toPBPresence() })
+    }.toByteString()
 }
 
 internal fun ByteString.toCrdtTree(): CrdtTree {

@@ -104,9 +104,20 @@ fun withTwoClientsAndDocuments(
     presences: Pair<Map<String, String>, Map<String, String>> = Pair(emptyMap(), emptyMap()),
     callback: suspend CoroutineScope.(Client, Client, Document, Document, String) -> Unit,
 ) {
-    createTwoClientsAndDocuments { client1, client2, document1, document2, key ->
-        client1.activateAsync().await()
-        client2.activateAsync().await()
+    createTwoClientsAndDocuments { rawClient1, rawClient2, rawDocument1, rawDocument2, key ->
+        rawClient1.activateAsync().await()
+        rawClient2.activateAsync().await()
+
+        // The actor used to be the time-ordered session id (second-created client won
+        // ties); the stable actor is derived from the client key, so creation order no
+        // longer implies actor order — pin it so callback assertions that depend on a
+        // consistent actor ordering (e.g. tie-breaks) stay meaningful (JS
+        // `integration_helper.ts`; iOS `withTwoClientsAndDocuments`).
+        val swap = rawClient1.requireActorId() > rawClient2.requireActorId()
+        val client1 = if (swap) rawClient2 else rawClient1
+        val client2 = if (swap) rawClient1 else rawClient2
+        val document1 = if (swap) rawDocument2 else rawDocument1
+        val document2 = if (swap) rawDocument1 else rawDocument2
 
         if (attachDocuments) {
             attachAndAwaitWatch(client1, document1, syncMode, presences.first)
@@ -142,17 +153,28 @@ fun withThreeClientsAndDocuments(
     ) -> Unit,
 ) {
     createThreeClientsAndDocuments {
-            client1,
-            client2,
-            client3,
-            document1,
-            document2,
-            document3,
+            rawClient1,
+            rawClient2,
+            rawClient3,
+            rawDocument1,
+            rawDocument2,
+            rawDocument3,
             key,
         ->
-        client1.activateAsync().await()
-        client2.activateAsync().await()
-        client3.activateAsync().await()
+        rawClient1.activateAsync().await()
+        rawClient2.activateAsync().await()
+        rawClient3.activateAsync().await()
+
+        // Sort the three (client, document) pairs ascending by the stable actor —
+        // see the matching comment in withTwoClientsAndDocuments.
+        val pairs = listOf(
+            rawClient1 to rawDocument1,
+            rawClient2 to rawDocument2,
+            rawClient3 to rawDocument3,
+        ).sortedBy { it.first.requireActorId() }
+        val (client1, document1) = pairs[0]
+        val (client2, document2) = pairs[1]
+        val (client3, document3) = pairs[2]
 
         attachAndAwaitWatch(client1, document1, syncMode)
         attachAndAwaitWatch(client2, document2, syncMode)

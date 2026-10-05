@@ -83,6 +83,7 @@ internal fun PBChangePack.toChangePack(): ChangePack {
         snapshot = snapshot.takeUnless { it.isEmpty },
         isRemoved = isRemoved,
         versionVector = versionVector.toVersionVector(),
+        epoch = epoch,
     )
 }
 
@@ -95,5 +96,16 @@ internal fun ChangePack.toPBChangePack(): PBChangePack {
         changes.addAll(changePack.changes.toPBChanges())
         isRemoved = changePack.isRemoved
         versionVector = changePack.versionVector.toPBVersionVector()
+        epoch = changePack.epoch
     }
 }
+
+/**
+ * Encodes this [ChangeID] into its protobuf binary form.
+ */
+internal fun ChangeID.toByteString(): ByteString = toPBChangeID().toByteString()
+
+/**
+ * Decodes a [ChangeID] from its protobuf binary form.
+ */
+internal fun ByteString.toChangeID(): ChangeID = PBChangeID.parseFrom(this).toChangeID()

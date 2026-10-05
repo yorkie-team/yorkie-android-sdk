@@ -52,7 +52,7 @@ class DocPresenceTest {
 
             assertEquals(
                 mapOf("key" to "${DEFAULT_SNAPSHOT_THRESHOLD - 1}"),
-                d1.allPresences.value[c1.requireClientId()],
+                d1.allPresences.value[c1.requireActorId()],
             )
 
             c1.syncAsync().await()
@@ -60,7 +60,7 @@ class DocPresenceTest {
 
             assertEquals(
                 mapOf("key" to "${DEFAULT_SNAPSHOT_THRESHOLD - 1}"),
-                d2.allPresences.value[c1.requireClientId()],
+                d2.allPresences.value[c1.requireActorId()],
             )
         }
     }
@@ -72,17 +72,17 @@ class DocPresenceTest {
             syncMode = Manual,
             presences = mapOf("key" to "key1") to mapOf("key" to "key2"),
         ) { c1, c2, d1, d2, _ ->
-            assertEquals(mapOf("key" to "key1"), d1.allPresences.value[c1.requireClientId()])
-            assertNull(d1.allPresences.value[c2.requireClientId()])
-            assertEquals(mapOf("key" to "key2"), d2.allPresences.value[c2.requireClientId()])
-            assertEquals(mapOf("key" to "key1"), d2.allPresences.value[c1.requireClientId()])
+            assertEquals(mapOf("key" to "key1"), d1.allPresences.value[c1.requireActorId()])
+            assertNull(d1.allPresences.value[c2.requireActorId()])
+            assertEquals(mapOf("key" to "key2"), d2.allPresences.value[c2.requireActorId()])
+            assertEquals(mapOf("key" to "key1"), d2.allPresences.value[c1.requireActorId()])
 
             c1.syncAsync().await()
-            assertEquals(mapOf("key" to "key2"), d1.allPresences.value[c2.requireClientId()])
+            assertEquals(mapOf("key" to "key2"), d1.allPresences.value[c2.requireActorId()])
 
             c2.detachDocument(d2).await()
             c1.syncAsync().await()
-            assertNull(d1.allPresences.value[c2.requireClientId()])
+            assertNull(d1.allPresences.value[c2.requireActorId()])
 
             c1.detachDocument(d1).await()
         }
@@ -92,10 +92,10 @@ class DocPresenceTest {
     fun test_initial_presence_value_without_manual_initialization() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, _ ->
             val emptyMap = emptyMap<String, String>()
-            assertEquals(emptyMap, d1.allPresences.value[c1.requireClientId()])
-            assertNull(d1.allPresences.value[c2.requireClientId()])
-            assertEquals(emptyMap, d2.allPresences.value[c1.requireClientId()])
-            assertEquals(emptyMap, d2.allPresences.value[c2.requireClientId()])
+            assertEquals(emptyMap, d1.allPresences.value[c1.requireActorId()])
+            assertNull(d1.allPresences.value[c2.requireActorId()])
+            assertEquals(emptyMap, d2.allPresences.value[c1.requireActorId()])
+            assertEquals(emptyMap, d2.allPresences.value[c2.requireActorId()])
         }
     }
 
@@ -149,7 +149,7 @@ class DocPresenceTest {
             }
 
             assertEquals(
-                Others.Watched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
+                Others.Watched(PresenceInfo(c2.requireActorId(), mapOf("name" to "b"))),
                 d1Events.last(),
             )
 
@@ -169,10 +169,10 @@ class DocPresenceTest {
             assertEquals(
                 listOf(
                     MyPresence.PresenceChanged(
-                        PresenceInfo(c1.requireClientId(), mapOf("name" to "A")),
+                        PresenceInfo(c1.requireActorId(), mapOf("name" to "A")),
                     ),
                     Others.PresenceChanged(
-                        PresenceInfo(c2.requireClientId(), mapOf("name" to "B")),
+                        PresenceInfo(c2.requireActorId(), mapOf("name" to "B")),
                     ),
                 ),
                 d1Events.takeLast(2),
@@ -188,12 +188,12 @@ class DocPresenceTest {
                 listOf(
                     MyPresence.PresenceChanged(
                         PresenceInfo(
-                            c2.requireClientId(),
+                            c2.requireActorId(),
                             mapOf("name" to "B"),
                         ),
                     ),
                     Others.PresenceChanged(
-                        PresenceInfo(c1.requireClientId(), mapOf("name" to "A")),
+                        PresenceInfo(c1.requireActorId(), mapOf("name" to "A")),
                     ),
                 ),
                 d2Events,
@@ -231,7 +231,7 @@ class DocPresenceTest {
 
             assertEquals(
                 mapOf("key" to "key1", "cursor" to updatedCursor),
-                d1.allPresences.value[c1.requireClientId()],
+                d1.allPresences.value[c1.requireActorId()],
             )
 
             c1.syncAsync().await()
@@ -239,7 +239,7 @@ class DocPresenceTest {
 
             assertEquals(
                 mapOf("key" to "key1", "cursor" to updatedCursor),
-                d2.allPresences.value[c1.requireClientId()],
+                d2.allPresences.value[c1.requireActorId()],
             )
         }
     }
@@ -261,8 +261,8 @@ class DocPresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            val c1ID = c1.requireClientId()
-            val c2ID = c2.requireClientId()
+            val c1ID = c1.requireActorId()
+            val c2ID = c2.requireActorId()
 
             val d1Job = launch(start = CoroutineStart.UNDISPATCHED) {
                 d1.events.filterIsInstance<PresenceChanged>().collect(d1Events::add)
@@ -358,8 +358,8 @@ class DocPresenceTest {
             c1.activateAsync().await()
             c2.activateAsync().await()
 
-            val c1ID = c1.requireClientId()
-            val c2ID = c2.requireClientId()
+            val c1ID = c1.requireActorId()
+            val c2ID = c2.requireActorId()
 
             awaitWatchConnected(d1) {
                 c1.attachDocument(d1, initialPresence = mapOf("name" to "a")).await()
@@ -389,7 +389,7 @@ class DocPresenceTest {
             }
 
             assertEquals(
-                Others.Unwatched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
+                Others.Unwatched(PresenceInfo(c2.requireActorId(), mapOf("name" to "b"))),
                 d1Events.last(),
             )
 
@@ -426,9 +426,9 @@ class DocPresenceTest {
             c2.activateAsync().await()
             c3.activateAsync().await()
 
-            val c1ID = c1.requireClientId()
-            val c2ID = c2.requireClientId()
-            val c3ID = c3.requireClientId()
+            val c1ID = c1.requireActorId()
+            val c2ID = c2.requireActorId()
+            val c3ID = c3.requireActorId()
 
             awaitWatchConnected(d1) {
                 c1.attachDocument(
@@ -535,8 +535,8 @@ class DocPresenceTest {
             c2.activateAsync().await()
             c3.activateAsync().await()
 
-            val c2ID = c2.requireClientId()
-            val c3ID = c3.requireClientId()
+            val c2ID = c2.requireActorId()
+            val c3ID = c3.requireActorId()
 
             awaitWatchConnected(d1) {
                 c1.attachDocument(
@@ -850,7 +850,7 @@ class DocPresenceTest {
             assertIs<Others.Watched>(d1Events.first())
             d1Events.drop(1).forEach { event ->
                 assertEquals(
-                    Others.PresenceChanged(PresenceInfo(c2.requireClientId(), mapOf("a" to "b"))),
+                    Others.PresenceChanged(PresenceInfo(c2.requireActorId(), mapOf("a" to "b"))),
                     event,
                 )
             }
@@ -895,7 +895,7 @@ class DocPresenceTest {
             }
 
             assertEquals(
-                Others.Watched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
+                Others.Watched(PresenceInfo(c2.requireActorId(), mapOf("name" to "b"))),
                 d1PresenceEvents.last(),
             )
 
@@ -905,7 +905,7 @@ class DocPresenceTest {
                     delay(50)
                 }
             }
-            assertNull(d1.presences.value[c2.requireClientId()])
+            assertNull(d1.presences.value[c2.requireActorId()])
 
             jobs.forEach(Job::cancel)
             c1.detachDocument(d1).await()
@@ -955,7 +955,7 @@ class DocPresenceTest {
                 }
             }
             assertEquals(
-                Others.Watched(PresenceInfo(c2.requireClientId(), mapOf("name" to "b"))),
+                Others.Watched(PresenceInfo(c2.requireActorId(), mapOf("name" to "b"))),
                 d1PresenceEvents.last { it is Others.Watched },
             )
 
@@ -968,16 +968,16 @@ class DocPresenceTest {
             }
 
             // then: c2's presence is filtered out of d1.presences, but retained in allPresences
-            assertNull(d1.presences.value[c2.requireClientId()])
+            assertNull(d1.presences.value[c2.requireActorId()])
             assertEquals(
                 mapOf("name" to "b"),
-                d1.allPresences.value[c2.requireClientId()],
+                d1.allPresences.value[c2.requireActorId()],
             )
 
             // when: c1 reopens its watch stream
             c1.changeSyncMode(d1, Realtime)
             withTimeout(GENERAL_TIMEOUT) {
-                while (d1.presences.value[c2.requireClientId()] == null) {
+                while (d1.presences.value[c2.requireActorId()] == null) {
                     delay(50)
                 }
             }
@@ -985,11 +985,11 @@ class DocPresenceTest {
             // then: c2's presence is visible again through the retained allPresences map
             assertEquals(
                 mapOf("name" to "b"),
-                d1.presences.value[c2.requireClientId()],
+                d1.presences.value[c2.requireActorId()],
             )
             assertEquals(
                 mapOf("name" to "b"),
-                d1.allPresences.value[c2.requireClientId()],
+                d1.allPresences.value[c2.requireActorId()],
             )
 
             jobs.forEach(Job::cancel)
@@ -1027,10 +1027,10 @@ class DocPresenceTest {
             }.await()
 
             val lastD1PresenceEvent = MyPresence.PresenceChanged(
-                PresenceInfo(c1.requireClientId(), mapOf("a" to "10")),
+                PresenceInfo(c1.requireActorId(), mapOf("a" to "10")),
             )
             val lastD2PresenceEvent = Others.PresenceChanged(
-                PresenceInfo(c1.requireClientId(), mapOf("a" to "10")),
+                PresenceInfo(c1.requireActorId(), mapOf("a" to "10")),
             )
 
             withTimeout(GENERAL_TIMEOUT) {

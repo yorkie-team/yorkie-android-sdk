@@ -24,18 +24,31 @@ internal const val LogRatio = 0.5
 internal const val MaxReplay = 1000
 
 /**
- * What the compaction decision is made from. Ported from yorkie-js-sdk `persist-policy.ts`
- * (`aaa5cb15`/#1354).
+ * What the compaction decision is made from, plus the bookkeeping the incremental write path
+ * (`Client.kt`) mutates per store key. Ported from yorkie-js-sdk `persist-policy.ts`
+ * (`aaa5cb15`/#1354, RTCOLLABPLATFORM-779).
  *
  * @param snapshotBytes size of the stored snapshot the log is appended to.
  * @param logBytes total size of the appended change log.
  * @param changeCount number of appended changes.
+ * @param lastAppendedClientSeq the highest [dev.yorkie.document.change.ChangeID.clientSeq] this
+ * key's snapshot or log already carries — the watermark [dev.yorkie.document.Document
+ * .pendingChangesAfter] appends from, so an already-carried change is never appended twice.
+ * @param poisoned true when the last store write for this key failed; the next write must repair
+ * with a fresh snapshot rather than append into a hole a failed write may have left. A body `var`
+ * (not a constructor param) because [kotlin.jvm.Volatile] is rejected on a primary-constructor
+ * parameter: the failure callback that sets it runs on [kotlinx.coroutines.Dispatchers.IO],
+ * re-reading the entry from the per-key [java.util.concurrent.ConcurrentHashMap] on `Client`.
  */
 internal class PersistState(
-    public val snapshotBytes: Int,
-    public val logBytes: Int,
-    public val changeCount: Int,
-)
+    public var snapshotBytes: Int,
+    public var logBytes: Int,
+    public var changeCount: Int,
+    public var lastAppendedClientSeq: UInt = 0u,
+) {
+    @Volatile
+    public var poisoned: Boolean = false
+}
 
 /**
  * Decides whether the appended log has grown enough to be worth replacing with a fresh

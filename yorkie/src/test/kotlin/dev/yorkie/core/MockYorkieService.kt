@@ -170,6 +170,40 @@ class MockYorkieService(
     var lastDocumentWatchActorId: String? = null
     var lastChannelWatchActorId: String? = null
 
+    /**
+     * Document keys whose [pushPullChanges] response is an ACK-ONLY pure push-ack: empty
+     * `changes`, no `snapshot`, and a `checkpoint` that echoes the request's own checkpoint
+     * (which [dev.yorkie.document.Document.createChangePack] already advanced by the pushed
+     * changes' count — so echoing it back IS the correct ack, derived rather than hard-coded;
+     * RTCOLLABPLATFORM-779). The otherwise-default response always carries one remote change
+     * (`k2`) with no advanced checkpoint — that default is unchanged for every other key.
+     */
+    val ackOnlyPushPullKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose [pushPullChanges] response is a PULL that is also an ack: the
+     * request's own checkpoint echoed back (as [ackOnlyPushPullKeys]) plus one remote change
+     * setting a fresh `pull<N>` key — harmless to re-apply any number of times, unlike the
+     * default response's remove of the element created at lamport 1 (team review U1 test,
+     * RTCOLLABPLATFORM-779).
+     */
+    val pullWithAckPushPullKeys = mutableSetOf<String>()
+    private var pullCount = 0
+
+    /**
+     * Document keys whose [detachDocument] response reports the document Removed
+     * (`isRemoved`), the shape a detach racing a peer's remove takes (team review U5,
+     * RTCOLLABPLATFORM-779).
+     */
+    val detachRemovedKeys = mutableSetOf<String>()
+
+    /**
+     * Fires once, inside [pushPullChanges] BEFORE the response is built, then clears itself —
+     * simulates an edit minted on the document while a push is "in flight" (the #1355
+     * counter-ahead-loss case, RTCOLLABPLATFORM-779).
+     */
+    var inFlightPushPullHook: (suspend () -> Unit)? = null
+
     override suspend fun activateClient(
         request: ActivateClientRequest,
         headers: Headers,
@@ -330,6 +364,13 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.changePack.documentKey in detachRemovedKeys) {
+            return ResponseMessage.Success(
+                detachDocumentResponse { changePack = changePack { isRemoved = true } },
+                emptyMap(),
+                emptyMap(),
+            )
+        }
         return ResponseMessage.Success(detachDocumentResponse { }, emptyMap(), emptyMap())
     }
 
@@ -363,6 +404,36 @@ class MockYorkieService(
                 trailers = emptyMap(),
             )
         }
+        inFlightPushPullHook?.let { hook ->
+            inFlightPushPullHook = null
+            hook()
+        }
+        if (request.changePack.documentKey in ackOnlyPushPullKeys) {
+            return ResponseMessage.Success(
+                pushPullChangesResponse {
+                    changePack = changePack {
+                        checkpoint = request.changePack.checkpoint
+                    }
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in pullWithAckPushPullKeys) {
+            pullCount += 1
+            return ResponseMessage.Success(
+                pushPullChangesResponse {
+                    changePack = changePack {
+                        checkpoint = request.changePack.checkpoint
+                        changes.add(
+                            change { operations.add(createSetOperation("pull$pullCount")) },
+                        )
+                    }
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+        }
         return ResponseMessage.Success(
             pushPullChangesResponse {
                 changePack = changePack {
@@ -379,9 +450,9 @@ class MockYorkieService(
         )
     }
 
-    private fun createSetOperation() = operation {
+    private fun createSetOperation(setKey: String = "k2") = operation {
         set = set {
-            key = "k2"
+            key = setKey
             value = jSONElementSimple {
                 type = ValueType.VALUE_TYPE_DOUBLE
                 value = ByteBuffer.allocate(Double.SIZE_BYTES)

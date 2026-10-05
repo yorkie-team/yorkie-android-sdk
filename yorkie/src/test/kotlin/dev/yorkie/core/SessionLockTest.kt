@@ -4,7 +4,6 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.document.Document
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentOpenElsewhere
-import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -142,7 +141,7 @@ class SessionLockTest {
     }
 
     @Test
-    fun `T10 an attach fails fast with ErrInvalidArgument when the session lock is contended`() =
+    fun `T10 an attach fails fast with ErrDocumentOpenElsewhere when the lock is contended`() =
         runTest {
             val lock = TestSessionLock()
             lock.acquire("yorkie-session:$TEST_KEY/${TEST_KEY}2/doc-a")
@@ -164,7 +163,7 @@ class SessionLockTest {
 
             assertTrue(result.isFailure)
             val exception = result.exceptionOrNull()
-            assertEquals(ErrInvalidArgument, (exception as? YorkieException)?.code)
+            assertEquals(ErrDocumentOpenElsewhere, (exception as? YorkieException)?.code)
             assertFalse(client.has("doc-a"))
 
             client.close()

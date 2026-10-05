@@ -337,7 +337,10 @@ class DocumentBytesTest {
 
         assertEquals(jsonBefore, document.toJson())
         assertEquals(checkPointBefore, document.checkPoint)
-        assertEquals(pendingBefore, document.pendingChanges().map { it.toPBChange() })
+        assertEquals(
+            pendingBefore,
+            runBlocking { document.pendingChanges() }.map { it.toPBChange() },
+        )
     }
 
     @Test
@@ -748,43 +751,51 @@ class DocumentBytesTest {
         assertEquals(jsonBefore, restored.toJson())
         assertEquals(checkPointBefore, restored.checkPoint)
         assertEquals(changeIDBefore, restored.changeID)
-        assertEquals(pendingBefore, restored.pendingChanges().map { it.id.clientSeq })
+        assertEquals(
+            pendingBefore,
+            runBlocking { restored.pendingChanges() }.map { it.id.clientSeq },
+        )
     }
 
     @Test
-    fun `T22 restoreMetaFromBytes round-trips the header without touching root or queue`() =
-        runTest {
-            val live = Document(key)
-            live.setActor(actorA)
-            live.updateAsync { root, _ -> root["k"] = 1 }.await()
-            live.applyChangePack(
-                ChangePack(
-                    key,
-                    CheckPoint(9, 1u),
-                    emptyList(),
-                    null,
-                    false,
-                    INITIAL_VERSION_VECTOR,
-                    epoch = 3,
-                ),
-            )
-            live.setDocId("live-doc-id")
+    fun `T22 restoreMetaFromBytes round-trips the header without touching the root`() = runTest {
+        val live = Document(key)
+        live.setActor(actorA)
+        live.updateAsync { root, _ -> root["k"] = 1 }.await()
+        live.applyChangePack(
+            ChangePack(
+                key,
+                CheckPoint(9, 1u),
+                emptyList(),
+                null,
+                false,
+                INITIAL_VERSION_VECTOR,
+                epoch = 3,
+            ),
+        )
+        live.setDocId("live-doc-id")
 
-            val restored = Document(key)
-            restored.setActor(actorA)
-            restored.updateAsync { root, _ -> root["untouched"] = true }.await()
-            val jsonBefore = restored.toJson()
-            val pendingBefore = restored.pendingChanges().map { it.id.clientSeq }
+        val restored = Document(key)
+        restored.setActor(actorA)
+        restored.updateAsync { root, _ -> root["untouched"] = true }.await()
+        restored.updateAsync { root, _ -> root["unacked"] = true }.await()
+        val jsonBefore = restored.toJson()
+        val pendingBefore = restored.pendingChanges().map { it.id.clientSeq }
 
-            restored.restoreMetaFromBytes(live.metaToBytes())
+        restored.restoreMetaFromBytes(live.metaToBytes())
 
-            assertEquals(live.checkPoint, restored.checkPoint)
-            assertEquals(live.changeID, restored.changeID)
-            assertEquals(live.epoch, restored.epoch)
-            assertEquals(live.docId, restored.docId)
-            assertEquals(jsonBefore, restored.toJson())
-            assertEquals(pendingBefore, restored.pendingChanges().map { it.id.clientSeq })
-        }
+        assertEquals(live.checkPoint, restored.checkPoint)
+        assertEquals(live.changeID, restored.changeID)
+        assertEquals(live.epoch, restored.epoch)
+        assertEquals(live.docId, restored.docId)
+        assertEquals(jsonBefore, restored.toJson())
+        // The queue keeps only what the restored checkpoint has not acked (T26 pins the
+        // trimming itself).
+        assertEquals(
+            pendingBefore.filter { it > live.checkPoint.clientSeq },
+            restored.pendingChanges().map { it.id.clientSeq },
+        )
+    }
 
     @Test
     fun `T22b a two-blob meta restores the checkpoint and changeID and leaves epoch and docId`() =
@@ -951,6 +962,100 @@ class DocumentBytesTest {
         }
 
     @Test
+    fun `T25 restoreMetaFromBytes is all-or-nothing on a corrupt changeID blob`() = runTest {
+        val live = Document(key)
+        live.setActor(actorA)
+        live.updateAsync { root, _ -> root["k"] = 1 }.await()
+        live.applyChangePack(
+            ChangePack(
+                key,
+                CheckPoint(9, 1u),
+                emptyList(),
+                null,
+                false,
+                INITIAL_VERSION_VECTOR,
+                epoch = 3,
+            ),
+        )
+        val corruptChangeID = live.metaToBytes()
+            .replaceBlob(1, "not-a-valid-changeid-protobuf-blob".toByteArray(Charsets.UTF_8))
+
+        val restored = Document(key)
+        restored.setActor(actorA)
+        val checkPointBefore = restored.checkPoint
+        val changeIDBefore = restored.changeID
+
+        val exception = assertThrows(YorkieException::class.java) {
+            runBlocking { restored.restoreMetaFromBytes(corruptChangeID) }
+        }
+
+        assertEquals(ErrInvalidArgument, exception.code)
+        // All-or-nothing (LOW-1): the checkpoint blob decoded FINE, but the failure must not
+        // leave it half-written while changeID/epoch/docId stay stale.
+        assertEquals(checkPointBefore, restored.checkPoint)
+        assertEquals(changeIDBefore, restored.changeID)
+
+        // Regression: a well-formed meta still round-trips (T22 shape).
+        restored.restoreMetaFromBytes(live.metaToBytes())
+        assertEquals(live.checkPoint, restored.checkPoint)
+        assertEquals(live.changeID, restored.changeID)
+    }
+
+    @Test
+    fun `T25b restoreMetaFromBytes rejects a zero-length changeID blob`() = runTest {
+        val live = Document(key)
+        live.setActor(actorA)
+        live.updateAsync { root, _ -> root["k"] = 1 }.await()
+
+        val zeroLengthChangeID = live.metaToBytes().replaceBlob(1, ByteArray(0))
+
+        val restored = Document(key)
+        restored.setActor(actorA)
+        val checkPointBefore = restored.checkPoint
+
+        val exception = assertThrows(YorkieException::class.java) {
+            runBlocking { restored.restoreMetaFromBytes(zeroLengthChangeID) }
+        }
+
+        assertEquals(ErrInvalidArgument, exception.code)
+        assertEquals(checkPointBefore, restored.checkPoint)
+    }
+
+    @Test
+    fun `T26 restoreMetaFromBytes drops envelope pending changes the header says were acked`() =
+        runTest {
+            // given: an envelope carrying pending [1, 2, 3], and a meta written after the server
+            // acked 2 of them (team review, critic M2 -- a Kotlin hardening; JS leaves all three
+            // queued and relies on the server skipping the two it already applied).
+            val live = Document(key)
+            live.setActor(actorA)
+            repeat(3) { i -> live.updateAsync { root, _ -> root["k$i"] = i }.await() }
+            val envelope = live.toBytes()
+            live.applyChangePack(
+                ChangePack(
+                    key,
+                    CheckPoint(1, 2u),
+                    emptyList(),
+                    null,
+                    false,
+                    INITIAL_VERSION_VECTOR,
+                ),
+            )
+            val meta = live.metaToBytes()
+            val restored = Document.fromBytes(key, envelope)
+            assertEquals(listOf(1u, 2u, 3u), restored.pendingChanges().map { it.id.clientSeq })
+            val jsonBefore = restored.toJson()
+
+            // when
+            restored.restoreMetaFromBytes(meta)
+
+            // then: only the unacked tail stays queued; the root is untouched.
+            assertEquals(2u, restored.checkPoint.clientSeq)
+            assertEquals(listOf(3u), restored.pendingChanges().map { it.id.clientSeq })
+            assertEquals(jsonBefore, restored.toJson())
+        }
+
+    @Test
     fun `T24b a Change round-trips through the stored-change codec`() = runTest {
         val document = Document(key)
         document.setActor(actorA)
@@ -967,6 +1072,15 @@ class DocumentBytesTest {
         assertEquals(change.operations.size, decoded.operations.size)
         assertEquals(change.message, decoded.message)
         assertEquals(change.hasPresenceChange, decoded.hasPresenceChange)
+    }
+
+    @Test
+    fun `T24c ByteArray(0) toStoredChange is rejected, not decoded as a zero-ID Change`() {
+        val exception = assertThrows(YorkieException::class.java) {
+            ByteArray(0).toStoredChange()
+        }
+
+        assertEquals(ErrInvalidArgument, exception.code)
     }
 }
 

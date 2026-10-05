@@ -977,16 +977,32 @@ public class Document(
      * `getPendingChangeStructs` returns [Change]; Android's struct layer
      * exists only for JS's JSON encoding, which this SDK does not need.
      */
-    internal fun pendingChanges(): List<Change> = localChanges.toList()
+    internal suspend fun pendingChanges(): List<Change> = withContext(dispatcher) {
+        // Confined like [pendingChangesAfter]: `localChanges` is owned by this document's
+        // dispatcher, and every caller used to be safe only by an attach-time invariant
+        // (round-5 QA LOW-B, RTCOLLABPLATFORM-779).
+        localChanges.toList()
+    }
 
     /**
      * Returns the un-pushed local changes whose [ChangeID.clientSeq] is
      * strictly greater than [clientSeq], in queue order. Mirrors JS
      * `getPendingChangesAfter`; used by the offline-persistence layer to
-     * append only what is new to the change log.
+     * append only what is new to the change log. Suspend and confined to
+     * [dispatcher] (round-4 QA BLOCKER-1, RTCOLLABPLATFORM-779): [localChanges]
+     * is a plain `mutableListOf` mutated on this document's own dispatcher
+     * (`updateAsync`), while the persist collector (`Client.append`) used to
+     * call this as a non-suspending field read from the CLIENT's dispatcher —
+     * a concurrent-iteration race (`ConcurrentModificationException`) that
+     * silently killed persistence under a burst of edits. The `filter` below
+     * already returns a fresh list, so the [withContext] hop is the only
+     * change needed; the caller gets a snapshot copy, same shape as
+     * [persistBase].
      */
-    internal fun pendingChangesAfter(clientSeq: UInt): List<Change> =
-        localChanges.filter { it.id.clientSeq > clientSeq }
+    internal suspend fun pendingChangesAfter(clientSeq: UInt): List<Change> =
+        withContext(dispatcher) {
+            localChanges.filter { it.id.clientSeq > clientSeq }
+        }
 
     /**
      * Serializes this document's full restorable state — root, presences,
@@ -1129,12 +1145,28 @@ public class Document(
      * Applies the bytes produced by [metaToBytes], overwriting the
      * checkpoint and the trailing fields present in [bytes]. Trailing blobs
      * stay optional, the same extension rule the [toBytes] envelope follows,
-     * so a meta written before a field existed still decodes. Touches
-     * neither [root] nor the pending-change queue. Mirrors JS
-     * `restoreMetaFromBytes`.
+     * so a meta written before a field existed still decodes. Never touches
+     * [root]. Mirrors JS `restoreMetaFromBytes`.
+     *
+     * The pending queue is trimmed to the restored checkpoint
+     * ([removePushedLocalChanges]) — a Kotlin hardening (team review, critic
+     * M2, RTCOLLABPLATFORM-779): an envelope written before a sync carries
+     * changes the header now says were acked, and keeping them queued would
+     * re-push them on the next sync. JS leaves them queued and relies on the
+     * server skipping an already-applied `clientSeq`; the root is unchanged
+     * either way, since the envelope's root already reflects them.
      *
      * @throws YorkieException with [ErrInvalidArgument] when [bytes] is
-     * empty or its checkpoint/epoch blob cannot be parsed.
+     * empty, or any blob it carries (checkpoint, changeID, epoch) cannot be
+     * parsed. All-or-nothing (determination 12, LOW-1): every blob is
+     * decoded into a local before any field is written, so a failure
+     * partway through — e.g. a corrupt changeID blob — cannot leave
+     * [checkPoint] written while [changeID] stays stale. JS `bytesToChangeID`
+     * is unwrapped and assigns the checkpoint first; this stricter,
+     * all-or-nothing shape is a deliberate Kotlin hardening (round-2 QA
+     * LOW-1 `meta-changeid-decode-unwrapped`). A zero-length changeID blob
+     * is rejected rather than silently decoding to a default-valued
+     * [ChangeID] (determination 13, LOW-2(b); JS is lenient here).
      */
     internal suspend fun restoreMetaFromBytes(bytes: ByteArray): Unit = withContext(dispatcher) {
         val blobs = unpackBlobs(bytes)
@@ -1142,20 +1174,39 @@ public class Document(
             blobs.isNotEmpty(),
             YorkieException(ErrInvalidArgument, "corrupt meta: expected at least 1 blob, got 0"),
         )
-        checkPoint = blobs[0].toCheckPoint()
-        if (blobs.size > 1) {
-            changeID = ByteString.copyFrom(blobs[1]).toChangeID()
+        val decodedCheckPoint = blobs[0].toCheckPoint()
+        val decodedChangeID = if (blobs.size > 1) {
+            checkYorkieError(
+                blobs[1].isNotEmpty(),
+                YorkieException(ErrInvalidArgument, "corrupt meta: empty changeID blob"),
+            )
+            try {
+                ByteString.copyFrom(blobs[1]).toChangeID()
+            } catch (e: Exception) {
+                throw YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt meta: invalid changeID blob: ${e.message}",
+                )
+            }
+        } else {
+            null
         }
-        if (blobs.size > 2) {
+        val decodedEpoch = if (blobs.size > 2) {
             // Same ASCII-digits-only rule as the envelope's epoch blob in [fromBytes].
-            epoch = EpochRegex.matchEntire(String(blobs[2], Charsets.UTF_8))
+            EpochRegex.matchEntire(String(blobs[2], Charsets.UTF_8))
                 ?.value
                 ?.toLongOrNull()
                 ?: throw YorkieException(ErrInvalidArgument, "corrupt meta: invalid epoch blob")
+        } else {
+            null
         }
-        if (blobs.size > 3) {
-            docId = String(blobs[3], Charsets.UTF_8)
-        }
+        val decodedDocId = if (blobs.size > 3) String(blobs[3], Charsets.UTF_8) else null
+
+        checkPoint = decodedCheckPoint
+        decodedChangeID?.let { changeID = it }
+        decodedEpoch?.let { epoch = it }
+        decodedDocId?.let { docId = it }
+        removePushedLocalChanges(checkPoint.clientSeq)
     }
 
     /**
@@ -1176,6 +1227,14 @@ public class Document(
      * caller that cannot satisfy that should restore from the snapshot alone
      * and report the loss rather than replaying a broken run: this throws
      * BEFORE any mutation, so the document is left completely untouched.
+     *
+     * Preconditions the caller must enforce (determination 13, LOW-2(a)):
+     * this document must be quiescent (no concurrent writer) and [changes]
+     * must share this document's own actor. Neither precondition is checked
+     * here — a replayed entry under a foreign actor, or a replay racing a
+     * concurrent local edit, is caller misuse this method does not defend
+     * against; the store-backed restore path (`Client.kt`) enforces both
+     * before calling this.
      *
      * @throws YorkieException with [ErrInvalidArgument] when [changes] is
      * not strictly ascending by clientSeq.

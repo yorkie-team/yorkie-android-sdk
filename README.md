@@ -113,7 +113,10 @@ servers and peers. Upgrade every participant before relying on undo/redo in a mi
 Offline local persistence and the stable actor (v0.7.20 sync): resuming a persisted document
 re-pushes its un-acknowledged changes against the persisted checkpoint and epoch, and watch peers
 are keyed by the stable actor — both need Yorkie server >= 0.7.20 (yorkie#1969, #1970). Against an
-older server the SDK falls back to the session id as the actor and never resumes.
+older server the SDK falls back to the session id as the actor: with a `docStore`, every activation
+gets a new actor, so each restart's restore fails the actor guard — un-pushed offline edits are
+**discarded** (`Document.Event.LocalChangesDropped`, reason `ActorMismatch`) and the envelope is
+removed; without a store nothing changes.
 
 | Participant | Minimum version |
 |-------------|-----------------|

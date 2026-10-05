@@ -458,6 +458,28 @@ class DocumentBytesTest {
         assertTrue(exception.errorMessage.contains("corrupt envelope: invalid epoch blob"))
     }
 
+    @Test
+    fun `T-E1 fromBytes rejects an epoch blob that is not plain ASCII digits`() {
+        // Kotlin's String.toLong() accepts non-ASCII decimal digits and a leading '+';
+        // JS `BigInt(text)` rejects both, and the writer only ever emits `epoch.toString()`.
+        listOf("٣", "+7", "7 ", " 7").forEach { malformed ->
+            val corrupted = runBlocking {
+                val document = Document(key)
+                document.buildSample()
+                document.toBytes().replaceBlob(4, malformed.toByteArray(Charsets.UTF_8))
+            }
+
+            val exception = assertThrows(YorkieException::class.java) {
+                runBlocking { Document.fromBytes(key, corrupted) }
+            }
+            assertEquals(ErrInvalidArgument, exception.code)
+            assertTrue(
+                exception.errorMessage.contains("corrupt envelope: invalid epoch blob"),
+                "expected an epoch rejection for \"$malformed\", got: ${exception.errorMessage}",
+            )
+        }
+    }
+
     // --- envelope error contract (AC3, I5/M1, spec 029) -----------------------
     // RED at a7579fe6: revert fromBytes's try/catch wrap around the withContext(doc.dispatcher)
     // decode (the production hunk this group pins) — each case below then escapes as its own raw
@@ -542,6 +564,13 @@ class DocumentBytesTest {
         listOf(
             """{"serverSeq":"1","clientSeq":12abc}""",
             """xx{"serverSeq":"1","clientSeq":2}yy""",
+            // A trailing Unicode line terminator: Java's `$` also matches before one final
+            // U+0085, U+2028 or U+2029, none of which `\s` covers, so only matchEntire
+            // rejects these (JSON.parse rejects them too; a plain trailing "\n" is `\s`
+            // and stays accepted, as JSON.parse accepts it).
+            """{"serverSeq":"1","clientSeq":2}""" + "\u0085",
+            """{"serverSeq":"1","clientSeq":2}""" + " ",
+            """{"serverSeq":"1","clientSeq":2}""" + " ",
         ).forEach { malformed ->
             val corrupted = runBlocking {
                 val document = Document(key)

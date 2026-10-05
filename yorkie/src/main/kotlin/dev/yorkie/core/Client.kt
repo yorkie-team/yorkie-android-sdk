@@ -616,10 +616,10 @@ public class Client(
                         }
                         resource.applyChangePack(responsePack)
                         // An ack-only push advances the checkpoint and drops the
-                        // pushed changes from localChanges without emitting any
-                        // LocalChange/Snapshot event, so the event-driven persist
-                        // subscription alone would leave a stale envelope in the
-                        // store. Gated on persistsToStore like the other site.
+                        // pushed changes from localChanges without recording a new
+                        // local change, so the Document.onLocalChange hook alone
+                        // would leave a stale envelope in the store. Gated on
+                        // persistsToStore like the other site.
                         if (attachment.persistsToStore) {
                             enqueuePersist(attachment)
                         }
@@ -1578,7 +1578,7 @@ public class Client(
                         // removed cannot undo into an unsyncable state) → Removed early-return
                         // (releases the lease — this Attachment will never exist to own it) →
                         // applyStatus(Attached) → attachment registration (hands the lease off)
-                        // → persist subscription → runWatchLoop → initialRoot
+                        // → persist hook (Document.onLocalChange) → runWatchLoop → initialRoot
                         // updateAsync(skipHistory = true) (never enters history, so it needs no
                         // trailing cleanup) → return. History is already cleared before the
                         // initializer runs, so a user edit made after the Attached event while

@@ -1193,6 +1193,14 @@ public class Document(
         }
     }
 
+    /**
+     * Releases this document's coroutine scope and dispatcher.
+     *
+     * For a document attached through a [dev.yorkie.core.Client.Options.docStore], close it
+     * only after it has been detached (or after the client has been deactivated or closed):
+     * a persist still queued for this document takes its snapshot on this dispatcher, so
+     * closing the document first forfeits that snapshot (logged, never thrown).
+     */
     override fun close() {
         scope.cancel()
         (dispatcher as? Closeable)?.close()
@@ -1403,6 +1411,9 @@ public class Document(
             """^\s*\{\s*"serverSeq"\s*:\s*"(-?\d+)"\s*,\s*"clientSeq"\s*:\s*(\d+)\s*\}\s*$""",
         )
 
+        // The epoch blob is `epoch.toString()`: an optional minus and ASCII digits, nothing else.
+        private val EpochRegex = Regex("""-?\d+""")
+
         /**
          * Rebuilds a [Document] from a byte envelope produced by [toBytes].
          * The envelope carries at least four blobs (snapshot, checkpoint,
@@ -1415,8 +1426,10 @@ public class Document(
          * Any decode failure — framing/checkpoint/epoch corruption, OR a protobuf-level failure
          * inside the snapshot, changeID, or pending-changes blobs (shared with the JS SDK's
          * `JSON.parse`/protobuf errors and iOS's decode errors) — surfaces as [YorkieException]
-         * with [ErrInvalidArgument] and the original failure attached as [Throwable.cause]; the
-         * half-built [Document] is closed first so it cannot leak its dispatcher (spec 029 I5/M1).
+         * with [ErrInvalidArgument]; where a lower-level exception caused it, that exception is
+         * attached as [Throwable.cause] (a blob that merely fails validation, such as a
+         * non-numeric epoch, has no cause). The half-built [Document] is closed first so it
+         * cannot leak its dispatcher (spec 029 I5/M1).
          */
         public suspend fun fromBytes(
             key: String,
@@ -1454,14 +1467,16 @@ public class Document(
 
                     // A missing epoch blob (legacy four-blob envelope) decodes as 0.
                     doc.epoch = if (blobs.size > 4) {
-                        runCatching {
-                            String(blobs[4], Charsets.UTF_8).toLong()
-                        }.getOrElse {
-                            throw YorkieException(
+                        // ASCII digits only, like JS `BigInt(text)`: Kotlin's toLong() would
+                        // also accept non-ASCII decimal digits (Character.digit). Overflow
+                        // (toLongOrNull == null) is corrupt as well.
+                        EpochRegex.matchEntire(String(blobs[4], Charsets.UTF_8))
+                            ?.value
+                            ?.toLongOrNull()
+                            ?: throw YorkieException(
                                 ErrInvalidArgument,
                                 "corrupt envelope: invalid epoch blob",
                             )
-                        }
                     } else {
                         0
                     }
@@ -1499,7 +1514,10 @@ public class Document(
 
         private fun ByteArray.toCheckPoint(): CheckPoint {
             val json = String(this, Charsets.UTF_8)
-            val match = CheckpointRegex.find(json)
+            // matchEntire, not find: Java's `$` also matches just before one final line
+            // terminator (\n, \r, U+0085, U+2028, U+2029), so an anchored find() still
+            // accepted a blob with a trailing terminator that JSON.parse rejects.
+            val match = CheckpointRegex.matchEntire(json)
                 ?: throw YorkieException(
                     ErrInvalidArgument,
                     "corrupt envelope: invalid checkpoint blob",

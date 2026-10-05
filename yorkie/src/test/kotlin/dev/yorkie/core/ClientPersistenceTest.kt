@@ -1,6 +1,8 @@
 package dev.yorkie.core
 
 import android.util.Base64
+import com.connectrpc.Code
+import com.connectrpc.ConnectException
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
@@ -27,6 +29,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -813,9 +816,9 @@ class ClientPersistenceTest {
         client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
 
         document.updateAsync { root, _ -> root["k"] = 1 }.await()
-        // Head start so the persist-subscription collector has definitely enqueued the
-        // write before close()'s drain timer starts (rules out a same-tick race, not
-        // the drain-bound-vs-dispatcher-shutdown behavior this test targets).
+        // Registration is synchronous with the edit (spec 029 B2), so this head start only
+        // lets the slow save itself get under way before close()'s drain timer starts —
+        // the drain-bound-vs-dispatcher-shutdown behavior is what this test targets.
         withContext(Dispatchers.Default) { delay(200) }
 
         val closeStart = System.currentTimeMillis()
@@ -883,14 +886,33 @@ class ClientPersistenceTest {
         val client = newClient(service, docStore = store)
         client.activateAsync().await()
         val document = Document(docKey)
+        val dropped = mutableListOf<Document.Event.LocalChangesDropped>()
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            document.events
+                .filterIsInstance<Document.Event.LocalChangesDropped>()
+                .collect { dropped += it }
+        }
 
         val result = client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
 
-        assertTrue(result.isFailure)
+        // The server's rejection propagates as-is (no re-anchor, no deactivation): the
+        // bare INVALID_ARGUMENT shape the real 0.7.20 server sends, not just "some failure".
+        val error = result.exceptionOrNull()
+        assertTrue(
+            error is ConnectException && error.code == Code.INVALID_ARGUMENT,
+            "expected the stale-checkpoint ConnectException to propagate, got: $error",
+        )
+        assertTrue(
+            error?.message.orEmpty().contains("checkpoint serverSeq exceeds server state"),
+            "expected the server's stale-checkpoint message, got: ${error?.message}",
+        )
         assertTrue(client.isActive)
         assertEquals(0, store.saveCount)
         assertEquals(0, store.removeCount)
+        // Nothing was restored, so nothing may be reported as dropped either.
+        assertTrue(dropped.isEmpty(), "no LocalChangesDropped expected, got: $dropped")
 
+        collector.cancel()
         client.deactivateAsync().await()
         client.close()
     }
@@ -902,7 +924,11 @@ class ClientPersistenceTest {
     @Test
     fun `T33 deactivate drains three slow persists with one bound instead of stacking them`() =
         runBlocking {
-            val store = SlowSaveStore(delayMs = 7_000)
+            // 12s saves: the single bounded drain returns at ~5s, while the reverted
+            // per-document drain path needs a second full 5s bound before the writes
+            // finish (>= 10s), so the 9s ceiling keeps RED/GREEN apart with ~4s of slack
+            // for a loaded host (round-2 QA LOW-2: the old 6.5s ceiling left ~1.2s).
+            val store = SlowSaveStore(delayMs = 12_000)
             val client = newClient(MockYorkieService(), docStore = store)
             client.activateAsync().await()
             val documents = (1..3).map { i ->
@@ -918,7 +944,7 @@ class ClientPersistenceTest {
             val elapsedMs = System.currentTimeMillis() - deactivateStart
 
             assertTrue(
-                elapsedMs in 4_500..6_500,
+                elapsedMs in 4_500..9_000,
                 "deactivateAsync() must return near the single 5s bound, not stack N*5s " +
                     "across the three attachments: ${elapsedMs}ms",
             )

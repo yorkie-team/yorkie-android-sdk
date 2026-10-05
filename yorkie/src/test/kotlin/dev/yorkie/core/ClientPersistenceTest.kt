@@ -8,6 +8,7 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_STABLE_ACTOR_ID
 import dev.yorkie.document.Document
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.presence.Channel
 import dev.yorkie.util.YorkieException
@@ -26,6 +27,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
@@ -393,6 +395,7 @@ class ClientPersistenceTest {
 
     private class UnreadableDocStore(private val inner: DocStore = MemoryDocStore()) : DocStore {
         var saveCount = 0
+        var removeCount = 0
         override suspend fun load(docKey: String): ByteArray? =
             throw java.io.IOException("store backend unavailable")
 
@@ -401,7 +404,10 @@ class ClientPersistenceTest {
             inner.save(docKey, bytes)
         }
 
-        override suspend fun remove(docKey: String) = inner.remove(docKey)
+        override suspend fun remove(docKey: String) {
+            removeCount++
+            inner.remove(docKey)
+        }
     }
 
     @Test
@@ -827,5 +833,146 @@ class ClientPersistenceTest {
         assertTrue(store.saveCompleted)
         val restored = Document.fromBytes("close-slow-persist-doc", stored)
         assertTrue(restored.toJson().contains("\"k\":1"))
+    }
+
+    // --- synchronous persist registration (AC1, B2, spec 029) ---------------
+    // RED at a7579fe6: revert the Document.onLocalChange hook (steps 1-3) and the Client-side
+    // wiring that subscribes it (step 7) back to the document.events collector — the scratch
+    // probe this replaces lost the marker in 5/10 runs at 3,000 edits; this test's 20,000-edit
+    // text makes document.toBytes() slow enough that every one of the 5 repeats below fails
+    // the same way once the fix is reverted.
+
+    @Test
+    fun `T31 an edit immediately followed by close never loses the last edit`() = runBlocking {
+        repeat(5) { i ->
+            val store = MemoryDocStore()
+            val client = newClient(MockYorkieService(), docStore = store)
+            client.activateAsync().await()
+            val docKey = "close-race-doc-$i"
+            val document = Document(docKey)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            document.updateAsync { root, _ ->
+                val text = root.setNewText("t")
+                repeat(20_000) { n -> text.edit(n, n, "x") }
+            }.await()
+            document.updateAsync { root, _ -> root["marker"] = "last" }.await()
+            client.close()
+
+            val stored = store.load(storeKeyFor(docKey))
+            assertNotNull(stored, "run $i: no envelope was persisted at all")
+            val restored = Document.fromBytes(docKey, stored)
+            assertTrue(
+                restored.toJson().contains("marker"),
+                "run $i: close() lost the last edit (marker missing)",
+            )
+        }
+    }
+
+    // --- store re-anchor gated on a restored envelope (AC2, I3, spec 029) ---
+    // RED at a7579fe6: revert the gate back to `options.docStore != null` (step 12) — the bare
+    // stale-checkpoint error below would then re-anchor despite nothing having been restored.
+
+    @Test
+    fun `T32 a store read failure does not re-anchor a stale checkpoint attach`() = runTest {
+        val store = UnreadableDocStore()
+        val docKey = "unreadable-store-reanchor-doc"
+        val service = MockYorkieService().apply {
+            invalidServerSeqBareOnAttachOnceKeys += docKey
+        }
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val document = Document(docKey)
+
+        val result = client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        assertTrue(result.isFailure)
+        assertTrue(client.isActive)
+        assertEquals(0, store.saveCount)
+        assertEquals(0, store.removeCount)
+
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    // --- single bounded deactivate drain, not N*5s (AC4, M3, spec 029) ------
+    // RED at a7579fe6: revert deactivateInternal to call detachInternal with its per-document
+    // drain (step 10) — three attachments at 7s each would then take ~21s, not ~5-6.5s.
+
+    @Test
+    fun `T33 deactivate drains three slow persists with one bound instead of stacking them`() =
+        runBlocking {
+            val store = SlowSaveStore(delayMs = 7_000)
+            val client = newClient(MockYorkieService(), docStore = store)
+            client.activateAsync().await()
+            val documents = (1..3).map { i ->
+                Document("deactivate-drain-doc-$i").also {
+                    client.attachDocument(it, syncMode = Client.SyncMode.Manual).await()
+                }
+            }
+            documents.forEach { it.updateAsync { root, _ -> root["k"] = 1 }.await() }
+            delay(200)
+
+            val deactivateStart = System.currentTimeMillis()
+            client.deactivateAsync().await()
+            val elapsedMs = System.currentTimeMillis() - deactivateStart
+
+            assertTrue(
+                elapsedMs in 4_500..6_500,
+                "deactivateAsync() must return near the single 5s bound, not stack N*5s " +
+                    "across the three attachments: ${elapsedMs}ms",
+            )
+            client.close()
+        }
+
+    // --- persist queue pruned on detach (AC4, M2, spec 029) ------------------
+    // RED at a7579fe6: revert the detachInternal prune (step 9) — the entry for this key
+    // would remain in persistQueues forever after detach.
+
+    @Test
+    fun `T34 detach prunes the completed persist entry from the queue`() = runTest {
+        val store = MemoryDocStore()
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val document = Document("detach-prune-doc")
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        client.detachDocument(document).await()
+
+        assertFalse(client.persistQueues.containsKey(storeKeyFor("detach-prune-doc")))
+
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    // --- JS-parity actor guard rejects an initial-actor envelope (AC5, D1, spec 029) ----
+    // RED at a7579fe6: restore either INITIAL_ACTOR_ID disjunct in Document.restoreFrom's
+    // guard (step 20) — the envelope below would then be exempted and restored instead of
+    // rejected.
+
+    @Test
+    fun `T-D1 an initial-actor envelope is rejected as an actor mismatch`() = runTest {
+        val store = MemoryDocStore()
+        val docKey = "initial-actor-envelope-doc"
+        store.save(storeKeyFor(docKey), buildEnvelope(docKey, actor = ActorID.INITIAL_ACTOR_ID))
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val document = Document(docKey)
+
+        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
+        }
+        val result = client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        assertTrue(result.isSuccess)
+        val dropped = droppedDeferred.await()
+        assertEquals(Document.Event.Reason.ActorMismatch, dropped.reason)
+        assertTrue(dropped.changes.isNotEmpty())
+        assertEquals(null, store.load(storeKeyFor(docKey)))
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
     }
 }

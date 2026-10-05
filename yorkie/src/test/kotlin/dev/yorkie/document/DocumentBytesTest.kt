@@ -1,8 +1,12 @@
 package dev.yorkie.document
 
 import android.util.Base64
+import com.google.protobuf.InvalidProtocolBufferException
 import dev.yorkie.api.PBChange
 import dev.yorkie.api.toPBChange
+import dev.yorkie.api.v1.JSONElement
+import dev.yorkie.api.v1.Snapshot
+import dev.yorkie.api.v1.ValueType
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
@@ -11,6 +15,7 @@ import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.helper.crossSync
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
+import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
@@ -18,6 +23,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -289,11 +295,12 @@ class DocumentBytesTest {
     }
 
     @Test
-    fun `T12 restoreFromBytes rejects a mismatched actor and leaves the document untouched`() {
+    fun `T12 restoreFromBytes rejects a mismatched actor and returns envelope pending changes`() {
         val document = Document(key)
         lateinit var jsonBefore: String
         lateinit var checkPointBefore: CheckPoint
         lateinit var pendingBefore: List<PBChange>
+        lateinit var envelopePending: List<PBChange>
         lateinit var bytes: ByteArray
 
         runBlocking {
@@ -301,6 +308,7 @@ class DocumentBytesTest {
             persisted.setActor(actorB)
             persisted.updateAsync { root, _ -> root["k1"] = 1 }.await()
             bytes = persisted.toBytes()
+            envelopePending = persisted.pendingChanges().map { it.toPBChange() }
 
             document.setActor(actorA)
             document.updateAsync { root, _ -> root["k2"] = 2 }.await()
@@ -310,10 +318,13 @@ class DocumentBytesTest {
             pendingBefore = document.pendingChanges().map { it.toPBChange() }
         }
 
-        val exception = assertThrows(YorkieException::class.java) {
-            runBlocking { document.restoreFromBytes(bytes) }
-        }
-        assertEquals(ErrInvalidArgument, exception.code)
+        // restoreFromBytes classifies a mismatched (non-initial, distinct) actor via
+        // RestoreResult instead of throwing (spec 029 I5/M1) — both actors here are real,
+        // non-initial actors, so this holds before and after D1's parity change too.
+        val result = runBlocking { document.restoreFromBytes(bytes) }
+
+        assertTrue(result is RestoreResult.ActorMismatch)
+        assertEquals(envelopePending, result.pending.map { it.toPBChange() })
 
         assertEquals(jsonBefore, document.toJson())
         assertEquals(checkPointBefore, document.checkPoint)
@@ -445,6 +456,119 @@ class DocumentBytesTest {
         }
         assertEquals(ErrInvalidArgument, exception.code)
         assertTrue(exception.errorMessage.contains("corrupt envelope: invalid epoch blob"))
+    }
+
+    // --- envelope error contract (AC3, I5/M1, spec 029) -----------------------
+    // RED at a7579fe6: revert fromBytes's try/catch wrap around the withContext(doc.dispatcher)
+    // decode (the production hunk this group pins) — each case below then escapes as its own raw
+    // exception (ErrUnimplemented, ClassCastException, InvalidProtocolBufferException) instead of
+    // the uniform YorkieException(ErrInvalidArgument) with the original attached as the cause.
+
+    @Test
+    fun `T-B1 fromBytes wraps an empty root snapshot as ErrInvalidArgument with cause attached`() {
+        // given: a snapshot blob that decodes to a valid but root-less Snapshot proto — the
+        // root JSONElement has none of its oneof fields set, so toCrdtElement() throws
+        // ErrUnimplemented rather than a parse error.
+        val corrupted = runBlocking {
+            val document = Document(key)
+            document.buildSample()
+            document.toBytes().replaceBlob(0, ByteArray(0))
+        }
+
+        val exception = assertThrows(YorkieException::class.java) {
+            runBlocking { Document.fromBytes(key, corrupted) }
+        }
+        assertEquals(ErrInvalidArgument, exception.code)
+        assertTrue(exception.errorMessage.contains("corrupt envelope"))
+        val cause = exception.cause
+        assertNotNull(cause)
+        assertTrue(cause is YorkieException)
+        assertEquals(ErrUnimplemented, cause.code)
+    }
+
+    @Test
+    fun `T-B2 fromBytes wraps a non-object root as ErrInvalidArgument with cause attached`() {
+        // given: a root JSONElement whose oneof is a Primitive(null), not a JSONObject — decodes
+        // fine via toCrdtElement(), but ElementConverter's `as CrdtObject` cast then fails.
+        val nonObjectRoot = JSONElement.newBuilder()
+            .setPrimitive(
+                JSONElement.Primitive.newBuilder()
+                    .setType(ValueType.VALUE_TYPE_NULL)
+                    .build(),
+            )
+            .build()
+        val snapshotBlob = Snapshot.newBuilder().setRoot(nonObjectRoot).build().toByteArray()
+        val corrupted = runBlocking {
+            val document = Document(key)
+            document.buildSample()
+            document.toBytes().replaceBlob(0, snapshotBlob)
+        }
+
+        val exception = assertThrows(YorkieException::class.java) {
+            runBlocking { Document.fromBytes(key, corrupted) }
+        }
+        assertEquals(ErrInvalidArgument, exception.code)
+        assertTrue(exception.errorMessage.contains("corrupt envelope"))
+        assertNotNull(exception.cause)
+        assertTrue(exception.cause is ClassCastException)
+    }
+
+    @Test
+    fun `T-B3 fromBytes wraps garbage protobuf bytes as ErrInvalidArgument with cause attached`() {
+        // given: 11 continuation-bit-set bytes — guaranteed malformed varint (protobuf varints
+        // cap at 10 bytes for a 64-bit value), so the parser itself throws.
+        val garbage = ByteArray(11) { 0xFF.toByte() }
+        val corrupted = runBlocking {
+            val document = Document(key)
+            document.buildSample()
+            document.toBytes().replaceBlob(0, garbage)
+        }
+
+        val exception = assertThrows(YorkieException::class.java) {
+            runBlocking { Document.fromBytes(key, corrupted) }
+        }
+        assertEquals(ErrInvalidArgument, exception.code)
+        assertTrue(exception.errorMessage.contains("corrupt envelope"))
+        assertNotNull(exception.cause)
+        assertTrue(exception.cause is InvalidProtocolBufferException)
+    }
+
+    // --- strict checkpoint parser (AC4, M6, spec 029) -------------------------
+    // RED at a7579fe6: revert CheckpointRegex to the two old unanchored regexes — both
+    // malformed blobs below would then be silently accepted (find() matches anywhere).
+
+    @Test
+    fun `T-C1 fromBytes rejects a checkpoint blob with unanchored garbage`() {
+        listOf(
+            """{"serverSeq":"1","clientSeq":12abc}""",
+            """xx{"serverSeq":"1","clientSeq":2}yy""",
+        ).forEach { malformed ->
+            val corrupted = runBlocking {
+                val document = Document(key)
+                document.buildSample()
+                document.toBytes().replaceBlob(1, malformed.toByteArray(Charsets.UTF_8))
+            }
+
+            val exception = assertThrows(YorkieException::class.java) {
+                runBlocking { Document.fromBytes(key, corrupted) }
+            }
+            assertEquals(ErrInvalidArgument, exception.code)
+            assertTrue(
+                exception.errorMessage.contains("corrupt envelope: invalid checkpoint blob"),
+                "expected a checkpoint rejection for \"$malformed\", " +
+                    "got: ${exception.errorMessage}",
+            )
+        }
+
+        // the canonical (anchored, no surrounding noise) blob a real toBytes() writes is
+        // still accepted and round-trips the same (un-synced, still initial) checkpoint.
+        val restoredCheckPoint = runBlocking {
+            val document = Document(key)
+            document.setActor(actorA)
+            document.updateAsync { root, _ -> root["k1"] = 1 }.await()
+            Document.fromBytes(key, document.toBytes()).checkPoint
+        }
+        assertEquals(CheckPoint.InitialCheckPoint, restoredCheckPoint)
     }
 }
 

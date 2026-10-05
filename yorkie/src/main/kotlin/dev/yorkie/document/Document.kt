@@ -64,6 +64,7 @@ import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -993,32 +994,36 @@ public class Document(
      * no [Document.Event.LocalChangesDropped] event — that event only fires on the failure
      * paths (actor mismatch, corrupt envelope, tier-3 purge, epoch re-anchor). This is JS parity
      * (`document.ts`'s `restoreFromBytes`), not an Android-specific gap.
+     *
+     * Returns a [RestoreResult] instead of throwing on an actor mismatch (a corrupt envelope
+     * still throws, from [fromBytes] below): the caller classifies by result type, so it decodes
+     * [bytes] exactly once instead of re-decoding to tell the two failure modes apart (spec 029
+     * I5/M1).
      */
-    internal suspend fun restoreFromBytes(bytes: ByteArray): Unit = withContext(dispatcher) {
-        val currentActor = changeID.actor
-        val restored = fromBytes(key, bytes, options)
-        try {
-            restoreFrom(restored, currentActor)
-        } finally {
-            // The decoded instance owns a dispatcher and scope of its own; only its
-            // fields are kept.
-            restored.close()
+    internal suspend fun restoreFromBytes(bytes: ByteArray): RestoreResult =
+        withContext(dispatcher) {
+            val currentActor = changeID.actor
+            val restored = fromBytes(key, bytes, options)
+            try {
+                restoreFrom(restored, currentActor)
+            } finally {
+                // The decoded instance owns a dispatcher and scope of its own; only its
+                // fields are kept.
+                restored.close()
+            }
         }
-    }
 
-    private fun restoreFrom(restored: Document, currentActor: String) {
+    private fun restoreFrom(restored: Document, currentActor: String): RestoreResult {
         val restoredActor = restored.changeID.actor
-        checkYorkieError(
-            currentActor == ActorID.INITIAL_ACTOR_ID ||
-                restoredActor == ActorID.INITIAL_ACTOR_ID ||
-                currentActor == restoredActor,
-            YorkieException(
-                ErrInvalidArgument,
-                "persisted actor \"$restoredActor\" does not match the current stable actor " +
-                    "\"$currentActor\"; the store was reused under a different client identity, " +
-                    "restoring would diverge the CRDT",
-            ),
-        )
+        val actorMatches = currentActor == ActorID.INITIAL_ACTOR_ID ||
+            restoredActor == ActorID.INITIAL_ACTOR_ID ||
+            currentActor == restoredActor
+        if (!actorMatches) {
+            // restored.localChanges is read (and defensively copied) before restored.close()
+            // runs in restoreFromBytes's finally, so this is safe despite restored owning its
+            // own now-about-to-be-cancelled scope/dispatcher.
+            return RestoreResult.ActorMismatch(restored.localChanges.toList())
+        }
         root = restored.root
         _presences.value = restored._presences.value
         checkPoint = restored.checkPoint
@@ -1030,6 +1035,7 @@ public class Document(
         clone = null
         // Reverse-ops reference the pre-restore root/changeID.
         clearHistory()
+        return RestoreResult.Restored
     }
 
     /**
@@ -1397,13 +1403,11 @@ public class Document(
          * ignored rather than rejected, so an app downgrade cannot discard
          * un-pushed edits carried in an envelope written by a newer SDK.
          *
-         * Framing, checkpoint, and epoch corruption surface as
-         * [YorkieException] with [ErrInvalidArgument]. A protobuf-level
-         * decode failure inside the snapshot, changeID, or pending-changes
-         * blobs surfaces as the protobuf parser's own exception instead —
-         * shared with the JS SDK's `JSON.parse`/protobuf errors and iOS's
-         * decode errors, and handled by the store-backed attach path as a
-         * restore failure.
+         * Any decode failure — framing/checkpoint/epoch corruption, OR a protobuf-level failure
+         * inside the snapshot, changeID, or pending-changes blobs (shared with the JS SDK's
+         * `JSON.parse`/protobuf errors and iOS's decode errors) — surfaces as [YorkieException]
+         * with [ErrInvalidArgument] and the original failure attached as [Throwable.cause]; the
+         * half-built [Document] is closed first so it cannot leak its dispatcher (spec 029 I5/M1).
          */
         public suspend fun fromBytes(
             key: String,
@@ -1420,40 +1424,66 @@ public class Document(
             )
 
             val doc = Document(key, options)
-            withContext(doc.dispatcher) {
-                // toSnapshot()/toChangeID() are internal ByteString-receiver
-                // converters; convert only at this boundary, per the envelope's
-                // public/internal ByteArray contract.
-                val (snapshotRoot, snapshotPresences) = ByteString.copyFrom(blobs[0]).toSnapshot()
-                doc.root = CrdtRoot(snapshotRoot)
-                doc._presences.value = snapshotPresences.asPresences()
+            try {
+                withContext(doc.dispatcher) {
+                    // toSnapshot()/toChangeID() are internal ByteString-receiver
+                    // converters; convert only at this boundary, per the envelope's
+                    // public/internal ByteArray contract.
+                    val (snapshotRoot, snapshotPresences) =
+                        ByteString.copyFrom(blobs[0]).toSnapshot()
+                    doc.root = CrdtRoot(snapshotRoot)
+                    doc._presences.value = snapshotPresences.asPresences()
 
-                doc.checkPoint = blobs[1].toCheckPoint()
+                    doc.checkPoint = blobs[1].toCheckPoint()
 
-                doc.changeID = ByteString.copyFrom(blobs[2]).toChangeID()
+                    doc.changeID = ByteString.copyFrom(blobs[2]).toChangeID()
 
-                doc.localChanges.clear()
-                doc.localChanges.addAll(PBChangePack.parseFrom(blobs[3]).changesList.toChanges())
+                    doc.localChanges.clear()
+                    doc.localChanges.addAll(
+                        PBChangePack.parseFrom(blobs[3]).changesList.toChanges(),
+                    )
 
-                // A missing epoch blob (legacy four-blob envelope) decodes as 0.
-                doc.epoch = if (blobs.size > 4) {
-                    runCatching {
-                        String(blobs[4], Charsets.UTF_8).toLong()
-                    }.getOrElse {
-                        throw YorkieException(
-                            ErrInvalidArgument,
-                            "corrupt envelope: invalid epoch blob",
-                        )
+                    // A missing epoch blob (legacy four-blob envelope) decodes as 0.
+                    doc.epoch = if (blobs.size > 4) {
+                        runCatching {
+                            String(blobs[4], Charsets.UTF_8).toLong()
+                        }.getOrElse {
+                            throw YorkieException(
+                                ErrInvalidArgument,
+                                "corrupt envelope: invalid epoch blob",
+                            )
+                        }
+                    } else {
+                        0
                     }
-                } else {
-                    0
+                    // A missing docId blob (legacy five-blob envelope) decodes as "".
+                    doc.docId = if (blobs.size > 5) {
+                        String(blobs[5], Charsets.UTF_8)
+                    } else {
+                        ""
+                    }
                 }
-                // A missing docId blob (legacy five-blob envelope) decodes as "".
-                doc.docId = if (blobs.size > 5) {
-                    String(blobs[5], Charsets.UTF_8)
-                } else {
-                    ""
-                }
+            } catch (e: CancellationException) {
+                doc.close()
+                throw e
+            } catch (e: YorkieException) {
+                doc.close()
+                // Already the public contract for this function — pass it through unchanged
+                // instead of re-wrapping (that would bury the real message behind a second
+                // "corrupt envelope:" prefix and replace a meaningful cause with itself).
+                if (e.code == ErrInvalidArgument) throw e
+                throw YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt envelope: ${e.message}",
+                ).apply { initCause(e) }
+            } catch (e: Throwable) {
+                // Protobuf parser failures (InvalidProtocolBufferException) and anything else
+                // land here; wrapped rather than left to propagate raw (spec 029 I5).
+                doc.close()
+                throw YorkieException(
+                    ErrInvalidArgument,
+                    "corrupt envelope: ${e.message}",
+                ).apply { initCause(e) }
             }
             return doc
         }
@@ -1483,6 +1513,17 @@ public class Document(
             return CheckPoint(serverSeqLong, clientSeqUInt)
         }
     }
+}
+
+/**
+ * Outcome of [Document.restoreFromBytes]. [ActorMismatch] carries the restored envelope's own
+ * pending changes (not this document's) so the caller — [dev.yorkie.core.Client] today — can
+ * surface them via a `LocalChangesDropped` event instead of losing them silently; a corrupt
+ * envelope is not represented here, [Document.Companion.fromBytes] still throws for that case.
+ */
+internal sealed interface RestoreResult {
+    object Restored : RestoreResult
+    class ActorMismatch(val pending: List<Change>) : RestoreResult
 }
 
 /**

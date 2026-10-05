@@ -47,6 +47,7 @@ import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
+import dev.yorkie.document.RestoreResult
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.presence.P
@@ -1381,38 +1382,53 @@ public class Client(
                                 }
                                 if (bytes != null) {
                                     try {
-                                        document.restoreFromBytes(bytes)
-                                        // An envelope persisted before the document was ever
-                                        // attached carries the initial actor; re-stamp so the
-                                        // restored pending changes go out under the stable
-                                        // actor (no-op when the envelope already matches).
-                                        document.setActor(requireActorId())
-                                        restored = true
-                                        restoredEnvelope = true
-                                    } catch (e: Throwable) {
-                                        ensureActive()
-                                        // C-3: Document.fromBytes throws YorkieException
-                                        // (ErrInvalidArgument) for BOTH a rejected actor
-                                        // guard and a corrupt envelope, so classify by
-                                        // re-decoding: if the bytes still decode outside
-                                        // the guard, the failure came from the guard.
-                                        val redecoded = runCatching {
-                                            Document.fromBytes(documentKey, bytes)
-                                        }
-                                        val reason = if (redecoded.isSuccess) {
-                                            Document.Event.Reason.ActorMismatch
-                                        } else {
-                                            Document.Event.Reason.RestoreFailed
-                                        }
-                                        val recovered = redecoded.getOrNull()
-                                            ?.let { doc ->
-                                                doc.pendingChanges().also { doc.close() }
+                                        // restoreFromBytes classifies by RestoreResult instead
+                                        // of throwing on an actor mismatch (spec 029 I5/M1), so
+                                        // this decodes bytes exactly once — the old design threw
+                                        // either way and re-decoded the envelope a second time in
+                                        // the catch below purely to tell a mismatch apart from a
+                                        // corrupt envelope.
+                                        when (val result = document.restoreFromBytes(bytes)) {
+                                            is RestoreResult.Restored -> {
+                                                // An envelope persisted before the document was
+                                                // ever attached carries the initial actor;
+                                                // re-stamp so the restored pending changes go
+                                                // out under the stable actor (no-op when the
+                                                // envelope already matches).
+                                                document.setActor(requireActorId())
+                                                restored = true
+                                                restoredEnvelope = true
                                             }
-                                            .orEmpty()
-                                        emitLocalChangesDropped(document, reason, recovered)
+
+                                            is RestoreResult.ActorMismatch -> {
+                                                ensureActive()
+                                                emitLocalChangesDropped(
+                                                    document,
+                                                    Document.Event.Reason.ActorMismatch,
+                                                    result.pending,
+                                                )
+                                                removeFromStore(documentKey)
+                                                // Fall through: restoreFromBytes is
+                                                // all-or-nothing, so the document is
+                                                // untouched; continue fresh.
+                                            }
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: YorkieException) {
+                                        // Corrupt envelope only — fromBytes always throws
+                                        // ErrInvalidArgument, never lets a protobuf-level or
+                                        // other decode failure escape unwrapped.
+                                        ensureActive()
+                                        emitLocalChangesDropped(
+                                            document,
+                                            Document.Event.Reason.RestoreFailed,
+                                            emptyList(),
+                                        )
                                         removeFromStore(documentKey)
-                                        // Fall through: restoreFromBytes is all-or-nothing,
-                                        // so the document is untouched; continue fresh.
+                                        // Fall through: fromBytes never built a usable
+                                        // Document, so restoreFromBytes never touched this
+                                        // document's fields; continue fresh.
                                     }
                                 }
                             }

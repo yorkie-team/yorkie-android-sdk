@@ -104,6 +104,16 @@ public class Document(
     private val localChanges = mutableListOf<Change>()
     private val internalHistory = History()
 
+    /**
+     * Fired synchronously, right after a local [Change] is appended to [localChanges] (both
+     * [updateAsync] and undo/redo), by [dev.yorkie.core.Client] to register a store persist for
+     * this document with zero suspension in between (spec 029 B2): the old design subscribed to
+     * [events] instead, which suspends in [toBytes] before the write is even registered, leaving a
+     * window where [close] can cancel the collector mid-snapshot and silently drop the last edit.
+     * Null when no [dev.yorkie.core.Client.Options.docStore] is configured.
+     */
+    internal var onLocalChange: (() -> Unit)? = null
+
     @Volatile
     private var isUpdating = false
 
@@ -373,6 +383,7 @@ public class Document(
             val reverseOps = localResult.reverseOps
 
             localChanges += change
+            onLocalChange?.invoke()
             changeID = context.getNextId()
 
             if (skipHistory) {
@@ -504,6 +515,7 @@ public class Document(
             }
 
             localChanges += change
+            onLocalChange?.invoke()
             changeID = context.getNextId()
 
             if (opInfos.isNotEmpty()) {

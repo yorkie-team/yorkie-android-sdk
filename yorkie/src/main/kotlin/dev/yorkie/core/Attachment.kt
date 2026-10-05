@@ -56,13 +56,6 @@ internal class Attachment<R : Attachable>(
     var sessionLockHandle: SessionLockHandle? = null
 
     /**
-     * The subscription that persists this attachment's document on every local change and local
-     * presence change, or null when no [Client.Options.docStore] is configured. Cancelled in
-     * `Client.detachInternal` so a re-attach does not stack a second collector on [Document.events].
-     */
-    var persistJob: Job? = null
-
-    /**
      * Gates every persist call for this attachment. False by default (and for a client without a
      * [Client.Options.docStore]); set true once this attachment's document has successfully attached
      * through a configured store. Cleared for the remainder of the session if the store could not be

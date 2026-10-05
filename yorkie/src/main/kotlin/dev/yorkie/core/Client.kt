@@ -111,7 +111,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -199,11 +198,13 @@ public class Client(
     private val Attachable.mutex
         get() = mutexForAttachments.getOrPut(getKey()) { Mutex() }
 
-    // Per-store-key FIFO of pending persist writes (spec 025). Mutated only on the
-    // client's single dispatcher (the persist collector launched in attachDocument and
-    // the persist-after-sync call in syncInternal); read from the caller's thread by
-    // close()'s runBlocking drain, hence a concurrent map (round-6 QA LOW-1).
-    private val persistQueues = ConcurrentHashMap<String, Job>()
+    // Per-store-key FIFO of pending persist writes (spec 025). Registered atomically via
+    // [ConcurrentHashMap.compute] from either [Document.onLocalChange] (document dispatcher) or
+    // the persist-after-sync call in syncInternal (client dispatcher); read from the caller's
+    // thread by close()'s runBlocking drain, hence a concurrent map (round-6 QA LOW-1). Internal
+    // (not private) so ClientPersistenceTest can assert the detach-time prune (spec 029 M2).
+    @VisibleForTesting
+    internal val persistQueues = ConcurrentHashMap<String, Job>()
 
     /**
      * Derives the [DocStore] key for [docKey]: `<apiKey>/<clientKey>/<docKey>`. Ported from JS
@@ -213,12 +214,19 @@ public class Client(
     private fun storeKey(docKey: String) = "${options.apiKey ?: ""}/${options.key}/$docKey"
 
     /**
-     * Snapshots [attachment]'s document via [Document.toBytes] EAGERLY (on the client dispatcher,
-     * before any suspension), then chains the store write after any already-enqueued write for the
-     * same store key so concurrent enqueues cannot land bytes out of order: because the snapshot is
-     * taken before the write is chained, the order in which [enqueuePersist] is called equals the
-     * order in which [DocStore.save] is invoked, so the LAST call to complete stores the LAST
-     * snapshot taken. Errors are logged, never thrown (JS `persistToStore`, `client.ts`).
+     * Registers [attachment]'s next store write, chained after any already-enqueued write for the
+     * same store key. Called synchronously off [Document.onLocalChange] (no suspension before this
+     * runs — spec 029 B2) as well as from the post-sync site, so [persistQueues] is mutated
+     * atomically via [ConcurrentHashMap.compute] rather than the read-then-write the old
+     * `persistQueues[key] = job` risked under two concurrent callers.
+     *
+     * The snapshot ([Document.toBytes]) is taken INSIDE the chained job, after the previous write
+     * for this key has completed, not eagerly before chaining: job N therefore reflects every local
+     * change made up to the moment job N-1 finishes, so the order in which [enqueuePersist] is
+     * called still equals the order [DocStore.save] is invoked in, and the LAST call to complete
+     * stores the LAST state — same guarantee as the old eager-snapshot design, without the
+     * suspension window in front of the registration. Errors are logged, never thrown (JS
+     * `persistToStore`, `client.ts`).
      *
      * The job body runs on [Dispatchers.IO] under [NonCancellable] (spec 025 MEDIUM-1, amended
      * round 5 per a cross-judge HIGH finding): Kotlin's structured concurrency cancels a child
@@ -232,47 +240,48 @@ public class Client(
      * suspended continuation from a dispatcher that refuses to run it at all. [drainPersist]/
      * [drainAllPersists] give a caller a bounded chance to OBSERVE completion before tearing down;
      * the write itself keeps running on [Dispatchers.IO] independently of that bound and of the
-     * client dispatcher's lifecycle.
+     * client dispatcher's lifecycle. A [Document.close] that races ahead of that observation forfeits
+     * whatever snapshot a still-queued job would have taken: the document's own dispatcher is shut
+     * down, so a job still waiting on [previous]'s join fails its own [Document.toBytes] call once it
+     * finally runs — logged, not thrown, same as any other snapshot failure.
      */
-    private suspend fun enqueuePersist(attachment: Attachment<out Attachable>) {
+    private fun enqueuePersist(attachment: Attachment<out Attachable>) {
         if (!attachment.persistsToStore) return
         val store = options.docStore ?: return
         val document = attachment.resource as? Document ?: return
         val key = storeKey(document.getKey())
-        val bytes = document.toBytes()
-        val previous = persistQueues[key]
-        val job = scope.launch(Dispatchers.IO) {
-            withContext(NonCancellable) {
-                previous?.join()
-                runCatching { store.save(key, bytes) }
-                    .onFailure { logError("PS", "persist $key failed", it) }
+        persistQueues.compute(key) { _, previous ->
+            scope.launch(Dispatchers.IO) {
+                withContext(NonCancellable) {
+                    previous?.join()
+                    val bytes = runCatching { document.toBytes() }
+                        .getOrElse {
+                            logError("PS", "persist snapshot $key failed", it)
+                            return@withContext
+                        }
+                    runCatching { store.save(key, bytes) }
+                        .onFailure { logError("PS", "persist $key failed", it) }
+                }
             }
         }
-        persistQueues[key] = job
     }
 
     /**
      * Waits for [key]'s persist chain to become quiescent, bounded to 5s (spec 025 MEDIUM-1).
-     * A persist is enqueued asynchronously off a buffered [Document.events] emission that the
-     * persist-subscription collector (started in `attachDocument`) may not have processed yet —
-     * an edit's `updateAsync(...).await()` returning does not itself guarantee the collector has
-     * run — so this re-checks [persistQueues] for [key] until a pass finds nothing new, instead
-     * of joining whatever happens to be registered right now. Called from [detachInternal] before
-     * it cancels the persist subscription and releases the lease, so a write enqueued for the
-     * last local edit is not silently dropped by the caller moving on.
+     * Registration is synchronous with the local change that triggers it (spec 029 B2), so there is
+     * no not-yet-registered write to poll for: the job currently at [key] (if any) is the whole
+     * chain, and joining it is sufficient — a second poll can only find something new if a write was
+     * enqueued concurrently while this suspended, which the `job === persistQueues[key]` recheck
+     * below still covers. Called from [detachInternal] before it clears the local-change hook and
+     * releases the lease, so a write enqueued for the last local edit is not silently dropped by the
+     * caller moving on.
      */
     private suspend fun drainPersist(key: String) {
         withTimeoutOrNull(5_000) {
-            var last: Job? = null
-            var first = true
             while (true) {
-                val current = persistQueues[key]
-                current?.join()
-                val settled = !first && current === last
-                last = current
-                first = false
-                if (settled) break
-                delay(10)
+                val job = persistQueues[key] ?: break
+                job.join()
+                if (persistQueues[key] === job) break
             }
         }
     }
@@ -283,16 +292,11 @@ public class Client(
      * close still flushes the last edit instead of dropping it mid-write (spec 025 MEDIUM-1).
      */
     private suspend fun drainAllPersists() {
-        var last: Map<String, Job> = emptyMap()
-        var first = true
         while (true) {
             val current = persistQueues.toMap()
+            if (current.isEmpty()) break
             current.values.forEach { it.join() }
-            val settled = !first && current == last
-            last = current
-            first = false
-            if (settled) break
-            delay(10)
+            if (persistQueues.toMap() == current) break
         }
     }
 
@@ -1579,23 +1583,14 @@ public class Client(
                         attachments[documentKey] = attachment
                         registered = true
 
-                        // (8) Persist on local change and on a local presence change. A
-                        // presence-only local change appends to localChanges but never
-                        // emits LocalChange, so both event shapes are subscribed.
+                        // (8) Persist on every local change, content or presence-only (spec 029
+                        // B2): the hook fires from inside updateAsync/undo-redo right after
+                        // localChanges += change, with zero suspension before enqueuePersist
+                        // registers the write — the old event-driven collector suspended in
+                        // Document.toBytes() before it ever touched persistQueues, leaving a
+                        // window where close()'s scope.cancel() could kill it mid-snapshot.
                         if (attachment.persistsToStore) {
-                            // UNDISPATCHED: the collector is subscribed before this flow
-                            // continues, so the initialRoot LocalChange below cannot be missed.
-                            attachment.persistJob = scope.launch(
-                                start = CoroutineStart.UNDISPATCHED,
-                            ) {
-                                document.events
-                                    .filter {
-                                        it is Document.Event.LocalChange ||
-                                            it is Document.Event.PresenceChanged.MyPresence
-                                                .PresenceChanged
-                                    }
-                                    .collect { enqueuePersist(attachment) }
-                            }
+                            document.onLocalChange = { enqueuePersist(attachment) }
                         }
 
                         // Manual and Polling are stream-less modes; only realtime modes
@@ -1856,30 +1851,42 @@ public class Client(
     )
     public fun detachPresence(presence: Presence) = detachChannel(presence)
 
-    private suspend fun detachInternal(key: String) {
+    private suspend fun detachInternal(key: String, drain: Boolean = true) {
         val attachment = attachments[key] ?: return
         attachment.cancelWatchJob()
         // MEDIUM-1: drain this attachment's persist chain (bounded to 5s) BEFORE
-        // cancelling the persist subscription below — the collector is still
-        // running during this wait and can still react to an already-published
-        // but not-yet-processed LocalChange/PresenceChanged event, so an edit made
-        // just before detach/deactivate/remove is not silently dropped. Suspend is
-        // required for the drain; every caller (detachDocument, syncInternal's
-        // Removed path, deactivateInternal's inline forEach, removeDocument) already
-        // runs on a suspend context.
-        if (attachment.persistsToStore) {
+        // clearing the local-change hook below — a write already registered in
+        // persistQueues for an edit made just before detach/deactivate/remove
+        // must not be silently dropped. Suspend is required for the drain;
+        // every caller (detachDocument, syncInternal's Removed path,
+        // deactivateInternal's inline forEach, removeDocument) already runs on
+        // a suspend context.
+        // [drain] is false only from deactivateInternal, which already ran one
+        // bounded drainAllPersists() across every attachment before its loop
+        // (spec 029 M3): draining again per-document here would re-serialize
+        // the exact N*5s stacking that single drain exists to avoid.
+        if (drain && attachment.persistsToStore) {
             (attachment.resource as? Document)?.let { drainPersist(storeKey(it.getKey())) }
         }
-        // Cancel the persist subscription and release the session lease here —
-        // the single choke point for detachDocument, syncInternal's Removed
-        // path, deactivateInternal, and removeDocument. Both calls are
-        // non-suspending (release() by contract) so the NonCancellable/
-        // GlobalScope keepalive paths cannot skip them. No store removal here
-        // (JS parity, recorded determination): the persisted envelope is
-        // re-validated on the next resume by the actor guard, epoch check,
-        // and tier-3 purge guard.
-        attachment.persistJob?.cancel()
-        attachment.persistJob = null
+        // Clear the local-change hook and release the session lease here — the
+        // single choke point for detachDocument, syncInternal's Removed path,
+        // deactivateInternal, and removeDocument. Both are non-suspending so
+        // the NonCancellable/GlobalScope keepalive paths cannot skip them. No
+        // store removal here (JS parity, recorded determination): the
+        // persisted envelope is re-validated on the next resume by the actor
+        // guard, epoch check, and tier-3 purge guard.
+        (attachment.resource as? Document)?.onLocalChange = null
+        // M2: prune this key's queue entry once its job has settled, so a
+        // client that attaches and detaches many documents over its lifetime
+        // does not accumulate one ConcurrentHashMap entry per ever-attached
+        // document. A write still running (observed above via the drain, or
+        // one that outlived its bound) stays chained so a re-attach's first
+        // persist still waits behind it instead of racing it.
+        (attachment.resource as? Document)?.let { doc ->
+            persistQueues.computeIfPresent(storeKey(doc.getKey())) { _, job ->
+                if (job.isCompleted) null else job
+            }
+        }
         attachment.sessionLockHandle?.release()
         attachment.sessionLockHandle = null
         attachments.remove(key)
@@ -1954,8 +1961,12 @@ public class Client(
     }
 
     private suspend fun deactivateInternal() {
+        // M3: one bounded drain across every attachment instead of detachInternal's
+        // per-document 5s drain N times over (spec 029) — a client deactivating with
+        // several store-backed documents used to block for up to N*5s serially.
+        withTimeoutOrNull(5_000) { drainAllPersists() }
         attachments.values.forEach {
-            detachInternal(it.resource.getKey())
+            detachInternal(it.resource.getKey(), drain = false)
             it.resource.applyStatus(ResourceStatus.Detached)
         }
 

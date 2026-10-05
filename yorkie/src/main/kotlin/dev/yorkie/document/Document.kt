@@ -47,7 +47,6 @@ import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
 import dev.yorkie.document.schema.Rule
 import dev.yorkie.document.schema.validateYorkieRuleset
-import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
@@ -1015,10 +1014,13 @@ public class Document(
 
     private fun restoreFrom(restored: Document, currentActor: String): RestoreResult {
         val restoredActor = restored.changeID.actor
-        val actorMatches = currentActor == ActorID.INITIAL_ACTOR_ID ||
-            restoredActor == ActorID.INITIAL_ACTOR_ID ||
-            currentActor == restoredActor
-        if (!actorMatches) {
+        // JS/iOS parity (spec 029 D1): an envelope written under the initial actor — only
+        // reachable by an app calling the public toBytes() on a never-attached Document and
+        // writing it under the client's own store key — is rejected the same as any other
+        // mismatched actor. Previously exempted on either side, but the client already stamps
+        // the stable actor before every restore attempt (requireActorId(), before this runs),
+        // so a legitimately-restored envelope never carries the initial actor in the first place.
+        if (currentActor != restoredActor) {
             // restored.localChanges is read (and defensively copied) before restored.close()
             // runs in restoreFromBytes's finally, so this is safe despite restored owning its
             // own now-about-to-be-cancelled scope/dispatcher.

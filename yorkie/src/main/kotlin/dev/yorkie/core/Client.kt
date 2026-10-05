@@ -1390,12 +1390,12 @@ public class Client(
                                         // corrupt envelope.
                                         when (val result = document.restoreFromBytes(bytes)) {
                                             is RestoreResult.Restored -> {
-                                                // An envelope persisted before the document was
-                                                // ever attached carries the initial actor;
-                                                // re-stamp so the restored pending changes go
-                                                // out under the stable actor (no-op when the
-                                                // envelope already matches).
-                                                document.setActor(requireActorId())
+                                                // No re-stamp needed (spec 029 D1): the actor
+                                                // guard is now strict (no initial-actor
+                                                // exemption on either side, JS/iOS parity), so a
+                                                // Restored result already carries the same
+                                                // stable actor this client stamped before the
+                                                // restore attempt (requireActorId(), above).
                                                 restored = true
                                                 restoredEnvelope = true
                                             }

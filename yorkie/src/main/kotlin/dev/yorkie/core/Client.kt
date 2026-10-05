@@ -1335,6 +1335,11 @@ public class Client(
                 document.mutex.withLock {
                     var sessionLockHandle: SessionLockHandle? = null
                     var persistsToStore = options.docStore != null
+                    // I3: true only once an envelope was actually restored this attach (set in
+                    // the attachOnce restore-success branch below) — narrower than
+                    // `options.docStore != null`, which also covers a store configured but never
+                    // successfully read this session (spec 029).
+                    var restoredEnvelope = false
                     var registered = false
                     try {
                         // Actor-before-elements: setActor rewrites localChanges/changeID
@@ -1383,6 +1388,7 @@ public class Client(
                                         // actor (no-op when the envelope already matches).
                                         document.setActor(requireActorId())
                                         restored = true
+                                        restoredEnvelope = true
                                     } catch (e: Throwable) {
                                         ensureActive()
                                         // C-3: Document.fromBytes throws YorkieException
@@ -1498,11 +1504,19 @@ public class Client(
                             attachOnce(reanchor = false)
                         } catch (e: ConnectException) {
                             ensureActive()
-                            if (options.docStore != null && isCompactionReanchorError(e)) {
-                                // Store path only: a stale-epoch (ErrEpochMismatch) OR a
-                                // stale checkpoint serverSeq (ErrInvalidServerSeq) attach
-                                // both mean the server compacted/purged the document since
-                                // this envelope was written.
+                            if (restoredEnvelope && isCompactionReanchorError(e)) {
+                                // Gated on an envelope actually having been restored THIS
+                                // attach (spec 029 I3), not merely on a store being configured:
+                                // a store-load failure (persistsToStore = false, nothing
+                                // restored) must not re-anchor — there is no persisted state to
+                                // reconcile, so removeFromStore/resetForReanchor would discard
+                                // nothing-but-still-contact the server for a pointless retry.
+                                // restoredEnvelope implies options.docStore != null, so this is
+                                // strictly narrower than the old gate, never broader.
+                                //
+                                // A stale-epoch (ErrEpochMismatch) OR a stale checkpoint
+                                // serverSeq (ErrInvalidServerSeq) attach both mean the server
+                                // compacted/purged the document since this envelope was written.
                                 //
                                 // Determination (round-2 QA HIGH-1, verified against yorkie
                                 // 0.7.20 server/packs/pushpull.go:285-320): the server checks
@@ -1517,8 +1531,8 @@ public class Client(
                                 //
                                 // Never deactivates the client (matches the sync-loop
                                 // ErrEpochMismatch handling — handleConnectException's error
-                                // callback is not invoked for either code); without a store
-                                // both codes propagate unchanged (today's behaviour,
+                                // callback is not invoked for either code); without a restored
+                                // envelope both codes propagate unchanged (today's behaviour,
                                 // scenario 3).
                                 logDebug(
                                     "AD",

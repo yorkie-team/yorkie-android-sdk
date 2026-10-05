@@ -260,7 +260,7 @@ public class Client(
                             logError("PS", "persist snapshot $key failed", it)
                             return@withContext
                         }
-                    runCatching { store.save(key, bytes) }
+                    runCatching { store.saveSnapshot(key, bytes) }
                         .onFailure { logError("PS", "persist $key failed", it) }
                 }
             }
@@ -1370,7 +1370,7 @@ public class Client(
                             var restored = false
                             if (options.docStore != null && !reanchor) {
                                 val bytes = try {
-                                    options.docStore.load(storeKey(documentKey))
+                                    options.docStore.load(storeKey(documentKey))?.snapshot
                                 } catch (e: Throwable) {
                                     ensureActive()
                                     logDebug("AD", "store load failed; fresh attach: ${e.message}")

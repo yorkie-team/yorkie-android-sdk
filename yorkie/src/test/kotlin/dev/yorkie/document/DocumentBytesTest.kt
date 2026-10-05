@@ -4,13 +4,17 @@ import android.util.Base64
 import com.google.protobuf.InvalidProtocolBufferException
 import dev.yorkie.api.PBChange
 import dev.yorkie.api.toPBChange
+import dev.yorkie.api.toStoredChange
+import dev.yorkie.api.toStoredChangeBytes
 import dev.yorkie.api.v1.JSONElement
 import dev.yorkie.api.v1.Snapshot
 import dev.yorkie.api.v1.ValueType
+import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonCounter
+import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.helper.crossSync
 import dev.yorkie.util.YorkieException
@@ -25,6 +29,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -598,6 +607,366 @@ class DocumentBytesTest {
             Document.fromBytes(key, document.toBytes()).checkPoint
         }
         assertEquals(CheckPoint.InitialCheckPoint, restoredCheckPoint)
+    }
+
+    // --- incremental restore: the offline-persistence log (aaa5cb15/#1354, RTCOLLABPLATFORM-779) --
+
+    @Test
+    fun `T17 restoreAppendedChanges replays a log appended after the snapshot`() = runTest {
+        val document = Document(key)
+        document.setActor(actorA)
+        document.updateAsync { root, _ -> root.setNewText("text").edit(0, 0, "hello") }.await()
+        document.updateAsync { root, _ -> root.setNewCounter("counter", 5) }.await()
+        val snapshot = document.toBytes()
+        val snapshotClientSeq = document.changeID.clientSeq
+
+        document.updateAsync { root, _ -> root.getAs<JsonCounter>("counter").increase(1) }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonCounter>("counter").increase(2) }.await()
+        document.updateAsync { root, _ -> root["flag"] = true }.await()
+        val appended = document.pendingChangesAfter(snapshotClientSeq)
+        assertEquals(3, appended.size)
+
+        val restored = Document.fromBytes(key, snapshot)
+        restored.setActor(actorA)
+        val localChangeEvents = async(start = CoroutineStart.UNDISPATCHED) {
+            restored.events.filterIsInstance<Document.Event.LocalChange>().take(3).toList()
+        }
+
+        restored.restoreAppendedChanges(appended)
+
+        assertEquals(document.toJson(), restored.toJson())
+        assertEquals(
+            document.pendingChanges().map { it.id.clientSeq },
+            restored.pendingChanges().map { it.id.clientSeq },
+        )
+        assertEquals(document.changeID, restored.changeID)
+        assertEquals(3, localChangeEvents.await().size)
+    }
+
+    @Test
+    fun `T18 restoreAppendedChanges with an acked prefix queues only the unacked tail`() = runTest {
+        val document = Document(key)
+        document.setActor(actorA)
+        document.updateAsync { root, _ -> root["k0"] = 0 }.await()
+        val snapshot = document.toBytes()
+        val snapshotClientSeq = document.changeID.clientSeq
+
+        document.updateAsync { root, _ -> root["k1"] = 1 }.await()
+        document.updateAsync { root, _ -> root["k2"] = 2 }.await()
+        document.updateAsync { root, _ -> root["k3"] = 3 }.await()
+        val appended = document.pendingChangesAfter(snapshotClientSeq)
+
+        val restored = Document.fromBytes(key, snapshot)
+        restored.setActor(actorA)
+        // The envelope already carries k0 as an unsynced pending change (toBytes bundles it).
+        val envelopeCarriedClientSeq = restored.pendingChanges().single().id.clientSeq
+
+        restored.restoreAppendedChanges(appended, ackedClientSeq = appended[0].id.clientSeq)
+
+        assertEquals(document.toJson(), restored.toJson())
+        val queuedSeqs = restored.pendingChanges().map { it.id.clientSeq }
+        assertFalse(queuedSeqs.contains(appended[0].id.clientSeq))
+        assertTrue(queuedSeqs.containsAll(appended.drop(1).map { it.id.clientSeq }))
+        assertTrue(queuedSeqs.contains(envelopeCarriedClientSeq))
+    }
+
+    @Test
+    fun `T19 the next local edit stays pushable after a replay`() = runTest {
+        val document = Document(key)
+        document.setActor(actorA)
+        val snapshot = document.toBytes()
+
+        document.updateAsync { root, _ -> root["k1"] = 1 }.await()
+        document.updateAsync { root, _ -> root["k2"] = 2 }.await()
+        val appended = document.pendingChangesAfter(0u)
+
+        val restored = Document.fromBytes(key, snapshot)
+        restored.setActor(actorA)
+        restored.restoreAppendedChanges(appended)
+        restored.updateAsync { root, _ -> root["k3"] = 3 }.await()
+
+        val seqs = restored.createChangePack().changes.map { it.id.clientSeq }
+        assertEquals(seqs.sorted(), seqs)
+        assertEquals(seqs.distinct(), seqs)
+        assertEquals(listOf(1u, 2u, 3u), seqs)
+    }
+
+    @Test
+    fun `T20 fromBytes does not re-apply the pending change the envelope already carries`() =
+        runTest {
+            val document = Document(key)
+            document.setActor(actorA)
+            document.updateAsync { root, _ -> root.setNewCounter("counter", 0) }.await()
+            document.updateAsync { root, _ -> root.getAs<JsonCounter>("counter").increase(7) }
+                .await()
+
+            val bytes = document.toBytes()
+            val restored = Document.fromBytes(key, bytes)
+
+            assertEquals(document.toJson(), restored.toJson())
+            val restoredCounterValue =
+                restored.getRoot().getAs<JsonCounter>("counter").value.toInt()
+            assertEquals(7, restoredCounterValue)
+            assertEquals(
+                document.pendingChanges().map { it.id.clientSeq },
+                restored.pendingChanges().map { it.id.clientSeq },
+            )
+        }
+
+    @Test
+    fun `T21 restoreAppendedChanges rejects an out-of-order log leaving the document untouched`() {
+        val document = Document(key)
+        lateinit var restored: Document
+        lateinit var jsonBefore: String
+        lateinit var checkPointBefore: CheckPoint
+        lateinit var changeIDBefore: ChangeID
+        lateinit var pendingBefore: List<UInt>
+        lateinit var outOfOrder: List<Change>
+
+        runBlocking {
+            document.setActor(actorA)
+            val snapshot = document.toBytes()
+            document.updateAsync { root, _ -> root["a"] = 1 }.await()
+            document.updateAsync { root, _ -> root["b"] = 2 }.await()
+            val appended = document.pendingChangesAfter(0u)
+            outOfOrder = listOf(appended[1], appended[0])
+
+            restored = Document.fromBytes(key, snapshot)
+            restored.setActor(actorA)
+            jsonBefore = restored.toJson()
+            checkPointBefore = restored.checkPoint
+            changeIDBefore = restored.changeID
+            pendingBefore = restored.pendingChanges().map { it.id.clientSeq }
+        }
+
+        val exception = assertThrows(YorkieException::class.java) {
+            runBlocking { restored.restoreAppendedChanges(outOfOrder) }
+        }
+        assertEquals(ErrInvalidArgument, exception.code)
+        assertTrue(exception.errorMessage.contains("ascending"))
+
+        assertEquals(jsonBefore, restored.toJson())
+        assertEquals(checkPointBefore, restored.checkPoint)
+        assertEquals(changeIDBefore, restored.changeID)
+        assertEquals(pendingBefore, restored.pendingChanges().map { it.id.clientSeq })
+    }
+
+    @Test
+    fun `T22 restoreMetaFromBytes round-trips the header without touching root or queue`() =
+        runTest {
+            val live = Document(key)
+            live.setActor(actorA)
+            live.updateAsync { root, _ -> root["k"] = 1 }.await()
+            live.applyChangePack(
+                ChangePack(
+                    key,
+                    CheckPoint(9, 1u),
+                    emptyList(),
+                    null,
+                    false,
+                    INITIAL_VERSION_VECTOR,
+                    epoch = 3,
+                ),
+            )
+            live.setDocId("live-doc-id")
+
+            val restored = Document(key)
+            restored.setActor(actorA)
+            restored.updateAsync { root, _ -> root["untouched"] = true }.await()
+            val jsonBefore = restored.toJson()
+            val pendingBefore = restored.pendingChanges().map { it.id.clientSeq }
+
+            restored.restoreMetaFromBytes(live.metaToBytes())
+
+            assertEquals(live.checkPoint, restored.checkPoint)
+            assertEquals(live.changeID, restored.changeID)
+            assertEquals(live.epoch, restored.epoch)
+            assertEquals(live.docId, restored.docId)
+            assertEquals(jsonBefore, restored.toJson())
+            assertEquals(pendingBefore, restored.pendingChanges().map { it.id.clientSeq })
+        }
+
+    @Test
+    fun `T22b a two-blob meta restores the checkpoint and changeID and leaves epoch and docId`() =
+        runTest {
+            val live = Document(key)
+            live.setActor(actorA)
+            live.updateAsync { root, _ -> root["k"] = 1 }.await()
+            live.applyChangePack(
+                ChangePack(
+                    key,
+                    CheckPoint(9, 1u),
+                    emptyList(),
+                    null,
+                    false,
+                    INITIAL_VERSION_VECTOR,
+                    epoch = 3,
+                ),
+            )
+            live.setDocId("live-doc-id")
+            val twoBlobMeta = live.metaToBytes().truncateToBlobCount(2)
+
+            val restored = Document(key)
+            restored.setActor(actorA)
+            restored.applyChangePack(
+                ChangePack(
+                    key,
+                    CheckPoint.InitialCheckPoint,
+                    emptyList(),
+                    null,
+                    false,
+                    INITIAL_VERSION_VECTOR,
+                    epoch = 42,
+                ),
+            )
+            restored.setDocId("pre-existing-doc-id")
+
+            restored.restoreMetaFromBytes(twoBlobMeta)
+
+            assertEquals(live.checkPoint, restored.checkPoint)
+            assertEquals(live.changeID, restored.changeID)
+            assertEquals(42L, restored.epoch)
+            assertEquals("pre-existing-doc-id", restored.docId)
+        }
+
+    @Test
+    fun `T22c restoreMetaFromBytes rejects empty, malformed, and non-numeric-epoch meta`() =
+        runTest {
+            val restored = Document(key)
+            restored.setActor(actorA)
+
+            val zeroException = assertThrows(YorkieException::class.java) {
+                runBlocking { restored.restoreMetaFromBytes(ByteArray(0)) }
+            }
+            assertEquals(ErrInvalidArgument, zeroException.code)
+
+            val malformedCheckpoint = ByteArray(0)
+                .appendBlob("not-the-checkpoint-json-shape".toByteArray(Charsets.UTF_8))
+            val malformedException = assertThrows(YorkieException::class.java) {
+                runBlocking { restored.restoreMetaFromBytes(malformedCheckpoint) }
+            }
+            assertEquals(ErrInvalidArgument, malformedException.code)
+
+            val live = Document(key)
+            live.setActor(actorA)
+            live.updateAsync { root, _ -> root["k"] = 1 }.await()
+            val nonNumericEpoch =
+                live.metaToBytes().replaceBlob(2, "not-a-number".toByteArray(Charsets.UTF_8))
+            val epochException = assertThrows(YorkieException::class.java) {
+                runBlocking { restored.restoreMetaFromBytes(nonNumericEpoch) }
+            }
+            assertEquals(ErrInvalidArgument, epochException.code)
+            assertTrue(epochException.errorMessage.contains("epoch"))
+
+            // Same ASCII-digits-only rule as the envelope's epoch blob (T-E1).
+            val signedEpoch = live.metaToBytes().replaceBlob(2, "+7".toByteArray(Charsets.UTF_8))
+            val signedException = assertThrows(YorkieException::class.java) {
+                runBlocking { restored.restoreMetaFromBytes(signedEpoch) }
+            }
+            assertEquals(ErrInvalidArgument, signedException.code)
+        }
+
+    @Test
+    fun `T23 restoreAppendedChanges does not pull changeID back below an all-acked meta counter`() =
+        runTest {
+            val document = Document(key)
+            document.setActor(actorA)
+            document.updateAsync { root, _ -> root["a"] = 1 }.await()
+
+            val restored = Document.fromBytes(key, document.toBytes())
+            restored.setActor(actorA)
+
+            val highCounter = Document(key)
+            highCounter.setActor(actorA)
+            repeat(10) { i -> highCounter.updateAsync { root, _ -> root["x$i"] = i }.await() }
+            restored.restoreMetaFromBytes(highCounter.metaToBytes())
+            val changeIDAfterMeta = restored.changeID
+
+            document.updateAsync { root, _ -> root["b"] = 2 }.await()
+            val appended = document.pendingChangesAfter(1u)
+
+            restored.restoreAppendedChanges(appended)
+
+            // The guard is specifically about clientSeq: a lower-seq replay must not pull the
+            // document's counter back below what the meta header already established, even
+            // though applying the change still advances lamport/versionVector via syncClocks
+            // (the same as it would for any applied change).
+            assertEquals(changeIDAfterMeta.clientSeq, restored.changeID.clientSeq)
+            assertTrue(restored.changeID.lamport >= changeIDAfterMeta.lamport)
+            val restoredB = restored.getRoot().getAs<JsonPrimitive>("b")
+            assertEquals(2, restoredB.value)
+        }
+
+    @Test
+    fun `T23b restoreAppendedChanges on an empty list is a no-op`() = runTest {
+        val document = Document(key)
+        document.setActor(actorA)
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        val jsonBefore = document.toJson()
+        val changeIDBefore = document.changeID
+        val pendingBefore = document.pendingChanges().map { it.id.clientSeq }
+        val canUndoBefore = document.history.canUndo()
+
+        document.restoreAppendedChanges(emptyList())
+
+        assertEquals(jsonBefore, document.toJson())
+        assertEquals(changeIDBefore, document.changeID)
+        assertEquals(pendingBefore, document.pendingChanges().map { it.id.clientSeq })
+        assertEquals(canUndoBefore, document.history.canUndo())
+    }
+
+    @Test
+    fun `T24 persistBase returns a toBytes-equal snapshot and the highest carried clientSeq`() =
+        runTest {
+            val document = Document(key)
+            document.setActor(actorA)
+            document.updateAsync { root, _ -> root["k1"] = 1 }.await()
+            document.updateAsync { root, _ -> root["k2"] = 2 }.await()
+
+            val base = document.persistBase()
+            val expectedSnapshot = document.toBytes()
+
+            assertTrue(base.snapshot.contentEquals(expectedSnapshot))
+            assertEquals(
+                document.pendingChanges().last().id.clientSeq,
+                base.lastCarriedClientSeq,
+            )
+
+            val emptyDoc = Document(key)
+            emptyDoc.setActor(actorA)
+            emptyDoc.applyChangePack(
+                ChangePack(
+                    key,
+                    CheckPoint(0, 3u),
+                    emptyList(),
+                    null,
+                    false,
+                    INITIAL_VERSION_VECTOR,
+                ),
+            )
+
+            val emptyBase = emptyDoc.persistBase()
+            assertTrue(emptyDoc.pendingChanges().isEmpty())
+            assertEquals(3u, emptyBase.lastCarriedClientSeq)
+        }
+
+    @Test
+    fun `T24b a Change round-trips through the stored-change codec`() = runTest {
+        val document = Document(key)
+        document.setActor(actorA)
+        document.updateAsync(message = "add k1 with presence") { root, presence ->
+            root["k1"] = 1
+            presence.put(mapOf("cursor" to "1"))
+        }.await()
+        val change = document.pendingChanges().single()
+
+        val bytes = change.toStoredChangeBytes()
+        val decoded = bytes.toStoredChange()
+
+        assertEquals(change.id, decoded.id)
+        assertEquals(change.operations.size, decoded.operations.size)
+        assertEquals(change.message, decoded.message)
+        assertEquals(change.hasPresenceChange, decoded.hasPresenceChange)
     }
 }
 

@@ -189,7 +189,7 @@ class ClientPersistenceTest {
 
         client.syncAsync(document).await()
 
-        val stored = awaitCondition { store.load(storeKeyFor("push-only-doc")) }
+        val stored = awaitCondition { store.load(storeKeyFor("push-only-doc"))?.snapshot }
         val restored = Document.fromBytes("push-only-doc", stored)
         assertTrue(restored.toJson().contains("\"k2\""))
 
@@ -209,7 +209,7 @@ class ClientPersistenceTest {
         document.updateAsync { _, presence -> presence.put(mapOf("cursor" to "1")) }.await()
 
         val stored = awaitCondition { store.load(storeKeyFor("presence-only-doc")) }
-        assertNotNull(stored)
+        assertNotNull(stored.snapshot)
 
         client.detachDocument(document).await()
         client.deactivateAsync().await()
@@ -228,7 +228,7 @@ class ClientPersistenceTest {
         document.updateAsync { root, _ -> root["k"] = 2 }.await()
 
         val restored = awaitCondition {
-            store.load(storeKeyFor("rapid-edit-doc"))?.let {
+            store.load(storeKeyFor("rapid-edit-doc"))?.snapshot?.let {
                 Document.fromBytes(
                     "rapid-edit-doc",
                     it,
@@ -248,7 +248,7 @@ class ClientPersistenceTest {
     fun `T7 a stale epoch on a store-backed resume re-anchors without deactivating`() = runTest {
         val store = MemoryDocStore()
         val docKey = "epoch-reanchor-doc"
-        store.save(storeKeyFor(docKey), buildEnvelope(docKey))
+        store.saveSnapshot(storeKeyFor(docKey), buildEnvelope(docKey))
         val service = MockYorkieService().apply { epochMismatchOnAttachOnceKeys += docKey }
         val client = newClient(service, docStore = store)
         client.activateAsync().await()
@@ -294,7 +294,7 @@ class ClientPersistenceTest {
     fun `T9 a docId change on a restored attach emits DocumentPurged and re-anchors`() = runTest {
         val store = MemoryDocStore()
         val docKey = "purge-docid-doc"
-        store.save(storeKeyFor(docKey), buildEnvelope(docKey, docId = "persisted-doc-id"))
+        store.saveSnapshot(storeKeyFor(docKey), buildEnvelope(docKey, docId = "persisted-doc-id"))
         val service = MockYorkieService().apply {
             attachDocumentIdOverride[docKey] = "server-assigned-different-id"
         }
@@ -322,7 +322,7 @@ class ClientPersistenceTest {
     fun `T10 a serverSeq reset with prior local state emits DocumentPurged`() = runTest {
         val store = MemoryDocStore()
         val docKey = "purge-serverseq-doc"
-        store.save(storeKeyFor(docKey), buildEnvelope(docKey, serverSeq = 5))
+        store.saveSnapshot(storeKeyFor(docKey), buildEnvelope(docKey, serverSeq = 5))
         val service = MockYorkieService().apply { attachServerSeqResetKeys += docKey }
         val client = newClient(service, docStore = store)
         client.activateAsync().await()
@@ -348,7 +348,7 @@ class ClientPersistenceTest {
         runTest {
             val store = MemoryDocStore()
             val docKey = "actor-mismatch-doc"
-            store.save(storeKeyFor(docKey), buildEnvelope(docKey, actor = actorB))
+            store.saveSnapshot(storeKeyFor(docKey), buildEnvelope(docKey, actor = actorB))
             val client = newClient(MockYorkieService(), docStore = store)
             client.activateAsync().await()
             val document = Document(docKey)
@@ -374,7 +374,7 @@ class ClientPersistenceTest {
         val store = MemoryDocStore()
         val docKey = "corrupt-envelope-doc"
         val full = buildEnvelope(docKey)
-        store.save(storeKeyFor(docKey), full.copyOfRange(0, full.size - 3))
+        store.saveSnapshot(storeKeyFor(docKey), full.copyOfRange(0, full.size - 3))
         val client = newClient(MockYorkieService(), docStore = store)
         client.activateAsync().await()
         val document = Document(docKey)
@@ -399,12 +399,20 @@ class ClientPersistenceTest {
     private class UnreadableDocStore(private val inner: DocStore = MemoryDocStore()) : DocStore {
         var saveCount = 0
         var removeCount = 0
-        override suspend fun load(docKey: String): ByteArray? =
+        override suspend fun load(docKey: String): StoredDoc? =
             throw java.io.IOException("store backend unavailable")
 
-        override suspend fun save(docKey: String, bytes: ByteArray) {
+        override suspend fun saveSnapshot(docKey: String, bytes: ByteArray) {
             saveCount++
-            inner.save(docKey, bytes)
+            inner.saveSnapshot(docKey, bytes)
+        }
+
+        override suspend fun appendChange(docKey: String, change: StoredChange) {
+            inner.appendChange(docKey, change)
+        }
+
+        override suspend fun saveMeta(docKey: String, bytes: ByteArray) {
+            inner.saveMeta(docKey, bytes)
         }
 
         override suspend fun remove(docKey: String) {
@@ -519,7 +527,7 @@ class ClientPersistenceTest {
     @Test
     fun `T18 a store envelope for a different document key is not restored`() = runTest {
         val store = MemoryDocStore()
-        store.save(storeKeyFor("doc-a"), buildEnvelope("doc-a"))
+        store.saveSnapshot(storeKeyFor("doc-a"), buildEnvelope("doc-a"))
         val client = newClient(MockYorkieService(), docStore = store)
         client.activateAsync().await()
         val document = Document("doc-b")
@@ -618,7 +626,7 @@ class ClientPersistenceTest {
         runTest {
             val store = MemoryDocStore()
             val docKey = "invalid-serverseq-reanchor-doc"
-            store.save(storeKeyFor(docKey), buildEnvelope(docKey))
+            store.saveSnapshot(storeKeyFor(docKey), buildEnvelope(docKey))
             val service = MockYorkieService().apply { invalidServerSeqOnAttachOnceKeys += docKey }
             val client = newClient(service, docStore = store)
             client.activateAsync().await()
@@ -672,7 +680,7 @@ class ClientPersistenceTest {
         document.updateAsync { root, _ -> root["k"] = 1 }.await()
         client.close()
 
-        val stored = store.load(storeKeyFor("close-drain-doc"))
+        val stored = store.load(storeKeyFor("close-drain-doc"))?.snapshot
         assertNotNull(stored)
         val restored = Document.fromBytes("close-drain-doc", stored)
         assertTrue(restored.toJson().contains("\"k\":1"))
@@ -691,7 +699,7 @@ class ClientPersistenceTest {
         client.deactivateAsync().await()
 
         assertTrue(lock.held.isEmpty())
-        val stored = store.load(storeKeyFor("deactivate-drain-doc"))
+        val stored = store.load(storeKeyFor("deactivate-drain-doc"))?.snapshot
         assertNotNull(stored)
         val restored = Document.fromBytes("deactivate-drain-doc", stored)
         assertTrue(restored.toJson().contains("\"k\":1"))
@@ -708,7 +716,7 @@ class ClientPersistenceTest {
         // given: the REAL 0.7.20 wire shape — no ErrorInfo, fixed message only.
         val store = MemoryDocStore()
         val docKey = "invalid-serverseq-bare-reanchor-doc"
-        store.save(storeKeyFor(docKey), buildEnvelope(docKey))
+        store.saveSnapshot(storeKeyFor(docKey), buildEnvelope(docKey))
         val service = MockYorkieService().apply {
             invalidServerSeqBareOnAttachOnceKeys += docKey
         }
@@ -791,12 +799,20 @@ class ClientPersistenceTest {
         @Volatile
         var saveCompleted = false
 
-        override suspend fun load(docKey: String): ByteArray? = inner.load(docKey)
+        override suspend fun load(docKey: String): StoredDoc? = inner.load(docKey)
 
-        override suspend fun save(docKey: String, bytes: ByteArray) {
+        override suspend fun saveSnapshot(docKey: String, bytes: ByteArray) {
             delay(delayMs)
-            inner.save(docKey, bytes)
+            inner.saveSnapshot(docKey, bytes)
             saveCompleted = true
+        }
+
+        override suspend fun appendChange(docKey: String, change: StoredChange) {
+            inner.appendChange(docKey, change)
+        }
+
+        override suspend fun saveMeta(docKey: String, bytes: ByteArray) {
+            inner.saveMeta(docKey, bytes)
         }
 
         override suspend fun remove(docKey: String) = inner.remove(docKey)
@@ -831,7 +847,7 @@ class ClientPersistenceTest {
         )
 
         val stored = awaitCondition(timeoutMs = 4_000) {
-            store.load(storeKeyFor("close-slow-persist-doc"))
+            store.load(storeKeyFor("close-slow-persist-doc"))?.snapshot
         }
         assertTrue(store.saveCompleted)
         val restored = Document.fromBytes("close-slow-persist-doc", stored)
@@ -864,7 +880,7 @@ class ClientPersistenceTest {
 
             val stored = store.load(storeKeyFor(docKey))
             assertNotNull(stored, "run $i: no envelope was persisted at all")
-            val restored = Document.fromBytes(docKey, stored)
+            val restored = Document.fromBytes(docKey, stored.snapshot)
             assertTrue(
                 restored.toJson().contains("marker"),
                 "run $i: close() lost the last edit (marker missing)",
@@ -981,7 +997,10 @@ class ClientPersistenceTest {
     fun `T-D1 an initial-actor envelope is rejected as an actor mismatch`() = runTest {
         val store = MemoryDocStore()
         val docKey = "initial-actor-envelope-doc"
-        store.save(storeKeyFor(docKey), buildEnvelope(docKey, actor = ActorID.INITIAL_ACTOR_ID))
+        store.saveSnapshot(
+            storeKeyFor(docKey),
+            buildEnvelope(docKey, actor = ActorID.INITIAL_ACTOR_ID),
+        )
         val client = newClient(MockYorkieService(), docStore = store)
         client.activateAsync().await()
         val document = Document(docKey)

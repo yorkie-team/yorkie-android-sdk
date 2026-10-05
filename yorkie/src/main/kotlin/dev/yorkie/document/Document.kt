@@ -715,12 +715,15 @@ public class Document(
     }
 
     /**
-     * Applies the given [changes] into this document.
+     * Applies the given [changes] into this document, sourced from [source]
+     * (defaults to [OpSource.Remote], the pre-existing behaviour of every
+     * caller other than [restoreAppendedChanges], which applies a replayed
+     * log as [OpSource.Local]).
      */
-    private suspend fun applyChanges(changes: List<Change>) {
+    private suspend fun applyChanges(changes: List<Change>, source: OpSource = OpSource.Remote) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, clone.presences, OpSource.Remote).also { cloneResult ->
+            change.execute(clone.root, clone.presences, source).also { cloneResult ->
                 this.clone = clone.copy(presences = cloneResult.newPresences ?: return@also)
             }
             val actorID = change.id.actor
@@ -753,7 +756,7 @@ public class Document(
                 }
             }
 
-            val remoteResult = change.execute(root, _presences.value, OpSource.Remote)
+            val remoteResult = change.execute(root, _presences.value, source)
             val opInfos = remoteResult.opInfos
             val newPresences = remoteResult.newPresences
 
@@ -764,7 +767,16 @@ public class Document(
             }
 
             if (opInfos.isNotEmpty()) {
-                eventStream.emit(Event.RemoteChange(change.toChangeInfo(opInfos)))
+                val info = change.toChangeInfo(opInfos)
+                eventStream.emit(
+                    if (source == OpSource.Local) {
+                        Event.LocalChange(
+                            info,
+                        )
+                    } else {
+                        Event.RemoteChange(info)
+                    },
+                )
             }
             newPresences?.let {
                 emitPresences(it, presenceEvent)
@@ -968,11 +980,26 @@ public class Document(
     internal fun pendingChanges(): List<Change> = localChanges.toList()
 
     /**
+     * Returns the un-pushed local changes whose [ChangeID.clientSeq] is
+     * strictly greater than [clientSeq], in queue order. Mirrors JS
+     * `getPendingChangesAfter`; used by the offline-persistence layer to
+     * append only what is new to the change log.
+     */
+    internal fun pendingChangesAfter(clientSeq: UInt): List<Change> =
+        localChanges.filter { it.id.clientSeq > clientSeq }
+
+    /**
      * Serializes this document's full restorable state — root, presences,
      * checkpoint, changeID, pending changes, compaction epoch, and docId —
-     * into a self-contained byte envelope. The reverse of [Companion.fromBytes].
+     * into a self-contained byte envelope. Non-suspending: assumes it runs on
+     * [dispatcher] already, so a caller composing it with another
+     * non-suspending dispatcher-confined read (e.g. [persistBase]) gets one
+     * atomic critical section rather than two dispatcher hops with a gap
+     * between them. [toBytes] is this method under its own [withContext];
+     * this single source of truth for the envelope prevents the
+     * two-copies-drift class of bug the incremental store exists to prevent.
      */
-    public suspend fun toBytes(): ByteArray = withContext(dispatcher) {
+    private fun buildEnvelopeBytes(): ByteArray {
         val snapshotBlob = snapshotToBytes(root.rootObject, _presences.value).toByteArray()
         val checkpointBlob = checkPoint.toCheckpointBytes()
         val changeIDBlob = changeID.toByteString().toByteArray()
@@ -988,7 +1015,7 @@ public class Document(
         // Appended last so an envelope written before docID support (five
         // blobs) still decodes: fromBytes treats a missing docID blob as "".
         val docIdBlob = docId.toByteArray(Charsets.UTF_8)
-        packBlobs(
+        return packBlobs(
             listOf(
                 snapshotBlob,
                 checkpointBlob,
@@ -998,6 +1025,15 @@ public class Document(
                 docIdBlob,
             ),
         )
+    }
+
+    /**
+     * Serializes this document's full restorable state — root, presences,
+     * checkpoint, changeID, pending changes, compaction epoch, and docId —
+     * into a self-contained byte envelope. The reverse of [Companion.fromBytes].
+     */
+    public suspend fun toBytes(): ByteArray = withContext(dispatcher) {
+        buildEnvelopeBytes()
     }
 
     /**
@@ -1058,6 +1094,158 @@ public class Document(
         // Reverse-ops reference the pre-restore root/changeID.
         clearHistory()
         return RestoreResult.Restored
+    }
+
+    /**
+     * Serializes just the checkpoint and changeID — plus the compaction
+     * epoch and docId — the client's position against the server, without
+     * touching the root. Mirrors JS `metaToBytes`.
+     *
+     * This is what the offline-persistence layer writes after a sync. A sync
+     * advances the checkpoint while leaving the document unchanged, so
+     * re-serializing the whole document to record it would cost time
+     * proportional to the document for information that is a few dozen
+     * bytes. The epoch and docId are learned from sync responses, so meta is
+     * the only place they can be recorded between snapshots: omitting the
+     * epoch would make a server-side force-compaction invisible until the
+     * next attach presented a stale one, took `ErrEpochMismatch`, and
+     * re-anchored — discarding every un-pushed edit for want of a field.
+     *
+     * Public — mirrors the public [toBytes] (a durable store may want to
+     * inspect it directly).
+     */
+    public suspend fun metaToBytes(): ByteArray = withContext(dispatcher) {
+        packBlobs(
+            listOf(
+                checkPoint.toCheckpointBytes(),
+                changeID.toByteString().toByteArray(),
+                epoch.toString().toByteArray(Charsets.UTF_8),
+                docId.toByteArray(Charsets.UTF_8),
+            ),
+        )
+    }
+
+    /**
+     * Applies the bytes produced by [metaToBytes], overwriting the
+     * checkpoint and the trailing fields present in [bytes]. Trailing blobs
+     * stay optional, the same extension rule the [toBytes] envelope follows,
+     * so a meta written before a field existed still decodes. Touches
+     * neither [root] nor the pending-change queue. Mirrors JS
+     * `restoreMetaFromBytes`.
+     *
+     * @throws YorkieException with [ErrInvalidArgument] when [bytes] is
+     * empty or its checkpoint/epoch blob cannot be parsed.
+     */
+    internal suspend fun restoreMetaFromBytes(bytes: ByteArray): Unit = withContext(dispatcher) {
+        val blobs = unpackBlobs(bytes)
+        checkYorkieError(
+            blobs.isNotEmpty(),
+            YorkieException(ErrInvalidArgument, "corrupt meta: expected at least 1 blob, got 0"),
+        )
+        checkPoint = blobs[0].toCheckPoint()
+        if (blobs.size > 1) {
+            changeID = ByteString.copyFrom(blobs[1]).toChangeID()
+        }
+        if (blobs.size > 2) {
+            // Same ASCII-digits-only rule as the envelope's epoch blob in [fromBytes].
+            epoch = EpochRegex.matchEntire(String(blobs[2], Charsets.UTF_8))
+                ?.value
+                ?.toLongOrNull()
+                ?: throw YorkieException(ErrInvalidArgument, "corrupt meta: invalid epoch blob")
+        }
+        if (blobs.size > 3) {
+            docId = String(blobs[3], Charsets.UTF_8)
+        }
+    }
+
+    /**
+     * Replays changes that were recorded *after* the snapshot this document
+     * was restored from, as the offline-persistence layer's change log holds
+     * them. Mirrors JS `restoreAppendedChanges`.
+     *
+     * These are the opposite case to the pending changes carried inside a
+     * [toBytes] envelope. Those are already reflected in the snapshot's root
+     * — [toBytes] serializes the live root — so [Companion.fromBytes] queues
+     * them without applying. A change from the log was written after that
+     * root was captured, so it must be both **applied**, to bring the root
+     * forward, and **queued**, so it is still pushed. Doing only the first
+     * loses the edit on reconnect; doing only the second leaves the user
+     * looking at stale content.
+     *
+     * The log must be contiguous and ascending by [ChangeID.clientSeq]. A
+     * caller that cannot satisfy that should restore from the snapshot alone
+     * and report the loss rather than replaying a broken run: this throws
+     * BEFORE any mutation, so the document is left completely untouched.
+     *
+     * @throws YorkieException with [ErrInvalidArgument] when [changes] is
+     * not strictly ascending by clientSeq.
+     */
+    internal suspend fun restoreAppendedChanges(
+        changes: List<Change>,
+        ackedClientSeq: UInt = 0u,
+    ): Unit = withContext(dispatcher) {
+        if (changes.isEmpty()) return@withContext
+
+        var prev: UInt? = null
+        for (change in changes) {
+            val clientSeq = change.id.clientSeq
+            if (prev != null && clientSeq <= prev) {
+                throw YorkieException(
+                    ErrInvalidArgument,
+                    "appended changes must be ascending by clientSeq, got $clientSeq after $prev",
+                )
+            }
+            prev = clientSeq
+        }
+
+        // Every entry is applied — the log is the delta between the
+        // snapshot and current content, so skipping an acked one would
+        // leave the root behind. Only the unacked ones are queued:
+        // re-pushing what the server has already taken presents a
+        // clientSeq it will skip.
+        applyChanges(changes, OpSource.Local)
+        localChanges.addAll(changes.filter { it.id.clientSeq > ackedClientSeq })
+
+        // Adopt the last replayed change's ID as the document's own
+        // counter. applyChanges only syncs clocks, which leaves clientSeq
+        // behind and over-advances lamport. Guarded: an all-acked replay
+        // must not pull the clock back below what the meta header already
+        // established.
+        val lastID = changes.last().id
+        if (lastID.clientSeq >= changeID.clientSeq) {
+            changeID = lastID
+        }
+
+        // The clone predates the replay, and the history's reverse-ops
+        // reference the pre-replay state — the same reasoning
+        // restoreFromBytes applies.
+        clone = null
+        clearHistory()
+    }
+
+    /**
+     * The result of [persistBase]: a [toBytes]-equal snapshot paired with
+     * the highest [ChangeID.clientSeq] it already carries.
+     */
+    internal data class PersistBase(val snapshot: ByteArray, val lastCarriedClientSeq: UInt)
+
+    /**
+     * The atomic base read a store write needs: a [toBytes]-equal snapshot
+     * paired with the highest [ChangeID.clientSeq] it already carries.
+     * Mirrors the iOS finding for `4213eecc67` (`aaa5cb15`/#1354): JS reads
+     * `toBytes()` and `getPendingChangesAfter(0)` in one synchronous block;
+     * on a coroutine dispatcher those would be two hops with a suspension
+     * gap between them, and an edit landing in that gap would be in neither
+     * the snapshot nor the log — durably lost. Because [buildEnvelopeBytes]
+     * is non-suspending and the [localChanges]/[checkPoint] reads are plain
+     * field reads, this whole block runs under [dispatcher] with no
+     * suspension in between.
+     */
+    internal suspend fun persistBase(): PersistBase = withContext(dispatcher) {
+        val snapshot = buildEnvelopeBytes()
+        val lastCarried =
+            maxOf(localChanges.lastOrNull()?.id?.clientSeq ?: 0u, checkPoint.clientSeq)
+        PersistBase(snapshot, lastCarried)
     }
 
     /**
@@ -1366,6 +1554,14 @@ public class Document(
             RestoreFailed("restore-failed"),
             EpochReanchor("epoch-reanchor"),
             DocumentPurged("document-purged"),
+
+            // LogDiscontinuity is raised when the persisted change log had a
+            // clientSeq hole — an append that never landed — so it could not
+            // be replayed: the server rejects a discontinuous run, and a
+            // document restored from one would never sync again. Raised by
+            // the store-backed attach path (`Client.kt`) when the log cannot
+            // back the persisted header.
+            LogDiscontinuity("log-discontinuity"),
         }
 
         /**

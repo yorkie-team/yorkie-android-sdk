@@ -15,8 +15,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Port of yorkie-js-sdk's `doc_store_test.ts` (`2291bf67`/#1338, RTCOLLABPLATFORM-771),
- * rewired onto the incremental `DocStore` shape (`aaa5cb15`/#1354, RTCOLLABPLATFORM-779).
+ * Port of yorkie-js-sdk's `doc_store_test.ts` (`2291bf67`/#1338),
+ * rewired onto the incremental `DocStore` shape (`aaa5cb15`/#1354).
  * The round-trip/defensive-copy/overwrite/remove cases this file used to cover (T1-T6) moved
  * to [DocStoreContractTest], which is stricter (11 cases incl. the append/meta contract) —
  * no coverage loss. T7/T8 remain here: the persistence loop through

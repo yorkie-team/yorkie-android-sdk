@@ -33,7 +33,7 @@ public class StoredDoc(
 
 /**
  * A byte-oriented, async storage seam for a [dev.yorkie.document.Document]'s persisted state.
- * Ported from yorkie-js-sdk `doc-store.ts` (`aaa5cb15`/#1354, RTCOLLABPLATFORM-779), replacing
+ * Ported from yorkie-js-sdk `doc-store.ts` (`aaa5cb15`/#1354), replacing
  * the single-blob shape from `2291bf67`/#1338.
  *
  * It is deliberately a snapshot plus an append-only change log rather than one opaque blob.

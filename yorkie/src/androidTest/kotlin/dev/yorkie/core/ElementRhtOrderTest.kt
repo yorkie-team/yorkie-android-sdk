@@ -11,8 +11,8 @@ import org.junit.runner.RunWith
 
 /**
  * Instrumented headline for yorkie-js-sdk `9970907c` (v0.7.22, yorkie-js-sdk#1343) against a real
- * Yorkie server (compose pin `yorkieteam/yorkie:0.7.22`) -- the exact live scenario the spec-026
- * cross-judge measured: a fresh client decoded an undone container as empty in 9-11 of 12 runs.
+ * Yorkie server (compose pin `yorkieteam/yorkie:0.7.22`) -- the exact live scenario in which
+ * a fresh client decoded an undone container as empty in 9-11 of 12 runs.
  *
  * c1 sets `frame=v1`, sets `frame=v2`, undoes back to `v1`; both clients sync; then a FRESH third
  * client attaches the same key, decoding the server's own snapshot. [serverRoot] reads the

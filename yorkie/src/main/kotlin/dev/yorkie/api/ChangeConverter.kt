@@ -129,7 +129,7 @@ internal fun Change.toStoredChangeBytes(): ByteArray = toPBChange().toByteArray(
  * surfaces the protobuf parser's own exception to the caller.
  *
  * Zero-length [bytes][ByteArray] are rejected with [YorkieException]([ErrInvalidArgument])
- * rather than decoded (determination 13, LOW-3(c)): an empty array parses to a default-valued,
+ * rather than decoded: an empty array parses to a default-valued,
  * zero-ID [dev.yorkie.api.v1.Change] without throwing, which would otherwise be replayed as a
  * silently-wrong entry instead of surfacing as the log corruption it actually is. JS is lenient
  * here; this is a deliberate Kotlin hardening.

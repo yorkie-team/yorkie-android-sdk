@@ -612,7 +612,7 @@ class DocumentBytesTest {
         assertEquals(CheckPoint.InitialCheckPoint, restoredCheckPoint)
     }
 
-    // --- incremental restore: the offline-persistence log (aaa5cb15/#1354, RTCOLLABPLATFORM-779) --
+    // --- incremental restore: the offline-persistence log (aaa5cb15/#1354) --
 
     @Test
     fun `T17 restoreAppendedChanges replays a log appended after the snapshot`() = runTest {
@@ -990,7 +990,7 @@ class DocumentBytesTest {
         }
 
         assertEquals(ErrInvalidArgument, exception.code)
-        // All-or-nothing (LOW-1): the checkpoint blob decoded FINE, but the failure must not
+        // All-or-nothing: the checkpoint blob decoded FINE, but the failure must not
         // leave it half-written while changeID/epoch/docId stay stale.
         assertEquals(checkPointBefore, restored.checkPoint)
         assertEquals(changeIDBefore, restored.changeID)
@@ -1025,7 +1025,7 @@ class DocumentBytesTest {
     fun `T26 restoreMetaFromBytes drops envelope pending changes the header says were acked`() =
         runTest {
             // given: an envelope carrying pending [1, 2, 3], and a meta written after the server
-            // acked 2 of them (team review, critic M2 -- a Kotlin hardening; JS leaves all three
+            // acked 2 of them (a Kotlin hardening; JS leaves all three
             // queued and relies on the server skipping the two it already applied).
             val live = Document(key)
             live.setActor(actorA)

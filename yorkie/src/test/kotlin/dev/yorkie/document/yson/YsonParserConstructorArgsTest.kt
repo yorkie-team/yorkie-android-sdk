@@ -16,7 +16,7 @@ import org.junit.Test
  * bracket-stack argument splitter with arity checks.
  *
  * [YsonParser] has neither defect: it is a single-stage hand-rolled recursive-descent parser
- * (spec 023 determination) with no `preprocessYSON` rewrite step and no `__yson_type` marker
+ * with no `preprocessYSON` rewrite step and no `__yson_type` marker
  * object -- constructors are recognised and their arguments consumed directly by the grammar
  * (`parseIntConstructor`, `parseDedupCounterConstructor`, `parseTextConstructor`, ...), so every
  * malformed argument list fails the grammar with `YorkieException(ErrInvalidArgument)` regardless
@@ -25,7 +25,7 @@ import org.junit.Test
  * `git diff --stat f6037bbe -- yorkie/src/main/kotlin/dev/yorkie/document/yson` is empty for this
  * commit (RED not constructible -- structurally absent).
  *
- * Error MESSAGE texts are not a contract (determination carried from spec 023, unchanged): JS and
+ * Error MESSAGE texts are not a contract (unchanged): JS and
  * iOS now name the constructor in the message; Android reports the grammar failure with a
  * "Failed to parse YSON at position N:" prefix. Every case here asserts type ([YorkieException])
  * and [YorkieException.Code.ErrInvalidArgument] only, never the message text.
@@ -34,7 +34,7 @@ import org.junit.Test
  * `{__yson_type, __yson_data}` object where Android's grammar rejects -- a bare number inside a
  * `Counter`/`Date`/`BinData` (`Counter(5)`, `Date(1)`, `BinData(1)`), a string value in a
  * `DedupCounter` (`DedupCounter("5","x")`), and non-integer or out-of-range `Int` arguments
- * (`Int(1e3)`, `Int(2147483648)`, `Int(1.5)`; spec 023 kept the strict integer grammar, matching
+ * (`Int(1e3)`, `Int(2147483648)`, `Int(1.5)`; the strict integer grammar is kept, matching
  * iOS). The asymmetry runs one way only: Android can reject what JS accepts, never accept what JS
  * rejects, so the 24 rejection/acceptance cases below hold on both sides (source-read, parity
  * unverified).

@@ -17,7 +17,7 @@ import org.junit.Test
 
 /**
  * Ports yorkie-js-sdk `test/unit/document/crdt/element_rht_order_test.ts` (v0.7.22, `9970907c`,
- * yorkie-js-sdk#1343) plus a two-replica over-the-wire twin (lesson all/007 / C9).
+ * yorkie-js-sdk#1343) plus a two-replica over-the-wire twin.
  *
  * [ElementRht.set] used to tombstone the previous occupant via [CrdtElement.remove], gated on the
  * raw `createdAt`, BEFORE deciding the LWW winner on [CrdtElement.getPositionedAt]. For an
@@ -186,9 +186,9 @@ class ElementRhtOrderTest {
         decodesIdentically(true)
 
     /**
-     * C9 twin (lesson all/007): the single-replica decoder cases above are pinned again over the
+     * The single-replica decoder cases above are pinned again over the
      * wire, converging two live replicas plus a third rebuilt directly from the first's root
-     * bytes -- the exact shape the spec-026 cross-judge measured live (a fresh client decoding an
+     * bytes -- the exact shape seen live (a fresh client decoding an
      * undone container as empty in 9-11 of 12 runs; `Document.toJson()` emitting invalid JSON).
      * Both `d2.toJson()` and the rebuilt `d3.toJson()` must parse as JSON, pinning the
      * `JsonStringifier` invalid-JSON symptom shut.

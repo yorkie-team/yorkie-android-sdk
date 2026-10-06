@@ -979,8 +979,7 @@ public class Document(
      */
     internal suspend fun pendingChanges(): List<Change> = withContext(dispatcher) {
         // Confined like [pendingChangesAfter]: `localChanges` is owned by this document's
-        // dispatcher, and every caller used to be safe only by an attach-time invariant
-        // (round-5 QA LOW-B, RTCOLLABPLATFORM-779).
+        // dispatcher, and every caller used to be safe only by an attach-time invariant.
         localChanges.toList()
     }
 
@@ -989,7 +988,7 @@ public class Document(
      * strictly greater than [clientSeq], in queue order. Mirrors JS
      * `getPendingChangesAfter`; used by the offline-persistence layer to
      * append only what is new to the change log. Suspend and confined to
-     * [dispatcher] (round-4 QA BLOCKER-1, RTCOLLABPLATFORM-779): [localChanges]
+     * [dispatcher]: [localChanges]
      * is a plain `mutableListOf` mutated on this document's own dispatcher
      * (`updateAsync`), while the persist collector (`Client.append`) used to
      * call this as a non-suspending field read from the CLIENT's dispatcher —
@@ -1010,7 +1009,7 @@ public class Document(
      * into a self-contained byte envelope. Non-suspending: assumes it runs on
      * [dispatcher] already, so a caller composing it with another
      * non-suspending dispatcher-confined read (e.g. [persistBase]) gets one
-     * atomic critical section rather than two dispatcher hops with a gap
+     * atomic step rather than two dispatcher hops with a gap
      * between them. [toBytes] is this method under its own [withContext];
      * this single source of truth for the envelope prevents the
      * two-copies-drift class of bug the incremental store exists to prevent.
@@ -1149,8 +1148,7 @@ public class Document(
      * [root]. Mirrors JS `restoreMetaFromBytes`.
      *
      * The pending queue is trimmed to the restored checkpoint
-     * ([removePushedLocalChanges]) — a Kotlin hardening (team review, critic
-     * M2, RTCOLLABPLATFORM-779): an envelope written before a sync carries
+     * ([removePushedLocalChanges]) — a Kotlin hardening: an envelope written before a sync carries
      * changes the header now says were acked, and keeping them queued would
      * re-push them on the next sync. JS leaves them queued and relies on the
      * server skipping an already-applied `clientSeq`; the root is unchanged
@@ -1158,15 +1156,14 @@ public class Document(
      *
      * @throws YorkieException with [ErrInvalidArgument] when [bytes] is
      * empty, or any blob it carries (checkpoint, changeID, epoch) cannot be
-     * parsed. All-or-nothing (determination 12, LOW-1): every blob is
+     * parsed. All-or-nothing: every blob is
      * decoded into a local before any field is written, so a failure
      * partway through — e.g. a corrupt changeID blob — cannot leave
      * [checkPoint] written while [changeID] stays stale. JS `bytesToChangeID`
      * is unwrapped and assigns the checkpoint first; this stricter,
-     * all-or-nothing shape is a deliberate Kotlin hardening (round-2 QA
-     * LOW-1 `meta-changeid-decode-unwrapped`). A zero-length changeID blob
+     * all-or-nothing shape is a deliberate Kotlin hardening. A zero-length changeID blob
      * is rejected rather than silently decoding to a default-valued
-     * [ChangeID] (determination 13, LOW-2(b); JS is lenient here).
+     * [ChangeID] (JS is lenient here).
      */
     internal suspend fun restoreMetaFromBytes(bytes: ByteArray): Unit = withContext(dispatcher) {
         val blobs = unpackBlobs(bytes)
@@ -1228,7 +1225,7 @@ public class Document(
      * and report the loss rather than replaying a broken run: this throws
      * BEFORE any mutation, so the document is left completely untouched.
      *
-     * Preconditions the caller must enforce (determination 13, LOW-2(a)):
+     * Preconditions the caller must enforce:
      * this document must be quiescent (no concurrent writer) and [changes]
      * must share this document's own actor. Neither precondition is checked
      * here — a replayed entry under a foreign actor, or a replay racing a

@@ -161,10 +161,8 @@ class ClientPersistenceTest {
 
     /**
      * Asserts the entry at [key] is a FRESH BASE: a non-empty snapshot that is NOT the [seeded]
-     * envelope the test planted, an empty log, and no meta (F10: a re-anchor's recovery attach,
-     * like every attach, now WRITES a fresh base — scenario 22 — rather than leaving the key
-     * absent as pre-029 builds did; disclosed per evaluator/005 as strictly more specific, not
-     * weakened). The seeded-bytes check (team review, test-writer) is what tells a re-anchor's
+     * envelope the test planted, an empty log, and no meta (a re-anchor's recovery attach,
+     * like every attach, WRITES a fresh base rather than leaving the key absent). The seeded-bytes check is what tells a re-anchor's
      * rewritten base apart from the planted envelope merely surviving untouched.
      */
     private suspend fun assertFreshBase(
@@ -193,7 +191,7 @@ class ClientPersistenceTest {
         }
     }
 
-    // --- actor (AC2) ---------------------------------------------------
+    // --- actor ---------------------------------------------------
 
     @Test
     fun `T1 activate with a distinct actor_id makes requireActorId differ from requireClientId`() =
@@ -239,7 +237,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- persist after sync + triggers + ordering (AC5) -----------------
+    // --- persist after sync + triggers + ordering -----------------
 
     @Test
     fun `T4 a sync pull with remote changes rewrites the snapshot and clears the log`() = runTest {
@@ -247,7 +245,7 @@ class ClientPersistenceTest {
         // client-seq ack, so this proves the persist-after-sync site (not the event-driven
         // one, which never fires for a push with no LocalChange/PresenceChanged) rewrites the
         // BASE after applyChangePack: the stored snapshot must contain the remote k2 key, the
-        // log is cleared, and meta is null (scenario 5).
+        // log is cleared, and meta is null.
         val store = MemoryDocStore()
         val client = newClient(MockYorkieService(), docStore = store)
         client.activateAsync().await()
@@ -347,7 +345,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- epoch re-anchor (AC4) ------------------------------------------
+    // --- epoch re-anchor ------------------------------------------
 
     @Test
     fun `T7 a stale epoch on a store-backed resume re-anchors without deactivating`() = runTest {
@@ -394,7 +392,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- tier-3 purge guard (AC4) ----------------------------------------
+    // --- tier-3 purge guard ----------------------------------------
 
     @Test
     fun `T9 a docId change on a restored attach emits DocumentPurged and re-anchors`() = runTest {
@@ -453,7 +451,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- actor mismatch / restore failed (AC3, C-3) -----------------------
+    // --- actor mismatch / restore failed -----------------------
 
     @Test
     fun `T11 a persisted actor mismatch emits ActorMismatch with the recovered pending changes`() =
@@ -507,7 +505,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- unreadable store (AC5, scenario 8) --------------------------------
+    // --- unreadable store --------------------------------
 
     private class UnreadableDocStore(private val inner: DocStore = MemoryDocStore()) : DocStore {
         var saveSnapshotCount = 0
@@ -561,7 +559,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- lease teardown (AC6) ---------------------------------------------
+    // --- lease teardown ---------------------------------------------
 
     private class RecordingSessionLock : SessionLock {
         val held = mutableSetOf<String>()
@@ -744,7 +742,7 @@ class ClientPersistenceTest {
         client2.close()
     }
 
-    // --- ErrInvalidServerSeq re-anchor (AC4, round-2 QA HIGH-1/MEDIUM-2) --------
+    // --- ErrInvalidServerSeq re-anchor --------
 
     @Test
     fun `T22 a stale checkpoint on a store-backed resume re-anchors without deactivating`() =
@@ -807,7 +805,7 @@ class ClientPersistenceTest {
         client.close()
 
         // The drained write is an append (or a base, if compaction happened to fire) — same
-        // observable either way: restorable from load() (scenario 24).
+        // observable either way: restorable from load().
         val stored = store.load(storeKeyFor("close-drain-doc"))
         assertNotNull(stored)
         val restored = reconstruct("close-drain-doc", stored)
@@ -991,7 +989,7 @@ class ClientPersistenceTest {
         assertTrue(restored.toJson().contains("\"k\":1"))
     }
 
-    // --- write path (AC1, scenarios 1, 3) ----------------------------------
+    // --- write path ----------------------------------
 
     @Test
     fun `U1 attach writes a fresh base with an empty log and no meta`() = runTest {
@@ -1057,7 +1055,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- sync branches (AC2, scenario 6) -----------------------------------
+    // --- sync branches -----------------------------------
 
     private class FlakyAppendStore(
         private val failCount: Int,
@@ -1117,7 +1115,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- write failures (AC3, scenarios 7, 8) ------------------------------
+    // --- write failures ------------------------------
 
     private class FlakySaveStore(
         private val failCount: Int,
@@ -1197,7 +1195,7 @@ class ClientPersistenceTest {
             client.close()
         }
 
-    // --- restore path (AC4, AC5, scenarios 9-16, 16b) ----------------------
+    // --- restore path ----------------------
 
     @Test
     fun `U9 restore replays the appended log so offline edits survive a reload`() = runTest {
@@ -1234,7 +1232,7 @@ class ClientPersistenceTest {
 
         // serverSeq stays 0 here deliberately: the mock's default attach response always
         // echoes a zero checkpoint, and a nonzero serverSeq would trip the UNRELATED tier-3
-        // silent-purge guard (spec 025) — this fixture targets only the clientSeq-ack split.
+        // silent-purge guard — this fixture targets only the clientSeq-ack split.
         val ackedMeta = Document(docKey).apply {
             setActor(TEST_ACTOR_ID)
             applyChangePack(
@@ -1484,7 +1482,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- entry lifecycle (AC8, scenarios 18, 19, 21) -----------------------
+    // --- entry lifecycle -----------------------
 
     @Test
     fun `U18 detach removes the store entry, re-attaching the same key succeeds`() = runTest {
@@ -1540,15 +1538,14 @@ class ClientPersistenceTest {
 
         client.deactivateAsync().await()
 
-        // The kept entry must still RECONSTRUCT the edit, not merely exist (team review,
-        // test-writer): a non-null load says nothing about what the next session restores.
+        // The kept entry must still RECONSTRUCT the edit, not merely exist: a non-null load says nothing about what the next session restores.
         val kept = awaitCondition { store.load(storeKeyFor("deactivate-keeps-doc")) }
         assertTrue(reconstruct("deactivate-keeps-doc", kept).toJson().contains("\"kept\":1"))
 
         client.close()
     }
 
-    // --- ordering (AC3, AC8, scenario 25) ----------------------------------
+    // --- ordering ----------------------------------
 
     @Test
     fun `U25 a chained append never overtakes the base it follows, a remove never resurrects`() =
@@ -1575,7 +1572,7 @@ class ClientPersistenceTest {
             client.close()
         }
 
-    // --- #1355 (AC6, scenarios 13, 14) --------------------------------------
+    // --- #1355 --------------------------------------
 
     @Test
     fun `U13 a log that does not start where the snapshot ends is a log discontinuity`() = runTest {
@@ -1671,10 +1668,10 @@ class ClientPersistenceTest {
 
     @Test
     fun `U14b a live 1355 inflight edit then newest entry dropped is a discontinuity`() = runTest {
-        // Round-3 cross-judge LOW-2: the live-mechanism twin of U14's hand-built fixture,
+        // The live-mechanism twin of U14's hand-built fixture,
         // proven against the real attach/sync/collector path instead of a direct fixture
-        // write. Also resolves LOW-1 — inFlightPushPullHook is not dead scaffolding; this
-        // is the test that actually drives it through a live sync.
+        // write. inFlightPushPullHook is driven through a live sync by
+        // this test.
         val store = MemoryDocStore()
         val service = MockYorkieService()
         val client = newClient(service, docStore = store)
@@ -1733,12 +1730,12 @@ class ClientPersistenceTest {
 
     @Test
     fun `U20 a burst of un-awaited edits is fully persisted and restorable`() = runTest {
-        // Round-4 QA BLOCKER-1 regression: Document.pendingChangesAfter used to be a
+        // Regression: Document.pendingChangesAfter used to be a
         // non-suspending read of a plain mutableListOf mutated on the DOCUMENT's own
         // dispatcher, called from the CLIENT dispatcher's persist collector — an unsynchronized
         // cross-thread read/write that threw ConcurrentModificationException and silently
-        // stopped persistence for the rest of the session (cross-judge round-3 Q6/Q7/Q8/Q9: up
-        // to 100% of a burst lost, and waiting before close() did not help). Every OTHER test in
+        // stopped persistence for the rest of the session (up
+        // to 100% of a burst was lost, and waiting before close() did not help). Every OTHER test in
         // this file awaits each edit before firing the next, which drains the collector between
         // edits and never exercises this path — this test fires a burst of un-awaited edits
         // first and only awaits them afterward, which is what actually puts concurrent pressure
@@ -1749,7 +1746,7 @@ class ClientPersistenceTest {
         // permanently-stuck log within 5s on the pre-fix tree, verified RED/GREEN for this
         // round's fix) while staying under PersistPolicy.MaxReplay. The BYTE rule does fire,
         // though: 900 entries total ~110 KB against the 64 KiB floor, so compaction folds the
-        // log into a base somewhere in the burst (team review: an earlier revision of this test
+        // log into a base somewhere in the burst (an earlier revision of this test
         // assumed it never did and asserted on the log alone, which raced the compaction's
         // base write -- the pre-fix 5s wedge seen in CI). The assertion is therefore on what
         // the store REACHES (log or snapshot), and the second client's restore is the proof
@@ -1778,13 +1775,13 @@ class ClientPersistenceTest {
         // NEVER catches up (the collector that would read the rest is dead) -- a long
         // timeout would not help a dead collector, so 10s is both tight enough to fail fast
         // on the bug and generous enough for the fixed path, which clears in well under 1s
-        // (was 5s; widened per team review to keep a loaded CI runner from false-failing).
+        // (was 5s; widened to keep a loaded CI runner from false-failing).
         val stored = awaitCondition(timeoutMs = 10_000) {
             store.load(storeKeyFor(docKey))?.takeIf { it.reach(docKey) >= liveSeq }
         }
         assertEquals(liveSeq, stored.reach(docKey))
 
-        // No detachDocument here — detach REMOVES the store entry (determination 8); close()
+        // No detachDocument here — detach REMOVES the store entry; close()
         // alone keeps it, like a deactivated-but-not-detached session the next attach restores.
         client.close()
 
@@ -1811,7 +1808,7 @@ class ClientPersistenceTest {
         client2.close()
     }
 
-    // --- team review: critic M1 / researcher U1, U2, U5 -------------------------
+    // --- meta/log ordering races and attach/detach edge cases -------------------------
 
     /**
      * Attaches a fresh client to [docKey] over [store] and returns the restored document's JSON
@@ -1844,7 +1841,7 @@ class ClientPersistenceTest {
 
     @Test
     fun `U26 meta never leads the log across a burst of edits racing ack-only syncs`() = runTest {
-        // Critic M1 / researcher U3: a change the server acked but the log never received (the
+        // A change the server acked but the log never received (the
         // collector's dispatcher hop resuming after applyChangePack dropped it from the pending
         // queue) must take the snapshot-repair branch, never a meta-only write. The exact
         // interleaving cannot be forced from a test -- the client and document dispatchers are
@@ -1898,7 +1895,7 @@ class ClientPersistenceTest {
     /**
      * Audits every snapshot write against the log it replaces: a violation is a `saveSnapshot`
      * landing over a log entry NEWER than the snapshot's own carried watermark, after which the
-     * entry exists in neither place (researcher U1). [snapshotDelayMs] widens the write-side
+     * entry exists in neither place. [snapshotDelayMs] widens the write-side
      * window so a racing append is chained behind a slow base rather than landing before it.
      */
     private class SnapshotAuditStore(private val snapshotDelayMs: Long) : DocStore {
@@ -1926,7 +1923,7 @@ class ClientPersistenceTest {
     @Test
     fun `U27 a base written while an edit races a pull-sync never drops a newer log entry`() =
         runTest {
-            // Researcher U1: a base read before an edit, written after the collector appended
+            // A base read before an edit, written after the collector appended
             // that edit, clears the log entry without containing it. Not forceable from a test
             // (FIFO dispatchers order the base's continuation ahead of the collector's for any
             // edit minted after the base read), so this pins the invariant: no snapshot write
@@ -1973,7 +1970,7 @@ class ClientPersistenceTest {
     @Test
     fun `U28 an edit minted as attach completes is in the store before any further edit`() =
         runTest {
-            // Researcher U2: an edit minted between the attach base's persistBase() read and the
+            // An edit minted between the attach base's persistBase() read and the
             // collector subscription is in neither the base nor the log, and nothing re-reads
             // the pending queue until the NEXT edit. The edit is fired the moment the document
             // reports Attached -- published on the document dispatcher right ahead of the base
@@ -2015,7 +2012,7 @@ class ClientPersistenceTest {
     @Test
     fun `U29 a Removed detach response still tears down the attachment and removes the entry`() =
         runTest {
-            // Critic Low / researcher U5: the Removed branch of detachDocument used to skip
+            // The Removed branch of detachDocument used to skip
             // detachInternal, leaving the attachment registered, its PersistState and its
             // session lease held, until deactivate.
             val lock = RecordingSessionLock()
@@ -2044,7 +2041,7 @@ class ClientPersistenceTest {
             client.close()
         }
 
-    // --- synchronous persist registration (AC1, B2, spec 029) ---------------
+    // --- synchronous persist registration ---------------
     // RED at a7579fe6: revert the Document.onLocalChange hook (steps 1-3) and the Client-side
     // wiring that subscribes it (step 7) back to the document.events collector — the scratch
     // probe this replaces lost the marker in 5/10 runs at 3,000 edits; this test's 20,000-edit
@@ -2080,7 +2077,7 @@ class ClientPersistenceTest {
         }
     }
 
-    // --- store re-anchor gated on a restored envelope (AC2, I3, spec 029) ---
+    // --- store re-anchor gated on a restored envelope ---
     // RED at a7579fe6: revert the gate back to `options.docStore != null` (step 12) — the bare
     // stale-checkpoint error below would then re-anchor despite nothing having been restored.
 
@@ -2125,7 +2122,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- single bounded deactivate drain, not N*5s (AC4, M3, spec 029) ------
+    // --- single bounded deactivate drain, not N*5s ------
     // RED at a7579fe6: revert deactivateInternal to call detachInternal with its per-document
     // drain (step 10) — three attachments at 7s each would then take ~21s, not ~5-6.5s.
 
@@ -2135,7 +2132,7 @@ class ClientPersistenceTest {
             // 12s saves: the single bounded drain returns at ~5s, while the reverted
             // per-document drain path needs a second full 5s bound before the writes
             // finish (>= 10s), so the 9s ceiling keeps RED/GREEN apart with ~4s of slack
-            // for a loaded host (round-2 QA LOW-2: the old 6.5s ceiling left ~1.2s).
+            // for a loaded host (the old 6.5s ceiling left ~1.2s).
             val store = SlowSaveStore(delayMs = 12_000)
             val client = newClient(MockYorkieService(), docStore = store)
             client.activateAsync().await()
@@ -2159,7 +2156,7 @@ class ClientPersistenceTest {
             client.close()
         }
 
-    // --- persist queue pruned on detach (AC4, M2, spec 029) ------------------
+    // --- persist queue pruned on detach ------------------
     // RED at a7579fe6: revert the detachInternal prune (step 9) — the entry for this key
     // would remain in persistQueues forever after detach.
 
@@ -2180,7 +2177,7 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- JS-parity actor guard rejects an initial-actor envelope (AC5, D1, spec 029) ----
+    // --- JS-parity actor guard rejects an initial-actor envelope ----
     // RED at a7579fe6: restore either INITIAL_ACTOR_ID disjunct in Document.restoreFrom's
     // guard (step 20) — the envelope below would then be exempted and restored instead of
     // rejected.
@@ -2204,7 +2201,7 @@ class ClientPersistenceTest {
         val dropped = droppedDeferred.await()
         assertEquals(Document.Event.Reason.ActorMismatch, dropped.reason)
         assertTrue(dropped.changes.isNotEmpty())
-        // The recovery attach writes a fresh base for the key (spec 029, like T11).
+        // The recovery attach writes a fresh base for the key (like T11).
         assertFreshBase(store, storeKeyFor(docKey), seeded)
 
         client.detachDocument(document).await()

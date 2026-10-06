@@ -58,7 +58,7 @@ public object NoopSessionLock : SessionLock {
  * Runs the single-active-session decision the store-backed attach makes: take the lock, and
  * translate an absent handle — the fail-fast signal — into a rejected attach carrying
  * [ErrDocumentOpenElsewhere]. Ported from yorkie-js-sdk `session-lock.ts` `acquireSessionLock`
- * (`aaa5cb15`/#1354, RTCOLLABPLATFORM-779).
+ * (`aaa5cb15`/#1354).
  *
  * It lives here, rather than inline in attach, so the decision has exactly one
  * implementation. A test that re-states it would pass while the real path regressed, which is

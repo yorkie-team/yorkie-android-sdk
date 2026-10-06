@@ -201,17 +201,16 @@ public class Client(
     private val Attachable.mutex
         get() = mutexForAttachments.getOrPut(getKey()) { Mutex() }
 
-    // Per-store-key FIFO of pending persist writes (spec 025). Every write goes through
-    // enqueueWrite, which registers it atomically via [ConcurrentHashMap.compute] (spec 029 B2):
+    // Per-store-key FIFO of pending persist writes. Every write goes through
+    // enqueueWrite, which registers it atomically via [ConcurrentHashMap.compute]:
     // writers run on the client dispatcher (append, persistAfterSync, the attach base), but
     // removeFromStore can also run from a keepalive GlobalScope detach, and close()'s runBlocking
-    // drain reads the map from the caller's thread — hence a concurrent map (round-6 QA LOW-1).
-    // Internal (not private) so ClientPersistenceTest can assert the detach-time prune (spec 029
-    // M2).
+    // drain reads the map from the caller's thread — hence a concurrent map.
+    // Internal (not private) so ClientPersistenceTest can assert the detach-time prune.
     @VisibleForTesting
     internal val persistQueues = ConcurrentHashMap<String, Job>()
 
-    // Per-store-key incremental-persistence bookkeeping (determination 7, RTCOLLABPLATFORM-779):
+    // Per-store-key incremental-persistence bookkeeping:
     // how large the stored snapshot/log already are, how many changes are appended, the highest
     // clientSeq already carried, and whether the last write to this key failed. Written from the
     // onLocalChange-triggered append() and the sync-persist site (persistAfterSync), both confined to
@@ -222,12 +221,12 @@ public class Client(
     // with each other, but it does not make either of them atomic: both suspend into the
     // document's own dispatcher (a suspension point), and another coroutine already queued on the
     // client dispatcher can interleave in that window — hence append()'s re-read-after-every-hop
-    // discipline (round-4 QA BLOCKER-1).
+    // discipline.
     @VisibleForTesting
     internal val persistStates = ConcurrentHashMap<String, PersistState>()
 
-    // Per-store-key chain of hook-launched append() runs (spec 029 B2 folded onto the incremental
-    // design, RTCOLLABPLATFORM-779): registered atomically from Document.onLocalChange (document
+    // Per-store-key chain of hook-launched append() runs (folded onto the incremental
+    // design): registered atomically from Document.onLocalChange (document
     // dispatcher) so drainPersist/drainAllPersists can join an append that has not reached
     // enqueueWrite yet. Entries remove themselves on completion, like persistQueues.
     private val persistTriggers = ConcurrentHashMap<String, Job>()
@@ -241,8 +240,7 @@ public class Client(
 
     /**
      * Chains [block] after any already-enqueued write for [key] so concurrent enqueues cannot
-     * land out of order, and runs it on [Dispatchers.IO] under [NonCancellable] (spec 025
-     * MEDIUM-1, amended round 5 per a cross-judge HIGH finding): Kotlin's structured concurrency
+     * land out of order, and runs it on [Dispatchers.IO] under [NonCancellable]: Kotlin's structured concurrency
      * cancels a child job immediately on `scope.cancel()`, which is not JS promise semantics — an
      * in-flight store write for the last local edit must not be interrupted mid-write just
      * because [close] moved on. Running on [Dispatchers.IO] (rather than the client's own
@@ -256,20 +254,20 @@ public class Client(
      * independently of that bound and of the client dispatcher's lifecycle. [onFailure] runs
      * inside the same [NonCancellable] section, on [Dispatchers.IO] — never thrown further. This
      * is the single chained-write primitive every store write (snapshot, append, meta, remove)
-     * goes through (determination, RTCOLLABPLATFORM-779; was [enqueuePersist], spec 025).
+     * goes through (this replaced the earlier single-blob [enqueuePersist]).
      *
-     * Registration is atomic — [ConcurrentHashMap.compute], the shape spec 029 B2 (57131568)
+     * Registration is atomic — [ConcurrentHashMap.compute], the shape JS (57131568)
      * gave the single-blob `enqueuePersist` — because the hook-driven [append],
      * [persistAfterSync] and a keepalive [removeFromStore] can chain onto the same key from
-     * different coroutines. B2's other half, "take the snapshot INSIDE the chained job", does NOT
+     * different coroutines. JS's other half, "take the snapshot INSIDE the chained job", does NOT
      * apply to the incremental design: an incremental write's bytes and its watermark must come
      * from ONE atomic read ([Document.persistBase] / [Document.pendingChangesAfter]) and
      * [PersistState] is advanced in the same non-suspending step, BEFORE the write is chained —
-     * so [block] only ever carries already-captured bytes. The zero-suspension guarantee B2
-     * exists for is kept by [triggerAppend] + [persistTriggers] instead.
+     * so [block] only ever carries already-captured bytes. The zero-suspension guarantee that
+     * shape exists for is kept by [triggerAppend] + [persistTriggers] instead.
      *
      * A completed job removes itself from [persistQueues] while it is still the tail (JS
-     * `persistToStore`'s `finally`; team review, researcher U4), so the map does not keep one
+     * `persistToStore`'s `finally`), so the map does not keep one
      * finished [Job] per key alive for the rest of the session — [drainPersist] and
      * [drainAllPersists] re-check the map, so an absent key reads as quiescent. Pre-existing
      * shape, unchanged: a write enqueued after [close] cancelled [scope] (e.g. a
@@ -326,8 +324,7 @@ public class Client(
      * Chains a snapshot write for [key] that is ALSO a repair: on failure, re-reads [key]'s
      * [PersistState] from [persistStates] (a detach may have removed it between enqueue and
      * failure) and sets [PersistState.poisoned], so the next write for this key writes a fresh
-     * snapshot instead of appending into a hole a failed write may have left (determination 7,
-     * RTCOLLABPLATFORM-779: "every snapshot write is also a repair").
+     * snapshot instead of appending into a hole a failed write may have left ("every snapshot write is also a repair").
      */
     private fun persistSnapshotOrPoison(key: String, snapshot: ByteArray) {
         val store = options.docStore ?: return
@@ -342,7 +339,7 @@ public class Client(
 
     /**
      * Waits for [key]'s persist chain to become quiescent, bounded to 5s (spec 025 MEDIUM-1).
-     * Registration is synchronous with the local change that triggers it (spec 029 B2): the hook
+     * Registration is synchronous with the local change that triggers it: the hook
      * registers its [append] launch in [persistTriggers] before anything suspends, so there is no
      * not-yet-registered write to poll for — joining the trigger (if any) and then the job
      * currently at [key] (if any) covers the whole chain; a second pass can only find something
@@ -383,9 +380,9 @@ public class Client(
      * Removes [docKey]'s envelope from the configured [DocStore], if any. Chained on [key]'s own
      * write queue via [enqueueWrite] and AWAITED (`.join()`) — never fire-and-forget — because
      * bypassing the chain would let an in-flight write enqueued just before this call resurrect
-     * the entry this call exists to destroy (JS `removeFromStore`, determination, 029). Called
+     * the entry this call exists to destroy (JS `removeFromStore`). Called
      * from the restore-failure / tier-3-purge / epoch-re-anchor recovery paths, and — as of JS
-     * v0.7.22 (determination 8, supersedes spec 025's "kept") — from `detachDocument` (both
+     * v0.7.22 — from `detachDocument` (both
      * branches), `removeDocument`, and the sync-Removed path; never from `deactivateInternal`,
      * so a deactivated-but-not-detached document's entry survives for the next session. Failures
      * are logged, never thrown.
@@ -402,11 +399,10 @@ public class Client(
     /**
      * The [Document.onLocalChange] handler: launches one [append] for [attachment] on the client
      * dispatcher (where [PersistState] is confined), chained after the previous launch for the
-     * same key and registered in [persistTriggers] with zero suspension in front of it (spec 029
-     * B2 on the incremental design) — so a drain joins it before sampling [persistQueues] even
+     * same key and registered in [persistTriggers] with zero suspension in front of it — so a drain joins it before sampling [persistQueues] even
      * though [append] itself hops to the document dispatcher before it chains a write. Not
      * suspending: it runs on the DOCUMENT dispatcher, inside `updateAsync`/undo-redo. One thrown
-     * [append] is logged, never propagated (round-4 QA BLOCKER-1: it used to end the events
+     * [append] is logged, never propagated (it used to end the events
      * collector and silently stop persistence for the rest of the session);
      * [CancellationException] propagates normally.
      */
@@ -444,10 +440,9 @@ public class Client(
      * [Document.persistBase]) is
      * itself `suspend` and hops to the document's OWN dispatcher, which is a suspension point on
      * the client's single-threaded dispatcher — another queued coroutine (`persistAfterSync`, a
-     * repeat `append`) can run in that window and mutate this key's [PersistState] (round-4 QA
-     * BLOCKER-1, RTCOLLABPLATFORM-779: a prior revision of this comment called the function
-     * "non-suspending after the state lookup", which is not the same claim as thread-confined and
-     * was false once [Document.pendingChangesAfter] stopped being a plain field read). So every
+     * repeat `append`) can run in that window and mutate this key's [PersistState] (the function is
+     * NOT non-suspending after the state lookup, and thread-confined is a weaker claim than that:
+     * it stopped being true once [Document.pendingChangesAfter] stopped being a plain field read). So every
      * read of [persistStates] after a hop is a FRESH read (the entry may have been removed by a
      * detach, or advanced by a racing writer), and every watermark update uses `maxOf` against the
      * CURRENT value rather than overwriting it, so a result from before the hop can never move the
@@ -485,7 +480,7 @@ public class Client(
             }
         }
         if (shouldCompact(stateAfterReadHop)) {
-            // Suspend hop #2 (inside the helper). determination 7: the watermark is seeded from
+            // Suspend hop #2 (inside the helper). The watermark is seeded from
             // the SAME atomic read compaction takes, which is the just-appended tail when
             // quiescent and the safer value when an edit landed in between (JS leaves this
             // field as-is here).
@@ -497,8 +492,7 @@ public class Client(
      * Writes a fresh base for [key] — a [Document.persistBase] snapshot — and resets its
      * [PersistState] to it. The ONE path every base written after a `persistBase()` hop goes
      * through: the pull and repair branches of [persistAfterSync], and the poisoned-repair and
-     * compaction paths of [append]. Kotlin-forced hardening (team review, researcher U1,
-     * RTCOLLABPLATFORM-779): `persistBase()` suspends into the document's own dispatcher, and
+     * compaction paths of [append]. Kotlin-forced hardening: `persistBase()` suspends into the document's own dispatcher, and
      * an onLocalChange-triggered append can append a NEWER change in that window. A base read before that edit does
      * not contain it, yet writing the base would clear the log entry that does
      * ([DocStore.saveSnapshot] drops the log) while [PersistState.lastAppendedClientSeq] already
@@ -530,8 +524,7 @@ public class Client(
     }
 
     /**
-     * The incremental half of a store-backed restore (spec 028/029, yorkie-js-sdk#1354/#1355,
-     * RTCOLLABPLATFORM-779), run right after [Document.restoreFromBytes] returned
+     * The incremental half of a store-backed restore (yorkie-js-sdk#1354/#1355), run right after [Document.restoreFromBytes] returned
      * [RestoreResult.Restored] for [stored]'s snapshot: snapshot watermark → meta → log
      * validation → replay, or a [Document.Event.Reason.LogDiscontinuity] report plus a rewrite of
      * the base when the log cannot back the header. A method of its own only to keep the attach
@@ -628,7 +621,7 @@ public class Client(
             val startsRight = fresh.isEmpty() ||
                 fresh.first().clientSeq ==
                 snapshotWatermark + 1u
-            // LOW-2(a): restoreAppendedChanges'
+            // restoreAppendedChanges'
             // documented precondition (quiescent, same
             // actor) is enforced HERE, not inside it.
             val sameActor = decoded != null &&
@@ -687,8 +680,7 @@ public class Client(
      * client with nothing left to edit. A healthy pure ack writes meta only, leaving the
      * snapshot and the log untouched.
      *
-     * Two Kotlin-forced guards keep meta from ever leading the log (team review, critic M1 /
-     * researcher U3, RTCOLLABPLATFORM-779). JS persists synchronously inside the event publish,
+     * Two Kotlin-forced guards keep meta from ever leading the log. JS persists synchronously inside the event publish,
      * so by the time its sync site runs every local change is already in the log; Android's
      * the triggered append is asynchronous. A base write needs neither guard — it embeds the whole pending
      * queue. Before a meta-only write, first, the catch-up [append] runs — cheap and idempotent
@@ -1030,7 +1022,7 @@ public class Client(
                         // would leave a stale envelope in the store. Gated on
                         // persistsToStore like the other site.
                         // persistAfterSync branches on whether the response carried
-                        // remote content (AC2, determination, RTCOLLABPLATFORM-779).
+                        // remote content.
                         if (attachment.persistsToStore) {
                             persistAfterSync(attachment, responsePack)
                         }
@@ -1054,7 +1046,7 @@ public class Client(
                         if (resource.getStatus() == ResourceStatus.Removed) {
                             detachInternal(documentKey)
                             // The removed document carries a serverSeq for a row that no
-                            // longer exists server-side (determination 8, RTCOLLABPLATFORM-779);
+                            // longer exists server-side;
                             // leaving the entry would present a resume the server refuses.
                             removeFromStore(documentKey)
                         }
@@ -1765,8 +1757,8 @@ public class Client(
 
                         // (1) Lease — store path only; contention fails fast (does not
                         // suspend waiting for the lock to free up). ErrDocumentOpenElsewhere
-                        // (determination, RTCOLLABPLATFORM-779) replaces the prior generic
-                        // ErrInvalidArgument — acquireSessionLock (spec 028) is the single
+                        // replaces the prior generic
+                        // ErrInvalidArgument — acquireSessionLock is the single
                         // implementation of this decision.
                         if (options.docStore != null) {
                             val lockName = "yorkie-session:${storeKey(documentKey)}"
@@ -1816,7 +1808,7 @@ public class Client(
                                             }
 
                                             is RestoreResult.Restored -> {
-                                                // No re-stamp needed (spec 029 D1): the actor
+                                                // No re-stamp needed: the actor
                                                 // guard is strict (no initial-actor exemption on
                                                 // either side, JS/iOS parity), so a Restored
                                                 // result already carries the stable actor this
@@ -2041,7 +2033,7 @@ public class Client(
                         attachments[documentKey] = attachment
                         registered = true
 
-                        // (7b) Attach-base write (AC1, determination, RTCOLLABPLATFORM-779):
+                        // (7b) Attach-base write:
                         // every attach (restored, fresh, or re-anchored) writes a fresh base —
                         // persistBase() serializes the CURRENT live document (snapshot + any
                         // replayed log folded in + the pending queue), so a restored log is
@@ -2062,21 +2054,20 @@ public class Client(
                             persistSnapshotOrPoison(key, base.snapshot)
                         }
 
-                        // (8) Persist on every local change, content or presence-only (spec 029
-                        // B2, 57131568): Document.onLocalChange fires synchronously inside
+                        // (8) Persist on every local change, content or presence-only (JS 57131568): Document.onLocalChange fires synchronously inside
                         // updateAsync/undo-redo right after localChanges += change — on the
                         // DOCUMENT dispatcher, so the hook itself must not suspend. triggerAppend
                         // launches append() onto the client dispatcher (where PersistState is
                         // confined) and registers that launch atomically in persistTriggers, so
                         // a drain (detach/deactivate/close) joins a not-yet-run append before it
                         // samples persistQueues: zero suspension between the edit and the
-                        // registration the drains observe, the same guarantee B2 gives the
-                        // single-blob design. The events collector this replaces suspended in
+                        // registration the drains observe, the same guarantee JS's synchronous
+                        // persist gives the single-blob design. The events collector this replaces suspended in
                         // pendingChangesAfter() before anything was registered, so close()'s
                         // scope.cancel() could kill it with the last edit unpersisted.
                         if (attachment.persistsToStore) {
                             document.onLocalChange = { triggerAppend(attachment) }
-                            // Catch-up (team review, researcher U2 — Kotlin-forced): the
+                            // Catch-up (Kotlin-forced): the
                             // attach base above was read under the document's dispatcher,
                             // and an edit minted between that read and the hook just
                             // installed is in neither — no hook saw it, and the base's
@@ -2202,13 +2193,13 @@ public class Client(
                 if (document.getStatus() != ResourceStatus.Removed) {
                     document.applyStatus(ResourceStatus.Detached)
                 }
-                // Both branches (team review, critic Low / researcher U5): detachInternal is
+                // Both branches: detachInternal is
                 // idempotent (`attachments[key] ?: return`), and a detach whose response
                 // reports Removed used to skip it — nothing else runs it on this path (the
                 // sync loop's Removed branch only fires on a sync), so the attachment stayed
                 // registered with its PersistState and session lease held until deactivate.
                 detachInternal(documentKey)
-                // Determination 8 (RTCOLLABPLATFORM-779, supersedes spec 025's "kept"): a
+                // As of JS v0.7.22: a
                 // detached document has no owner for its offline state, and leaving the entry
                 // makes the NEXT attach in this session present a resume the server refuses
                 // for a row it just detached. Removed in BOTH branches (JS v0.7.22), after
@@ -2389,14 +2380,13 @@ public class Client(
         // single choke point for detachDocument, syncInternal's Removed path,
         // deactivateInternal, and removeDocument. Both are non-suspending so
         // the NonCancellable/GlobalScope keepalive paths cannot skip them.
-        // Store removal is NOT done here (determination 8, RTCOLLABPLATFORM-779,
-        // supersedes spec 025's "kept" comment that used to sit at this line):
+        // Store removal is NOT done here:
         // detachInternal runs from deactivateInternal too, which must keep the
         // entry for the next session, so the three callers that DO want the
         // entry gone (detachDocument, removeDocument, the sync-Removed path)
         // call removeFromStore themselves, after this drain/clear/release.
         (attachment.resource as? Document)?.onLocalChange = null
-        // M2 (spec 029): no queue entry outlives its job — enqueueWrite's and
+        // No queue entry outlives its job — enqueueWrite's and
         // triggerAppend's completion cleanup drop a finished job while it is
         // still the tail, so a client that attaches and detaches many documents
         // never accumulates one entry per ever-attached document; a write still
@@ -2523,7 +2513,7 @@ public class Client(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
                 detachInternal(documentKey)
-                // The document is gone server-side (determination 8, RTCOLLABPLATFORM-779).
+                // The document is gone server-side.
                 removeFromStore(documentKey)
             }
             SUCCESS

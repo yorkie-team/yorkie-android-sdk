@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Port of yorkie-js-sdk's `doc_store_contract.ts` (`aaa5cb15`/#1354, RTCOLLABPLATFORM-779),
+ * Port of yorkie-js-sdk's `doc_store_contract.ts` (`aaa5cb15`/#1354),
  * an 11-case suite over [MemoryDocStore]. The suite exists because the SDK's two independent
  * implementations once disagreed on whether [DocStore.saveSnapshot] keeps meta and whether
  * [DocStore.saveMeta] trims the log — copies diverge, and this suite is the single place that

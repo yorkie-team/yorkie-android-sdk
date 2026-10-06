@@ -346,7 +346,7 @@ class OfflinePersistenceTest {
     /**
      * Polls until the log holds AT LEAST [expectedCount] entries. `>=`, not `==`, so a log
      * that overshoots (or a mid-test compaction that lands extra writes) surfaces as a clear
-     * assertion failure at the call site rather than a timeout here (team review, test-writer).
+     * assertion failure at the call site rather than a timeout here.
      */
     private suspend fun awaitStoredWithChanges(
         store: DocStore,

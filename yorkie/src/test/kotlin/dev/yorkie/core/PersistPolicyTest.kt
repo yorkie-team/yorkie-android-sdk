@@ -5,7 +5,7 @@ import kotlin.test.assertTrue
 import org.junit.Test
 
 /**
- * Port of yorkie-js-sdk's `persist_policy_test.ts` (`aaa5cb15`/#1354, RTCOLLABPLATFORM-779).
+ * Port of yorkie-js-sdk's `persist_policy_test.ts` (`aaa5cb15`/#1354).
  * Pins [shouldCompact]'s figures and the strict `>` boundary on both rules — a `>=` here would
  * compact a document exactly at the floor, which the JS rationale explicitly rules out.
  */

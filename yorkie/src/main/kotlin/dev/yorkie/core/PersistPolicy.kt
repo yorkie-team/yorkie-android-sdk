@@ -26,7 +26,7 @@ internal const val MaxReplay = 1000
 /**
  * What the compaction decision is made from, plus the bookkeeping the incremental write path
  * (`Client.kt`) mutates per store key. Ported from yorkie-js-sdk `persist-policy.ts`
- * (`aaa5cb15`/#1354, RTCOLLABPLATFORM-779).
+ * (`aaa5cb15`/#1354).
  *
  * @param snapshotBytes size of the stored snapshot the log is appended to.
  * @param logBytes total size of the appended change log.

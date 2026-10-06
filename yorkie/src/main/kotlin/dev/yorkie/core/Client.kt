@@ -566,134 +566,114 @@ public class Client(
             document.checkPoint.clientSeq,
         )
 
-        // determination 14 (Kotlin hardening): a corrupt or
-        // zero-length meta header is caught in its OWN try and
-        // routed to the discontinuity branch below — never to
-        // the outer catch, which would otherwise discard a
-        // snapshot that restored fine and misclassify it as
-        // ActorMismatch/RestoreFailed. restoreMetaFromBytes is
-        // all-or-nothing (LOW-1), so a thrown decode leaves
-        // checkPoint/changeID exactly as the snapshot restore
-        // set them — nothing here needs undoing.
-        val metaDecodeFailure = stored.meta?.let { metaBytes ->
+        // A corrupt or zero-length meta header only loses the header, not the snapshot or the
+        // log, so it is treated as absent and the log goes through the same validation as a
+        // no-meta restore. It is caught in its OWN try, never by the outer catch, which would
+        // discard a snapshot that restored fine and misclassify it as ActorMismatch/RestoreFailed.
+        // restoreMetaFromBytes is all-or-nothing, so a thrown decode leaves checkPoint/changeID
+        // exactly as the snapshot restore set them. Re-sending changes the server already acked
+        // is harmless: the server skips them.
+        stored.meta?.let { metaBytes ->
             try {
                 document.restoreMetaFromBytes(metaBytes)
-                null
+            } catch (e: Throwable) {
+                coroutineContext.ensureActive()
+                logDebug("AD", "persisted meta undecodable; treating it as absent: ${e.message}")
+            }
+        }
+
+        val ackedWatermark = document.checkPoint.clientSeq
+        // #1355 (8cf346ae): meta carries TWO positions — the acked checkpoint and changeID
+        // (how many changes this client has minted). They differ whenever an edit is minted
+        // while a sync is in flight: the push already captured only the earlier changes, so
+        // the checkpoint advances past them, but changeID already counts the in-flight edit
+        // too. Validating against the checkpoint alone would accept the loss of exactly that
+        // trailing log entry — restoreAppendedChanges refuses to pull the counter back, so
+        // the next edit mints a clientSeq gap, and every subsequent push takes
+        // ErrInvalidClientSeq with no re-anchor: the document never syncs again. Reading
+        // AFTER meta and taking the max means an empty log also validates against the right
+        // watermark; with no meta this reduces to the checkpoint comparison.
+        val headerWatermark = maxOf(
+            ackedWatermark,
+            document.changeID.clientSeq,
+        )
+        val fresh = stored.changes.filter {
+            it.clientSeq > snapshotWatermark
+        }
+        val lastReplayable =
+            fresh.lastOrNull()?.clientSeq
+                ?: snapshotWatermark
+        val backsTheHeader =
+            lastReplayable >= headerWatermark
+        if (fresh.isNotEmpty() || !backsTheHeader) {
+            // Each decode failure (a corrupt/zero-length
+            // entry) is caught in its OWN try — a corrupt
+            // LOG entry says nothing about the snapshot.
+            val decoded: List<Change>? = try {
+                fresh.map { it.bytes.toStoredChange() }
             } catch (e: Throwable) {
                 coroutineContext.ensureActive()
                 logDebug(
                     "AD",
-                    "persisted meta undecodable; " +
-                        "log discontinuity: ${e.message}",
+                    "persisted change log undecodable; " +
+                        "keeping the snapshot: " +
+                        e.message,
                 )
-                e
+                null
             }
-        }
-
-        if (metaDecodeFailure != null) {
-            emitLocalChangesDropped(
-                document,
-                Document.Event.Reason.LogDiscontinuity,
-                emptyList(),
-            )
-            persistToStore(
-                storeKey(documentKey),
-                stored.snapshot,
-            )
-        } else {
-            val ackedWatermark = document.checkPoint.clientSeq
-            // #1355 (8cf346ae): meta carries TWO positions — the acked checkpoint and changeID
-            // (how many changes this client has minted). They differ whenever an edit is minted
-            // while a sync is in flight: the push already captured only the earlier changes, so
-            // the checkpoint advances past them, but changeID already counts the in-flight edit
-            // too. Validating against the checkpoint alone would accept the loss of exactly that
-            // trailing log entry — restoreAppendedChanges refuses to pull the counter back, so
-            // the next edit mints a clientSeq gap, and every subsequent push takes
-            // ErrInvalidClientSeq with no re-anchor: the document never syncs again. Reading
-            // AFTER meta and taking the max means an empty log also validates against the right
-            // watermark; with no meta this reduces to the checkpoint comparison.
-            val headerWatermark = maxOf(
-                ackedWatermark,
-                document.changeID.clientSeq,
-            )
-            val fresh = stored.changes.filter {
-                it.clientSeq > snapshotWatermark
-            }
-            val lastReplayable =
-                fresh.lastOrNull()?.clientSeq
-                    ?: snapshotWatermark
-            val backsTheHeader =
-                lastReplayable >= headerWatermark
-            if (fresh.isNotEmpty() || !backsTheHeader) {
-                // Each decode failure (a corrupt/zero-length
-                // entry) is caught in its OWN try — a corrupt
-                // LOG entry says nothing about the snapshot.
-                val decoded: List<Change>? = try {
-                    fresh.map { it.bytes.toStoredChange() }
-                } catch (e: Throwable) {
-                    coroutineContext.ensureActive()
-                    logDebug(
-                        "AD",
-                        "persisted change log undecodable; " +
-                            "keeping the snapshot: " +
-                            e.message,
-                    )
-                    null
+            val contiguous = decoded != null &&
+                decoded.zipWithNext().all { (a, b) ->
+                    b.id.clientSeq == a.id.clientSeq + 1u
                 }
-                val contiguous = decoded != null &&
-                    decoded.zipWithNext().all { (a, b) ->
-                        b.id.clientSeq == a.id.clientSeq + 1u
-                    }
-                val startsRight = fresh.isEmpty() ||
-                    fresh.first().clientSeq ==
-                    snapshotWatermark + 1u
-                // LOW-2(a): restoreAppendedChanges'
-                // documented precondition (quiescent, same
-                // actor) is enforced HERE, not inside it.
-                val sameActor = decoded != null &&
-                    decoded.all {
-                        it.id.actor == requireActorId()
-                    }
-                if (decoded == null || !backsTheHeader ||
-                    !contiguous || !startsRight || !sameActor
-                ) {
-                    // Reported rather than thrown, because what
-                    // is lost here is the *log*, not the
-                    // envelope — and the event exists to say
-                    // what was lost. Routing this through the
-                    // generic restore failure would hand the
-                    // app the snapshot's pending changes (often
-                    // none) and call it an actor mismatch.
-                    emitLocalChangesDropped(
-                        document,
-                        Document.Event.Reason.LogDiscontinuity,
-                        decoded.orEmpty(),
-                    )
-                    // Undoes the header: it described a
-                    // position the log cannot back, so
-                    // keeping it would leave the document
-                    // claiming content its root does not
-                    // have — and the server would never
-                    // resend it.
-                    // Same bytes, same actor as the
-                    // restore above: cannot mismatch, so
-                    // the RestoreResult is not consulted.
-                    document.restoreFromBytes(stored.snapshot)
-                    // Re-persists the SAME bytes
-                    // fire-and-forget: writing them back
-                    // costs no serialization, and
-                    // re-serializing here would bake the
-                    // rejected header into the new base.
-                    persistToStore(
-                        storeKey(documentKey),
-                        stored.snapshot,
-                    )
-                } else {
-                    document.restoreAppendedChanges(
-                        decoded,
-                        ackedWatermark,
-                    )
+            val startsRight = fresh.isEmpty() ||
+                fresh.first().clientSeq ==
+                snapshotWatermark + 1u
+            // LOW-2(a): restoreAppendedChanges'
+            // documented precondition (quiescent, same
+            // actor) is enforced HERE, not inside it.
+            val sameActor = decoded != null &&
+                decoded.all {
+                    it.id.actor == requireActorId()
                 }
+            if (decoded == null || !backsTheHeader ||
+                !contiguous || !startsRight || !sameActor
+            ) {
+                // Reported rather than thrown, because what
+                // is lost here is the *log*, not the
+                // envelope — and the event exists to say
+                // what was lost. Routing this through the
+                // generic restore failure would hand the
+                // app the snapshot's pending changes (often
+                // none) and call it an actor mismatch.
+                emitLocalChangesDropped(
+                    document,
+                    Document.Event.Reason.LogDiscontinuity,
+                    decoded.orEmpty(),
+                )
+                // Undoes the header: it described a
+                // position the log cannot back, so
+                // keeping it would leave the document
+                // claiming content its root does not
+                // have — and the server would never
+                // resend it.
+                // Same bytes, same actor as the
+                // restore above: cannot mismatch, so
+                // the RestoreResult is not consulted.
+                document.restoreFromBytes(stored.snapshot)
+                // Re-persists the SAME bytes
+                // fire-and-forget: writing them back
+                // costs no serialization, and
+                // re-serializing here would bake the
+                // rejected header into the new base.
+                persistToStore(
+                    storeKey(documentKey),
+                    stored.snapshot,
+                )
+            } else {
+                document.restoreAppendedChanges(
+                    decoded,
+                    ackedWatermark,
+                )
             }
         }
     }

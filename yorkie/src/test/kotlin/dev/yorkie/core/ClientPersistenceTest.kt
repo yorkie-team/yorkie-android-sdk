@@ -1397,7 +1397,7 @@ class ClientPersistenceTest {
         }
 
     @Test
-    fun `U16b a corrupt meta header is a log discontinuity, not a restore failure`() = runTest {
+    fun `U16b a corrupt meta header is treated as absent and the snapshot is kept`() = runTest {
         val store = MemoryDocStore()
         val docKey = "corrupt-meta-doc"
         val source = Document(docKey)
@@ -1410,19 +1410,11 @@ class ClientPersistenceTest {
         val client = newClient(MockYorkieService(), docStore = store)
         client.activateAsync().await()
         val document = Document(docKey)
-        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-            document.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
-        }
-
         val result = client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
 
         assertTrue(result.isSuccess)
-        val dropped = droppedDeferred.await()
-        assertEquals(Document.Event.Reason.LogDiscontinuity, dropped.reason)
-        assertTrue(dropped.changes.isEmpty())
         // The snapshot, which restored fine, is kept — never reaches RestoreFailed/ActorMismatch.
         assertTrue(document.toJson().contains("\"r0\""))
-        assertFreshBase(store, storeKeyFor(docKey), seeded)
 
         client.detachDocument(document).await()
         client.deactivateAsync().await()

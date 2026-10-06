@@ -369,11 +369,13 @@ public class Client(
      */
     private suspend fun drainAllPersists() {
         while (true) {
-            persistTriggers.values.toList().forEach { it.join() }
-            val current = persistQueues.toMap()
+            // Copy constructors, not toList()/toMap(): those read size then next(), which throws
+            // when a finished job removes itself from the map in between.
+            ArrayList(persistTriggers.values).forEach { it.join() }
+            val current = HashMap(persistQueues)
             if (current.isEmpty()) break
             current.values.forEach { it.join() }
-            if (persistQueues.toMap() == current) break
+            if (HashMap(persistQueues) == current) break
         }
     }
 

@@ -20,6 +20,7 @@ import dev.yorkie.api.v1.rule
 import dev.yorkie.assertJsonContentEquals
 import dev.yorkie.core.Client.SyncMode.Manual
 import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
+import dev.yorkie.core.MockYorkieService.Companion.ATTACH_DELAY_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.ATTACH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.AUTH_ERROR_DOCUMENT_KEY
 import dev.yorkie.core.MockYorkieService.Companion.DETACH_ERROR_DOCUMENT_KEY
@@ -837,6 +838,37 @@ class ClientTest {
         target.attachDocument(document).await()
 
         assertFalse(target.detachDocument(document).await().isSuccess)
+
+        target.deactivateAsync().await()
+    }
+
+    @Test
+    fun `attachDocument rejects a concurrent duplicate attach while the first is in flight`() =
+        runTest {
+            target.activateAsync().await()
+
+            val first = target.attachDocument(Document(ATTACH_DELAY_DOCUMENT_KEY))
+            val exception = assertFailsWith<YorkieException> {
+                target.attachDocument(Document(ATTACH_DELAY_DOCUMENT_KEY)).await()
+            }
+            assertEquals(YorkieException.Code.ErrAlreadyAttached, exception.code)
+
+            assertTrue(first.await().isSuccess)
+            target.deactivateAsync().await()
+        }
+
+    @Test
+    fun `attachDocument clears the in-flight mark after a failed attach`() = runTest {
+        target.activateAsync().await()
+
+        assertTrue(target.attachDocument(Document(ATTACH_ERROR_DOCUMENT_KEY)).await().isFailure)
+
+        // The mark was cleared in the finally, so a second attach of the same key is
+        // NOT rejected by the guard — it reaches the mock again and fails with the
+        // same connect error, not ErrAlreadyAttached.
+        val secondResult = target.attachDocument(Document(ATTACH_ERROR_DOCUMENT_KEY)).await()
+        assertTrue(secondResult.isFailure)
+        assertFalse(secondResult.exceptionOrNull() is YorkieException)
 
         target.deactivateAsync().await()
     }

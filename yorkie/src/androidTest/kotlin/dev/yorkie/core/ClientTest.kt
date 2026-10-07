@@ -333,7 +333,7 @@ class ClientTest {
                 while (
                     d2PresenceEvents.none {
                         it is Document.Event.PresenceChanged.Others.Unwatched &&
-                            it.changed.actorID == c1.requireClientId()
+                            it.changed.actorID == c1.requireActorId()
                     }
                 ) {
                     delay(50)

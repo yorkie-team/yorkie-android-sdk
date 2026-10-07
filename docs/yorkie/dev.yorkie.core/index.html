@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.18            </div>
+0.7.19            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -107,6 +107,21 @@
               </div>
             </div>
           </div>
+<a data-name="589327682%2FClasslikes%2F-1590045667" anchor-label="DocStore" id="589327682%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-doc-store/index.html"><span>Doc</span><wbr></wbr><span><span>Store</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="589327682%2FClasslikes%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-doc-store/index.html">DocStore</a></div><div class="brief "><p class="paragraph">A byte-oriented, async storage seam for a <a href="../dev.yorkie.document/-document/index.html">dev.yorkie.document.Document</a>'s persisted envelope (see <a href="../dev.yorkie.document/-document/to-bytes.html">dev.yorkie.document.Document.toBytes</a>/<a href="../dev.yorkie.document/-document/-companion/from-bytes.html">dev.yorkie.document.Document.Companion.fromBytes</a>). Ported from yorkie-js-sdk <code class="lang-kotlin">doc-store.ts</code> (<code class="lang-kotlin">2291bf67</code>/#1338); byte-oriented and suspending so a durable backend (file, Room, DataStore) fits behind it. The SDK ships no persistent implementation of its own — <a href="-memory-doc-store/index.html">MemoryDocStore</a> is process-local and dies with the process; a durable store is an app concern. Keyed by an opaque store key the <a href="-client/index.html">Client</a> derives from the API key, client key, and document key (see <code class="lang-kotlin">Client.storeKey</code>) — this interface itself is unaware of that scheme.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
 <a data-name="-992199951%2FClasslikes%2F-1590045667" anchor-label="InitialRoot" id="-992199951%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
@@ -118,6 +133,36 @@
               <div>
                 <div class="title">
                   <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">typealias </span><a href="-initial-root/index.html">InitialRoot</a><span class="token operator"> = </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-map/index.html">Map</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span><span class="token keyword">suspend </span><a href="../dev.yorkie.document.json/-json-object/index.html">JsonObject</a><span class="token punctuation">.</span><span class="token punctuation">(</span>key<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">)</span><span class="token operator"> -&gt; </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-unit/index.html">Unit</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Initializers for missing root keys when attaching a <a href="../dev.yorkie.document/-document/index.html">Document</a>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-790818623%2FClasslikes%2F-1590045667" anchor-label="MemoryDocStore" id="-790818623%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-memory-doc-store/index.html"><span>Memory</span><wbr></wbr><span>Doc</span><wbr></wbr><span><span>Store</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-790818623%2FClasslikes%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-memory-doc-store/index.html">MemoryDocStore</a> : <a href="-doc-store/index.html">DocStore</a></div><div class="brief "><p class="paragraph">Default in-memory <a href="-doc-store/index.html">DocStore</a>, backed by a <a href="https://developer.android.com/reference/kotlin/java/util/concurrent/ConcurrentHashMap.html">ConcurrentHashMap</a>. Ported from yorkie-js-sdk <code class="lang-kotlin">MemoryDocStore</code> (<code class="lang-kotlin">doc-store.ts</code>); matches iOS's memory-only default.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-574595016%2FClasslikes%2F-1590045667" anchor-label="NoopSessionLock" id="-574595016%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-noop-session-lock/index.html"><span>Noop</span><wbr></wbr><span>Session</span><wbr></wbr><span><span>Lock</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-574595016%2FClasslikes%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">object </span><a href="-noop-session-lock/index.html">NoopSessionLock</a> : <a href="-session-lock/index.html">SessionLock</a></div><div class="brief "><p class="paragraph">Default <a href="-session-lock/index.html">SessionLock</a>: grants every <a href="-noop-session-lock/acquire.html">acquire</a> unconditionally. Ported from the non-browser branch of yorkie-js-sdk's <code class="lang-kotlin">WebLocksSessionLock</code> (a no-op outside a browser) and matching iOS's own <code class="lang-kotlin">NoopSessionLock</code> default.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -163,6 +208,36 @@
               <div>
                 <div class="title">
                   <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">data </span><span class="token keyword">class </span><a href="-revision-summary/index.html">RevisionSummary</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>id<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>label<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>description<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>snapshot<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>createdAt<span class="token operator">: </span><a href="https://developer.android.com/reference/kotlin/java/util/Date.html">Date</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Represents a document revision for version management. Stores a snapshot of document content at a specific point in time, enabling rollback, audit, and version history tracking.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="81778870%2FClasslikes%2F-1590045667" anchor-label="SessionLock" id="81778870%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-session-lock/index.html"><span>Session</span><wbr></wbr><span><span>Lock</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="81778870%2FClasslikes%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-session-lock/index.html">SessionLock</a></div><div class="brief "><p class="paragraph">A single-active-session guard for a <a href="-doc-store/index.html">DocStore</a>-backed document. Ported from yorkie-js-sdk <code class="lang-kotlin">session-lock.ts</code> (<code class="lang-kotlin">2291bf67</code>/#1338). Two sessions concurrently resuming the same persisted document under the same stable actor would mint colliding <code class="lang-kotlin">clientSeq</code> values and silently lose edits, so <a href="-client/index.html">Client</a> takes a lease named after the document before restoring its persisted envelope.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2091149230%2FClasslikes%2F-1590045667" anchor-label="SessionLockHandle" id="2091149230%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-session-lock-handle/index.html"><span>Session</span><wbr></wbr><span>Lock</span><wbr></wbr><span><span>Handle</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2091149230%2FClasslikes%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-session-lock-handle/index.html">SessionLockHandle</a></div><div class="brief "><p class="paragraph">A handle to a held <a href="-session-lock/index.html">SessionLock</a>, returned by a successful <a href="-session-lock/acquire.html">SessionLock.acquire</a>. Ported from yorkie-js-sdk <code class="lang-kotlin">session-lock.ts</code> (<code class="lang-kotlin">2291bf67</code>/#1338).</p></div></div></div>
                 </div>
               </div>
             </div>

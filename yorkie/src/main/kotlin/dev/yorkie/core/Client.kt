@@ -17,6 +17,8 @@ import dev.yorkie.api.fromSchemaRules
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
 import dev.yorkie.api.toRevisionSummary
+import dev.yorkie.api.toStoredChange
+import dev.yorkie.api.toStoredChangeBytes
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.AttachDocumentResponse
 import dev.yorkie.api.v1.DocEventType
@@ -49,6 +51,7 @@ import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.RestoreResult
 import dev.yorkie.document.change.Change
+import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
@@ -68,7 +71,6 @@ import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
 import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
-import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrInvalidServerSeq
 import dev.yorkie.util.YorkieException.Code.ErrSessionNotFound
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
@@ -199,13 +201,35 @@ public class Client(
     private val Attachable.mutex
         get() = mutexForAttachments.getOrPut(getKey()) { Mutex() }
 
-    // Per-store-key FIFO of pending persist writes (spec 025). Registered atomically via
-    // [ConcurrentHashMap.compute] from either [Document.onLocalChange] (document dispatcher) or
-    // the persist-after-sync call in syncInternal (client dispatcher); read from the caller's
-    // thread by close()'s runBlocking drain, hence a concurrent map (round-6 QA LOW-1). Internal
-    // (not private) so ClientPersistenceTest can assert the detach-time prune (spec 029 M2).
+    // Per-store-key FIFO of pending persist writes. Every write goes through
+    // enqueueWrite, which registers it atomically via [ConcurrentHashMap.compute]:
+    // writers run on the client dispatcher (append, persistAfterSync, the attach base), but
+    // removeFromStore can also run from a keepalive GlobalScope detach, and close()'s runBlocking
+    // drain reads the map from the caller's thread — hence a concurrent map.
+    // Internal (not private) so ClientPersistenceTest can assert the detach-time prune.
     @VisibleForTesting
     internal val persistQueues = ConcurrentHashMap<String, Job>()
+
+    // Per-store-key incremental-persistence bookkeeping:
+    // how large the stored snapshot/log already are, how many changes are appended, the highest
+    // clientSeq already carried, and whether the last write to this key failed. Written from the
+    // onLocalChange-triggered append() and the sync-persist site (persistAfterSync), both confined to
+    // the client's single dispatcher; PersistState.poisoned is additionally set from the
+    // Dispatchers.IO failure callback in persistSnapshotOrPoison, which is why it is @Volatile and
+    // why every write helper re-reads the entry from this map rather than closing over it. Being
+    // confined to the client dispatcher means append()/persistAfterSync never run CONCURRENTLY
+    // with each other, but it does not make either of them atomic: both suspend into the
+    // document's own dispatcher (a suspension point), and another coroutine already queued on the
+    // client dispatcher can interleave in that window — hence append()'s re-read-after-every-hop
+    // discipline.
+    @VisibleForTesting
+    internal val persistStates = ConcurrentHashMap<String, PersistState>()
+
+    // Per-store-key chain of hook-launched append() runs (folded onto the incremental
+    // design): registered atomically from Document.onLocalChange (document
+    // dispatcher) so drainPersist/drainAllPersists can join an append that has not reached
+    // enqueueWrite yet. Entries remove themselves on completion, like persistQueues.
+    private val persistTriggers = ConcurrentHashMap<String, Job>()
 
     /**
      * Derives the [DocStore] key for [docKey]: `<apiKey>/<clientKey>/<docKey>`. Ported from JS
@@ -215,71 +239,119 @@ public class Client(
     private fun storeKey(docKey: String) = "${options.apiKey ?: ""}/${options.key}/$docKey"
 
     /**
-     * Registers [attachment]'s next store write, chained after any already-enqueued write for the
-     * same store key. Called synchronously off [Document.onLocalChange] (no suspension before this
-     * runs — spec 029 B2) as well as from the post-sync site, so [persistQueues] is mutated
-     * atomically via [ConcurrentHashMap.compute] rather than the read-then-write the old
-     * `persistQueues[key] = job` risked under two concurrent callers.
+     * Chains [block] after any already-enqueued write for [key] so concurrent enqueues cannot
+     * land out of order, and runs it on [Dispatchers.IO] under [NonCancellable]: Kotlin's structured concurrency
+     * cancels a child job immediately on `scope.cancel()`, which is not JS promise semantics — an
+     * in-flight store write for the last local edit must not be interrupted mid-write just
+     * because [close] moved on. Running on [Dispatchers.IO] (rather than the client's own
+     * single-thread [dispatcher]) matters specifically for [close]: that dispatcher is shut down
+     * right after the bounded drain below gives up on a slow write, and a write still suspended at
+     * that point would be permanently rejected on its next resumption if it depended on the
+     * now-closed dispatcher — [NonCancellable] alone only suppresses cooperative cancellation
+     * checks, it does not protect a suspended continuation from a dispatcher that refuses to run
+     * it at all. [drainPersist]/[drainAllPersists] give a caller a bounded chance to OBSERVE
+     * completion before tearing down; the write itself keeps running on [Dispatchers.IO]
+     * independently of that bound and of the client dispatcher's lifecycle. [onFailure] runs
+     * inside the same [NonCancellable] section, on [Dispatchers.IO] — never thrown further. This
+     * is the single chained-write primitive every store write (snapshot, append, meta, remove)
+     * goes through (this replaced the earlier single-blob [enqueuePersist]).
      *
-     * The snapshot ([Document.toBytes]) is taken INSIDE the chained job, after the previous write
-     * for this key has completed, not eagerly before chaining: job N therefore reflects every local
-     * change made up to the moment job N-1 finishes, so the order in which [enqueuePersist] is
-     * called still equals the order [DocStore.save] is invoked in, and the LAST call to complete
-     * stores the LAST state — same guarantee as the old eager-snapshot design, without the
-     * suspension window in front of the registration. Errors are logged, never thrown (JS
-     * `persistToStore`, `client.ts`).
+     * Registration is atomic — [ConcurrentHashMap.compute], the shape JS (57131568)
+     * gave the single-blob `enqueuePersist` — because the hook-driven [append],
+     * [persistAfterSync] and a keepalive [removeFromStore] can chain onto the same key from
+     * different coroutines. JS's other half, "take the snapshot INSIDE the chained job", does NOT
+     * apply to the incremental design: an incremental write's bytes and its watermark must come
+     * from ONE atomic read ([Document.persistBase] / [Document.pendingChangesAfter]) and
+     * [PersistState] is advanced in the same non-suspending step, BEFORE the write is chained —
+     * so [block] only ever carries already-captured bytes. The zero-suspension guarantee that
+     * shape exists for is kept by [triggerAppend] + [persistTriggers] instead.
      *
-     * The job body runs on [Dispatchers.IO] under [NonCancellable] (spec 025 MEDIUM-1, amended
-     * round 5 per a cross-judge HIGH finding): Kotlin's structured concurrency cancels a child
-     * job immediately on `scope.cancel()`, which is not JS promise semantics — an in-flight
-     * `store.save` for the last local edit must not be interrupted mid-write just because [close]
-     * moved on. Running on [Dispatchers.IO] (rather than the client's own single-thread
-     * [dispatcher]) matters specifically for [close]: that dispatcher is shut down right after the
-     * bounded drain below gives up on a slow write, and a write still suspended at that point would
-     * be permanently rejected on its next resumption if it depended on the now-closed dispatcher —
-     * [NonCancellable] alone only suppresses cooperative cancellation checks, it does not protect a
-     * suspended continuation from a dispatcher that refuses to run it at all. [drainPersist]/
-     * [drainAllPersists] give a caller a bounded chance to OBSERVE completion before tearing down;
-     * the write itself keeps running on [Dispatchers.IO] independently of that bound and of the
-     * client dispatcher's lifecycle. A [Document.close] that races ahead of that observation forfeits
-     * whatever snapshot a still-queued job would have taken: the document's own dispatcher is shut
-     * down, so a job still waiting on [previous]'s join fails its own [Document.toBytes] call once it
-     * finally runs — logged, not thrown, same as any other snapshot failure.
+     * A completed job removes itself from [persistQueues] while it is still the tail (JS
+     * `persistToStore`'s `finally`), so the map does not keep one
+     * finished [Job] per key alive for the rest of the session — [drainPersist] and
+     * [drainAllPersists] re-check the map, so an absent key reads as quiescent. Pre-existing
+     * shape, unchanged: a write enqueued after [close] cancelled [scope] (e.g. a
+     * [removeFromStore] from a keepalive detach) never starts and is skipped.
      */
-    private fun enqueuePersist(attachment: Attachment<out Attachable>) {
-        if (!attachment.persistsToStore) return
-        val store = options.docStore ?: return
-        val document = attachment.resource as? Document ?: return
-        val key = storeKey(document.getKey())
-        persistQueues.compute(key) { _, previous ->
-            scope.launch(Dispatchers.IO) {
-                withContext(NonCancellable) {
-                    previous?.join()
-                    val bytes = runCatching { document.toBytes() }
-                        .getOrElse {
-                            logError("PS", "persist snapshot $key failed", it)
-                            return@withContext
-                        }
-                    runCatching { store.save(key, bytes) }
-                        .onFailure { logError("PS", "persist $key failed", it) }
+    private fun enqueueWrite(
+        key: String,
+        onFailure: (Throwable) -> Unit = { logError("PS", "persist $key failed", it) },
+        block: suspend () -> Unit,
+    ): Job {
+        val job = checkNotNull(
+            persistQueues.compute(key) { _, previous ->
+                scope.launch(Dispatchers.IO) {
+                    withContext(NonCancellable) {
+                        previous?.join()
+                        runCatching { block() }.onFailure(onFailure)
+                    }
                 }
-            }
-        }
+            },
+        )
+        job.invokeOnCompletion { persistQueues.remove(key, job) }
+        return job
+    }
+
+    /**
+     * Chains a plain snapshot write for [key]: errors logged, never thrown, [poisoned][
+     * PersistState.poisoned] left untouched. Used for the ack-handled, already-reset sync paths;
+     * the attach-base write and the append repair/compaction paths go through
+     * [persistSnapshotOrPoison] instead, so a failure there poisons the key for the next write to
+     * repair.
+     */
+    private fun persistToStore(key: String, bytes: ByteArray) {
+        val store = options.docStore ?: return
+        enqueueWrite(key) { store.saveSnapshot(key, bytes) }
+    }
+
+    /** Chains one appended change for [key]; [onFailure] is the caller's poison-on-failure hook. */
+    private fun appendToStore(
+        key: String,
+        change: StoredChange,
+        onFailure: (Throwable) -> Unit,
+    ) {
+        val store = options.docStore ?: return
+        enqueueWrite(key, onFailure) { store.appendChange(key, change) }
+    }
+
+    /** Chains a meta-only write for [key]: leaves the snapshot and the log alone. */
+    private fun saveMetaToStore(key: String, bytes: ByteArray) {
+        val store = options.docStore ?: return
+        enqueueWrite(key) { store.saveMeta(key, bytes) }
+    }
+
+    /**
+     * Chains a snapshot write for [key] that is ALSO a repair: on failure, re-reads [key]'s
+     * [PersistState] from [persistStates] (a detach may have removed it between enqueue and
+     * failure) and sets [PersistState.poisoned], so the next write for this key writes a fresh
+     * snapshot instead of appending into a hole a failed write may have left ("every snapshot write is also a repair").
+     */
+    private fun persistSnapshotOrPoison(key: String, snapshot: ByteArray) {
+        val store = options.docStore ?: return
+        enqueueWrite(
+            key,
+            onFailure = {
+                persistStates[key]?.poisoned = true
+                logError("PS", "persist $key failed; poisoned for repair on next write", it)
+            },
+        ) { store.saveSnapshot(key, snapshot) }
     }
 
     /**
      * Waits for [key]'s persist chain to become quiescent, bounded to 5s (spec 025 MEDIUM-1).
-     * Registration is synchronous with the local change that triggers it (spec 029 B2), so there is
-     * no not-yet-registered write to poll for: the job currently at [key] (if any) is the whole
-     * chain, and joining it is sufficient — a second poll can only find something new if a write was
-     * enqueued concurrently while this suspended, which the `job === persistQueues[key]` recheck
-     * below still covers. Called from [detachInternal] before it clears the local-change hook and
-     * releases the lease, so a write enqueued for the last local edit is not silently dropped by the
-     * caller moving on.
+     * Registration is synchronous with the local change that triggers it: the hook
+     * registers its [append] launch in [persistTriggers] before anything suspends, so there is no
+     * not-yet-registered write to poll for — joining the trigger (if any) and then the job
+     * currently at [key] (if any) covers the whole chain; a second pass can only find something
+     * new if a write was chained concurrently while this suspended, which the
+     * `job === persistQueues[key]` recheck below still covers. Called from [detachInternal] before
+     * it clears the local-change hook and releases the lease, so a write enqueued for the last
+     * local edit is not silently dropped by the caller moving on.
      */
     private suspend fun drainPersist(key: String) {
         withTimeoutOrNull(5_000) {
             while (true) {
+                persistTriggers[key]?.join()
                 val job = persistQueues[key] ?: break
                 job.join()
                 if (persistQueues[key] === job) break
@@ -294,22 +366,351 @@ public class Client(
      */
     private suspend fun drainAllPersists() {
         while (true) {
-            val current = persistQueues.toMap()
+            // Copy constructors, not toList()/toMap(): those read size then next(), which throws
+            // when a finished job removes itself from the map in between.
+            ArrayList(persistTriggers.values).forEach { it.join() }
+            val current = HashMap(persistQueues)
             if (current.isEmpty()) break
             current.values.forEach { it.join() }
-            if (persistQueues.toMap() == current) break
+            if (HashMap(persistQueues) == current) break
         }
     }
 
     /**
-     * Removes [docKey]'s envelope from the configured [DocStore], if any. Called only from the
-     * three recovery paths (restore failure, tier-3 purge, epoch re-anchor) — never from teardown,
-     * which is JS parity (`client.ts`, recorded determination). Failures are logged, never thrown.
+     * Removes [docKey]'s envelope from the configured [DocStore], if any. Chained on [key]'s own
+     * write queue via [enqueueWrite] and AWAITED (`.join()`) — never fire-and-forget — because
+     * bypassing the chain would let an in-flight write enqueued just before this call resurrect
+     * the entry this call exists to destroy (JS `removeFromStore`). Called
+     * from the restore-failure / tier-3-purge / epoch-re-anchor recovery paths, and — as of JS
+     * v0.7.22 — from `detachDocument` (both
+     * branches), `removeDocument`, and the sync-Removed path; never from `deactivateInternal`,
+     * so a deactivated-but-not-detached document's entry survives for the next session. Failures
+     * are logged, never thrown.
      */
     private suspend fun removeFromStore(docKey: String) {
         val store = options.docStore ?: return
-        runCatching { store.remove(storeKey(docKey)) }
-            .onFailure { logDebug("PS", "store remove $docKey failed: ${it.message}") }
+        val key = storeKey(docKey)
+        enqueueWrite(
+            key,
+            onFailure = { logDebug("PS", "store remove $docKey failed: ${it.message}") },
+        ) { store.remove(key) }.join()
+    }
+
+    /**
+     * The [Document.onLocalChange] handler: launches one [append] for [attachment] on the client
+     * dispatcher (where [PersistState] is confined), chained after the previous launch for the
+     * same key and registered in [persistTriggers] with zero suspension in front of it — so a drain joins it before sampling [persistQueues] even
+     * though [append] itself hops to the document dispatcher before it chains a write. Not
+     * suspending: it runs on the DOCUMENT dispatcher, inside `updateAsync`/undo-redo. One thrown
+     * [append] is logged, never propagated (it used to end the events
+     * collector and silently stop persistence for the rest of the session);
+     * [CancellationException] propagates normally.
+     */
+    private fun triggerAppend(attachment: Attachment<out Attachable>) {
+        val document = attachment.resource as? Document ?: return
+        val key = storeKey(document.getKey())
+        val job = checkNotNull(
+            persistTriggers.compute(key) { _, previous ->
+                scope.launch {
+                    previous?.join()
+                    try {
+                        append(attachment)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        logError(
+                            "PS",
+                            "persist hook threw for ${document.getKey()}; this change is " +
+                                "not persisted, the hook stays installed",
+                            e,
+                        )
+                    }
+                }
+            },
+        )
+        job.invokeOnCompletion { persistTriggers.remove(key, job) }
+    }
+
+    /**
+     * The persist handler — run by [triggerAppend] off [Document.onLocalChange], and as a
+     * catch-up from the attach flow and [persistAfterSync]: driven off the PENDING QUEUE via
+     * [Document.pendingChangesAfter] rather than an event payload, so a coalesced or missed
+     * trigger cannot silently drop a change (JS `append`, `client.ts`). NOT atomic end-to-end:
+     * every call this function makes into [document] ([Document.pendingChangesAfter],
+     * [Document.persistBase]) is
+     * itself `suspend` and hops to the document's OWN dispatcher, which is a suspension point on
+     * the client's single-threaded dispatcher — another queued coroutine (`persistAfterSync`, a
+     * repeat `append`) can run in that window and mutate this key's [PersistState] (the function is
+     * NOT non-suspending after the state lookup, and thread-confined is a weaker claim than that:
+     * it stopped being true once [Document.pendingChangesAfter] stopped being a plain field read). So every
+     * read of [persistStates] after a hop is a FRESH read (the entry may have been removed by a
+     * detach, or advanced by a racing writer), and every watermark update uses `maxOf` against the
+     * CURRENT value rather than overwriting it, so a result from before the hop can never move the
+     * watermark backwards or re-append an entry a racing writer already carried.
+     */
+    private suspend fun append(attachment: Attachment<out Attachable>) {
+        if (!attachment.persistsToStore) return
+        val document = attachment.resource as? Document ?: return
+        val key = storeKey(document.getKey())
+        val stateBeforeHop = persistStates[key] ?: return
+        if (stateBeforeHop.poisoned) {
+            // Repair: never append into a holed log. Writing a snapshot loses nothing — it
+            // embeds the whole pending queue — while appending would leave the gap unrepaired.
+            persistBaseOrPoison(key, document)
+            return
+        }
+        // Suspend hop #1: document.pendingChangesAfter returns a COPY taken under the document's
+        // own dispatcher. Everything below, up to the next hop, runs non-suspending.
+        val pending = document.pendingChangesAfter(stateBeforeHop.lastAppendedClientSeq)
+        val stateAfterReadHop = persistStates[key] ?: return
+        for (change in pending) {
+            if (change.id.clientSeq <= stateAfterReadHop.lastAppendedClientSeq) {
+                // Already carried by a racing writer (persistAfterSync, or a repeat append
+                // run) that advanced the watermark past this entry during hop #1 above.
+                continue
+            }
+            val bytes = change.toStoredChangeBytes()
+            stateAfterReadHop.lastAppendedClientSeq =
+                maxOf(stateAfterReadHop.lastAppendedClientSeq, change.id.clientSeq)
+            stateAfterReadHop.logBytes += bytes.size
+            stateAfterReadHop.changeCount += 1
+            appendToStore(key, StoredChange(change.id.clientSeq, bytes)) {
+                stateAfterReadHop.poisoned = true
+                logError("PS", "append $key failed; poisoned for repair on next write", it)
+            }
+        }
+        if (shouldCompact(stateAfterReadHop)) {
+            // Suspend hop #2 (inside the helper). The watermark is seeded from
+            // the SAME atomic read compaction takes, which is the just-appended tail when
+            // quiescent and the safer value when an edit landed in between (JS leaves this
+            // field as-is here).
+            persistBaseOrPoison(key, document)
+        }
+    }
+
+    /**
+     * Writes a fresh base for [key] — a [Document.persistBase] snapshot — and resets its
+     * [PersistState] to it. The ONE path every base written after a `persistBase()` hop goes
+     * through: the pull and repair branches of [persistAfterSync], and the poisoned-repair and
+     * compaction paths of [append]. Kotlin-forced hardening: `persistBase()` suspends into the document's own dispatcher, and
+     * an onLocalChange-triggered append can append a NEWER change in that window. A base read before that edit does
+     * not contain it, yet writing the base would clear the log entry that does
+     * ([DocStore.saveSnapshot] drops the log) while [PersistState.lastAppendedClientSeq] already
+     * claims it — the change would then exist in neither place. So the state is re-read after
+     * the hop and, when its watermark leads the base's, the base is re-taken (bounded to three
+     * attempts); if it is still behind, the stale base is NOT written: the key is poisoned
+     * instead, so the next write (an edit or a sync) repairs with a fresh snapshot, and the
+     * stored entry stays the old base plus its complete log. The watermark only ever advances
+     * (`maxOf`): a plain assignment on the sync site used to regress it. JS has no such window —
+     * its persist runs synchronously inside the event publish.
+     */
+    private suspend fun persistBaseOrPoison(key: String, document: Document) {
+        repeat(3) {
+            val base = document.persistBase()
+            val state = persistStates[key] ?: return
+            if (state.lastAppendedClientSeq <= base.lastCarriedClientSeq) {
+                state.snapshotBytes = base.snapshot.size
+                state.logBytes = 0
+                state.changeCount = 0
+                state.poisoned = false
+                state.lastAppendedClientSeq =
+                    maxOf(state.lastAppendedClientSeq, base.lastCarriedClientSeq)
+                persistSnapshotOrPoison(key, base.snapshot)
+                return
+            }
+        }
+        persistStates[key]?.poisoned = true
+        logDebug("PS", "base for $key kept trailing its log; poisoned for repair on next write")
+    }
+
+    /**
+     * The incremental half of a store-backed restore (yorkie-js-sdk#1354/#1355), run right after [Document.restoreFromBytes] returned
+     * [RestoreResult.Restored] for [stored]'s snapshot: snapshot watermark → meta → log
+     * validation → replay, or a [Document.Event.Reason.LogDiscontinuity] report plus a rewrite of
+     * the base when the log cannot back the header. A method of its own only to keep the attach
+     * flow's nesting readable; it is called from exactly one place and shares that caller's
+     * try/catch.
+     */
+    private suspend fun restoreStoredLog(
+        document: Document,
+        documentKey: String,
+        stored: StoredDoc,
+    ) {
+        // The snapshot already embeds every change pending at
+        // the moment it was taken (persistBase's atomic read),
+        // so this is "the highest clientSeq the snapshot
+        // already carries" — read BEFORE meta, which
+        // describes the server's position and not the
+        // snapshot's contents.
+        //
+        // The `max` here is a guard rather than a live branch:
+        // a document's pending queue only ever holds changes
+        // above its checkpoint (an ack removes them), so the
+        // carried value leads whenever the queue is non-empty.
+        // It was load-bearing while `saveMeta` trimmed the log
+        // and a snapshot's queue could go stale against an
+        // advancing checkpoint; that state is now unreachable.
+        // Kept because the ordering it asserts is what makes
+        // the two-watermark split correct, and a future change
+        // that reintroduces trimming would need it again.
+        val carried = document.pendingChangesAfter(0u)
+        val snapshotWatermark = maxOf(
+            carried.lastOrNull()?.id?.clientSeq ?: 0u,
+            document.checkPoint.clientSeq,
+        )
+
+        // A corrupt or zero-length meta header only loses the header, not the snapshot or the
+        // log, so it is treated as absent and the log goes through the same validation as a
+        // no-meta restore. It is caught in its OWN try, never by the outer catch, which would
+        // discard a snapshot that restored fine and misclassify it as ActorMismatch/RestoreFailed.
+        // restoreMetaFromBytes is all-or-nothing, so a thrown decode leaves checkPoint/changeID
+        // exactly as the snapshot restore set them. Re-sending changes the server already acked
+        // is harmless: the server skips them.
+        stored.meta?.let { metaBytes ->
+            try {
+                document.restoreMetaFromBytes(metaBytes)
+            } catch (e: Throwable) {
+                coroutineContext.ensureActive()
+                logDebug("AD", "persisted meta undecodable; treating it as absent: ${e.message}")
+            }
+        }
+
+        val ackedWatermark = document.checkPoint.clientSeq
+        // #1355 (8cf346ae): meta carries TWO positions — the acked checkpoint and changeID
+        // (how many changes this client has minted). They differ whenever an edit is minted
+        // while a sync is in flight: the push already captured only the earlier changes, so
+        // the checkpoint advances past them, but changeID already counts the in-flight edit
+        // too. Validating against the checkpoint alone would accept the loss of exactly that
+        // trailing log entry — restoreAppendedChanges refuses to pull the counter back, so
+        // the next edit mints a clientSeq gap, and every subsequent push takes
+        // ErrInvalidClientSeq with no re-anchor: the document never syncs again. Reading
+        // AFTER meta and taking the max means an empty log also validates against the right
+        // watermark; with no meta this reduces to the checkpoint comparison.
+        val headerWatermark = maxOf(
+            ackedWatermark,
+            document.changeID.clientSeq,
+        )
+        val fresh = stored.changes.filter {
+            it.clientSeq > snapshotWatermark
+        }
+        val lastReplayable =
+            fresh.lastOrNull()?.clientSeq
+                ?: snapshotWatermark
+        val backsTheHeader =
+            lastReplayable >= headerWatermark
+        if (fresh.isNotEmpty() || !backsTheHeader) {
+            // Each decode failure (a corrupt/zero-length
+            // entry) is caught in its OWN try — a corrupt
+            // LOG entry says nothing about the snapshot.
+            val decoded: List<Change>? = try {
+                fresh.map { it.bytes.toStoredChange() }
+            } catch (e: Throwable) {
+                coroutineContext.ensureActive()
+                logDebug(
+                    "AD",
+                    "persisted change log undecodable; " +
+                        "keeping the snapshot: " +
+                        e.message,
+                )
+                null
+            }
+            val contiguous = decoded != null &&
+                decoded.zipWithNext().all { (a, b) ->
+                    b.id.clientSeq == a.id.clientSeq + 1u
+                }
+            val startsRight = fresh.isEmpty() ||
+                fresh.first().clientSeq ==
+                snapshotWatermark + 1u
+            // restoreAppendedChanges'
+            // documented precondition (quiescent, same
+            // actor) is enforced HERE, not inside it.
+            val sameActor = decoded != null &&
+                decoded.all {
+                    it.id.actor == requireActorId()
+                }
+            if (decoded == null || !backsTheHeader ||
+                !contiguous || !startsRight || !sameActor
+            ) {
+                // Reported rather than thrown, because what
+                // is lost here is the *log*, not the
+                // envelope — and the event exists to say
+                // what was lost. Routing this through the
+                // generic restore failure would hand the
+                // app the snapshot's pending changes (often
+                // none) and call it an actor mismatch.
+                emitLocalChangesDropped(
+                    document,
+                    Document.Event.Reason.LogDiscontinuity,
+                    decoded.orEmpty(),
+                )
+                // Undoes the header: it described a
+                // position the log cannot back, so
+                // keeping it would leave the document
+                // claiming content its root does not
+                // have — and the server would never
+                // resend it.
+                // Same bytes, same actor as the
+                // restore above: cannot mismatch, so
+                // the RestoreResult is not consulted.
+                document.restoreFromBytes(stored.snapshot)
+                // Re-persists the SAME bytes
+                // fire-and-forget: writing them back
+                // costs no serialization, and
+                // re-serializing here would bake the
+                // rejected header into the new base.
+                persistToStore(
+                    storeKey(documentKey),
+                    stored.snapshot,
+                )
+            } else {
+                document.restoreAppendedChanges(
+                    decoded,
+                    ackedWatermark,
+                )
+            }
+        }
+    }
+
+    /**
+     * The post-sync persist decision, run after [Document.applyChangePack] under the document's
+     * mutex (JS `client.ts`'s sync-site persist). A pull (changes or a snapshot in the response)
+     * rewrites the base, because the append log holds only LOCAL changes — writing meta alone
+     * would advance the persisted `serverSeq` past a root the store never received. A poisoned
+     * pure ack repairs the same way: the append's repair-on-next-edit path cannot cover a
+     * client with nothing left to edit. A healthy pure ack writes meta only, leaving the
+     * snapshot and the log untouched.
+     *
+     * Two Kotlin-forced guards keep meta from ever leading the log. JS persists synchronously inside the event publish,
+     * so by the time its sync site runs every local change is already in the log; Android's
+     * the triggered append is asynchronous. A base write needs neither guard — it embeds the whole pending
+     * queue. Before a meta-only write, first, the catch-up [append] runs — cheap and idempotent
+     * ([DocStore.appendChange] is an upsert, and the watermark skips what is carried) — closing
+     * the window where the triggered append has not run yet for a change still pending. Second, a
+     * change the server acked that the log never received (the triggered append's dispatcher hop
+     * resumed after [Document.applyChangePack] had already dropped it from the pending queue, so
+     * no later append can ever see it) shows as a checkpoint ahead of the watermark; that takes
+     * the snapshot-repair branch, whose base embeds the acked content, instead of a meta-only
+     * write that would claim a position the log cannot back.
+     */
+    private suspend fun persistAfterSync(
+        attachment: Attachment<out Attachable>,
+        responsePack: ChangePack,
+    ) {
+        val document = attachment.resource as? Document ?: return
+        val key = storeKey(document.getKey())
+        val state = persistStates[key] ?: return
+        if (responsePack.hasChanges || responsePack.hasSnapshot || state.poisoned) {
+            persistBaseOrPoison(key, document)
+            return
+        }
+        append(attachment)
+        val caughtUp = persistStates[key] ?: return
+        val ackedPastLog = document.checkPoint.clientSeq > caughtUp.lastAppendedClientSeq
+        if (caughtUp.poisoned || ackedPastLog) {
+            persistBaseOrPoison(key, document)
+        } else {
+            saveMetaToStore(key, document.metaToBytes())
+        }
     }
 
     /**
@@ -620,8 +1021,10 @@ public class Client(
                         // local change, so the Document.onLocalChange hook alone
                         // would leave a stale envelope in the store. Gated on
                         // persistsToStore like the other site.
+                        // persistAfterSync branches on whether the response carried
+                        // remote content.
                         if (attachment.persistsToStore) {
-                            enqueuePersist(attachment)
+                            persistAfterSync(attachment, responsePack)
                         }
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,
@@ -642,6 +1045,10 @@ public class Client(
                         // be disconnected to not receive an event for that document.
                         if (resource.getStatus() == ResourceStatus.Removed) {
                             detachInternal(documentKey)
+                            // The removed document carries a serverSeq for a row that no
+                            // longer exists server-side;
+                            // leaving the entry would present a resume the server refuses.
+                            removeFromStore(documentKey)
                         }
                     }
                 } else if (resource is Channel) {
@@ -1349,17 +1756,14 @@ public class Client(
                         document.setActor(requireActorId())
 
                         // (1) Lease — store path only; contention fails fast (does not
-                        // suspend waiting for the lock to free up).
+                        // suspend waiting for the lock to free up). ErrDocumentOpenElsewhere
+                        // replaces the prior generic
+                        // ErrInvalidArgument — acquireSessionLock is the single
+                        // implementation of this decision.
                         if (options.docStore != null) {
                             val lockName = "yorkie-session:${storeKey(documentKey)}"
-                            sessionLockHandle = options.sessionLock.acquire(lockName)
-                                ?: throw YorkieException(
-                                    ErrInvalidArgument,
-                                    "document \"$documentKey\" is already open in another " +
-                                        "session under offline persistence; only one active " +
-                                        "session per document is allowed to avoid silent " +
-                                        "edit loss",
-                                )
+                            sessionLockHandle =
+                                acquireSessionLock(options.sessionLock, lockName, documentKey)
                         }
 
                         // (2) attachOnce — restore + RPC + apply; retried once on an
@@ -1369,7 +1773,7 @@ public class Client(
                         suspend fun attachOnce(reanchor: Boolean): AttachDocumentResponse {
                             var restored = false
                             if (options.docStore != null && !reanchor) {
-                                val bytes = try {
+                                val stored: StoredDoc? = try {
                                     options.docStore.load(storeKey(documentKey))
                                 } catch (e: Throwable) {
                                     ensureActive()
@@ -1380,26 +1784,16 @@ public class Client(
                                     persistsToStore = false
                                     null
                                 }
-                                if (bytes != null) {
+                                if (stored != null) {
                                     try {
                                         // restoreFromBytes classifies by RestoreResult instead
                                         // of throwing on an actor mismatch (spec 029 I5/M1), so
-                                        // this decodes bytes exactly once — the old design threw
-                                        // either way and re-decoded the envelope a second time in
-                                        // the catch below purely to tell a mismatch apart from a
-                                        // corrupt envelope.
-                                        when (val result = document.restoreFromBytes(bytes)) {
-                                            is RestoreResult.Restored -> {
-                                                // No re-stamp needed (spec 029 D1): the actor
-                                                // guard is now strict (no initial-actor
-                                                // exemption on either side, JS/iOS parity), so a
-                                                // Restored result already carries the same
-                                                // stable actor this client stamped before the
-                                                // restore attempt (requireActorId(), above).
-                                                restored = true
-                                                restoredEnvelope = true
-                                            }
-
+                                        // this decodes the snapshot exactly once — the old design
+                                        // threw either way and re-decoded the envelope a second
+                                        // time in the catch below purely to tell a mismatch apart
+                                        // from a corrupt envelope.
+                                        val result = document.restoreFromBytes(stored.snapshot)
+                                        when (result) {
                                             is RestoreResult.ActorMismatch -> {
                                                 ensureActive()
                                                 emitLocalChangesDropped(
@@ -1412,11 +1806,25 @@ public class Client(
                                                 // all-or-nothing, so the document is
                                                 // untouched; continue fresh.
                                             }
+
+                                            is RestoreResult.Restored -> {
+                                                // No re-stamp needed: the actor
+                                                // guard is strict (no initial-actor exemption on
+                                                // either side, JS/iOS parity), so a Restored
+                                                // result already carries the stable actor this
+                                                // client stamped before the restore attempt
+                                                // (requireActorId(), above) — the value
+                                                // restoreMetaFromBytes and the log replay below
+                                                // compare against.
+                                                restored = true
+                                                restoredEnvelope = true
+                                                restoreStoredLog(document, documentKey, stored)
+                                            }
                                         }
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: YorkieException) {
-                                        // Corrupt envelope only — fromBytes always throws
+                                        // Corrupt envelope — fromBytes always throws
                                         // ErrInvalidArgument, never lets a protobuf-level or
                                         // other decode failure escape unwrapped.
                                         ensureActive()
@@ -1426,9 +1834,21 @@ public class Client(
                                             emptyList(),
                                         )
                                         removeFromStore(documentKey)
-                                        // Fall through: fromBytes never built a usable
-                                        // Document, so restoreFromBytes never touched this
-                                        // document's fields; continue fresh.
+                                        restored = false
+                                        // Fall through and continue fresh. A throw from
+                                        // fromBytes never built a usable Document, so this
+                                        // document's fields are untouched. This catch also
+                                        // covers what runs after a Restored result: once
+                                        // restoreMetaFromBytes or restoreAppendedChanges has
+                                        // run, a throw from a later step leaves the document
+                                        // PARTIALLY restored (the snapshot's root, meta's
+                                        // checkpoint, possibly a part-applied replay), and the
+                                        // attach below then presents meta's checkpoint with
+                                        // that root — restoredEnvelope deliberately stays set
+                                        // there, so a compaction error on that RPC still
+                                        // re-anchors. Shared with JS `client.ts` (its outer
+                                        // catch does not reset the document either); tracked,
+                                        // not changed here.
                                     }
                                 }
                             }
@@ -1613,14 +2033,60 @@ public class Client(
                         attachments[documentKey] = attachment
                         registered = true
 
-                        // (8) Persist on every local change, content or presence-only (spec 029
-                        // B2): the hook fires from inside updateAsync/undo-redo right after
-                        // localChanges += change, with zero suspension before enqueuePersist
-                        // registers the write — the old event-driven collector suspended in
-                        // Document.toBytes() before it ever touched persistQueues, leaving a
-                        // window where close()'s scope.cancel() could kill it mid-snapshot.
+                        // (7b) Attach-base write:
+                        // every attach (restored, fresh, or re-anchored) writes a fresh base —
+                        // persistBase() serializes the CURRENT live document (snapshot + any
+                        // replayed log folded in + the pending queue), so a restored log is
+                        // folded into a single-snapshot base and the on-disk log is cleared.
+                        // lastAppendedClientSeq seeds from the SAME atomic read: it is "the
+                        // highest clientSeq this base already carries", so append() never
+                        // re-appends what this base already embeds. Runs BEFORE the persist
+                        // subscription below so no edit can race this seed.
                         if (attachment.persistsToStore) {
-                            document.onLocalChange = { enqueuePersist(attachment) }
+                            val key = storeKey(documentKey)
+                            val base = document.persistBase()
+                            persistStates[key] = PersistState(
+                                snapshotBytes = base.snapshot.size,
+                                logBytes = 0,
+                                changeCount = 0,
+                                lastAppendedClientSeq = base.lastCarriedClientSeq,
+                            )
+                            persistSnapshotOrPoison(key, base.snapshot)
+                        }
+
+                        // (8) Persist on every local change, content or presence-only (JS 57131568): Document.onLocalChange fires synchronously inside
+                        // updateAsync/undo-redo right after localChanges += change — on the
+                        // DOCUMENT dispatcher, so the hook itself must not suspend. triggerAppend
+                        // launches append() onto the client dispatcher (where PersistState is
+                        // confined) and registers that launch atomically in persistTriggers, so
+                        // a drain (detach/deactivate/close) joins a not-yet-run append before it
+                        // samples persistQueues: zero suspension between the edit and the
+                        // registration the drains observe, the same guarantee JS's synchronous
+                        // persist gives the single-blob design. The events collector this replaces suspended in
+                        // pendingChangesAfter() before anything was registered, so close()'s
+                        // scope.cancel() could kill it with the last edit unpersisted.
+                        if (attachment.persistsToStore) {
+                            document.onLocalChange = { triggerAppend(attachment) }
+                            // Catch-up (Kotlin-forced): the
+                            // attach base above was read under the document's dispatcher,
+                            // and an edit minted between that read and the hook just
+                            // installed is in neither — no hook saw it, and the base's
+                            // watermark excludes it. One append() off the pending queue
+                            // picks it up; idempotent against the hook (the watermark skips
+                            // what is carried). JS has no window here: its subscription and
+                            // base write are one synchronous block. Guarded like the hook
+                            // path: a store/encode throw must not fail the attach.
+                            try {
+                                append(attachment)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Throwable) {
+                                logError(
+                                    "PS",
+                                    "attach catch-up append failed for ${document.getKey()}",
+                                    e,
+                                )
+                            }
                         }
 
                         // Manual and Polling are stream-less modes; only realtime modes
@@ -1726,8 +2192,20 @@ public class Client(
                 document.applyChangePack(pack)
                 if (document.getStatus() != ResourceStatus.Removed) {
                     document.applyStatus(ResourceStatus.Detached)
-                    detachInternal(documentKey)
                 }
+                // Both branches: detachInternal is
+                // idempotent (`attachments[key] ?: return`), and a detach whose response
+                // reports Removed used to skip it — nothing else runs it on this path (the
+                // sync loop's Removed branch only fires on a sync), so the attachment stayed
+                // registered with its PersistState and session lease held until deactivate.
+                detachInternal(documentKey)
+                // As of JS v0.7.22: a
+                // detached document has no owner for its offline state, and leaving the entry
+                // makes the NEXT attach in this session present a resume the server refuses
+                // for a row it just detached. Removed in BOTH branches (JS v0.7.22), after
+                // detachInternal's drain so no in-flight write resurrects the entry
+                // (sync-Removed mirrors this call order too).
+                removeFromStore(documentKey)
             }
             SUCCESS
         }
@@ -1901,24 +2379,23 @@ public class Client(
         // Clear the local-change hook and release the session lease here — the
         // single choke point for detachDocument, syncInternal's Removed path,
         // deactivateInternal, and removeDocument. Both are non-suspending so
-        // the NonCancellable/GlobalScope keepalive paths cannot skip them. No
-        // store removal here (JS parity, recorded determination): the
-        // persisted envelope is re-validated on the next resume by the actor
-        // guard, epoch check, and tier-3 purge guard.
+        // the NonCancellable/GlobalScope keepalive paths cannot skip them.
+        // Store removal is NOT done here:
+        // detachInternal runs from deactivateInternal too, which must keep the
+        // entry for the next session, so the three callers that DO want the
+        // entry gone (detachDocument, removeDocument, the sync-Removed path)
+        // call removeFromStore themselves, after this drain/clear/release.
         (attachment.resource as? Document)?.onLocalChange = null
-        // M2: prune this key's queue entry once its job has settled, so a
-        // client that attaches and detaches many documents over its lifetime
-        // does not accumulate one ConcurrentHashMap entry per ever-attached
-        // document. A write still running (observed above via the drain, or
-        // one that outlived its bound) stays chained so a re-attach's first
-        // persist still waits behind it instead of racing it.
-        (attachment.resource as? Document)?.let { doc ->
-            persistQueues.computeIfPresent(storeKey(doc.getKey())) { _, job ->
-                if (job.isCompleted) null else job
-            }
-        }
+        // No queue entry outlives its job — enqueueWrite's and
+        // triggerAppend's completion cleanup drop a finished job while it is
+        // still the tail, so a client that attaches and detaches many documents
+        // never accumulates one entry per ever-attached document; a write still
+        // running stays chained so a re-attach's first write waits behind it.
         attachment.sessionLockHandle?.release()
         attachment.sessionLockHandle = null
+        if (attachment.persistsToStore) {
+            persistStates.remove(storeKey(key))
+        }
         attachments.remove(key)
         mutexForAttachments.remove(key)
     }
@@ -2036,6 +2513,8 @@ public class Client(
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
                 detachInternal(documentKey)
+                // The document is gone server-side.
+                removeFromStore(documentKey)
             }
             SUCCESS
         }

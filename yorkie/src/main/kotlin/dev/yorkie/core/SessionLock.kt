@@ -1,5 +1,8 @@
 package dev.yorkie.core
 
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrDocumentOpenElsewhere
+
 /**
  * A handle to a held [SessionLock], returned by a successful [SessionLock.acquire]. Ported from
  * yorkie-js-sdk `session-lock.ts` (`2291bf67`/#1338).
@@ -49,4 +52,28 @@ public object NoopSessionLock : SessionLock {
     override suspend fun acquire(name: String): SessionLockHandle = object : SessionLockHandle {
         override fun release() {}
     }
+}
+
+/**
+ * Runs the single-active-session decision the store-backed attach makes: take the lock, and
+ * translate an absent handle — the fail-fast signal — into a rejected attach carrying
+ * [ErrDocumentOpenElsewhere]. Ported from yorkie-js-sdk `session-lock.ts` `acquireSessionLock`
+ * (`aaa5cb15`/#1354).
+ *
+ * It lives here, rather than inline in attach, so the decision has exactly one
+ * implementation. A test that re-states it would pass while the real path regressed, which is
+ * the failure mode this guard can least afford: getting it wrong means two sessions sharing
+ * one checkpoint and silently losing edits.
+ */
+internal suspend fun acquireSessionLock(
+    lock: SessionLock,
+    name: String,
+    docKey: String,
+): SessionLockHandle {
+    return lock.acquire(name) ?: throw YorkieException(
+        ErrDocumentOpenElsewhere,
+        "document \"$docKey\" is already open in another session under offline " +
+            "persistence; only one active session per document is allowed to " +
+            "avoid silent edit loss",
+    )
 }

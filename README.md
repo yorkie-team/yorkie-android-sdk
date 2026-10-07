@@ -110,13 +110,21 @@ never applies there: it takes effect only on the client that issued it, and the 
 diverge for good, with no error on either side. Every other SDK feature works against earlier
 servers and peers. Upgrade every participant before relying on undo/redo in a mixed fleet.
 
-Offline local persistence and the stable actor (v0.7.20 sync): resuming a persisted document
-re-pushes its un-acknowledged changes against the persisted checkpoint and epoch, and watch peers
-are keyed by the stable actor — both need Yorkie server >= 0.7.20 (yorkie#1969, #1970). Against an
-older server the SDK falls back to the session id as the actor: with a `docStore`, every activation
-gets a new actor, so each restart's restore fails the actor guard — un-pushed offline edits are
-**discarded** (`Document.Event.LocalChangesDropped`, reason `ActorMismatch`) and the envelope is
-removed; without a store nothing changes.
+Offline local persistence and the stable actor (v0.7.20 sync): a persisted document is stored as
+a snapshot plus an append-only change log and a small header (checkpoint, changeID, compaction
+epoch) rather than one opaque blob — each local edit appends one small log entry instead of
+re-serializing the whole document, and the log is folded back into a fresh snapshot once it
+grows past a size-relative threshold. Resuming replays the log on top of the snapshot and
+re-pushes whatever the header shows as un-acknowledged against the persisted checkpoint and epoch,
+and watch peers are keyed by the stable actor — both need Yorkie server >= 0.7.20 (yorkie#1969,
+#1970). Against an older server the SDK falls back to the session id as the actor: with a
+`docStore`, every activation gets a new actor, so each restart's restore fails the actor guard —
+un-pushed offline edits are **discarded** (`Document.Event.LocalChangesDropped`, reason
+`ActorMismatch`) and the entry is removed; without a store nothing changes. Only one active
+session per document is allowed under offline persistence: a second concurrent resume fails fast
+with `ErrDocumentOpenElsewhere` instead of silently racing the first. The persisted entry is
+removed once the document is detached, removed, or learned removed via a sync, and is kept across
+a deactivate so the next session can resume it.
 
 | Participant | Minimum version |
 |-------------|-----------------|

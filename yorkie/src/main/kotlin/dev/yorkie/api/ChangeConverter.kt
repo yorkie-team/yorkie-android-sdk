@@ -9,21 +9,26 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
+import dev.yorkie.util.checkYorkieError
 
 internal typealias PBChange = dev.yorkie.api.v1.Change
 internal typealias PBChangeID = dev.yorkie.api.v1.ChangeID
 internal typealias PBCheckPoint = dev.yorkie.api.v1.Checkpoint
 internal typealias PBChangePack = dev.yorkie.api.v1.ChangePack
 
+internal fun PBChange.toChange(): Change {
+    return Change(
+        id.toChangeID(),
+        operationsList.toOperations(),
+        takeIf { it.hasPresenceChange() }?.presenceChange?.toPresenceChange(),
+        message.ifEmpty { null },
+    )
+}
+
 internal fun List<PBChange>.toChanges(): List<Change> {
-    return map {
-        Change(
-            it.id.toChangeID(),
-            it.operationsList.toOperations(),
-            it.takeIf { it.hasPresenceChange() }?.presenceChange?.toPresenceChange(),
-            it.message.ifEmpty { null },
-        )
-    }
+    return map { it.toChange() }
 }
 
 internal fun Change.toPBChange(): PBChange {
@@ -109,3 +114,30 @@ internal fun ChangeID.toByteString(): ByteString = toPBChangeID().toByteString()
  * Decodes a [ChangeID] from its protobuf binary form.
  */
 internal fun ByteString.toChangeID(): ChangeID = PBChangeID.parseFrom(this).toChangeID()
+
+/**
+ * Encodes this [Change] into the bytes a [dev.yorkie.core.StoredChange] carries. Android has
+ * no `ChangeStruct`/`toStruct` layer like JS, so a stored change is simply
+ * `change.toPBChange().toByteArray()` — matching how [dev.yorkie.document.Document.toBytes]
+ * already carries pending changes, and iOS's own serialized `PbChange`. This store is
+ * local-only and never crosses SDKs, so the encoding choice is Android-internal.
+ */
+internal fun Change.toStoredChangeBytes(): ByteArray = toPBChange().toByteArray()
+
+/**
+ * Decodes a [Change] from the bytes produced by [toStoredChangeBytes]. A malformed payload
+ * surfaces the protobuf parser's own exception to the caller.
+ *
+ * Zero-length [bytes][ByteArray] are rejected with [YorkieException]([ErrInvalidArgument])
+ * rather than decoded: an empty array parses to a default-valued,
+ * zero-ID [dev.yorkie.api.v1.Change] without throwing, which would otherwise be replayed as a
+ * silently-wrong entry instead of surfacing as the log corruption it actually is. JS is lenient
+ * here; this is a deliberate Kotlin hardening.
+ */
+internal fun ByteArray.toStoredChange(): Change {
+    checkYorkieError(
+        isNotEmpty(),
+        YorkieException(ErrInvalidArgument, "corrupt stored change: zero-length bytes"),
+    )
+    return PBChange.parseFrom(this).toChange()
+}

@@ -164,4 +164,204 @@ class OfflinePersistenceTest {
         doc2.close()
         session2.close()
     }
+
+    /** Mirrors `Client.storeKey`: `"<apiKey>/<clientKey>/<docKey>"`, apiKey unset here (""). */
+    private fun storeKeyFor(clientKey: String, docKey: String) = "/$clientKey/$docKey"
+
+    @Test
+    fun test_keeps_writing_appends_not_snapshots_while_editing() = runBlocking {
+        val store = MemoryDocStore()
+        val clientKey = "offline-append-${UUID.randomUUID()}"
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+        val storeKey = storeKeyFor(clientKey, documentKey)
+
+        val session = createClient(options(clientKey, store))
+        session.activateAsync().await()
+        val document = Document(documentKey)
+        session.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        val base = awaitStored(store, storeKey)
+        assertTrue(base.changes.isEmpty())
+
+        document.updateAsync { root, _ -> root.setNewText("content").edit(0, 0, "a") }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("content").edit(1, 1, "b") }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonText>("content").edit(2, 2, "c") }.await()
+
+        val stored = awaitStoredWithChanges(store, storeKey, expectedCount = 3)
+        assertEquals(3, stored.changes.size)
+        assertTrue(stored.snapshot.contentEquals(base.snapshot))
+
+        session.detachDocument(document).await()
+        session.deactivateAsync().await()
+        document.close()
+        session.close()
+    }
+
+    @Test
+    fun test_survives_a_reload_and_stays_pushable_afterwards() = runBlocking {
+        val sharedStore = MemoryDocStore()
+        val clientKey = "offline-reload-${UUID.randomUUID()}"
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+
+        // A peer writes "from-peer".
+        val peer = createClient()
+        peer.activateAsync().await()
+        val peerDoc = Document(documentKey)
+        peer.attachDocument(peerDoc, syncMode = Client.SyncMode.Manual).await()
+        peerDoc.updateAsync { root, _ -> root.setNewText("content").edit(0, 0, "from-peer") }
+            .await()
+        peer.syncAsync(peerDoc).await()
+
+        // c1 syncs (pulls "from-peer"), then edits "+offline" WITHOUT syncing.
+        val session1 = createClient(options(clientKey, sharedStore))
+        session1.activateAsync().await()
+        val doc1 = Document(documentKey)
+        session1.attachDocument(doc1, syncMode = Client.SyncMode.Manual).await()
+        session1.syncAsync(doc1).await()
+        assertEquals("from-peer", doc1.getRoot().getAs<JsonText>("content").toString())
+        doc1.updateAsync { root, _ ->
+            root.getAs<JsonText>("content").edit(9, 9, "+offline")
+        }.await()
+        session1.close()
+
+        // c2 (same key+store) restores "from-peer+offline", edits "+after", syncs.
+        val session2 = createClient(options(clientKey, sharedStore))
+        session2.activateAsync().await()
+        val doc2 = Document(documentKey)
+        session2.attachDocument(doc2, syncMode = Client.SyncMode.Manual).await()
+        assertEquals(
+            "from-peer+offline",
+            doc2.getRoot().getAs<JsonText>("content").toString(),
+        )
+        doc2.updateAsync { root, _ ->
+            root.getAs<JsonText>("content").edit(17, 17, "+after")
+        }.await()
+        session2.syncAsync(doc2).await()
+
+        // The server-oracle: a fresh verifier client reads the server's own copy — proof
+        // the restored-and-edited document is genuinely pushable, not merely locally
+        // consistent (C10(b)).
+        val verifier = createClient()
+        verifier.activateAsync().await()
+        val verifierDoc = Document(documentKey)
+        verifier.attachDocument(verifierDoc, syncMode = Client.SyncMode.Manual).await()
+        verifier.syncAsync(verifierDoc).await()
+        assertEquals(
+            "from-peer+offline+after",
+            verifierDoc.getRoot().getAs<JsonText>("content").toString(),
+        )
+
+        peer.detachDocument(peerDoc).await()
+        peer.deactivateAsync().await()
+        session2.detachDocument(doc2).await()
+        session2.deactivateAsync().await()
+        verifier.detachDocument(verifierDoc).await()
+        verifier.deactivateAsync().await()
+        doc1.close()
+        peerDoc.close()
+        doc2.close()
+        verifierDoc.close()
+        peer.close()
+        session2.close()
+        verifier.close()
+    }
+
+    @Test
+    fun test_allows_re_attaching_a_document_after_detaching_it() = runBlocking {
+        val store = MemoryDocStore()
+        val clientKey = "offline-reattach-${UUID.randomUUID()}"
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+        val storeKey = storeKeyFor(clientKey, documentKey)
+
+        val session = createClient(options(clientKey, store))
+        session.activateAsync().await()
+        val document = Document(documentKey)
+        session.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        awaitStored(store, storeKey)
+
+        session.detachDocument(document).await()
+        assertEquals(null, store.load(storeKey))
+
+        val document2 = Document(documentKey)
+        val result = session.attachDocument(document2, syncMode = Client.SyncMode.Manual).await()
+        assertTrue(result.isSuccess)
+
+        session.detachDocument(document2).await()
+        session.deactivateAsync().await()
+        document.close()
+        document2.close()
+        session.close()
+    }
+
+    @Test
+    fun test_allows_attaching_again_after_learning_the_document_was_removed() = runBlocking {
+        val store = MemoryDocStore()
+        val clientKey = "offline-removed-${UUID.randomUUID()}"
+        val documentKey = UUID.randomUUID().toString().toDocKey()
+        val storeKey = storeKeyFor(clientKey, documentKey)
+
+        val session = createClient(options(clientKey, store))
+        session.activateAsync().await()
+        val document = Document(documentKey)
+        session.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        awaitStored(store, storeKey)
+
+        // A different client removes the document server-side.
+        val remover = createClient()
+        remover.activateAsync().await()
+        val removerDoc = Document(documentKey)
+        remover.attachDocument(removerDoc, syncMode = Client.SyncMode.Manual).await()
+        remover.removeDocument(removerDoc).await()
+        remover.deactivateAsync().await()
+        removerDoc.close()
+        remover.close()
+
+        // session's sync learns Removed -> detachInternal + the store entry removed.
+        session.syncAsync(document).await()
+        assertEquals(ResourceStatus.Removed, document.getStatus())
+        assertEquals(null, store.load(storeKey))
+
+        // A fresh attach on the same key+store succeeds.
+        val document2 = Document(documentKey)
+        val result = session.attachDocument(document2, syncMode = Client.SyncMode.Manual).await()
+        assertTrue(result.isSuccess)
+
+        session.detachDocument(document2).await()
+        session.deactivateAsync().await()
+        document.close()
+        document2.close()
+        session.close()
+    }
+
+    private suspend fun awaitStored(store: DocStore, key: String): StoredDoc {
+        var result: StoredDoc? = null
+        withTimeout(GENERAL_TIMEOUT) {
+            while (result == null) {
+                result = store.load(key)
+                if (result == null) kotlinx.coroutines.delay(50)
+            }
+        }
+        return checkNotNull(result)
+    }
+
+    /**
+     * Polls until the log holds AT LEAST [expectedCount] entries. `>=`, not `==`, so a log
+     * that overshoots (or a mid-test compaction that lands extra writes) surfaces as a clear
+     * assertion failure at the call site rather than a timeout here.
+     */
+    private suspend fun awaitStoredWithChanges(
+        store: DocStore,
+        key: String,
+        expectedCount: Int,
+    ): StoredDoc {
+        var result: StoredDoc? = null
+        withTimeout(GENERAL_TIMEOUT) {
+            while ((result?.changes?.size ?: 0) < expectedCount) {
+                result = store.load(key)
+                if ((result?.changes?.size ?: 0) < expectedCount) {
+                    kotlinx.coroutines.delay(50)
+                }
+            }
+        }
+        return checkNotNull(result)
+    }
 }

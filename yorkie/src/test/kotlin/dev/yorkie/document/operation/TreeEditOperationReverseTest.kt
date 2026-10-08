@@ -7,6 +7,7 @@ import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
+import dev.yorkie.document.crdt.CrdtTreePos
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.TreeRestoreSpan
 import dev.yorkie.document.crdt.toTreeNode
@@ -273,6 +274,88 @@ class TreeEditOperationReverseTest {
 
         // then: no reverse op (isPureSplit false, splitLevel != 0)
         assertTrue(result.reverseOps.isEmpty())
+    }
+
+    @Test
+    fun `undoes a split deeper than the tree without an index error`() {
+        // Ports JS `history_tree_split_test.ts` "should undo a split deeper
+        // than the tree" (v0.7.23, port e41069df, yorkie-js-sdk#1360): a
+        // splitLevel request deeper than the tree's actual depth below root
+        // is capped by the root-stop guard (CrdtTree.edit step 04), and the
+        // reverse must be sized from the ACTUAL levels split, not the
+        // requested one.
+        //
+        // given: <root><div><p>ab</p></div></root> (2 element levels below root)
+        val (tree, root) = buildTreeRoot()
+        val divNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "div")
+        makeTreeEditOp(tree, 0, 0, listOf(divNode), 3).execute(root, OpSource.Local, null)
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(4), 0), "p")
+        makeTreeEditOp(tree, 1, 1, listOf(pNode), 4).execute(root, OpSource.Local, null)
+        val textNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(5), 0), "ab")
+        makeTreeEditOp(tree, 2, 2, listOf(textNode), 5).execute(root, OpSource.Local, null)
+
+        // when: request splitLevel=3 (one level deeper than root->div->p allows)
+        val op = makeTreeEditOp(tree, 3, 3, null, 6, splitLevel = 3)
+        val result = op.execute(root, OpSource.Local, null)
+
+        // then: only 2 levels actually split (root itself is never split);
+        // the reverse is tagged with the ACTUAL level, and applying it
+        // (the undo) does not throw an index error.
+        assertEquals(1, result.reverseOps.size)
+        val reverseOp = result.reverseOps[0] as TreeEditOperation
+        assertEquals(2, reverseOp.redoSplitLevel)
+        assertTrue(reverseOp.isUndoOp)
+
+        reverseOp.execute(root, OpSource.Local, null)
+        assertEquals("<root><div><p>ab</p></div></root>", tree.toXml())
+    }
+
+    @Test
+    fun `getContentSize sums insertedContentSize and splitSize`() {
+        // Port e41069df (yorkie-js-sdk#1360): getContentSize() ==
+        // insertedContentSize + splitSize, each measured independently.
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        val insertOp = makeTreeEditOp(tree, 0, 0, listOf(pNode), 3)
+        insertOp.execute(root, OpSource.Local, null)
+        // Inserting <p></p> (no split): getContentSize() is just the
+        // inserted element's own padded size.
+        assertEquals(2, insertOp.getContentSize())
+
+        val textNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "ab")
+        makeTreeEditOp(tree, 1, 1, listOf(textNode), 4).execute(root, OpSource.Local, null)
+
+        val splitOp = makeTreeEditOp(tree, 2, 2, null, 5, splitLevel = 1)
+        splitOp.execute(root, OpSource.Local, null)
+        // Pure split (no inserted content): getContentSize() is just the
+        // measured boundary growth (one new empty <p> sibling, padding 2).
+        assertEquals(2, splitOp.getContentSize())
+    }
+
+    @Test
+    fun `getContentSize resets to 0 when a reused op's execute hits an early return`() {
+        // insertedContentSize/splitSize are mutable `var` fields that
+        // outlive a single execute() call -- the SAME TreeEditOperation
+        // instance can be re-executed later (e.g. reconcileOperation
+        // re-targeting a pending undo/redo entry). An early-return path
+        // (here: checkPosRangeValid fails) must not leave getContentSize()
+        // reporting a size left over from a PREVIOUS, unrelated execution.
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        val insertOp = makeTreeEditOp(tree, 0, 0, listOf(pNode), 3)
+        insertOp.execute(root, OpSource.Local, null)
+        assertEquals(2, insertOp.getContentSize())
+
+        // Retarget the SAME instance at a position that cannot resolve in
+        // this tree, forcing execute() to early-return via
+        // CrdtTree.checkPosRangeValid.
+        val bogusID = CrdtTreeNodeID(makeTicket(999), 0)
+        insertOp.fromPos = CrdtTreePos(bogusID, bogusID)
+        insertOp.toPos = CrdtTreePos(bogusID, bogusID)
+
+        insertOp.execute(root, OpSource.Local, null)
+
+        assertEquals(0, insertOp.getContentSize())
     }
 
     @Test

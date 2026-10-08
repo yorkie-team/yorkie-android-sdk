@@ -110,6 +110,35 @@ never applies there: it takes effect only on the client that issued it, and the 
 diverge for good, with no error on either side. Every other SDK feature works against earlier
 servers and peers. Upgrade every participant before relying on undo/redo in a mixed fleet.
 
+#### Styling text or tree nodes that a peer removed concurrently (0.7.23)
+
+From 0.7.23 a style or remove-style operation on text that is concurrent with a removal is applied
+on every replica that receives it (and so are the pieces of a tree element that a concurrent split
+exposes), as it already was on the replica that issued it (yorkie-js-sdk #1368, yorkie server
+#2012). Earlier releases could skip such a style on a replica that received it after the removal,
+so replicas held different attributes on the removed content. That difference becomes visible when
+the removal is later undone. Replicas agree on those attributes only if every participant is on
+0.7.23 or later:
+
+| Participant | Minimum version |
+|-------------|-----------------|
+| Yorkie server | 0.7.23 |
+| yorkie-android-sdk peers | this release |
+| yorkie-js-sdk peers | 0.7.23 |
+
+Two cases still diverge, with every participant on 0.7.23. First, if a replica garbage-collects the
+removed content before a peer undoes the removal, that replica rebuilds the text from the peer's
+deletion-time snapshot and loses a style it had applied to the tombstone, while the peer and the
+server keep it; the same outcome was executed on the yorkie-js-sdk reference, and an instrumented
+test pins it. Second, a style on a tree element that a peer removes as a whole never takes effect
+on the peer that removed it, so after the removal is undone the two replicas hold different
+attributes on that element; earlier releases and yorkie-js-sdk behave the same way.
+
+A plain string attribute is sent as the raw string (`color="red"` is sent as `red`), the encoding
+yorkie-js-sdk 0.7.23 and the server use; older yorkie-js-sdk peers expect the JSON-encoded form. A
+string that is itself JSON (such as `1` or `true`) is also sent raw, where yorkie-js-sdk keeps it
+quoted, so a JS peer may read it as the JSON value.
+
 Offline local persistence and the stable actor (v0.7.20 sync): a persisted document is stored as
 a snapshot plus an append-only change log and a small header (checkpoint, changeID, compaction
 epoch) rather than one opaque blob — each local edit appends one small log entry instead of

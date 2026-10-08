@@ -8,11 +8,12 @@ import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.json.TreePosStructRange
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.document.time.ticketKnown
 import dev.yorkie.util.DataSize
+import dev.yorkie.util.DocSize
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
 import dev.yorkie.util.IndexTreeNodeList
@@ -119,7 +120,7 @@ internal data class TreeRestoreSpan(
 internal data class TreeRestoreResult(
     val untombstoned: List<CrdtTreeNode>,
     val recreated: List<CrdtTreeNode>,
-    val pendingGcPairs: List<GCPair<CrdtTreeNode>>,
+    val pendingGcPairs: List<GCPair<*>>,
     val diff: DataSize,
 )
 
@@ -154,9 +155,13 @@ internal data class CrdtTree(
      * Buffers GC pairs for pieces born already-tombstoned by splitting a
      * removed node, which were never counted live. [edit], [style], and
      * [removeStyle] drain this buffer via [drainPendingGcPairs] into the GC
-     * pairs they already return.
+     * pairs they already return. Widened to `GCPair<*>` (was
+     * `GCPair<CrdtTreeNode>`) so [pushPendingGcPair] can buffer an
+     * already-built attribute-tombstone pair (`GCPair<RhtNode>`) alongside
+     * node-level pairs — a split's copied attribute tombstones (port
+     * yorkie-js-sdk `99dbec9d`, #1363).
      */
-    private var pendingGcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+    private var pendingGcPairs = mutableListOf<GCPair<*>>()
 
     /**
      * Buffers a GC pair for [node], a piece born already-tombstoned by
@@ -169,9 +174,20 @@ internal data class CrdtTree(
     }
 
     /**
+     * Buffers an already-built GC [pair] (mirrors JS `tree.ts:1527`
+     * `pushPendingGCPair`). Used for pairs the caller already constructed —
+     * e.g. [CrdtTreeNode.gcPairs]' per-attribute `GCPair<RhtNode>`s copied by
+     * a split — as opposed to [registerPendingGcPair], which builds a
+     * node-level pair from scratch.
+     */
+    fun pushPendingGcPair(pair: GCPair<*>) {
+        pendingGcPairs.add(pair)
+    }
+
+    /**
      * Returns the buffered GC pairs and clears the buffer.
      */
-    fun drainPendingGcPairs(): List<GCPair<CrdtTreeNode>> {
+    fun drainPendingGcPairs(): List<GCPair<*>> {
         val pairs = pendingGcPairs
         pendingGcPairs = mutableListOf()
         return pairs
@@ -275,6 +291,12 @@ internal data class CrdtTree(
         val prevAttributes = mutableMapOf<String, String>()
         val newAttrKeys = mutableListOf<String>()
         var capturedPrev = false
+        // DocSize: accAttrWrite folds each RhtWrite's
+        // install/supersede/revive into live or gc depending on whether the
+        // node it landed on is still live (see GC.kt). `diff` (the two
+        // boundary splits above) is always live-bound and is folded in once,
+        // below, after the traversal.
+        var size = DocSize(live = DataSize(0, 0), gc = DataSize(0, 0))
         val shouldSkipToken =
             styleSkipPredicate(range.second, versionVector, recovery?.isInterloper)
         traverseInPosRange(
@@ -283,10 +305,7 @@ internal data class CrdtTree(
             toParent = toParent,
             toLeft = toLeft,
         ) { (node, tokenType), _ ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
-
-            if (node.canStyle(executedAt, clientLamportAtChange) && attributes != null) {
+            if (node.canStyle(versionVector) && attributes != null) {
                 if (shouldSkipToken(node, tokenType)) {
                     return@traverseInPosRange
                 }
@@ -307,11 +326,20 @@ internal data class CrdtTree(
                 val previousNode = node.prevSibling ?: parentOfNode
 
                 val updatedAttrPairs = node.setAttributes(attributes, executedAt)
-                val affectedAttrs = updatedAttrPairs.fold(emptyMap<String, String>()) { acc, pair ->
-                    val curr = pair.new
-                    acc + curr?.let { mapOf(curr.key to attributes[curr.key].orEmpty()) }.orEmpty()
+                val affectedAttrs = updatedAttrPairs.fold(
+                    emptyMap<String, String>(),
+                ) { acc, write ->
+                    val installed = write.installed
+                    acc + installed?.let {
+                        mapOf(it.key to attributes[it.key].orEmpty())
+                    }.orEmpty()
                 }
-                if (affectedAttrs.isNotEmpty()) {
+                // A tombstoned node (now admitted by canStyle) is not
+                // part of the rendered document; toIndex on one yields a
+                // zero-width range meaningless to an editor. Mirrors JS SDK
+                // `tree.ts:1744` (e0609c7a #1368) — the text half makes the
+                // same exclusion.
+                if (affectedAttrs.isNotEmpty() && !node.isRemoved) {
                     TreeChange(
                         type = TreeChangeType.Style,
                         from = toIndex(parentOfNode, previousNode),
@@ -323,17 +351,18 @@ internal data class CrdtTree(
                     ).let(changes::add)
                 }
 
-                updatedAttrPairs.forEach { (prev, _) ->
-                    prev?.let {
-                        gcPairs.add(GCPair(node, prev))
-                    }
-                }
-
-                for ((key, _) in attributes) {
-                    val curr = node.getAttrs().getNodeMapByKey()[key]
-                    if (curr != null && tokenType != TokenType.End) {
-                        diff = addDataSizes(diff, curr.dataSize)
-                    }
+                // A node visited twice (Start then End) issues the SAME
+                // write ticket twice; the second always loses LWW against
+                // itself (installed/revived/superseded all empty on an
+                // RhtWrite read), so folding it in a second time is a
+                // no-op. A range that OPENS inside an element reaches that
+                // element as an End token with no Start visit, so gating
+                // this on `tokenType != TokenType.End` dropped the only
+                // booking for that node. Book every write unconditionally,
+                // matching JS SDK `tree.ts:1762-1764` (190204f8, closing
+                // "the TokenType.End asymmetry").
+                updatedAttrPairs.forEach { write ->
+                    size = accAttrWrite(write, node, !node.isRemoved, gcPairs, size)
                 }
 
                 // Propagate style to unknown split siblings so that a style
@@ -349,9 +378,9 @@ internal data class CrdtTree(
 
                         val siblingPairs = next.setAttributes(attributes, executedAt)
                         val siblingAffectedAttrs =
-                            siblingPairs.fold(emptyMap<String, String>()) { acc, pair ->
-                                val curr = pair.new
-                                acc + curr?.let { mapOf(curr.key to curr.value) }.orEmpty()
+                            siblingPairs.fold(emptyMap<String, String>()) { acc, write ->
+                                val installed = write.installed
+                                acc + installed?.let { mapOf(it.key to it.value) }.orEmpty()
                             }
                         if (siblingAffectedAttrs.isNotEmpty()) {
                             val parentOfNext = requireNotNull(next.parent)
@@ -366,14 +395,8 @@ internal data class CrdtTree(
                                 attributes = siblingAffectedAttrs,
                             ).let(changes::add)
                         }
-                        siblingPairs.forEach { (prev, _) ->
-                            prev?.let { gcPairs.add(GCPair(next, prev)) }
-                        }
-                        for ((key, _) in attributes) {
-                            // The RHT always retains an entry for a key that was just
-                            // set (the new node or the LWW-winning previous one).
-                            val curr = next.getAttrs().getNodeMapByKey().getValue(key)
-                            diff = addDataSizes(diff, curr.dataSize)
+                        siblingPairs.forEach { write ->
+                            size = accAttrWrite(write, next, !next.isRemoved, gcPairs, size)
                         }
                         current = next
                     }
@@ -387,7 +410,7 @@ internal data class CrdtTree(
         return TreeOperationResult(
             changes,
             gcPairs,
-            diff,
+            DocSize(live = addDataSizes(diff, size.live), gc = size.gc),
             prevAttributes = prevAttributes,
             attributesToRemove = newAttrKeys,
         )
@@ -408,7 +431,18 @@ internal data class CrdtTree(
                 var parent = parentNode
                 while (parent.isRemoved) {
                     child = parent
-                    parent = child.parent ?: break
+                    // Port yorkie-js-sdk 248551a1 (#1364, tree.ts:3346-3351):
+                    // a removed-ancestor walk running off the top of a
+                    // detached subtree (every ancestor up to the root is
+                    // tombstoned) has no least-alive-ancestor to resolve a
+                    // position against. The prior `?: break` silently kept
+                    // `parent == child` and resolved a bogus offset instead
+                    // of signalling the caller that the position is
+                    // unresolvable.
+                    parent = child.parent ?: throw YorkieException(
+                        ErrInvalidArgument,
+                        "toCrdtTreePos: parent of ${child.id} not found",
+                    )
                 }
 
                 val childOffset = parent.findOffset(child, includeRemoved)
@@ -639,8 +673,11 @@ internal data class CrdtTree(
             emptyList()
         }
 
-        // 02. Delete: delete the nodes that are marked as removed.
-        val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+        // 02. Delete: delete the nodes that are marked as removed. Widened to
+        // GCPair<*> (was GCPair<CrdtTreeNode>): drainPendingGcPairs() (below)
+        // can now also carry a split's copied attribute-tombstone pairs
+        // (GCPair<RhtNode>, pushed by CrdtTreeNode.split via pushPendingGcPair).
+        val gcPairs = mutableListOf<GCPair<*>>()
         // Identity-preserving undo: capture one span per node THIS edit
         // transitions visible -> tombstoned. node.remove() returning true is
         // exactly that transition, so pre-tombstoned nodes and LWW
@@ -744,6 +781,11 @@ internal data class CrdtTree(
         }
 
         // 04. Split: split the element nodes for the given split level.
+        // sizeBeforeSplit/splitSize (port e41069df, #1360): measures how
+        // much this split step grew the visible index, so a pure-split
+        // undo/redo reverse can be sized from the measured boundary instead
+        // of guessing 2 * splitLevel.
+        val sizeBeforeSplit = size
         if (splitLevel > 0 && issueTimeTicket != null) {
             var parent = fromParent
             var left = fromLeft
@@ -785,12 +827,13 @@ internal data class CrdtTree(
                         )
                         return@run
                     }
-                    parent.split(
+                    val (_, splitDiff) = parent.split(
                         this,
                         splitOffset,
                         issueTimeTicket,
                         versionVector,
                     )
+                    diff = addDataSizes(diff, splitDiff)
                     actualSplitLevel++
                     left = parent
                     parent = parent.parent ?: return@run
@@ -810,6 +853,7 @@ internal data class CrdtTree(
                 )
             }
         }
+        val splitSize = size - sizeBeforeSplit
 
         // 05. insert the given node at the given position. Cross-change ID
         // reuse (an earlier change, another actor, or a text piece step 01's
@@ -912,6 +956,18 @@ internal data class CrdtTree(
         // pairs beyond the plain-delete loop, the captured spans don't fully
         // describe the deletion -> emit empty spans so the op layer keeps
         // the copy-reinsert reverse.
+        //
+        // DISCLOSURE (port 99dbec9d, #1363): when a boundary split (step 01)
+        // lands on an already-tombstoned node that still carries attribute
+        // tombstones, CrdtTreeNode.split now copies and registers one pair
+        // per copied tombstone (pushPendingGcPair, drained above) in addition
+        // to the plain-delete loop's node pairs. That inflates gcPairs.size
+        // past deletePairCount even though the deletion itself was plain, so
+        // spansComplete flips to false and this edit falls back to the
+        // copy-reinsert reverse instead of the identity-preserving one — the
+        // same shape as JS (tree.ts:2506). Accepted: a correctness fix that
+        // narrows an unrelated optimization's applicability, not a behaviour
+        // regression.
         val spansComplete = toBeMergedNodes.isEmpty() && gcPairs.size == deletePairCount
 
         // Count merged boundaries before their children were moved (above), so
@@ -920,7 +976,10 @@ internal data class CrdtTree(
         return TreeOperationResult(
             changes,
             gcPairs,
-            diff,
+            // edit()'s diff is always live-bound — a piece born already-
+            // removed by a split goes through its own gcOnlySize pair
+            // instead (see splitNode), never through this diff.
+            DocSize(live = diff, gc = DataSize(0, 0)),
             removedNodes,
             mergeLevel = toBeMergedNodes.size,
             removedSpans = if (spansComplete) removedSpans else emptyList(),
@@ -930,6 +989,7 @@ internal data class CrdtTree(
             // resolves its parent by identity).
             insertedSpans = if (spansComplete) insertedSpans.reversed() else emptyList(),
             insertedContentSize = insertedContentSize,
+            splitSize = splitSize,
         )
     }
 
@@ -1049,6 +1109,9 @@ internal data class CrdtTree(
         }
     }
 
+    // attrGcPair hoisted to a top-level shared fn in GC.kt so CrdtText and
+    // CrdtTree book from ONE copy — see GC.kt.
+
     fun removeStyle(
         range: TreePosRange,
         attributeToRemove: List<String>,
@@ -1115,14 +1178,7 @@ internal data class CrdtTree(
             toParent,
             toLeft,
         ) { (node, tokenType), _ ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
-
-            if (node.canStyle(
-                    executedAt,
-                    clientLamportAtChange,
-                ) && attributeToRemove.isNotEmpty()
-            ) {
+            if (node.canStyle(versionVector) && attributeToRemove.isNotEmpty()) {
                 if (shouldSkipToken(node, tokenType)) {
                     return@traverseInPosRange
                 }
@@ -1137,24 +1193,34 @@ internal data class CrdtTree(
                     capturedPrev = true
                 }
 
+                // canStyle now admits a node removed CONCURRENTLY with this
+                // change, so nodeIsLive is the third question attrGcPair
+                // asks.
+                val nodeIsLive = !node.isRemoved
                 attributeToRemove.forEach { key ->
-                    node.removeAttribute(key, executedAt)
-                        .map { rhtNode -> GCPair(node, rhtNode) }
-                        .let(gcPairs::addAll)
+                    var wasLive = node.getAttrs().has(key)
+                    node.removeAttribute(key, executedAt).forEach { rhtNode ->
+                        gcPairs.add(attrGcPair(node, rhtNode, wasLive, nodeIsLive))
+                        wasLive = false
+                    }
                 }
 
                 val parentOfNode = requireNotNull(node.parent)
                 val previousNode = node.prevSibling ?: parentOfNode
 
-                TreeChange(
-                    type = TreeChangeType.RemoveStyle,
-                    from = toIndex(parentOfNode, previousNode),
-                    to = toIndex(node, node),
-                    fromPath = toPath(parentOfNode, previousNode),
-                    toPath = toPath(node, node),
-                    actorID = executedAt.actorID,
-                    attributesToRemove = attributeToRemove,
-                ).let(changes::add)
+                // See style(): a tombstoned node reports no change to
+                // editors. Mirrors JS SDK `tree.ts:1907` (e0609c7a #1368).
+                if (nodeIsLive) {
+                    TreeChange(
+                        type = TreeChangeType.RemoveStyle,
+                        from = toIndex(parentOfNode, previousNode),
+                        to = toIndex(node, node),
+                        fromPath = toPath(parentOfNode, previousNode),
+                        toPath = toPath(node, node),
+                        actorID = executedAt.actorID,
+                        attributesToRemove = attributeToRemove,
+                    ).let(changes::add)
+                }
 
                 // Propagate remove-style to unknown split siblings so a
                 // remove-style whose range was determined before the split
@@ -1168,11 +1234,15 @@ internal data class CrdtTree(
                         if (isSplitSiblingKnown(next, versionVector)) break
 
                         var removedAny = false
+                        val nextIsLive = !next.isRemoved
                         attributeToRemove.forEach { key ->
+                            var wasLive = next.getAttrs().has(key)
                             val removed = next.removeAttribute(key, executedAt)
                             if (removed.isNotEmpty()) removedAny = true
-                            removed.map { rhtNode -> GCPair(next, rhtNode) }
-                                .let(gcPairs::addAll)
+                            removed.forEach { rhtNode ->
+                                gcPairs.add(attrGcPair(next, rhtNode, wasLive, nextIsLive))
+                                wasLive = false
+                            }
                         }
                         if (removedAny) {
                             val parentOfNext = requireNotNull(next.parent)
@@ -1196,7 +1266,16 @@ internal data class CrdtTree(
         // can land inside an already-tombstoned node and buffer a born-dead
         // piece; drain it so it is not left unregistered for GC.
         gcPairs.addAll(drainPendingGcPairs())
-        return TreeOperationResult(changes, gcPairs, diff, prevAttributes = prevAttributes)
+        return TreeOperationResult(
+            changes,
+            gcPairs,
+            // removeStyle's attribute accounting moves entirely through the
+            // attrGcPair-registered gcPairs above (CrdtRoot.registerGCPair
+            // moves the bytes live -> gc when they are registered); diff
+            // here is only the two boundary splits, always live-bound.
+            DocSize(live = diff, gc = DataSize(0, 0)),
+            prevAttributes = prevAttributes,
+        )
     }
 
     private fun traverseInPosRange(
@@ -1351,7 +1430,7 @@ internal data class CrdtTree(
                 this,
                 pos.leftSiblingID.offset - leftSibling.id.offset,
             )
-            diff = splitedDiff
+            diff = addDataSizes(diff, splitedDiff)
         }
 
         // 04. Find the appropriate left node. If some nodes are inserted at the
@@ -1694,9 +1773,13 @@ internal data class CrdtTree(
             // undefined there), not a guard: a text node's Rht is empty. The
             // snapshot copies tombstoned Rht nodes too, and recreateFromSpan
             // deep-copies them into the recreated element WITHOUT registering
-            // GC pairs — exactly like JS v0.7.14. KNOWN shared leak (PR #360
-            // review F4), pinned in TreeUpstreamDefectPinTest; fix upstream
-            // first, then port.
+            // GC pairs — exactly like JS v0.7.14 and JS v0.7.23 (yorkie-js-sdk
+            // #1363 fixes only the SPLIT path's copied tombstones, in
+            // CrdtTreeNode.split — not this recreate path). KNOWN shared leak
+            // (PR #360 review F4), pinned in TreeUpstreamDefectPinTest; fix
+            // upstream first, then port. Not to be confused with the
+            // recreate-under-a-removed-PARENT case below ([restore]'s KDoc),
+            // which #1364 does fix.
             attrs = node.getAttrs().takeIf { !node.isText }?.deepCopy(),
             parentID = parent?.id,
             leftSiblingID = leftSiblingID,
@@ -1741,23 +1824,35 @@ internal data class CrdtTree(
      * in place). Do not merge-normalize segmentation here: non-commutative,
      * breaks GC/tombstone symmetry after redo.
      *
-     * JS parity, KNOWN DEFECT (PR #360 reviews 5165084872 F2 and 5194612367):
-     * like yorkie-js-sdk v0.7.14 (`tree.ts` `restore`), a tombstoned target is
-     * unremoved even when an ancestor is still tombstoned, and a purged target
-     * is recreated live under such an ancestor. The node stays invisible but
-     * is counted live, and a replica that already purged the parent and one
-     * that still holds its tombstone can diverge once the parent is revived.
+     * JS parity, KNOWN DEFECT, HALF STILL OPEN (PR #360 reviews 5165084872 F2
+     * and 5194612367; yorkie-js-sdk v0.7.14 `tree.ts` `restore`): a
+     * tombstoned target is unremoved via [CrdtTreeNode.unremove] even when an
+     * ancestor is still tombstoned. The node stays invisible but is counted
+     * live, and a replica that already purged the parent and one that still
+     * holds its tombstone can diverge once the parent is revived.
      * Deliberately NOT guarded Android-only: the wire payload is identical, so
      * a local guard would make the same relayed op resolve differently here
      * than on JS/iOS peers (the worse defect — lesson all/003, #359 B2).
-     * Pinned in TreeUpstreamDefectPinTest; fix upstream first, then port.
+     * yorkie-js-sdk #1364 does NOT touch this unremove route (out of scope).
+     * Pinned in TreeUpstreamDefectPinTest ("restore under a tombstoned parent
+     * diverges", unchanged); fix upstream first, then port.
+     *
+     * THE OTHER HALF IS NOW FIXED (port yorkie-js-sdk 248551a1, #1364): a
+     * PURGED target recreated under a still-tombstoned parent used to be
+     * placed and counted LIVE (same JS v0.7.14 shape as above).
+     * [recreateFromSpan]'s `attach()` now stamps it with the parent's own
+     * `removedAt`, excludes it from [TreeRestoreResult.recreated], and
+     * registers a pending `gcOnlySize` pair instead — never counted live, and
+     * the next purge of the parent does not orphan it. Both replicas recreate
+     * tombstoned identically (same relayed op, same outcome), so this remains
+     * convergent.
      */
     fun restore(spans: List<TreeRestoreSpan>): TreeRestoreResult {
         val untombstoned = mutableListOf<CrdtTreeNode>()
         val recreated = mutableListOf<CrdtTreeNode>()
         var diff = DataSize(data = 0, meta = 0)
 
-        val pairs: List<GCPair<CrdtTreeNode>>
+        val pairs: List<GCPair<*>>
         try {
             for (span in spans) {
                 if (!span.isText) {
@@ -1957,8 +2052,13 @@ internal data class CrdtTree(
      * -> returns null: the node stays unplaced/invisible; convergent,
      * because every replica resolves parent-absent identically.
      *
-     * Parent still tombstoned (not purged) -> the node is placed and returned
-     * LIVE, exactly like JS v0.7.14; see the known-defect note on [restore].
+     * Parent still tombstoned (not purged) -> the node is attached tombstoned
+     * with the parent's own `removedAt` (port yorkie-js-sdk 248551a1, #1364):
+     * excluded from [TreeRestoreResult.recreated] (never counted live) and
+     * its size registered as a pending `gcOnlySize` pair instead, so the
+     * next purge of the parent does not orphan it (see the known-defect note
+     * on [restore] for the half of this that is NOT fixed — unremove under a
+     * tombstoned ancestor).
      */
     private fun recreateFromSpan(
         span: TreeRestoreSpan,
@@ -1990,6 +2090,29 @@ internal data class CrdtTree(
 
         val siblings = parent.allChildren
 
+        // Port yorkie-js-sdk 248551a1 (#1364, tree.ts:2893-2905): a single
+        // attach point for every anchor rung below. registerNode runs first
+        // regardless of outcome (nodeMapByID must resolve the id either
+        // way); THEN, if the parent is tombstoned (not purged — a purged
+        // parent already returned null above), the node is removed with the
+        // parent's OWN removedAt (not this restore's ticket: a replica that
+        // recreated the node live then had the removal sweep it must agree
+        // with one that never saw it live) and its size (read AFTER remove,
+        // which adds the removedAt meta ticket) is registered as a pending
+        // gcOnlySize pair — never counted live, so the next purge of the
+        // parent does not orphan it. Returning null keeps the node out of
+        // TreeRestoreResult.recreated (restore()'s `?.let(recreated::add)`),
+        // matching JS returning `undefined`.
+        fun attach(): CrdtTreeNode? {
+            registerNode(node)
+            if (parent.isRemoved) {
+                node.remove(requireNotNull(parent.removedAt))
+                registerPendingGcPair(node, node.dataSize)
+                return null
+            }
+            return node
+        }
+
         // (a) same-insertion successor / predecessor piece (text): exact slot.
         if (span.isText) {
             val succ = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset + length))
@@ -1999,15 +2122,13 @@ internal data class CrdtTree(
                 succ.id.offset == offset + length
             ) {
                 parent.insertAt(siblings.indexOf(succ), node)
-                registerNode(node)
-                return node
+                return attach()
             }
             if (offset > span.id.offset || offset > 0) {
                 val pred = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset - 1))
                 if (pred != null && pred.isText && pred.parent === parent) {
                     parent.insertAfter(pred, node)
-                    registerNode(node)
-                    return node
+                    return attach()
                 }
             }
         }
@@ -2016,16 +2137,14 @@ internal data class CrdtTree(
         val left = span.leftSiblingID?.let(::findFloorNode)
         if (left != null && left.parent === parent) {
             parent.insertAfter(left, node)
-            registerNode(node)
-            return node
+            return attach()
         }
 
         // (c) captured right boundary sibling (redundant anchor): insert before it.
         val right = span.rightSiblingID?.let(::findFloorNode)
         if (right != null && right.parent === parent) {
             parent.insertAt(siblings.indexOf(right), node)
-            registerNode(node)
-            return node
+            return attach()
         }
 
         // (d) last-resort id-order fallback: first slot whose child id > node id.
@@ -2034,8 +2153,7 @@ internal data class CrdtTree(
         val insertIndex = siblings.indexOfFirst { it.id > node.id }
             .let { if (it == -1) siblings.size else it }
         parent.insertAt(insertIndex, node)
-        registerNode(node)
-        return node
+        return attach()
     }
 
     /**
@@ -2245,15 +2363,6 @@ internal data class CrdtTree(
         )
     }
 
-    /**
-     * Returns the client info for the change.
-     */
-    private fun getClientInfoForChange(actorID: String, versionVector: VersionVector?): Long {
-        return versionVector?.let {
-            versionVector.get(actorID) ?: 0L
-        } ?: MAX_LAMPORT
-    }
-
     companion object {
         private const val TAG = "CrdtTree"
     }
@@ -2456,16 +2565,40 @@ internal data class CrdtTreeNode(
                         insNextParent !== split.parent &&
                         split.allChildren.isEmpty()
                     ) {
-                        // No try/catch: `split` was just inserted by splitElement,
-                        // so detachChild cannot fail here. Let a throw surface a
-                        // real structural bug (matches JS invariant).
-                        split.parent?.detachChild(split)
-                        insNextParent.insertBefore(insNext, split)
+                        // moveChildBefore does the tombstone-aware detach
+                        // moveChild uses, then inserts before insNext instead
+                        // of appending -- so a tombstoned split's re-parent
+                        // (split.isRemoved, the born-tombstoned case) makes
+                        // no live-size change (port e41069df,
+                        // yorkie-js-sdk#1360, tree.ts:730). No try/catch:
+                        // `split` was just inserted by splitElement, so this
+                        // cannot fail here. Let a throw surface a real
+                        // structural bug (matches JS invariant).
+                        insNextParent.moveChildBefore(split, insNext)
                     }
                 }
             }
             node.insNextID = split.id
             tree.registerNode(split)
+
+            // Port yorkie-js-sdk 99dbec9d (#1363): clone() deep-copies this
+            // node's attributes (tombstones included, so a concurrent style
+            // applied before vs after the split still resolves against the
+            // same Rht state on both halves), but a copied tombstoned
+            // RhtNode was never registered for GC — it rode along
+            // unreachable until a snapshot reload re-scanned it. gcPairs
+            // (below) yields one GCPair<RhtNode> per tombstoned attribute
+            // already on the split, built with gcOnlySize since the
+            // snapshot-load dataSize scan (and this node's own live dataSize)
+            // skip removed attributes — their size was never in docSize.live
+            // to move out of. Runs for every split, live or born-tombstoned,
+            // BEFORE the born-tombstoned registerPendingGcPair below. No
+            // gcPairMap re-key needed: Android keys gcPairMap on object
+            // identity (CrdtRoot.kt gcPairMap KDoc), and deepCopy builds
+            // fresh RhtNode instances, so this registration can never
+            // collide with — and silently cancel — another pair (unlike JS's
+            // pre-fix `toIDString()` key).
+            split.gcPairs.forEach(tree::pushPendingGcPair)
         }
 
         // A piece split off an already-tombstoned node inherits removedAt
@@ -2514,10 +2647,7 @@ internal data class CrdtTreeNode(
         return knownLamport == null || knownLamport < child.id.createdAt.lamport
     }
 
-    fun setAttributes(
-        attributes: Map<String, String>,
-        executedAt: TimeTicket,
-    ): List<RhtSetResult> {
+    fun setAttributes(attributes: Map<String, String>, executedAt: TimeTicket): List<RhtWrite> {
         return attributes.map { (key, value) -> _attributes.set(key, value, executedAt) }
     }
 
@@ -2619,13 +2749,14 @@ internal data class CrdtTreeNode(
         return false
     }
 
-    fun canStyle(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
-        if (isText) {
-            return false
-        }
-        val nodeExisted = createdAt.lamport <= clientLamportAtChange
-        return nodeExisted && (removedAt == null || executedAt > removedAt)
-    }
+    /**
+     * Checks if node is able to style. Answers the same question as
+     * [RgaTreeSplitNode.canStyle], the same way — see the contract there
+     * (yorkie-js-sdk e0609c7a #1368). Keeps the pre-existing `!isText`
+     * rejection; drops the [removedAt] read.
+     */
+    fun canStyle(versionVector: VersionVector?): Boolean =
+        !isText && ticketKnown(versionVector, createdAt)
 
     override fun delete(node: RhtNode) {
         _attributes.delete(node)

@@ -758,6 +758,63 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         child.updateAncestorSize(child.paddedSize(true), includeRemoved = true)
     }
 
+    /**
+     * Detaches [child] from its current parent, if any, and inserts it
+     * immediately before [reference] in this node's children, preserving
+     * both size dimensions on both parents -- the same tombstone-aware
+     * detach [moveChild] does, but inserting before a specific sibling
+     * instead of appending. Used by [CrdtTreeNode.split]'s §7.4 empty
+     * sibling re-parenting so a tombstoned split re-parent makes no live-
+     * size change (port `e41069df`'s `moveChildBefore`, yorkie-js-sdk#1360,
+     * `tree.ts:730`).
+     *
+     * A no-op when [child] and [reference] are the same node (JS parity,
+     * `index_tree.ts` `moveChildBefore` at v0.7.23). Otherwise throws
+     * [NoSuchElementException] when [reference] is not a child of this node
+     * -- validated BEFORE [child] is detached from its old parent, so a
+     * missing [reference] never leaves [child] detached-but-unattached
+     * (this node and [child]'s old parent both untouched).
+     */
+    fun moveChildBefore(child: T, reference: T) {
+        check(!isText) {
+            "Text node cannot have children"
+        }
+
+        if (child === reference) return
+
+        // Existence-only check, deliberately before any mutation below. The
+        // actual insertion offset is re-derived from childNodes AFTER
+        // detaching `child` (below), since detaching `child` can shift
+        // `reference`'s index when they share the same parent -- an
+        // offset captured here would go stale in that case.
+        if (reference !in childNodes) {
+            throw NoSuchElementException("reference not found")
+        }
+
+        val removed = child.isRemoved
+
+        val oldParent = child.parent
+        if (oldParent != null) {
+            val offset = oldParent.childNodes.indexOf(child)
+            if (offset != -1) {
+                oldParent.childNodes.removeAt(offset)
+                if (!removed) {
+                    child.updateAncestorSize(-child.paddedSize())
+                }
+                child.updateAncestorSize(-child.paddedSize(true), includeRemoved = true)
+            }
+            child.parent = null
+        }
+
+        val referenceOffset = childNodes.indexOf(reference)
+        childNodes.add(referenceOffset, child)
+        child.parent = this as T
+        if (!removed) {
+            child.updateAncestorSize(child.paddedSize())
+        }
+        child.updateAncestorSize(child.paddedSize(true), includeRemoved = true)
+    }
+
     fun splitText(offset: Int, absOffset: Int): Pair<T?, DataSize> {
         var diff = DataSize(
             data = 0,
@@ -824,7 +881,14 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
 
         val clone = cloneElement(issueTimeTicket)
         parent?.insertAfterInternal(this as T, clone)
-        clone.updateAncestorSize(clone.paddedSize())
+        // A clone inherits removedAt via cloneElement (above), so a split of
+        // an already-tombstoned node must skip the VISIBLE growth here --
+        // otherwise live ancestors would be inflated for a piece that was
+        // never visible (port e41069df, yorkie-js-sdk#1360). The
+        // include-removed line stays unconditional, mirroring moveChild.
+        if (!clone.isRemoved) {
+            clone.updateAncestorSize(clone.paddedSize())
+        }
         clone.updateAncestorSize(clone.paddedSize(true), true)
 
         clone.childNodes.clear()

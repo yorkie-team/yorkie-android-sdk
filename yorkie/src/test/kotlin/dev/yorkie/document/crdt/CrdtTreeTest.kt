@@ -6,6 +6,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.issueTime
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
+import dev.yorkie.util.YorkieException
 import kotlin.test.assertFailsWith
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1030,6 +1031,85 @@ class CrdtTreeTest {
 
         assertEquals(p2.id, content.mergedFrom)
         assertEquals(p2.removedAt, content.mergedAt)
+    }
+
+    // Port yorkie-js-sdk tree_to_tree_pos_test.ts (v0.7.23, 248551a1, #1364,
+    // yorkie#2008). toCrdtTreePos's removed-ancestor walk dereferences
+    // `child.parent` on every hop; CrdtTree.delete (JS `purge`) clears ONLY
+    // the purged node's own parent link and touches none of its children
+    // (IndexTreeNode.removeChild), so purging <p> while its text child still
+    // exists leaves `text.parent` pointing at a <p> that no longer hangs off
+    // the root — the walk runs off the top. Driven directly via `delete`
+    // (not through an undo): the restore path that used to reach this shape
+    // no longer can, since recreateFromSpan's attach() refuses to place a
+    // node live under a tombstone. The guard is defence in depth and
+    // outlives the sequence that found it.
+    @Test
+    fun `toIndex rejects a chain ending in a purged node`() {
+        initializeTarget()
+        target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+        target.edit(1 to 1, CrdtTreeText(issuePos(), "hello").toList())
+        assertEquals("<root><p>hello</p></root>", target.toXml())
+
+        val p = target.root.children.single()
+        val text = p.children.single()
+
+        // Remove the whole <p>, tombstoning it and its text.
+        target.edit(0 to 7, null)
+        assertEquals("<root></root>", target.toXml())
+        assertTrue(p.isRemoved)
+        assertTrue(text.isRemoved)
+
+        // Purge <p> while its text child is still around: delete/purge
+        // unlinks the node it purges, but leaves its children pointing at it.
+        target.delete(p)
+        assertEquals(null, p.parent)
+        assertEquals(p, text.parent)
+
+        // Resolving a position anchored at the text node now walks
+        // text -> <p> -> null. Before the guard this silently resolved a
+        // bogus position instead of refusing the walk.
+        val exception = assertFailsWith<YorkieException> { target.toIndex(text, text) }
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    // Control for the guard above: nothing is purged, so the walk from a
+    // removed text node reaches the live root and resolves normally.
+    @Test
+    fun `toIndex still resolves through a removed parent that has a live ancestor`() {
+        initializeTarget()
+        target.edit(0 to 0, CrdtTreeElement(issuePos(), "p").toList())
+        target.edit(1 to 1, CrdtTreeText(issuePos(), "hello").toList())
+        val p = target.root.children.single()
+        val text = p.children.single()
+
+        target.edit(0 to 7, null)
+        assertTrue(text.isRemoved)
+
+        assertTrue(target.toIndex(text, text) >= 0)
+    }
+
+    // iOS-only probe (#277); pinned on Android: a node removed twice must
+    // keep the NEWER removedAt regardless of arrival order — already correct
+    // here (CrdtTreeNode.remove's `alived || removedAt < executedAt` guard),
+    // unlike the iOS bug this probes for. No production hunk in this diff
+    // touches `remove`.
+    @Test
+    fun `a node removed twice keeps the newer removedAt in both arrival orders`() {
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, 0u, actor)
+        val older = tick(1)
+        val newer = tick(2)
+
+        val forward = CrdtTreeElement(issuePos(), "p")
+        forward.remove(older)
+        forward.remove(newer)
+        assertEquals(newer, forward.removedAt)
+
+        val reverse = CrdtTreeElement(issuePos(), "p")
+        reverse.remove(newer)
+        reverse.remove(older)
+        assertEquals(newer, reverse.removedAt)
     }
 
     private fun issuePos(offset: Int = 0) = CrdtTreeNodeID(issueTime(), offset)

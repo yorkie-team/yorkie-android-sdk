@@ -6,10 +6,20 @@ import dev.yorkie.document.time.VersionVector
 
 /**
  * Result of executing an [Operation].
+ *
+ * [executed] is false only when the operation found no target to act on (its
+ * parent/element lookup failed, or an explicit precondition rejected it
+ * before any mutation) -- the JS SDK's counterpart signals this by having
+ * `execute` return `undefined` instead of a result (document.ts /
+ * change.ts). Kotlin's `execute` always returns an [ExecutionResult], so
+ * [executed] carries the same distinction: a style or tree-style landing
+ * only on a tombstone genuinely ran (canStyle admits it) and produces empty
+ * [opInfos] with [executed] staying true, which is NOT the same condition.
  */
 internal data class ExecutionResult(
     val opInfos: List<OperationInfo>,
     val reverseOps: List<Operation> = emptyList(),
+    val executed: Boolean = true,
 )
 
 /**

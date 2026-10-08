@@ -86,7 +86,7 @@ internal data class RemoveOperation(
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "only object and array can execute remove: $parentObject")
-            ExecutionResult(opInfos = emptyList())
+            ExecutionResult(opInfos = emptyList(), executed = false)
         }
     }
 

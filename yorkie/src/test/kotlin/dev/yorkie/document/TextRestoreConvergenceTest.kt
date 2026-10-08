@@ -17,6 +17,7 @@ import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.Logger
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -758,5 +759,57 @@ class TextRestoreConvergenceTest {
         assertEquals("0123456789", split.toString())
         assertTrue(result.changes.isEmpty(), "nothing overlaps an empty interval")
         assertTrue(result.gcPairs.isEmpty())
+    }
+
+    /**
+     * Text twin of `TreeRestoreConvergenceTest`'s "a no-effect tree restore
+     * undo enqueues no local change but keeps its redo": undoing a
+     * local insert whose node a concurrent remote delete already removed
+     * must take the idempotent-skip retombstone path (`opInfos` empty), so
+     * it must NOT enqueue a phantom local change -- `executed` (whether the
+     * restore/retombstone actually changed anything) is the gate, not a
+     * stale "did this produce an OpInfo" check.
+     */
+    @Test
+    fun `a no-effect text restore undo enqueues no local change but keeps its redo`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+        // skipHistory: the connected twin builds the text via initialRoot,
+        // which leaves no undo entry either.
+        d1.updateAsync(skipHistory = true) { root, _ -> root.setNewText("text").edit(0, 0, "x") }
+            .await()
+        crossSync(d1, d2)
+
+        d1.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(1, 1, "y") }.await()
+        crossSync(d1, d2)
+        d2.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(1, 2, "") }.await()
+        crossSync(d1, d2)
+        assertEquals("x", d1.getRoot().getAs<JsonText>("text").toString())
+        assertFalse(d1.hasLocalChanges())
+        assertTrue(d1.history.canUndo())
+
+        assertTrue(d1.history.undoAsync().await().isSuccess)
+        assertEquals("x", d1.getRoot().getAs<JsonText>("text").toString())
+        assertFalse(
+            d1.hasLocalChanges(),
+            "a no-effect restore must not enqueue a phantom local change",
+        )
+        assertFalse(d1.history.canUndo())
+        assertTrue(
+            d1.history.canRedo(),
+            "the redo counterpart is pushed unconditionally (Tree twin / JS parity)",
+        )
+
+        // Redo revives "y" by identity and both replicas converge.
+        assertTrue(d1.history.redoAsync().await().isSuccess)
+        assertEquals("xy", d1.getRoot().getAs<JsonText>("text").toString())
+        crossSync(d1, d2)
+        assertEquals(
+            d1.getRoot().getAs<JsonText>("text").toString(),
+            d2.getRoot().getAs<JsonText>("text").toString(),
+        )
+        assertEquals(identitySequence(d1.crdtText()), identitySequence(d2.crdtText()))
     }
 }

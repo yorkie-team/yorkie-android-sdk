@@ -123,4 +123,14 @@ internal class ChangeContext(
     fun acc(diff: DataSize) {
         root.acc(diff)
     }
+
+    /**
+     * `accGC` accumulates the given DataSize to the gc size of the root.
+     * Mirrors [acc] for the gc half of a style result's DocSize: a style
+     * op's gc-bound attribute writes need somewhere to fold into besides
+     * live.
+     */
+    fun accGC(diff: DataSize) {
+        root.accGC(diff)
+    }
 }

@@ -122,3 +122,22 @@ class VersionVector(vectorMap: Map<String, Long> = emptyMap()) {
         val INITIAL_VERSION_VECTOR = VersionVector()
     }
 }
+
+/**
+ * Returns true if [ticket] is causally known to the editor, i.e. [vv]
+ * covers [ticket]'s lamport clock for the same actor. A `null` or empty
+ * [vv] is a local change — the same way the server reads `len(vv) == 0`,
+ * not just an absent vector — so every ticket is considered known. Mirrors
+ * JS SDK `ticketKnown` (`version_vector.ts:173-192`, yorkie-js-sdk e0609c7a
+ * #1368). Shared by [dev.yorkie.document.crdt.RgaTreeSplitNode.canStyle] and
+ * [dev.yorkie.document.crdt.CrdtTreeNode.canStyle] so both node types
+ * answer the same "did this change know this node existed" question from
+ * one place.
+ */
+internal fun ticketKnown(vv: VersionVector?, ticket: TimeTicket): Boolean {
+    if (vv == null || vv.size() == 0) {
+        return true
+    }
+    val lamport = vv.get(ticket.actorID)
+    return lamport != null && lamport >= ticket.lamport
+}

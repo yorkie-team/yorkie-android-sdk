@@ -11,13 +11,11 @@ import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.TreeElementNode
 import dev.yorkie.document.crdt.TreePosRange
 import dev.yorkie.document.crdt.TreeTextNode
-import dev.yorkie.document.crdt.toTreeNode
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
-import dev.yorkie.util.TreePos
 import dev.yorkie.util.YorkieException
 import dev.yorkie.document.CrdtTreePosStruct as TreePosStruct
 
@@ -39,162 +37,16 @@ public class JsonTree internal constructor(
         get() = target.rootTreeNode.toJsonTreeNode()
 
     /**
-     * `createSplitNode` returns new node which is split from the given node.
-     */
-    private fun createSplitNode(node: CrdtTreeNode, offset: Int): ElementNode {
-        val parentNode = node.parent
-        val type = if (node.isText && parentNode != null) {
-            parentNode.type
-        } else {
-            node.type
-        }
-
-        val attributes = when {
-            node.attributes.isNotEmpty() -> {
-                node.attributes
-            }
-
-            node.isText && parentNode?.attributes?.isNotEmpty() == true -> {
-                parentNode.attributes
-            }
-
-            else -> {
-                emptyMap()
-            }
-        }
-
-        val children = if (node.isText) {
-            if (parentNode == null || parentNode.getChildrenText().length == offset) {
-                emptyList()
-            } else {
-                val childrenText = parentNode.getChildrenText()
-                listOf(
-                    TextNode(
-                        value = childrenText.slice(IntRange(offset, childrenText.length - 1)),
-                    ),
-                )
-            }
-        } else {
-            val children = node.children
-            children.slice(IntRange(offset, children.size - 1)).map {
-                it.toTreeNode().toJsonTreeNode()
-            }
-        }
-
-        return ElementNode(
-            type = type,
-            children = children,
-            attributes = attributes,
-        )
-    }
-
-    /**
-     * `separateSplit` separates the split operation into insert and delete operations.
-     */
-    private fun separateSplit(
-        treePos: TreePos<CrdtTreeNode>,
-        path: List<Int>,
-    ): List<Triple<List<Int>, List<Int>, TreeNode?>> {
-        val node = treePos.node
-        val parentPath = path.dropLast(1)
-        val parentNode = node.parent
-        val last = if (node.isText && parentNode != null) {
-            parentNode.getChildrenText().length
-        } else {
-            node.children.size
-        }
-        val toPath = parentPath + last
-        val insertPath = parentPath.toMutableList()
-        insertPath[insertPath.size - 1] = insertPath.last() + 1
-
-        val res = mutableListOf<Triple<List<Int>, List<Int>, TreeNode?>>()
-        if (path != toPath) {
-            res.add(
-                Triple(
-                    first = path,
-                    second = toPath,
-                    third = null,
-                ),
-            )
-        }
-
-        val newNode = createSplitNode(node, path.last())
-        res.add(
-            Triple(
-                first = insertPath,
-                second = insertPath,
-                third = newNode,
-            ),
-        )
-
-        return res
-    }
-
-    /**
-     * `separateMerge` separates the merge operation into insert and delete operations.
-     */
-    private fun separateMerge(
-        treePos: TreePos<CrdtTreeNode>,
-        path: List<Int>,
-    ): List<Triple<List<Int>, List<Int>, Array<TreeNode>>> {
-        val parentNode = treePos.node
-        val offset = treePos.offset
-        val node = parentNode.children[offset]
-        val leftSiblingNode = parentNode.children[offset - 1]
-        val children = node.children
-        val parentPath = path.dropLast(1)
-        val res = mutableListOf<Triple<List<Int>, List<Int>, Array<TreeNode>>>()
-
-        // Add initial fromPath -> toPath mapping
-        res.add(
-            Triple(
-                first = path.toList(),
-                second = parentPath + (offset + 1),
-                third = emptyArray(),
-            ),
-        )
-
-        // If no children, return early
-        if (children.isEmpty()) {
-            return res
-        }
-
-        // Determine insertPath
-        val insertPath = buildList {
-            addAll(parentPath)
-            add(offset - 1)
-            val length = if (leftSiblingNode.hasTextChild) {
-                leftSiblingNode.getChildrenText().length
-            } else {
-                leftSiblingNode.children.size
-            }
-            add(length)
-        }
-
-        // Convert children to TreeNode
-        val nodes = children.map {
-            it.toTreeNode().toJsonTreeNode()
-        }.toTypedArray()
-
-        res.add(
-            Triple(
-                first = insertPath,
-                second = insertPath,
-                third = nodes,
-            ),
-        )
-
-        return res
-    }
-
-    /**
      * Splits the tree at the given [path].
      *
-     * The node at [path] is split into two sibling nodes. Content after the
-     * split point moves into a new node inserted immediately after. Internally
-     * decomposes into one or two [edit] calls (delete tail + insert new node).
+     * Lowers to a single [editInternal] call with `splitLevel = 1` at the
+     * resolved position — no node is copied or deleted; the split is
+     * produced by [CrdtTree.edit]'s own split step. Mirrors JS
+     * `document/json/tree.ts` `splitByPath` (v0.7.23).
      *
-     * @throws YorkieException if [path] is empty.
+     * @throws YorkieException with ErrInvalidArgument if [path] is empty or
+     *   resolves to the root node (a text node's element parent with no
+     *   parent of its own, or an element node with no parent).
      */
     public fun splitByPath(path: List<Int>) {
         if (path.isEmpty()) {
@@ -205,35 +57,28 @@ public class JsonTree internal constructor(
         }
 
         val treePos = target.pathToTreePos(path)
-        val commands = separateSplit(treePos, path)
-
-        for (command in commands) {
-            val (fromPath, toPath, content) = command
-            val fromPos = target.pathToPos(fromPath)
-            val toPos = target.pathToPos(toPath)
-
-            editInternal(
-                fromPos = fromPos,
-                toPos = toPos,
-                contents = if (content != null) {
-                    arrayOf(content)
-                } else {
-                    emptyArray()
-                },
+        val targetNode = if (treePos.node.isText) treePos.node.parent else treePos.node
+        if (targetNode?.parent == null) {
+            throw YorkieException(
+                code = YorkieException.Code.ErrInvalidArgument,
+                errorMessage = "the root node cannot be split",
             )
         }
+
+        val pos = target.pathToPos(path)
+        editInternal(fromPos = pos, toPos = pos, splitLevel = 1)
     }
 
     /**
      * Merges the element node at the given [path] into its left sibling.
      *
-     * The children of the node at [path] are moved into the preceding sibling,
-     * then the now-empty node is deleted. Only element nodes can be merged;
-     * merging a text node throws [YorkieException]. The node must have a left
-     * sibling (i.e., it cannot be the first child).
+     * Lowers to a single empty [editInternal] call spanning the boundary
+     * between the left sibling's end and [path]'s start — no node is
+     * copied; [CrdtTree.edit]'s own merge step (03/03-1) moves the
+     * children. Mirrors JS `document/json/tree.ts` `mergeByPath` (v0.7.23).
      *
-     * @throws YorkieException if [path] is empty, resolves to a text node, or
-     *   resolves to the first child (no left sibling).
+     * @throws YorkieException if [path] is empty, resolves to a text node,
+     *   or resolves to the first child (no left sibling).
      */
     public fun mergeByPath(path: List<Int>) {
         if (path.isEmpty()) {
@@ -251,24 +96,24 @@ public class JsonTree internal constructor(
             )
         }
 
-        if (treePos.offset == 0) {
-            throw YorkieException(
+        val parentNode = treePos.node
+        val offset = treePos.offset
+        val leftSibling = parentNode.children.getOrNull(offset - 1)
+            ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
-                errorMessage = "the first child cannot be merged (no left sibling)",
+                errorMessage = "the first child cannot be merged",
             )
-        }
 
-        val commands = separateMerge(treePos, path)
-        for (command in commands) {
-            val (fromPath, toPath, contents) = command
-            val fromPos = target.pathToPos(fromPath)
-            val toPos = target.pathToPos(toPath)
-            editInternal(
-                fromPos = fromPos,
-                toPos = toPos,
-                contents = contents,
-            )
+        val parentPath = path.dropLast(1)
+        val lastOffset = if (leftSibling.hasTextChild) {
+            leftSibling.getChildrenText().length
+        } else {
+            leftSibling.children.size
         }
+        val fromPath = parentPath + (offset - 1) + lastOffset
+        val toPath = path + 0
+
+        editInternal(fromPos = target.pathToPos(fromPath), toPos = target.pathToPos(toPath))
     }
 
     /**
@@ -323,7 +168,7 @@ public class JsonTree internal constructor(
 
     private fun styleByRange(range: TreePosRange, attributes: Map<String, String>) {
         val ticket = context.issueTimeTicket()
-        val (_, gcPairs, diff) = target.style(range, attributes, ticket)
+        val (_, gcPairs, docSize) = target.style(range, attributes, ticket)
 
         context.push(
             TreeStyleOperation(
@@ -335,7 +180,8 @@ public class JsonTree internal constructor(
             ),
         )
 
-        this.context.acc(diff)
+        this.context.acc(docSize.live)
+        this.context.accGC(docSize.gc)
 
         gcPairs.forEach(context::registerGCPair)
     }
@@ -381,13 +227,14 @@ public class JsonTree internal constructor(
 
     private fun removeStyleByRange(range: TreePosRange, attributesToRemove: List<String>) {
         val executedAt = context.issueTimeTicket()
-        val (_, gcPairs, diff) = target.removeStyle(
+        val (_, gcPairs, docSize) = target.removeStyle(
             range,
             attributesToRemove,
             executedAt,
         )
 
-        this.context.acc(diff)
+        this.context.acc(docSize.live)
+        this.context.accGC(docSize.gc)
 
         gcPairs.forEach(context::registerGCPair)
 
@@ -496,7 +343,7 @@ public class JsonTree internal constructor(
         // executedAt + contents.size, which under-counts once a content
         // has descendants.
         val splitTickets = mutableListOf<TimeTicket>()
-        val (_, gcPairs, diff) = target.edit(
+        val (_, gcPairs, docSize) = target.edit(
             fromPos to toPos,
             crdtNodes.map(CrdtTreeNode::deepCopy).ifEmpty { null },
             splitLevel,
@@ -504,7 +351,7 @@ public class JsonTree internal constructor(
             { context.issueTimeTicket().also(splitTickets::add) },
         )
 
-        this.context.acc(diff)
+        this.context.acc(docSize.live)
 
         gcPairs.forEach(context::registerGCPair)
 

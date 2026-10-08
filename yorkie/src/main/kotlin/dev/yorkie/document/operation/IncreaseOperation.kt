@@ -43,7 +43,7 @@ internal data class IncreaseOperation(
             if (parentObject.isDedup()) {
                 if (actor.isEmpty()) {
                     logError(TAG, "dedup counter requires actor")
-                    return ExecutionResult(opInfos = emptyList())
+                    return ExecutionResult(opInfos = emptyList(), executed = false)
                 }
                 parentObject.increaseDedup(copiedValue, actor)
                 val newValue = parentObject.value
@@ -95,7 +95,7 @@ internal data class IncreaseOperation(
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only Counter can execute increase")
-            ExecutionResult(opInfos = emptyList())
+            ExecutionResult(opInfos = emptyList(), executed = false)
         }
     }
 

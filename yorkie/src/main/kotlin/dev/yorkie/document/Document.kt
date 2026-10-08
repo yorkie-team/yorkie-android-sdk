@@ -530,7 +530,18 @@ public class Document(
                 }
             }
 
-            if (opInfos.isEmpty()) {
+            // The test is whether an operation RAN, not whether it produced an
+            // OpInfo. Those differ: a style may change CRDT state without
+            // anything an editor could render, because canStyle admits a node
+            // another client removed concurrently and a tombstone has no
+            // index to report. Gating on opInfos dropped such a reverse style
+            // on the floor -- it mutated this replica and never reached the
+            // others, the divergence canStyle exists to prevent, reintroduced
+            // through undo. executedOperations already excludes an operation
+            // whose target vanished while the undo was pending (its own
+            // execute found no target to act on), so that case is still
+            // gated out here. Mirrors JS document.ts's `!operations.length`.
+            if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
                 return@async Result.success(Unit)
             }
 
@@ -831,12 +842,20 @@ public class Document(
                     opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
                         .firstOrNull()
                         ?.let { opInfo ->
-                            val insertedSize = opInfo.nodes?.size ?: 0
+                            // getContentSize() (insertedContentSize + splitSize)
+                            // replaces the prior node-COUNT measurement
+                            // (opInfo.nodes?.size): a split-only edit has no
+                            // `value`, so the node count was always 0 and never
+                            // shifted stacked tree-undo offsets, even though the
+                            // split visibly grows the index. A multi-character
+                            // text insert also now shifts by its padded size
+                            // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
+                            // backlog 009 second half).
                             internalHistory.reconcileTreeEdit(
                                 executedOp.parentCreatedAt,
                                 opInfo.from,
                                 opInfo.to,
-                                insertedSize,
+                                executedOp.getContentSize(),
                             )
                         }
                 }

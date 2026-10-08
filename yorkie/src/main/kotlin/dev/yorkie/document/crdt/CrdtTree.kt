@@ -423,7 +423,18 @@ internal data class CrdtTree(
                 var parent = parentNode
                 while (parent.isRemoved) {
                     child = parent
-                    parent = child.parent ?: break
+                    // Port yorkie-js-sdk 248551a1 (#1364, tree.ts:3346-3351):
+                    // a removed-ancestor walk running off the top of a
+                    // detached subtree (every ancestor up to the root is
+                    // tombstoned) has no least-alive-ancestor to resolve a
+                    // position against. The prior `?: break` silently kept
+                    // `parent == child` and resolved a bogus offset instead
+                    // of signalling the caller that the position is
+                    // unresolvable.
+                    parent = child.parent ?: throw YorkieException(
+                        ErrInvalidArgument,
+                        "toCrdtTreePos: parent of ${child.id} not found",
+                    )
                 }
 
                 val childOffset = parent.findOffset(child, includeRemoved)
@@ -1767,9 +1778,13 @@ internal data class CrdtTree(
             // undefined there), not a guard: a text node's Rht is empty. The
             // snapshot copies tombstoned Rht nodes too, and recreateFromSpan
             // deep-copies them into the recreated element WITHOUT registering
-            // GC pairs — exactly like JS v0.7.14. KNOWN shared leak (PR #360
-            // review F4), pinned in TreeUpstreamDefectPinTest; fix upstream
-            // first, then port.
+            // GC pairs — exactly like JS v0.7.14 and JS v0.7.23 (yorkie-js-sdk
+            // #1363 fixes only the SPLIT path's copied tombstones, in
+            // CrdtTreeNode.split — not this recreate path). KNOWN shared leak
+            // (PR #360 review F4), pinned in TreeUpstreamDefectPinTest; fix
+            // upstream first, then port. Not to be confused with the
+            // recreate-under-a-removed-PARENT case below ([restore]'s KDoc),
+            // which #1364 does fix.
             attrs = node.getAttrs().takeIf { !node.isText }?.deepCopy(),
             parentID = parent?.id,
             leftSiblingID = leftSiblingID,
@@ -1814,16 +1829,28 @@ internal data class CrdtTree(
      * in place). Do not merge-normalize segmentation here: non-commutative,
      * breaks GC/tombstone symmetry after redo.
      *
-     * JS parity, KNOWN DEFECT (PR #360 reviews 5165084872 F2 and 5194612367):
-     * like yorkie-js-sdk v0.7.14 (`tree.ts` `restore`), a tombstoned target is
-     * unremoved even when an ancestor is still tombstoned, and a purged target
-     * is recreated live under such an ancestor. The node stays invisible but
-     * is counted live, and a replica that already purged the parent and one
-     * that still holds its tombstone can diverge once the parent is revived.
+     * JS parity, KNOWN DEFECT, HALF STILL OPEN (PR #360 reviews 5165084872 F2
+     * and 5194612367; yorkie-js-sdk v0.7.14 `tree.ts` `restore`): a
+     * tombstoned target is unremoved via [CrdtTreeNode.unremove] even when an
+     * ancestor is still tombstoned. The node stays invisible but is counted
+     * live, and a replica that already purged the parent and one that still
+     * holds its tombstone can diverge once the parent is revived.
      * Deliberately NOT guarded Android-only: the wire payload is identical, so
      * a local guard would make the same relayed op resolve differently here
      * than on JS/iOS peers (the worse defect — lesson all/003, #359 B2).
-     * Pinned in TreeUpstreamDefectPinTest; fix upstream first, then port.
+     * yorkie-js-sdk #1364 does NOT touch this unremove route (out of scope).
+     * Pinned in TreeUpstreamDefectPinTest ("restore under a tombstoned parent
+     * diverges", unchanged); fix upstream first, then port.
+     *
+     * THE OTHER HALF IS NOW FIXED (port yorkie-js-sdk 248551a1, #1364): a
+     * PURGED target recreated under a still-tombstoned parent used to be
+     * placed and counted LIVE (same JS v0.7.14 shape as above).
+     * [recreateFromSpan]'s `attach()` now stamps it with the parent's own
+     * `removedAt`, excludes it from [TreeRestoreResult.recreated], and
+     * registers a pending `gcOnlySize` pair instead — never counted live, and
+     * the next purge of the parent does not orphan it. Both replicas recreate
+     * tombstoned identically (same relayed op, same outcome), so this remains
+     * convergent.
      */
     fun restore(spans: List<TreeRestoreSpan>): TreeRestoreResult {
         val untombstoned = mutableListOf<CrdtTreeNode>()
@@ -2030,8 +2057,13 @@ internal data class CrdtTree(
      * -> returns null: the node stays unplaced/invisible; convergent,
      * because every replica resolves parent-absent identically.
      *
-     * Parent still tombstoned (not purged) -> the node is placed and returned
-     * LIVE, exactly like JS v0.7.14; see the known-defect note on [restore].
+     * Parent still tombstoned (not purged) -> the node is attached tombstoned
+     * with the parent's own `removedAt` (port yorkie-js-sdk 248551a1, #1364):
+     * excluded from [TreeRestoreResult.recreated] (never counted live) and
+     * its size registered as a pending `gcOnlySize` pair instead, so the
+     * next purge of the parent does not orphan it (see the known-defect note
+     * on [restore] for the half of this that is NOT fixed — unremove under a
+     * tombstoned ancestor).
      */
     private fun recreateFromSpan(
         span: TreeRestoreSpan,
@@ -2063,6 +2095,29 @@ internal data class CrdtTree(
 
         val siblings = parent.allChildren
 
+        // Port yorkie-js-sdk 248551a1 (#1364, tree.ts:2893-2905): a single
+        // attach point for every anchor rung below. registerNode runs first
+        // regardless of outcome (nodeMapByID must resolve the id either
+        // way); THEN, if the parent is tombstoned (not purged — a purged
+        // parent already returned null above), the node is removed with the
+        // parent's OWN removedAt (not this restore's ticket: a replica that
+        // recreated the node live then had the removal sweep it must agree
+        // with one that never saw it live) and its size (read AFTER remove,
+        // which adds the removedAt meta ticket) is registered as a pending
+        // gcOnlySize pair — never counted live, so the next purge of the
+        // parent does not orphan it. Returning null keeps the node out of
+        // TreeRestoreResult.recreated (restore()'s `?.let(recreated::add)`),
+        // matching JS returning `undefined`.
+        fun attach(): CrdtTreeNode? {
+            registerNode(node)
+            if (parent.isRemoved) {
+                node.remove(requireNotNull(parent.removedAt))
+                registerPendingGcPair(node, node.dataSize)
+                return null
+            }
+            return node
+        }
+
         // (a) same-insertion successor / predecessor piece (text): exact slot.
         if (span.isText) {
             val succ = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset + length))
@@ -2072,15 +2127,13 @@ internal data class CrdtTree(
                 succ.id.offset == offset + length
             ) {
                 parent.insertAt(siblings.indexOf(succ), node)
-                registerNode(node)
-                return node
+                return attach()
             }
             if (offset > span.id.offset || offset > 0) {
                 val pred = findFloorNode(CrdtTreeNodeID(span.id.createdAt, offset - 1))
                 if (pred != null && pred.isText && pred.parent === parent) {
                     parent.insertAfter(pred, node)
-                    registerNode(node)
-                    return node
+                    return attach()
                 }
             }
         }
@@ -2089,16 +2142,14 @@ internal data class CrdtTree(
         val left = span.leftSiblingID?.let(::findFloorNode)
         if (left != null && left.parent === parent) {
             parent.insertAfter(left, node)
-            registerNode(node)
-            return node
+            return attach()
         }
 
         // (c) captured right boundary sibling (redundant anchor): insert before it.
         val right = span.rightSiblingID?.let(::findFloorNode)
         if (right != null && right.parent === parent) {
             parent.insertAt(siblings.indexOf(right), node)
-            registerNode(node)
-            return node
+            return attach()
         }
 
         // (d) last-resort id-order fallback: first slot whose child id > node id.
@@ -2107,8 +2158,7 @@ internal data class CrdtTree(
         val insertIndex = siblings.indexOfFirst { it.id > node.id }
             .let { if (it == -1) siblings.size else it }
         parent.insertAt(insertIndex, node)
-        registerNode(node)
-        return node
+        return attach()
     }
 
     /**

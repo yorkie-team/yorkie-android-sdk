@@ -304,7 +304,8 @@ internal data class TreeEditOperation(
      * (a recreated node never physically existed, so there is no GC pair to
      * unregister for it — only [CrdtRoot.acc] applies); (4) `acc` the total
      * diff once.
-     * Carries the upstream F2/F4 known defects unchanged (see [CrdtTree.restore]).
+     * The unremove route and the recreate-path attribute-copy leak stay open,
+     * unchanged from upstream (see [CrdtTree.restore]).
      *
      * Unlike [EditOperation.executeRestore] (the Text twin), there is no
      * fallback-anchor parameter: [recreateFromSpan]'s id-order rung needs no
@@ -353,9 +354,22 @@ internal data class TreeEditOperation(
         // the span boundary (non-zero live-split diff). Peers must replay it
         // or text-node segmentation diverges (spec 006,
         // TreeRestoreConcurrentTest interleaved-undo case).
+        //
+        // A tombstoned-recreate-only restore also still counts as a change
+        // (port yorkie-js-sdk 248551a1, #1364): recreateFromSpan's attach()
+        // can place a node under a removed parent, excluded from
+        // restored.recreated (never counted live) with only a pending
+        // gcOnlySize pair to show for it. With no untombstoned/recreated/
+        // diff signal, that pair is the ONLY evidence anything happened —
+        // without this disjunct the restore would report no opInfo and never
+        // propagate, leaving the node un-registered (and the undo/redo stack
+        // entry silently dropped) on every peer but this one. JS emits the
+        // opInfo unconditionally; this keeps Android's drop-when-idempotent
+        // optimization (above) while still catching this case.
         val changed = retombstonePairs.isNotEmpty() ||
             restored.untombstoned.isNotEmpty() ||
             restored.recreated.isNotEmpty() ||
+            restored.pendingGcPairs.isNotEmpty() ||
             diff != DataSize(data = 0, meta = 0)
 
         // TODO(RTCOLLABPLATFORM-754): paths/values are empty and, for a remote

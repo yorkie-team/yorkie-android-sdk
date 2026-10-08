@@ -785,12 +785,13 @@ internal data class CrdtTree(
                         )
                         return@run
                     }
-                    parent.split(
+                    val (_, splitDiff) = parent.split(
                         this,
                         splitOffset,
                         issueTimeTicket,
                         versionVector,
                     )
+                    diff = addDataSizes(diff, splitDiff)
                     actualSplitLevel++
                     left = parent
                     parent = parent.parent ?: return@run
@@ -1049,6 +1050,34 @@ internal data class CrdtTree(
         }
     }
 
+    /**
+     * Builds the GC pair for one RHT tombstone [child] a `removeStyle`
+     * mints on [parent]'s attribute table. [attrWasLive] records whether
+     * [child]'s key held a live value right before this removal;
+     * [nodeIsLive] records whether [parent] itself is still visible.
+     *
+     * A live attribute on a live node is debited from `live` normally (no
+     * [GCPair.gcOnlySize]). Otherwise the tombstone was never counted in
+     * `live`: a live attribute on an already-REMOVED node took its size out
+     * of `live` already via the node's own removal, so this pair carries a
+     * zero [GCPair.gcOnlySize] (nothing further to move); a tombstone
+     * minted over an absent key, or superseding an already-tombstoned one,
+     * carries [child]'s own size as its [GCPair.gcOnlySize] (it was gc from
+     * the start). Mirrors JS `attrGCPair` (`crdt/tree.ts:926-940`) widened
+     * to the 4-input shape `canStyle` still needs until #1368 (spec 032)
+     * stops it from admitting a removed node.
+     */
+    private fun attrGcPair(
+        parent: CrdtTreeNode,
+        child: RhtNode,
+        attrWasLive: Boolean,
+        nodeIsLive: Boolean,
+    ): GCPair<RhtNode> = if (attrWasLive && nodeIsLive) {
+        GCPair(parent, child)
+    } else {
+        GCPair(parent, child, gcOnlySize = if (attrWasLive) DataSize(0, 0) else child.dataSize)
+    }
+
     fun removeStyle(
         range: TreePosRange,
         attributeToRemove: List<String>,
@@ -1137,10 +1166,13 @@ internal data class CrdtTree(
                     capturedPrev = true
                 }
 
+                val nodeIsLive = !node.isRemoved
                 attributeToRemove.forEach { key ->
-                    node.removeAttribute(key, executedAt)
-                        .map { rhtNode -> GCPair(node, rhtNode) }
-                        .let(gcPairs::addAll)
+                    var wasLive = node.getAttrs().has(key)
+                    node.removeAttribute(key, executedAt).forEach { rhtNode ->
+                        gcPairs.add(attrGcPair(node, rhtNode, wasLive, nodeIsLive))
+                        wasLive = false
+                    }
                 }
 
                 val parentOfNode = requireNotNull(node.parent)
@@ -1168,11 +1200,15 @@ internal data class CrdtTree(
                         if (isSplitSiblingKnown(next, versionVector)) break
 
                         var removedAny = false
+                        val nextIsLive = !next.isRemoved
                         attributeToRemove.forEach { key ->
+                            var wasLive = next.getAttrs().has(key)
                             val removed = next.removeAttribute(key, executedAt)
                             if (removed.isNotEmpty()) removedAny = true
-                            removed.map { rhtNode -> GCPair(next, rhtNode) }
-                                .let(gcPairs::addAll)
+                            removed.forEach { rhtNode ->
+                                gcPairs.add(attrGcPair(next, rhtNode, wasLive, nextIsLive))
+                                wasLive = false
+                            }
                         }
                         if (removedAny) {
                             val parentOfNext = requireNotNull(next.parent)
@@ -1351,7 +1387,7 @@ internal data class CrdtTree(
                 this,
                 pos.leftSiblingID.offset - leftSibling.id.offset,
             )
-            diff = splitedDiff
+            diff = addDataSizes(diff, splitedDiff)
         }
 
         // 04. Find the appropriate left node. If some nodes are inserted at the

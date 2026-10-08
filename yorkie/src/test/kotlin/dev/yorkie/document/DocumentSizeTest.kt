@@ -811,4 +811,139 @@ class DocumentSizeTest {
         assertEquals(1, rebuilt.garbageCollect(maxVectorOf(listOf(document.changeID.actor))))
         assertEquals(DataSize(0, 0), rebuilt.docSize.gc)
     }
+
+    /**
+     * Ports JS `test/unit/document/document_size_test.ts` "accounts for the
+     * element a split creates" (v0.7.23, #1359, `8cb96f51`, server twin
+     * yorkie#1998). A split mints a new element node, and the phase that
+     * does it dropped the size its own `split` call reported, so `live`
+     * never carried it. A split and the merge that undoes it then did not
+     * cancel out: `live.meta` walked down by a ticket per cycle, without
+     * bound. RED at `5959dac0`: before `CrdtTree.edit`'s step-04 diff
+     * accumulation, `live` after the split was `{20, 192}` (the discarded
+     * ticket), not `{20, 216}`, and the 100-cycle loop drifted.
+     */
+    @Test
+    fun `accounts for the element a split creates`() = runTest {
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") {
+                        element("span") { text { "abcdefghij" } }
+                    }
+                },
+            )
+        }.await()
+        assertEquals(DataSize(data = 20, meta = 168), document.getDocSize().live)
+
+        // Split after `a`: a new <span> and a text split, one ticket each.
+        document.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").editByPath(listOf(0, 0, 1), listOf(0, 0, 1), splitLevel = 1)
+        }.await()
+        assertEquals(
+            "<doc><p><span>a</span><span>bcdefghij</span></p></doc>",
+            document.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals(DataSize(data = 20, meta = 216), document.getDocSize().live)
+
+        // Merge the boundary back. The <span> the split created is
+        // tombstoned, so its size moves to gc. The text stays two nodes,
+        // which is why live keeps the ticket the text split added rather
+        // than returning to its pre-split value -- the expectation #1998
+        // states.
+        document.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").editByPath(listOf(0, 0, 1), listOf(0, 1, 0))
+        }.await()
+        assertEquals(
+            "<doc><p><span>abcdefghij</span></p></doc>",
+            document.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+        assertEquals(DataSize(data = 20, meta = 192), document.getDocSize().live)
+        assertEquals(DataSize(data = 0, meta = 48), document.getDocSize().gc)
+
+        // Every further cycle needs no text split, so live returns to the
+        // same two values instead of drifting -- the 100-cycle stability
+        // #1998 requires.
+        repeat(100) {
+            document.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t")
+                    .editByPath(listOf(0, 0, 1), listOf(0, 0, 1), splitLevel = 1)
+            }.await()
+            assertEquals(DataSize(data = 20, meta = 216), document.getDocSize().live)
+            document.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").editByPath(listOf(0, 0, 1), listOf(0, 1, 0))
+            }.await()
+            assertEquals(DataSize(data = 20, meta = 192), document.getDocSize().live)
+        }
+    }
+
+    /**
+     * Ports JS `test/unit/document/document_size_test.ts` "charges live only
+     * for attribute values it was holding" (v0.7.23, #1359, `8cb96f51`). RHT
+     * mints a tombstone even for a key the element never carried -- so a
+     * remove arriving before its set still wins -- and supersedes an
+     * existing tombstone when the same key is removed twice or set again.
+     * None of those replace a live value, yet `live` was debited for each,
+     * so toggling one key walked it down without bound. RED at `5959dac0`
+     * (the live figure drifts: the pre-existing `removeStyle` main-node and
+     * split-sibling call sites did not distinguish a live attribute from an
+     * absent/tombstoned one); GREEN with the `attrGcPair` gc-only routing
+     * this spec adds.
+     *
+     * Android's raw-string `bold:'true'` live figure is 22 (`(4 + 4) * 2`
+     * UTF-8 bytes), matching the JS v0.7.23 tag's own expectation (the old
+     * JSON-quoted figure of 26 was superseded by JS #1365, spec 032 --
+     * not re-derived here; Android never counted the quotes).
+     */
+    @Test
+    fun `charges live only for attribute values it was holding`() = runTest {
+        suspend fun newDoc(): Document {
+            val doc = Document("")
+            doc.updateAsync { root, _ ->
+                root.setNewTree(
+                    "t",
+                    element("doc") {
+                        element("p") { text { "abc" } }
+                    },
+                )
+            }.await()
+            assertEquals(DataSize(data = 6, meta = 144), doc.getDocSize().live)
+            return doc
+        }
+
+        val absent = newDoc()
+        absent.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").removeStyleByPath(listOf(0), listOf(1), listOf("never-set"))
+        }.await()
+        assertEquals(DataSize(data = 6, meta = 144), absent.getDocSize().live)
+        assertEquals(DataSize(data = 18, meta = 24), absent.getDocSize().gc)
+
+        val twice = newDoc()
+        twice.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").styleByPath(listOf(0), listOf(1), mapOf("bold" to "true"))
+        }.await()
+        assertEquals(DataSize(data = 22, meta = 168), twice.getDocSize().live)
+        repeat(2) {
+            twice.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").removeStyleByPath(listOf(0), listOf(1), listOf("bold"))
+            }.await()
+            assertEquals(DataSize(data = 6, meta = 144), twice.getDocSize().live)
+        }
+
+        // Toggling was already correct here -- the restyle credits live for
+        // the node it revives, which cancels the debit -- and has to stay
+        // that way.
+        val toggled = newDoc()
+        repeat(100) {
+            toggled.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").styleByPath(listOf(0), listOf(1), mapOf("bold" to "true"))
+            }.await()
+            assertEquals(DataSize(data = 22, meta = 168), toggled.getDocSize().live)
+            toggled.updateAsync { root, _ ->
+                root.getAs<JsonTree>("t").removeStyleByPath(listOf(0), listOf(1), listOf("bold"))
+            }.await()
+            assertEquals(DataSize(data = 6, meta = 144), toggled.getDocSize().live)
+        }
+    }
 }

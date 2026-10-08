@@ -136,11 +136,11 @@ internal data class TreeEditOperation(
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
             logError(TAG, "fail to find $parentCreatedAt")
-            return ExecutionResult(opInfos = emptyList())
+            return ExecutionResult(opInfos = emptyList(), executed = false)
         }
         if (tree !is CrdtTree) {
             logError(TAG, "fail to execute, only Tree can execute edit")
-            return ExecutionResult(opInfos = emptyList())
+            return ExecutionResult(opInfos = emptyList(), executed = false)
         }
 
         // Restore/retombstone execution addresses content by identity, never by
@@ -174,7 +174,7 @@ internal data class TreeEditOperation(
 
         if (!tree.checkPosRangeValid(actualFrom to actualTo)) {
             logError(TAG, "has invalid pos range, skip executing the operation")
-            return ExecutionResult(opInfos = emptyList())
+            return ExecutionResult(opInfos = emptyList(), executed = false)
         }
 
         // For undo ops that restore deleted content, rebuild fresh CrdtTreeNodes from
@@ -419,7 +419,13 @@ internal data class TreeEditOperation(
             emptyList()
         }
 
-        return ExecutionResult(opInfos = opInfos, reverseOps = reverseOps)
+        // executed mirrors the SAME idempotent-skip distinction as `changed`
+        // above: nothing changed means no peer needs to know, so this must
+        // still count as not-executed for Document's executedOperations
+        // gate, exactly as it already counted as opInfos-empty for the OLD
+        // gate this comment block describes -- the reverse/redo push above
+        // is independent of this and stays unconditional either way.
+        return ExecutionResult(opInfos = opInfos, reverseOps = reverseOps, executed = changed)
     }
 
     /**

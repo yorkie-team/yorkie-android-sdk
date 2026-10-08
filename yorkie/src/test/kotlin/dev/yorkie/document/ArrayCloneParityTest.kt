@@ -1,6 +1,7 @@
 package dev.yorkie.document
 
 import dev.yorkie.assertJsonContentEquals
+import dev.yorkie.document.crdt.CrdtArray
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.RgaTreeList
 import dev.yorkie.document.json.JsonArray
@@ -8,6 +9,7 @@ import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.addDataSizes
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
@@ -174,4 +176,48 @@ class ArrayCloneParityTest {
             requireNotNull(document.clone).root.toJson(),
         )
     }
+
+    /**
+     * A bare position node (no element) holds no content; its size was never
+     * counted in `live` in the first place, so a move must book its dead
+     * old-position node to `gc` with `gcOnlySize` and leave `live` exactly
+     * as it was. Before this was wired (`gcOnlySize = deadNode.dataSize` at
+     * the registration in `MoveOperation.execute`/`JsonArray.moveInternal`/
+     * `JsonArray.moveAfterByIndex`), the generic registration path moved the
+     * dead node's own size OUT of live and added an extra time-ticket charge
+     * on top -- self-consistent against a from-scratch rebuild (which hit
+     * the identical unfixed path in `CrdtRoot`'s own snapshot scan), so no
+     * prior ledger-exactness check against a rebuild could see it; only an
+     * absolute before/after comparison can. Mirrors JS SDK e0609c7a's
+     * `move_operation.ts`/`array.ts` (server twin yorkie#2012, `6731bb6c`,
+     * #1368 commit body: "array dead position nodes were debited from live,
+     * on the move path and in the snapshot-load scan").
+     */
+    @Test
+    fun `a local move leaves live untouched and books exactly the dead node's size to gc`() =
+        runTest {
+            val document = Document("")
+            document.updateAsync { root, _ ->
+                root.setNewArray("arr").apply {
+                    put(0)
+                    put(1)
+                }
+            }.await()
+
+            val before = document.getDocSize()
+            document.updateAsync { root, _ ->
+                root.getAs<JsonArray>("arr").moveAfterByIndex(0, 1)
+            }.await()
+
+            val array = document.getRootObject()["arr"] as CrdtArray
+            val deadNode = array.getAllRGANodes().single { it.elementEntry == null }
+            val after = document.getDocSize()
+
+            assertEquals(
+                before.live,
+                after.live,
+                "a bare position node holds no element; its size must never move through live",
+            )
+            assertEquals(addDataSizes(before.gc, deadNode.dataSize), after.gc)
+        }
 }

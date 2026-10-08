@@ -29,11 +29,11 @@ internal data class TreeStyleOperation(
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
             logError(TAG, "fail to find $parentCreatedAt")
-            return ExecutionResult(opInfos = emptyList())
+            return ExecutionResult(opInfos = emptyList(), executed = false)
         }
         if (tree !is CrdtTree) {
             logError(TAG, "fail to execute, only Tree can execute edit")
-            return ExecutionResult(opInfos = emptyList())
+            return ExecutionResult(opInfos = emptyList(), executed = false)
         }
 
         val reversePrevAttributes = mutableMapOf<String, String>()

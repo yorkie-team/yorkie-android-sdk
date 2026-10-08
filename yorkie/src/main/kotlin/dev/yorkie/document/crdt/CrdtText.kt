@@ -2,7 +2,6 @@ package dev.yorkie.document.crdt
 
 import android.annotation.SuppressLint
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
@@ -201,16 +200,7 @@ internal data class CrdtText(
 
         // 2. Style nodes between from and to.
         val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
-        val toBeStyleds = nodes.mapNotNull { node ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = versionVector?.let {
-                versionVector.get(actorID) ?: 0L
-            } ?: MAX_LAMPORT
-
-            node.takeIf {
-                it.canStyle(executedAt, clientLamportAtChange)
-            }
-        }
+        val toBeStyleds = nodes.filter { it.canStyle(versionVector) }
 
         // Widened to GCPair<*>: drained pending pairs below are
         // GCPair<RgaTreeSplitNode<TextValue>>, a different type parameter
@@ -219,6 +209,14 @@ internal data class CrdtText(
         val prevAttributes = mutableMapOf<String, String>()
         val newAttributeKeys = mutableListOf<String>()
         var capturedPrev = false
+        // The reverse operation restores what the VISIBLE text held, so the
+        // prior values come from the first LIVE node in the range. canStyle
+        // now admits tombstones, and the first node in the range can be one
+        // — capturing from it made an undo write an attribute onto text
+        // that never carried it, out of a run the user had already
+        // deleted. The fallback to the first node keeps an all-tombstone
+        // range undoable. Mirrors JS SDK `text.ts:461-467` (e0609c7a #1368).
+        val captureFrom = toBeStyleds.firstOrNull { !it.isRemoved } ?: toBeStyleds.firstOrNull()
         // DocSize: accAttrWrite folds each RhtWrite's
         // install/supersede/revive into live or gc depending on whether the
         // node it landed on is still live (see GC.kt). `diff` (the two
@@ -227,12 +225,12 @@ internal data class CrdtText(
         var size = DocSize(live = DataSize(0, 0), gc = DataSize(0, 0))
         val changes = mutableListOf<TextChange>()
         toBeStyleds.forEach { node ->
-            // canStyle (unchanged this commit) can admit a node whose
-            // removal this write is newer than; such a node is not part of
-            // the rendered text, so it reports no change but its bytes
-            // still move through the ledger — into gc, not live.
+            // canStyle can admit a node removed CONCURRENTLY with this
+            // style; such a node is not part of the rendered text, so it
+            // reports no change but its bytes still move through the
+            // ledger — into gc, not live.
             val nodeIsLive = !node.isRemoved
-            if (nodeIsLive && !capturedPrev) {
+            if (!capturedPrev && node === captureFrom) {
                 val attrs = node.value.getAttrs()
                 for ((key, _) in attributes) {
                     if (attrs.has(key)) {
@@ -298,14 +296,7 @@ internal data class CrdtText(
         diff = addDataSizes(diff, diffTo, diffFrom)
 
         val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
-        val toBeStyleds = nodes.mapNotNull { node ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = versionVector?.let {
-                versionVector.get(actorID) ?: 0L
-            } ?: MAX_LAMPORT
-
-            node.takeIf { it.canStyle(executedAt, clientLamportAtChange) }
-        }
+        val toBeStyleds = nodes.filter { it.canStyle(versionVector) }
 
         // Widened to GCPair<*>: drained pending pairs below are
         // GCPair<RgaTreeSplitNode<TextValue>>, a different type parameter
@@ -313,14 +304,19 @@ internal data class CrdtText(
         val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         var capturedPrev = false
+        // See style(): the reverse operation restores what the VISIBLE text
+        // held, so the prior values come from the first LIVE node in the
+        // range, falling back to the first node for an all-tombstone range.
+        // Mirrors JS SDK `text.ts:551-557` (e0609c7a #1368).
+        val captureFrom = toBeStyleds.firstOrNull { !it.isRemoved } ?: toBeStyleds.firstOrNull()
         val changes = mutableListOf<TextChange>()
         toBeStyleds.forEach { node ->
-            // canStyle (unchanged this commit) can admit a node whose
-            // removal this write is newer than; such a node is not part of
-            // the rendered text, so it reports no change but the tombstone
-            // this mints is still registered for GC below.
+            // canStyle can admit a node removed CONCURRENTLY with this
+            // change; such a node is not part of the rendered text, so it
+            // reports no change but the tombstone this mints is still
+            // registered for GC below.
             val nodeIsLive = !node.isRemoved
-            if (nodeIsLive && !capturedPrev) {
+            if (!capturedPrev && node === captureFrom) {
                 val attrs = node.value.getAttrs()
                 for (key in attributesToRemove) {
                     if (attrs.has(key)) {

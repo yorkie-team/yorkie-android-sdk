@@ -8,6 +8,7 @@ import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.document.time.ticketKnown
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.SplayTreeSet
@@ -1194,12 +1195,21 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
 
     /**
      * Checks if node is able to set style.
+     *
+     * Answers only whether the styling change knew this node existed —
+     * deliberately NOT whether the node has since been removed. A style is
+     * applied unconditionally on the replica that issues it (the node is
+     * live there, or the range would not have reached it) and can never be
+     * retracted afterwards, so every other replica has to apply it too; a
+     * rule that reads [removedAt] is delivery-order dependent, since
+     * [removedAt] is last-writer-wins and mutable while a style is
+     * evaluated once, when it arrives. Mirrors JS SDK `canStyle`
+     * (`rga_tree_split.ts:499-524`, yorkie-js-sdk e0609c7a #1368).
+     * BEHAVIOUR CHANGE: a style now covers text the same replica already
+     * deleted; see
+     * [CrdtText.style]/[CrdtText.removeStyle].
      */
-    fun canStyle(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
-        val nodeExisted = createdAt.lamport <= clientLamportAtChange
-
-        return nodeExisted && (removedAt == null || executedAt > removedAt)
-    }
+    fun canStyle(versionVector: VersionVector?): Boolean = ticketKnown(versionVector, createdAt)
 
     /**
      * Sets the remove time of this node.

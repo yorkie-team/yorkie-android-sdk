@@ -37,7 +37,11 @@ internal data class MoveOperation(
             val previousIndex = parentObject.subPathOf(createdAt).toInt()
             val deadNode = parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
             if (deadNode != null) {
-                root.registerGCPair(GCPair(parentObject.getRGATreeList(), deadNode))
+                // The dead position node's size was never counted in live --
+                // gcOnlySize says so, mirroring JS move_operation.ts.
+                root.registerGCPair(
+                    GCPair(parentObject.getRGATreeList(), deadNode, gcOnlySize = deadNode.dataSize),
+                )
             }
             val index = parentObject.subPathOf(createdAt).toInt()
 
@@ -67,7 +71,7 @@ internal data class MoveOperation(
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only array can execute move")
-            ExecutionResult(opInfos = emptyList())
+            ExecutionResult(opInfos = emptyList(), executed = false)
         }
     }
 

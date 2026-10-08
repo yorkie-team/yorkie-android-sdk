@@ -1,7 +1,6 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.subDataSize
@@ -9,10 +8,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Step 1b (spec 032, AC1, DC-B): [CrdtRoot.registerGCPair]'s toggle branch
- * (the SAME child registered twice) must release the first registration's
- * gc charge — ported from yorkie-js-sdk 190204f8 (`root.ts`), which adds
- * exactly one `subDataSize(docSize.gc, prev.gcOnlySize ?? prev.child.getDataSize())`
+ * [CrdtRoot.registerGCPair]'s toggle branch (the SAME child registered
+ * twice) must release the first registration's gc charge — ported from
+ * yorkie-js-sdk 190204f8 (`root.ts`), which adds exactly one
+ * `subDataSize(docSize.gc, prev.gcOnlySize ?? prev.child.getDataSize())`
  * line to the toggle and touches nothing else.
  */
 class CrdtRootGcToggleTest {
@@ -54,50 +53,104 @@ class CrdtRootGcToggleTest {
     }
 
     // The only non-RhtNode gc child is an array dead-position node
-    // (CrdtRoot.kt:119-122). Measures — rather than assumes — whether
-    // the toggle must also reverse the extra TIME_TICKET_SIZE a non-RhtNode
-    // child's FIRST registration adds to LIVE (registerGCPair:394-401),
-    // since `unregisterAccounting` (the EXPLICIT-unregister reference point,
-    // not this toggle) reverses that ticket but ALSO moves size back to
-    // live, which this toggle must NOT do.
+    // (CrdtRoot.kt:119-122). Every production call site that registers one
+    // (MoveOperation.execute, CrdtRoot's construction-time scan) always
+    // passes an explicit `gcOnlySize = deadNode.dataSize`, so a toggle test
+    // for this shape must register the same way rather than relying on the
+    // parameter's default -- the default (null) path takes a different
+    // branch in [CrdtRoot.registerGCPair] (it ALSO moves the child's size
+    // out of live and adds a stray TIME_TICKET_SIZE), one no real call site
+    // reaches.
     //
-    // RESULT: ported from the JS 190204f8 diff directly (not guessed) — JS's
-    // toggle fix is ONE line, `subDataSize(docSize.gc, ...)`, with no
-    // RhtNode-vs-not branching and no ticket adjustment. Measured here: gc
-    // returns FULLY to its pre-first-registration value; live does NOT —
-    // it stays short by exactly one TIME_TICKET_SIZE, the extra ticket the
-    // first registration added to live for a non-RhtNode child, which only
-    // the explicit `unregisterGCPair` (not this toggle) ever reverses.
+    // The toggle's non-RhtNode branch (`prev.gcOnlySize ?:
+    // prev.child.dataSize`) must release the STORED first-registration
+    // gcOnlySize, not whatever the child's dataSize happens to be NOW. The
+    // one real non-RhtNode case (a dead array position node) can never
+    // actually tell the two formulas apart -- its dataSize is a fixed
+    // TIME_TICKET_SIZE*2 the moment it is dead and never changes afterward,
+    // so gcOnlySize and the child's current dataSize are always equal for
+    // it. This test exercises the written contract directly, independent
+    // of that coincidence: register the SAME non-RhtNode child twice with
+    // an explicit, deliberately mismatched gcOnlySize and confirm the
+    // toggle releases exactly the stored amount -- and that live, which the
+    // `gcOnlySize` registration path never touches (the child's size was
+    // never counted there to begin with), stays untouched throughout.
     @Test
-    fun `toggle for a non-RhtNode child releases gc fully but leaves live short one ticket`() {
+    fun `toggle for a non-RhtNode child releases the STORED gcOnlySize, not its current size`() {
         val root = CrdtRoot(CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()))
         val array = CrdtArray(tick(1))
         val a = CrdtPrimitive("a", tick(2))
         val b = CrdtPrimitive("b", tick(3))
         listOf(a, b).forEach { array.insertAfter(array.lastCreatedAt, it) }
-        // a's old position becomes a dead position node (non-RhtNode GCChild).
         array.moveAfter(b.createdAt, a.createdAt, tick(4))
         val deadNode = array.getAllRGANodes().single { it.elementEntry == null }
 
         val gcBefore = root.docSize.gc
         val liveBefore = root.docSize.live
+        // Deliberately different from deadNode.dataSize so the two
+        // candidate formulas disagree.
+        val staleGcOnlySize = addDataSizes(deadNode.dataSize, DataSize(data = 11, meta = 7))
 
+        root.registerGCPair(GCPair(array.getRGATreeList(), deadNode, gcOnlySize = staleGcOnlySize))
+        assertEquals(addDataSizes(gcBefore, staleGcOnlySize), root.docSize.gc)
+        assertEquals("gcOnlySize never moves anything out of live", liveBefore, root.docSize.live)
+
+        // Toggle: the SAME identity registered again (gcOnlySize on this
+        // second call is irrelevant -- only the FIRST registration's stored
+        // value is ever read on a toggle).
         root.registerGCPair(GCPair(array.getRGATreeList(), deadNode))
-        val liveAfterFirst = root.docSize.live
-        assertEquals(addDataSizes(gcBefore, deadNode.dataSize), root.docSize.gc)
 
-        root.registerGCPair(GCPair(array.getRGATreeList(), deadNode))
-
-        // gc: fully released back to baseline.
-        assertEquals(gcBefore, root.docSize.gc)
-        // live: untouched by the toggle — stays at whatever the first
-        // registration left it (short one TIME_TICKET_SIZE vs baseline, the
-        // asymmetric ticket registerGCPair:394-401 adds for a non-RhtNode
-        // child and which this toggle does not reverse).
-        assertEquals(liveAfterFirst, root.docSize.live)
         assertEquals(
-            DataSize(data = liveBefore.data, meta = liveBefore.meta - TIME_TICKET_SIZE),
-            root.docSize.live,
+            "the toggle must release the stored gcOnlySize, not the child's current dataSize",
+            gcBefore,
+            root.docSize.gc,
         )
+        assertEquals("the toggle never touches live either", liveBefore, root.docSize.live)
+    }
+
+    /**
+     * The OTHER site that registers a dead array position node with
+     * `gcOnlySize` -- [CrdtRoot]'s own construction-time scan
+     * (`CrdtRoot.kt:117-128`), reached only when a root is built from an
+     * already-decoded structure (a snapshot load, or a from-scratch rebuild
+     * for a ledger comparison), never during a live move (that is the
+     * toggle tests above, a different call site). [RgaTreeList.addDeadPosition]
+     * is the exact shape `ElementConverter.kt` restores a decoded move's
+     * displaced marker into, so this builds the scenario directly rather
+     * than performing a real move -- a real move also sets the moved
+     * element's own `movedAt`, which [CrdtElement.getDataSize] folds in and
+     * would confound this comparison with an unrelated, pre-existing
+     * ticket-accounting gap (tracked separately, not this site).
+     */
+    @Test
+    fun `root construction charges a snapshot-restored dead array position node to gc only`() {
+        fun buildObject(withDeadNode: Boolean): CrdtObject {
+            return CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht()).apply {
+                set("arr", array(withDeadNode), tick(5))
+            }
+        }
+
+        val deadNodeSize = array(withDeadNode = true).getRGATreeList()
+            .allNodes().single { it.elementEntry == null }.dataSize
+
+        val withoutDead = CrdtRoot(buildObject(withDeadNode = false))
+        val withDead = CrdtRoot(buildObject(withDeadNode = true))
+
+        // CrdtRoot's construction-time scan for a dead array position node
+        // (CrdtRoot.kt:117-128) must never subtract it from live -- it was
+        // never counted there (registerLive only visits elements, never a
+        // bare position node).
+        assertEquals(withoutDead.docSize.live, withDead.docSize.live)
+        // The dead position node's own size must be charged to gc exactly once.
+        assertEquals(addDataSizes(withoutDead.docSize.gc, deadNodeSize), withDead.docSize.gc)
+    }
+
+    private fun array(withDeadNode: Boolean): CrdtArray {
+        val array = CrdtArray(tick(1))
+        array.insertAfter(array.lastCreatedAt, CrdtPrimitive("a", tick(2)))
+        if (withDeadNode) {
+            array.getRGATreeList().addDeadPosition(tick(3), tick(4))
+        }
+        return array
     }
 }

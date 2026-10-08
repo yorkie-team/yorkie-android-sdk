@@ -8,10 +8,10 @@ import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.json.TreePosStructRange
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
 import dev.yorkie.document.time.TimeTicket.Companion.compareTo
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.document.time.ticketKnown
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.IndexTree
@@ -305,10 +305,7 @@ internal data class CrdtTree(
             toParent = toParent,
             toLeft = toLeft,
         ) { (node, tokenType), _ ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
-
-            if (node.canStyle(executedAt, clientLamportAtChange) && attributes != null) {
+            if (node.canStyle(versionVector) && attributes != null) {
                 if (shouldSkipToken(node, tokenType)) {
                     return@traverseInPosRange
                 }
@@ -337,7 +334,12 @@ internal data class CrdtTree(
                         mapOf(it.key to attributes[it.key].orEmpty())
                     }.orEmpty()
                 }
-                if (affectedAttrs.isNotEmpty()) {
+                // A tombstoned node (now admitted by canStyle) is not
+                // part of the rendered document; toIndex on one yields a
+                // zero-width range meaningless to an editor. Mirrors JS SDK
+                // `tree.ts:1744` (e0609c7a #1368) — the text half makes the
+                // same exclusion.
+                if (affectedAttrs.isNotEmpty() && !node.isRemoved) {
                     TreeChange(
                         type = TreeChangeType.Style,
                         from = toIndex(parentOfNode, previousNode),
@@ -1176,14 +1178,7 @@ internal data class CrdtTree(
             toParent,
             toLeft,
         ) { (node, tokenType), _ ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = getClientInfoForChange(actorID, versionVector)
-
-            if (node.canStyle(
-                    executedAt,
-                    clientLamportAtChange,
-                ) && attributeToRemove.isNotEmpty()
-            ) {
+            if (node.canStyle(versionVector) && attributeToRemove.isNotEmpty()) {
                 if (shouldSkipToken(node, tokenType)) {
                     return@traverseInPosRange
                 }
@@ -1198,6 +1193,9 @@ internal data class CrdtTree(
                     capturedPrev = true
                 }
 
+                // canStyle now admits a node removed CONCURRENTLY with this
+                // change, so nodeIsLive is the third question attrGcPair
+                // asks.
                 val nodeIsLive = !node.isRemoved
                 attributeToRemove.forEach { key ->
                     var wasLive = node.getAttrs().has(key)
@@ -1210,15 +1208,19 @@ internal data class CrdtTree(
                 val parentOfNode = requireNotNull(node.parent)
                 val previousNode = node.prevSibling ?: parentOfNode
 
-                TreeChange(
-                    type = TreeChangeType.RemoveStyle,
-                    from = toIndex(parentOfNode, previousNode),
-                    to = toIndex(node, node),
-                    fromPath = toPath(parentOfNode, previousNode),
-                    toPath = toPath(node, node),
-                    actorID = executedAt.actorID,
-                    attributesToRemove = attributeToRemove,
-                ).let(changes::add)
+                // See style(): a tombstoned node reports no change to
+                // editors. Mirrors JS SDK `tree.ts:1907` (e0609c7a #1368).
+                if (nodeIsLive) {
+                    TreeChange(
+                        type = TreeChangeType.RemoveStyle,
+                        from = toIndex(parentOfNode, previousNode),
+                        to = toIndex(node, node),
+                        fromPath = toPath(parentOfNode, previousNode),
+                        toPath = toPath(node, node),
+                        actorID = executedAt.actorID,
+                        attributesToRemove = attributeToRemove,
+                    ).let(changes::add)
+                }
 
                 // Propagate remove-style to unknown split siblings so a
                 // remove-style whose range was determined before the split
@@ -2361,15 +2363,6 @@ internal data class CrdtTree(
         )
     }
 
-    /**
-     * Returns the client info for the change.
-     */
-    private fun getClientInfoForChange(actorID: String, versionVector: VersionVector?): Long {
-        return versionVector?.let {
-            versionVector.get(actorID) ?: 0L
-        } ?: MAX_LAMPORT
-    }
-
     companion object {
         private const val TAG = "CrdtTree"
     }
@@ -2756,13 +2749,14 @@ internal data class CrdtTreeNode(
         return false
     }
 
-    fun canStyle(executedAt: TimeTicket, clientLamportAtChange: Long): Boolean {
-        if (isText) {
-            return false
-        }
-        val nodeExisted = createdAt.lamport <= clientLamportAtChange
-        return nodeExisted && (removedAt == null || executedAt > removedAt)
-    }
+    /**
+     * Checks if node is able to style. Answers the same question as
+     * [RgaTreeSplitNode.canStyle], the same way — see the contract there
+     * (yorkie-js-sdk e0609c7a #1368). Keeps the pre-existing `!isText`
+     * rejection; drops the [removedAt] read.
+     */
+    fun canStyle(versionVector: VersionVector?): Boolean =
+        !isText && ticketKnown(versionVector, createdAt)
 
     override fun delete(node: RhtNode) {
         _attributes.delete(node)

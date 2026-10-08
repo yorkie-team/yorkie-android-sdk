@@ -62,7 +62,7 @@ internal data class AddOperation(
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only array can execute add")
-            ExecutionResult(opInfos = emptyList())
+            ExecutionResult(opInfos = emptyList(), executed = false)
         }
     }
 

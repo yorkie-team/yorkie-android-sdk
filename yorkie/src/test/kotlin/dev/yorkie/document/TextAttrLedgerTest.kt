@@ -6,11 +6,14 @@ import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.helper.crossSync
 import dev.yorkie.util.DataSize
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -107,7 +110,7 @@ class TextAttrLedgerTest {
     /**
      * A style whose range OPENS inside an element reaches it as an
      * End-only visit; the removed `TokenType.End` guard dropped the only
-     * booking for that node (HIGH-1).
+     * booking for that node.
      */
     @Test
     fun `keeps live exact for a style straddling an element boundary`() = runTest {
@@ -234,8 +237,7 @@ class TextAttrLedgerTest {
     /**
      * A STYLE whose boundary split lands inside a node carrying a removed
      * attribute. The split's copied attribute tombstone must be drained
-     * into the result, or it is unreachable by any future collection
-     * (HIGH-2).
+     * into the result, or it is unreachable by any future collection.
      */
     @Test
     fun `style boundary split registers the copied attribute tombstone`() = runTest {
@@ -323,5 +325,35 @@ class TextAttrLedgerTest {
         assertEquals("""[{"val":"abcdefghij"}]""", d1.text().toJson(), "d1's removal must win LWW")
         assertLedgerExact(d1, "d1 after a losing write against its tombstone")
         assertLedgerExact(d2, "d2")
+    }
+
+    /**
+     * A remote style that lands ONLY on a tombstone must report no
+     * [OperationInfo.StyleOpInfo] to the app -- the tombstoned node is not
+     * part of the rendered text, so nothing visible changed.
+     */
+    @Test
+    fun `a style landing only on a tombstone emits no style change`() = runTest {
+        val d1 = Document("test-doc").apply { setActor("000000000000000000000001") }
+        val d2 = Document("test-doc").apply { setActor("000000000000000000000002") }
+        d1.updateAsync { r, _ -> r.setNewText("k").edit(0, 0, "abcdefghij") }.await()
+        crossSync(d1, d2)
+        d1.updateAsync { r, _ -> r.getAs<JsonText>("k").style(4, 6, mapOf("b" to "1")) }.await()
+        d2.updateAsync { r, _ -> r.getAs<JsonText>("k").edit(4, 6, "") }.await()
+        val events = mutableListOf<Document.Event>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { d2.events.collect(events::add) }
+        crossSync(d1, d2)
+        job.cancel()
+        val styleInfos = events.filterIsInstance<Document.Event.RemoteChange>()
+            .flatMap { it.changeInfo.operations }
+            .filterIsInstance<OperationInfo.StyleOpInfo>()
+        assertEquals(emptyList(), styleInfos, "the tombstone reported a style change")
+        assertTrue(
+            d2.text().rgaTreeSplit.any { n ->
+                n.isRemoved &&
+                    n.value.attributesWithTimeTicket.any { it.key == "b" && !it.isRemoved }
+            },
+            "sanity: the style reached d2's tombstone",
+        )
     }
 }

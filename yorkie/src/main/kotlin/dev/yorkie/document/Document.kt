@@ -530,7 +530,18 @@ public class Document(
                 }
             }
 
-            if (opInfos.isEmpty()) {
+            // The test is whether an operation RAN, not whether it produced an
+            // OpInfo. Those differ: a style may change CRDT state without
+            // anything an editor could render, because canStyle admits a node
+            // another client removed concurrently and a tombstone has no
+            // index to report. Gating on opInfos dropped such a reverse style
+            // on the floor -- it mutated this replica and never reached the
+            // others, the divergence canStyle exists to prevent, reintroduced
+            // through undo. executedOperations already excludes an operation
+            // whose target vanished while the undo was pending (its own
+            // execute found no target to act on), so that case is still
+            // gated out here. Mirrors JS document.ts's `!operations.length`.
+            if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
                 return@async Result.success(Unit)
             }
 

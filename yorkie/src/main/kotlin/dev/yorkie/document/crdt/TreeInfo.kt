@@ -138,4 +138,14 @@ internal data class TreeOperationResult(
      * past what was actually inserted. Port 2ed28322.
      */
     val insertedContentSize: Int = 0,
+    /**
+     * Net growth of the visible index this edit's own split step (04)
+     * produced, measured as `size` right after the split walk minus `size`
+     * right before it. Zero for an edit with no split step. Used by
+     * [dev.yorkie.document.operation.TreeEditOperation.getContentSize] and
+     * by its pure-split reverse, which sizes the boundary deletion from this
+     * measured value instead of assuming `2 * splitLevel`. Port `e41069df`
+     * (yorkie-js-sdk#1360).
+     */
+    val splitSize: Int = 0,
 )

@@ -744,6 +744,11 @@ internal data class CrdtTree(
         }
 
         // 04. Split: split the element nodes for the given split level.
+        // sizeBeforeSplit/splitSize (port e41069df, #1360): measures how
+        // much this split step grew the visible index, so a pure-split
+        // undo/redo reverse can be sized from the measured boundary instead
+        // of guessing 2 * splitLevel.
+        val sizeBeforeSplit = size
         if (splitLevel > 0 && issueTimeTicket != null) {
             var parent = fromParent
             var left = fromLeft
@@ -811,6 +816,7 @@ internal data class CrdtTree(
                 )
             }
         }
+        val splitSize = size - sizeBeforeSplit
 
         // 05. insert the given node at the given position. Cross-change ID
         // reuse (an earlier change, another actor, or a text piece step 01's
@@ -931,6 +937,7 @@ internal data class CrdtTree(
             // resolves its parent by identity).
             insertedSpans = if (spansComplete) insertedSpans.reversed() else emptyList(),
             insertedContentSize = insertedContentSize,
+            splitSize = splitSize,
         )
     }
 
@@ -2492,11 +2499,16 @@ internal data class CrdtTreeNode(
                         insNextParent !== split.parent &&
                         split.allChildren.isEmpty()
                     ) {
-                        // No try/catch: `split` was just inserted by splitElement,
-                        // so detachChild cannot fail here. Let a throw surface a
-                        // real structural bug (matches JS invariant).
-                        split.parent?.detachChild(split)
-                        insNextParent.insertBefore(insNext, split)
+                        // moveChildBefore does the tombstone-aware detach
+                        // moveChild uses, then inserts before insNext instead
+                        // of appending -- so a tombstoned split's re-parent
+                        // (split.isRemoved, the born-tombstoned case) makes
+                        // no live-size change (port e41069df,
+                        // yorkie-js-sdk#1360, tree.ts:730). No try/catch:
+                        // `split` was just inserted by splitElement, so this
+                        // cannot fail here. Let a throw surface a real
+                        // structural bug (matches JS invariant).
+                        insNextParent.moveChildBefore(split, insNext)
                     }
                 }
             }

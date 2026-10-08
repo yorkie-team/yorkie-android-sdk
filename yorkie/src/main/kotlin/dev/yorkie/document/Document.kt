@@ -831,12 +831,20 @@ public class Document(
                     opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
                         .firstOrNull()
                         ?.let { opInfo ->
-                            val insertedSize = opInfo.nodes?.size ?: 0
+                            // getContentSize() (insertedContentSize + splitSize)
+                            // replaces the prior node-COUNT measurement
+                            // (opInfo.nodes?.size): a split-only edit has no
+                            // `value`, so the node count was always 0 and never
+                            // shifted stacked tree-undo offsets, even though the
+                            // split visibly grows the index. A multi-character
+                            // text insert also now shifts by its padded size
+                            // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
+                            // backlog 009 second half).
                             internalHistory.reconcileTreeEdit(
                                 executedOp.parentCreatedAt,
                                 opInfo.from,
                                 opInfo.to,
-                                insertedSize,
+                                executedOp.getContentSize(),
                             )
                         }
                 }

@@ -20,6 +20,7 @@ import dev.yorkie.util.DataSize
 import java.util.Date
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 
@@ -730,6 +731,47 @@ class DocumentSizeTest {
             expected = "<p bold=\"true\">world</p>",
             actual = rightElem?.toXml(),
         )
+    }
+
+    /**
+     * Scenario 8 (spec 030, port `e41069df`, yorkie-js-sdk#1360): splitting
+     * an already-REMOVED element does not grow its live ancestors' visible
+     * size. A clone born via [dev.yorkie.util.IndexTreeNode.cloneElement]
+     * inherits `removedAt` from the node it split from, so before the
+     * `!clone.isRemoved` guard the unconditional ancestor-size update
+     * inflated `root.visibleSize` for a piece that was never visible.
+     */
+    @Test
+    fun `splitting a removed element node does not change live ancestor size`() {
+        val root = CrdtTreeNode(id = CrdtTreeNodeID.InitialCrdtTreeNodeID, type = "r")
+        val para = CrdtTreeNode(id = CrdtTreeNodeID.InitialCrdtTreeNodeID, type = "p")
+        root.append(para)
+        para.append(
+            node = CrdtTreeNode(
+                id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+                type = "b",
+            ),
+        )
+        para.append(
+            node = CrdtTreeNode(
+                id = CrdtTreeNodeID.InitialCrdtTreeNodeID,
+                type = "i",
+            ),
+        )
+        para.remove(TimeTicket.InitialTimeTicket)
+
+        val rootVisibleBefore = root.visibleSize
+        val rootTotalBefore = root.totalSize
+
+        val (split, _) = para.splitElement(1, null) { TimeTicket.InitialTimeTicket }
+
+        // A split never changes total CONTENT size -- the existing children
+        // are only redistributed between para and its new sibling -- except
+        // for the one new element-padding (open+close tag, 2) the split
+        // sibling itself introduces.
+        assertEquals(rootVisibleBefore, root.visibleSize)
+        assertEquals(rootTotalBefore + 2, root.totalSize)
+        assertTrue(requireNotNull(split).isRemoved)
     }
 
     @Test

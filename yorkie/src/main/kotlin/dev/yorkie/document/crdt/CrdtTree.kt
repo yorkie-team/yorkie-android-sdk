@@ -119,7 +119,7 @@ internal data class TreeRestoreSpan(
 internal data class TreeRestoreResult(
     val untombstoned: List<CrdtTreeNode>,
     val recreated: List<CrdtTreeNode>,
-    val pendingGcPairs: List<GCPair<CrdtTreeNode>>,
+    val pendingGcPairs: List<GCPair<*>>,
     val diff: DataSize,
 )
 
@@ -154,9 +154,13 @@ internal data class CrdtTree(
      * Buffers GC pairs for pieces born already-tombstoned by splitting a
      * removed node, which were never counted live. [edit], [style], and
      * [removeStyle] drain this buffer via [drainPendingGcPairs] into the GC
-     * pairs they already return.
+     * pairs they already return. Widened to `GCPair<*>` (was
+     * `GCPair<CrdtTreeNode>`) so [pushPendingGcPair] can buffer an
+     * already-built attribute-tombstone pair (`GCPair<RhtNode>`) alongside
+     * node-level pairs — a split's copied attribute tombstones (port
+     * yorkie-js-sdk `99dbec9d`, #1363).
      */
-    private var pendingGcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+    private var pendingGcPairs = mutableListOf<GCPair<*>>()
 
     /**
      * Buffers a GC pair for [node], a piece born already-tombstoned by
@@ -169,9 +173,20 @@ internal data class CrdtTree(
     }
 
     /**
+     * Buffers an already-built GC [pair] (mirrors JS `tree.ts:1527`
+     * `pushPendingGCPair`). Used for pairs the caller already constructed —
+     * e.g. [CrdtTreeNode.gcPairs]' per-attribute `GCPair<RhtNode>`s copied by
+     * a split — as opposed to [registerPendingGcPair], which builds a
+     * node-level pair from scratch.
+     */
+    fun pushPendingGcPair(pair: GCPair<*>) {
+        pendingGcPairs.add(pair)
+    }
+
+    /**
      * Returns the buffered GC pairs and clears the buffer.
      */
-    fun drainPendingGcPairs(): List<GCPair<CrdtTreeNode>> {
+    fun drainPendingGcPairs(): List<GCPair<*>> {
         val pairs = pendingGcPairs
         pendingGcPairs = mutableListOf()
         return pairs
@@ -639,8 +654,11 @@ internal data class CrdtTree(
             emptyList()
         }
 
-        // 02. Delete: delete the nodes that are marked as removed.
-        val gcPairs = mutableListOf<GCPair<CrdtTreeNode>>()
+        // 02. Delete: delete the nodes that are marked as removed. Widened to
+        // GCPair<*> (was GCPair<CrdtTreeNode>): drainPendingGcPairs() (below)
+        // can now also carry a split's copied attribute-tombstone pairs
+        // (GCPair<RhtNode>, pushed by CrdtTreeNode.split via pushPendingGcPair).
+        val gcPairs = mutableListOf<GCPair<*>>()
         // Identity-preserving undo: capture one span per node THIS edit
         // transitions visible -> tombstoned. node.remove() returning true is
         // exactly that transition, so pre-tombstoned nodes and LWW
@@ -919,6 +937,18 @@ internal data class CrdtTree(
         // pairs beyond the plain-delete loop, the captured spans don't fully
         // describe the deletion -> emit empty spans so the op layer keeps
         // the copy-reinsert reverse.
+        //
+        // DISCLOSURE (port 99dbec9d, #1363): when a boundary split (step 01)
+        // lands on an already-tombstoned node that still carries attribute
+        // tombstones, CrdtTreeNode.split now copies and registers one pair
+        // per copied tombstone (pushPendingGcPair, drained above) in addition
+        // to the plain-delete loop's node pairs. That inflates gcPairs.size
+        // past deletePairCount even though the deletion itself was plain, so
+        // spansComplete flips to false and this edit falls back to the
+        // copy-reinsert reverse instead of the identity-preserving one — the
+        // same shape as JS (tree.ts:2506). Accepted: a correctness fix that
+        // narrows an unrelated optimization's applicability, not a behaviour
+        // regression.
         val spansComplete = toBeMergedNodes.isEmpty() && gcPairs.size == deletePairCount
 
         // Count merged boundaries before their children were moved (above), so
@@ -1800,7 +1830,7 @@ internal data class CrdtTree(
         val recreated = mutableListOf<CrdtTreeNode>()
         var diff = DataSize(data = 0, meta = 0)
 
-        val pairs: List<GCPair<CrdtTreeNode>>
+        val pairs: List<GCPair<*>>
         try {
             for (span in spans) {
                 if (!span.isText) {
@@ -2514,6 +2544,25 @@ internal data class CrdtTreeNode(
             }
             node.insNextID = split.id
             tree.registerNode(split)
+
+            // Port yorkie-js-sdk 99dbec9d (#1363): clone() deep-copies this
+            // node's attributes (tombstones included, so a concurrent style
+            // applied before vs after the split still resolves against the
+            // same Rht state on both halves), but a copied tombstoned
+            // RhtNode was never registered for GC — it rode along
+            // unreachable until a snapshot reload re-scanned it. gcPairs
+            // (below) yields one GCPair<RhtNode> per tombstoned attribute
+            // already on the split, built with gcOnlySize since the
+            // snapshot-load dataSize scan (and this node's own live dataSize)
+            // skip removed attributes — their size was never in docSize.live
+            // to move out of. Runs for every split, live or born-tombstoned,
+            // BEFORE the born-tombstoned registerPendingGcPair below. No
+            // gcPairMap re-key needed: Android keys gcPairMap on object
+            // identity (CrdtRoot.kt gcPairMap KDoc), and deepCopy builds
+            // fresh RhtNode instances, so this registration can never
+            // collide with — and silently cancel — another pair (unlike JS's
+            // pre-fix `toIDString()` key).
+            split.gcPairs.forEach(tree::pushPendingGcPair)
         }
 
         // A piece split off an already-tombstoned node inherits removedAt

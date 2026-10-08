@@ -41,6 +41,17 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * of the map; [CrdtTreeNode]'s data-class hash changes with its children
      * and attributes, so a value-keyed entry could become unreachable.
      * Purge order in [garbageCollect] does not depend on iteration order.
+     *
+     * No re-keying needed for a tree split's copied attribute tombstones
+     * (port yorkie-js-sdk 99dbec9d, #1363): JS keyed `gcPairMap` on
+     * `child.toIDString()` (`updatedAt` + key, both preserved by `RHT.deepcopy`),
+     * so splitting a node with a tombstoned attribute produced a second
+     * registration whose key collided with the original's and was read as an
+     * un-registration, cancelling it — JS re-keyed to `${parentID}:${child
+     * id}` to fix this. Android was never exposed: `gcPairMap` here is keyed
+     * on [GCChild] object IDENTITY (above), and [Rht.deepCopy] builds fresh
+     * [RhtNode] instances, so a split's copied tombstone is a distinct object
+     * from the original and registers as a distinct, non-colliding entry.
      */
     private val gcPairMap: MutableMap<GCChild, GCPair<*>> = IdentityHashMap()
 

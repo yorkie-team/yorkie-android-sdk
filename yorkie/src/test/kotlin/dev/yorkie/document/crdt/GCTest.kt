@@ -32,10 +32,12 @@ class GCTest {
                     Step(
                         TestOperation(TreeCode.Style, "b", "f"),
                         """<r><p b="f"></p></r>""",
-                        // F12: overwriting a live attribute now registers a
-                        // tombstoned copy of the overwritten value instead
-                        // of leaking it as phantom-live forever.
-                        1,
+                        // RHT overrides immutably,
+                        // so overwriting a live attribute mints no
+                        // tombstone copy and registers no gc pair — the
+                        // old value's bytes leave live directly instead of
+                        // moving through a GC pass.
+                        0,
                     ),
                 ),
             ),
@@ -179,10 +181,12 @@ class GCTest {
                     Step(
                         TestOperation(TextCode.Style, "b", "f"),
                         """[{"attrs":{"b":"f"},"val":"AB"}]""",
-                        // F12: overwriting a live attribute now registers a
-                        // tombstoned copy of the overwritten value instead
-                        // of leaking it as phantom-live forever.
-                        1,
+                        // RHT overrides immutably,
+                        // so overwriting a live attribute mints no
+                        // tombstone copy and registers no gc pair — the
+                        // old value's bytes leave live directly instead of
+                        // moving through a GC pass.
+                        0,
                     ),
                 ),
             ),

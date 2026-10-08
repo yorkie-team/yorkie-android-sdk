@@ -2,10 +2,15 @@ package dev.yorkie.document
 
 import dev.yorkie.api.toCrdtElement
 import dev.yorkie.api.toPBJsonObject
+import dev.yorkie.document.change.ChangeContext
+import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNodeID
+import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.toXml
 import dev.yorkie.document.json.JsonArray
@@ -15,11 +20,14 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import java.util.Date
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -734,12 +742,12 @@ class DocumentSizeTest {
     }
 
     /**
-     * Scenario 8 (spec 030, port `e41069df`, yorkie-js-sdk#1360): splitting
-     * an already-REMOVED element does not grow its live ancestors' visible
-     * size. A clone born via [dev.yorkie.util.IndexTreeNode.cloneElement]
-     * inherits `removedAt` from the node it split from, so before the
-     * `!clone.isRemoved` guard the unconditional ancestor-size update
-     * inflated `root.visibleSize` for a piece that was never visible.
+     * Splitting an already-REMOVED element does not grow its live ancestors'
+     * visible size (port `e41069df`, yorkie-js-sdk#1360). A clone born via
+     * [dev.yorkie.util.IndexTreeNode.cloneElement] inherits `removedAt` from
+     * the node it split from, so before the `!clone.isRemoved` guard the
+     * unconditional ancestor-size update inflated `root.visibleSize` for a
+     * piece that was never visible.
      */
     @Test
     fun `splitting a removed element node does not change live ancestor size`() {
@@ -861,9 +869,9 @@ class DocumentSizeTest {
      * does it dropped the size its own `split` call reported, so `live`
      * never carried it. A split and the merge that undoes it then did not
      * cancel out: `live.meta` walked down by a ticket per cycle, without
-     * bound. RED at `5959dac0`: before `CrdtTree.edit`'s step-04 diff
-     * accumulation, `live` after the split was `{20, 192}` (the discarded
-     * ticket), not `{20, 216}`, and the 100-cycle loop drifted.
+     * bound. Before `CrdtTree.edit`'s step-04 diff accumulation, `live`
+     * after the split was `{20, 192}` (the discarded ticket) instead of
+     * `{20, 216}`, and the 100-cycle loop drifted.
      */
     @Test
     fun `accounts for the element a split creates`() = runTest {
@@ -927,16 +935,15 @@ class DocumentSizeTest {
      * remove arriving before its set still wins -- and supersedes an
      * existing tombstone when the same key is removed twice or set again.
      * None of those replace a live value, yet `live` was debited for each,
-     * so toggling one key walked it down without bound. RED at `5959dac0`
-     * (the live figure drifts: the pre-existing `removeStyle` main-node and
-     * split-sibling call sites did not distinguish a live attribute from an
-     * absent/tombstoned one); GREEN with the `attrGcPair` gc-only routing
-     * this spec adds.
+     * so toggling one key walked it down without bound. The pre-existing
+     * `removeStyle` main-node and split-sibling call sites did not
+     * distinguish a live attribute from an absent/tombstoned one; the
+     * `attrGcPair` gc-only routing this change adds fixes that.
      *
      * Android's raw-string `bold:'true'` live figure is 22 (`(4 + 4) * 2`
      * UTF-8 bytes), matching the JS v0.7.23 tag's own expectation (the old
-     * JSON-quoted figure of 26 was superseded by JS #1365, spec 032 --
-     * not re-derived here; Android never counted the quotes).
+     * JSON-quoted figure of 26 was superseded by JS #1365 -- not re-derived
+     * here; Android never counted the quotes).
      */
     @Test
     fun `charges live only for attribute values it was holding`() = runTest {
@@ -988,4 +995,244 @@ class DocumentSizeTest {
             assertEquals(DataSize(data = 6, meta = 144), toggled.getDocSize().live)
         }
     }
+
+    /**
+     * Ports JS `text_attr_ledger_test.ts`'s split case. An undo
+     * that removes a never-before-set style key leaves a genuine tombstoned
+     * attribute inside a still-live text node. A peer loading this document
+     * from its encoded snapshot (simulated here the same way
+     * "rebuilding a document that holds a tombstone" above does, via
+     * [toPBJsonObject]/[toCrdtElement]) re-registers that tombstone through
+     * [CrdtText.gcPairs]. Splitting the node afterwards (an ordinary edit
+     * landing strictly inside it) must keep the LEFT half's already-
+     * registered pair pointing at a live object (in-place `truncate`, not a
+     * replacement) and register the RIGHT half's deep-copied duplicate of
+     * the same tombstone, or one of the two leaks forever (previously
+     * `splitValue` replaced `_value` outright, orphaning the left pair, and
+     * never registered the right's copy at all).
+     */
+    @Test
+    fun `a split after a snapshot keeps the left pair valid and registers the right's copy`() =
+        runTest {
+            document.updateAsync { root, _ ->
+                root.setNewText("t").edit(0, 0, "Hello World")
+            }.await()
+            document.updateAsync { root, _ ->
+                root.getAs<JsonText>("t").style(0, 11, mapOf("bold" to "true"))
+            }.await()
+            // "bold" was never set before, so the reverse op removes it
+            // wholesale, leaving a genuine tombstone inside the still-live node.
+            document.history.undoAsync().await()
+
+            val restoredObj =
+                document.getRootObject().toPBJsonObject().toCrdtElement() as CrdtObject
+            val restoredRoot = CrdtRoot(restoredObj)
+            val restoredText = restoredObj["t"] as CrdtText
+            val actor = document.changeID.actor
+
+            val node = restoredText.rgaTreeSplit.first { it.contentLength == 11 }
+            val attrPairBefore = node.value.gcPairs.single()
+            assertEquals(1, restoredRoot.garbageLength)
+
+            val editResult =
+                restoredText.edit(restoredText.indexRangeToPosRange(5, 5), "X", tick(999, actor))
+            restoredRoot.acc(editResult.dataSize)
+            editResult.gcPairs.forEach(restoredRoot::registerGCPair)
+
+            // LEFT half: same TextValue object (in-place truncate), same
+            // attribute object -> the pre-split pair is still valid.
+            assertSame(node, restoredText.rgaTreeSplit.first { it.contentLength == 5 })
+            assertEquals("Hello", node.value.content)
+            val attrPairAfter = node.value.gcPairs.single()
+            assertSame(attrPairBefore.child, attrPairAfter.child)
+            assertEquals(attrPairBefore.gcOnlySize, attrPairAfter.gcOnlySize)
+
+            // RIGHT half: splitNode registered a DISTINCT copy of the same
+            // tombstone (same gcOnlySize, different object).
+            assertEquals(1, editResult.gcPairs.size)
+            val rightPair = editResult.gcPairs.single()
+            assertNotSame(attrPairBefore.child, rightPair.child)
+            assertEquals(attrPairBefore.gcOnlySize, rightPair.gcOnlySize)
+            assertEquals(2, restoredRoot.garbageLength)
+
+            // GC sweeps both tombstones; the final live size matches a fresh
+            // document holding only the final visible content, no history.
+            assertEquals(2, restoredRoot.garbageCollect(maxVectorOf(listOf(actor))))
+            assertEquals(0, restoredRoot.garbageLength)
+            assertEquals(DataSize(0, 0), restoredRoot.docSize.gc)
+
+            // A fresh document with the SAME final node count (3 live split
+            // pieces: "Hello", "X", " World" — a split's own ticket overhead
+            // is a real, permanent cost regardless of content, same as
+            // "accounts for the element a split creates" above) and no
+            // attribute history must match exactly once every tombstone is
+            // swept: the attribute never contributed to live, and the GC
+            // left no residue.
+            val fresh = Document("")
+            fresh.updateAsync { root, _ ->
+                val text = root.setNewText("t")
+                text.edit(0, 0, "Hello")
+                text.edit(5, 5, "X")
+                text.edit(6, 6, " World")
+            }.await()
+            assertEquals(fresh.getDocSize().live, restoredRoot.docSize.live)
+        }
+
+    /**
+     * Pins the `attrGcPair` removed-sibling branch across two replicas —
+     * one splits a styled span and deletes the half the split opened, the
+     * other concurrently (and unaware of the split) removes the same style
+     * from the whole span. Before `attrGcPair` folded the `nodeIsLive`
+     * input in, this scenario drove live negative
+     * (`live=DataSize(data=-28, meta=96)`); this test is GREEN against the
+     * fix. A later change to the `nodeIsLive` input `canStyle` gates on
+     * must keep this pin GREEN and non-negative, not just today.
+     */
+    @Test
+    fun `attrGcPair removed-sibling branch converges and never goes negative`() = runTest {
+        val actor1 = "000000000000000000000001"
+        val actor2 = "000000000000000000000002"
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        val seed = element("doc") {
+            element("p") {
+                element("span") {
+                    attr { "bold" to "true" }
+                    text { "abcde" }
+                }
+            }
+        }
+
+        d1.updateAsync { root, _ -> root.setNewTree("t", seed) }.await()
+        crossSync(d1, d2)
+
+        // d1: split the span after "ab", then delete the second half the
+        // split opened ("cde").
+        d1.updateAsync { root, _ ->
+            val tree = root.getAs<JsonTree>("t")
+            tree.editByPath(listOf(0, 0, 2), listOf(0, 0, 2), splitLevel = 1)
+            tree.editByPath(listOf(0, 1), listOf(0, 2))
+        }.await()
+        // d2 (concurrent, unaware of the split): remove "bold" from the
+        // whole (still unsplit, from d2's view) span.
+        d2.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").removeStyleByPath(listOf(0, 0), listOf(0, 1), listOf("bold"))
+        }.await()
+
+        crossSync(d1, d2)
+        crossSync(d1, d2)
+
+        assertEquals(
+            d1.getRoot().getAs<JsonTree>("t").toXml(),
+            d2.getRoot().getAs<JsonTree>("t").toXml(),
+        )
+
+        val d1Live = d1.getDocSize().live
+        val d2Live = d2.getDocSize().live
+        assertEquals(d1Live, d2Live)
+
+        val oracle1 = CrdtRoot(d1.getRootObject().deepCopy() as CrdtObject).docSize.live
+        val oracle2 = CrdtRoot(d2.getRootObject().deepCopy() as CrdtObject).docSize.live
+        assertEquals(oracle1, d1Live)
+        assertEquals(oracle2, d2Live)
+
+        assertTrue(d1Live.data >= 0, "live.data must never go negative")
+        assertTrue(d1Live.meta >= 0, "live.meta must never go negative")
+    }
+
+    /**
+     * `TreeStyleOperation`'s removeStyle branch never called `root.acc` at
+     * all — only the gc half of removeStyle's own result (attribute
+     * tombstones) was ever registered. removeStyle resolves its
+     * OWN range boundaries the same way style/edit do
+     * (`findNodesAndSplitText`), so a range landing strictly inside a text
+     * run splits it, growing live by the new piece's own ticket overhead —
+     * exactly the diff this test forces by removing "bold" over the span's
+     * middle two characters instead of its full content.
+     */
+    @Test
+    fun `removeStyle's own boundary split is credited to live`() = runTest {
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") {
+                        element("span") {
+                            attr { "bold" to "true" }
+                            text { "abcde" }
+                        }
+                    }
+                },
+            )
+        }.await()
+
+        document.updateAsync { root, _ ->
+            // [0, 0, 2]..[0, 0, 4] lands strictly inside the span's text
+            // content, forcing removeStyle's own two boundary splits before
+            // it drops "bold" from the (sole) enclosing span element.
+            root.getAs<JsonTree>("t").removeStyleByPath(
+                listOf(0, 0, 2),
+                listOf(0, 0, 4),
+                listOf("bold"),
+            )
+        }.await()
+
+        val rebuilt = CrdtRoot(document.getRootObject().deepCopy())
+        assertEquals(
+            rebuilt.docSize.live,
+            document.getDocSize().live,
+            "removeStyle's own boundary-split growth must be credited to live",
+        )
+    }
+
+    /**
+     * `JsonText.style()`'s own `this.context.accGC(docSize.gc)` call is
+     * the ONLY place that books an attribute install landing on an
+     * ALREADY-removed node into `docSize.gc` for a LOCAL style — distinct
+     * from `StyleOperation.execute`'s OWN `root.accGC(...)` (used when a
+     * `Change` is replayed, which is how `Document.updateAsync` re-applies
+     * every local change against its root; that second booking would mask
+     * this one if the test went through `Document`). Built directly against
+     * a bare `ChangeContext`/`CrdtRoot`, bypassing `Document`, so this one
+     * call is the only thing that can book these bytes. A local style call
+     * passes no version vector, so `canStyle` (`ticketKnown(null, ...)`)
+     * admits every node in the index range unconditionally, including a
+     * tombstone physically sitting between two still-live runs — exactly
+     * what deleting the middle of a visible string leaves behind.
+     */
+    @Test
+    fun `JsonText style credits an attribute installed onto an already-removed node to gc`() {
+        val obj = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = ElementRht())
+        val root = CrdtRoot(obj)
+        val crdtText = CrdtText(RgaTreeSplit(), tick(0, "actor1"))
+        obj.set("t", crdtText, tick(0, "actor1"))
+        root.registerElement(crdtText, obj)
+
+        val context = ChangeContext(ChangeID.InitialChangeID, root)
+        val jsonText = JsonText(context, crdtText)
+
+        jsonText.edit(0, 0, "abXYcd")
+        // Deletes "XY", leaving a tombstoned node physically between the two
+        // still-live halves "ab" and "cd" (visible text is now "abcd").
+        jsonText.edit(2, 4, "")
+        // [0, 4) spans the full visible "abcd", which internally still
+        // includes the tombstoned "XY" node sitting between "ab" and "cd".
+        jsonText.style(0, 4, mapOf("bold" to "true"))
+
+        val rebuilt = CrdtRoot(obj.deepCopy())
+        assertEquals(
+            rebuilt.docSize.gc,
+            root.docSize.gc,
+            "the attribute installed on the already-removed node must be credited to gc",
+        )
+        assertTrue(
+            root.docSize.gc.data > 0,
+            "the scenario must actually exercise a non-zero gc charge",
+        )
+    }
+
+    private fun tick(lamport: Long, actor: String) = TimeTicket(lamport, 0u, actor)
 }

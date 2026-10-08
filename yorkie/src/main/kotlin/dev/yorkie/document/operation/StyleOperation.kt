@@ -42,13 +42,15 @@ internal data class StyleOperation(
                 } catch (e: RuntimeException) {
                     // The first of CrdtText.removeStyle's two sequential
                     // findNodeWithSplit calls can have already buffered a
-                    // born-dead split piece before the second throws; drain
-                    // and register it before propagating (F11).
-                    parentObject.rgaTreeSplit.drainPendingGcPairs()
+                    // born-dead split piece — and a copied attribute
+                    // tombstone — before the second throws; drain and
+                    // register both before propagating (F11).
+                    parentObject.rgaTreeSplit.drainAllPendingGcPairs()
                         .forEach(root::registerGCPair)
                     throw e
                 }
-                root.acc(result.dataSize)
+                root.acc(result.docSize.live)
+                root.accGC(result.docSize.gc)
                 result.gcPairs.forEach(root::registerGCPair)
                 allChanges.addAll(result.textChanges)
                 reversePrevAttributes.putAll(result.prevAttributes)
@@ -63,11 +65,15 @@ internal data class StyleOperation(
                         versionVector,
                     )
                 } catch (e: RuntimeException) {
-                    parentObject.rgaTreeSplit.drainPendingGcPairs()
+                    // Same F11 leak as removeStyle's catch above, for
+                    // CrdtText.style's own pair of sequential
+                    // findNodeWithSplit calls.
+                    parentObject.rgaTreeSplit.drainAllPendingGcPairs()
                         .forEach(root::registerGCPair)
                     throw e
                 }
-                root.acc(result.dataSize)
+                root.acc(result.docSize.live)
+                root.accGC(result.docSize.gc)
                 result.gcPairs.forEach(root::registerGCPair)
                 allChanges.addAll(result.textChanges)
                 reversePrevAttributes.putAll(result.prevAttributes)

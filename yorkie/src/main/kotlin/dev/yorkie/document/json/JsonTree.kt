@@ -168,7 +168,7 @@ public class JsonTree internal constructor(
 
     private fun styleByRange(range: TreePosRange, attributes: Map<String, String>) {
         val ticket = context.issueTimeTicket()
-        val (_, gcPairs, diff) = target.style(range, attributes, ticket)
+        val (_, gcPairs, docSize) = target.style(range, attributes, ticket)
 
         context.push(
             TreeStyleOperation(
@@ -180,7 +180,8 @@ public class JsonTree internal constructor(
             ),
         )
 
-        this.context.acc(diff)
+        this.context.acc(docSize.live)
+        this.context.accGC(docSize.gc)
 
         gcPairs.forEach(context::registerGCPair)
     }
@@ -226,13 +227,14 @@ public class JsonTree internal constructor(
 
     private fun removeStyleByRange(range: TreePosRange, attributesToRemove: List<String>) {
         val executedAt = context.issueTimeTicket()
-        val (_, gcPairs, diff) = target.removeStyle(
+        val (_, gcPairs, docSize) = target.removeStyle(
             range,
             attributesToRemove,
             executedAt,
         )
 
-        this.context.acc(diff)
+        this.context.acc(docSize.live)
+        this.context.accGC(docSize.gc)
 
         gcPairs.forEach(context::registerGCPair)
 
@@ -341,7 +343,7 @@ public class JsonTree internal constructor(
         // executedAt + contents.size, which under-counts once a content
         // has descendants.
         val splitTickets = mutableListOf<TimeTicket>()
-        val (_, gcPairs, diff) = target.edit(
+        val (_, gcPairs, docSize) = target.edit(
             fromPos to toPos,
             crdtNodes.map(CrdtTreeNode::deepCopy).ifEmpty { null },
             splitLevel,
@@ -349,7 +351,7 @@ public class JsonTree internal constructor(
             { context.issueTimeTicket().also(splitTickets::add) },
         )
 
-        this.context.acc(diff)
+        this.context.acc(docSize.live)
 
         gcPairs.forEach(context::registerGCPair)
 

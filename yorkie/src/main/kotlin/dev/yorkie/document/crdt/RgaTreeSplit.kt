@@ -74,6 +74,41 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     }
 
     /**
+     * Buffers the copied attribute-tombstone pairs a split registers for the
+     * NEW piece ([RgaTreeSplitValue.gcPairs]) — a separate,
+     * loosely-typed buffer from [pendingGcPairs] because those pairs are
+     * `GCPair<RhtNode>`, not `GCPair<RgaTreeSplitNode<T>>`. Callers that split
+     * nodes drain it via [drainPendingAttributeGcPairs] and fold it into
+     * their own result alongside their node-level pairs (e.g.
+     * [CrdtText.edit], [CrdtText.restore], [CrdtText.retombstone]).
+     */
+    private var pendingAttributeGcPairs = mutableListOf<GCPair<*>>()
+
+    /**
+     * Returns the GC pairs buffered for a split's copied attribute
+     * tombstones and clears the buffer.
+     */
+    fun drainPendingAttributeGcPairs(): List<GCPair<*>> {
+        val pairs = pendingAttributeGcPairs
+        pendingAttributeGcPairs = mutableListOf()
+        return pairs
+    }
+
+    /**
+     * Drains BOTH [pendingGcPairs] and [pendingAttributeGcPairs] together.
+     * A single boundary split can buffer into both buffers at once (a
+     * born-dead node pair AND a copied attribute tombstone), so a caller
+     * that recovers one after a throwing second [findNodeWithSplit] (F11)
+     * must recover both or the attribute copy leaks. Shared by the success
+     * paths ([CrdtText.style]/[CrdtText.removeStyle]) and every catch
+     * handler that recovers a pre-throw buffer, so the two buffers cannot
+     * drift apart again.
+     */
+    fun drainAllPendingGcPairs(): List<GCPair<*>> {
+        return drainPendingGcPairs() + drainPendingAttributeGcPairs()
+    }
+
+    /**
      * Does following stpes.
      * 1. Split nodes with the given [range].
      * 2. Delete between the given [range].
@@ -369,9 +404,12 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             }
         }
 
-        // Defensive: retombstone only ever isolates live pieces, so
-        // splitNode never buffers anything here — drain anyway to stay
-        // consistent with every other caller of isolateRange/splitNode.
+        // `piece` is always live here, so splitNode's node-level born-dead
+        // buffer never fires — drain anyway to stay consistent with every
+        // other caller of isolateRange/splitNode. A live piece CAN carry
+        // already-removed attributes, though: splitNode separately buffers
+        // their split-copied tombstones (pendingAttributeGcPairs); the
+        // caller (CrdtText.retombstone) drains that one.
         gcPairs.addAll(drainPendingGcPairs())
 
         return RgaTreeSplitRetombstoneResult(gcPairs, changes, diff)
@@ -669,6 +707,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
         diff = addDataSizes(diff, node.dataSize, splitNode.dataSize)
         diff = subDataSize(diff, prevSize)
+
+        // The split deep-copies the value's attributes (splitValue below), so
+        // any attribute already tombstoned on `node` is duplicated into
+        // splitNode under a NEW, unregistered parent. That copy was never in
+        // docSize.live (getDataSize skips removed attributes), so it enters
+        // gc only (JS rga_tree_split.ts:1487-1500).
+        pendingAttributeGcPairs.addAll(splitNode.value.gcPairs)
 
         // A piece split off an already-tombstoned node inherits removedAt
         // without going through remove(), so no GC pair is created for it in
@@ -987,6 +1032,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             override fun get(index: Int): Char = throw IndexOutOfBoundsException()
 
             override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = this
+
+            // The sentinel's contentLength is always 0, so splitNode's
+            // offset-bounds check rejects any offset > 0 before this could
+            // ever be reached — never truncated in practice.
+            override fun truncate(offset: Int) {
+                throw UnsupportedOperationException("InitialNodeValue is never truncated")
+            }
         }
     }
 }
@@ -996,6 +1048,25 @@ internal interface RgaTreeSplitValue<T : RgaTreeSplitValue<T>> : CharSequence {
     fun deepCopy(): T
 
     fun getDataSize(): DataSize
+
+    /**
+     * Shortens this value to its first [offset] units IN PLACE, keeping
+     * object identity — a split keeps the LEFT piece's value
+     * object rather than replacing it, so GC pairs already registered
+     * against it (keyed by identity) stay valid.
+     */
+    fun truncate(offset: Int)
+
+    /**
+     * Attribute tombstones this value holds, as GC pairs ready to register.
+     * A split deep-copies attributes into the new piece ([RgaTreeSplit]'s
+     * private `splitNode`), duplicating any already-removed attribute under
+     * a new, unregistered parent — without this, that copy could never be
+     * collected. Empty by default; only a value that carries attributes
+     * (`TextValue`) overrides it.
+     */
+    val gcPairs: List<GCPair<*>>
+        get() = emptyList()
 }
 
 internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
@@ -1077,11 +1148,17 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
         return RgaTreeSplitNode(id.split(offset), splitValue(offset), _removedAt)
     }
 
+    // Take the right part first (subSequence deep-copies attributes), then
+    // shorten this value IN PLACE rather than replacing it, so GC pairs
+    // already registered against it (keyed by identity) keep pointing at a
+    // live object (JS rga_tree_split.ts:602-607). The baseline
+    // replaced `_value` outright, orphaning the left half's registered
+    // pairs.
     @Suppress("UNCHECKED_CAST")
     private fun splitValue(offset: Int): T {
-        val valueBefore = _value
-        _value = valueBefore.subSequence(0, offset) as T
-        return valueBefore.subSequence(offset, valueBefore.length) as T
+        val right = _value.subSequence(offset, _value.length) as T
+        _value.truncate(offset)
+        return right
     }
 
     /**

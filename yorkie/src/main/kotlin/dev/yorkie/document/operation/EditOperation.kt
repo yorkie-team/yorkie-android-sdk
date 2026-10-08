@@ -139,9 +139,10 @@ internal data class EditOperation(
             } catch (e: RuntimeException) {
                 // The first of RgaTreeSplit.edit's two sequential
                 // findNodeWithSplit calls can have already buffered a
-                // born-dead split piece before the second throws; drain and
-                // register it before propagating (F11).
-                parentObject.rgaTreeSplit.drainPendingGcPairs().forEach(root::registerGCPair)
+                // born-dead split piece — and a copied attribute tombstone —
+                // before the second throws; drain and register both before
+                // propagating (F11).
+                parentObject.rgaTreeSplit.drainAllPendingGcPairs().forEach(root::registerGCPair)
                 throw e
             }
 

@@ -218,7 +218,7 @@ internal data class TreeEditOperation(
                 captureRemovedNodes = source.producesReverseOps,
             )
 
-        root.acc(result.dataSize)
+        root.acc(result.docSize.live)
 
         result.gcPairs.forEach(root::registerGCPair)
 

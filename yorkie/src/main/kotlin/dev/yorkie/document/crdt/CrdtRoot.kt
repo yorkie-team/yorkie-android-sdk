@@ -375,6 +375,27 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     fun registerGCPair(pair: GCPair<*>) {
         val prev = gcPairMap[pair.child]
         if (prev != null) {
+            // DC-B (spec 032, port yorkie-js-sdk 190204f8 root.ts): a second
+            // registration under the SAME child un-registers — the child is
+            // no longer collectable, it was revived (an RHT overwrite
+            // dropped its predecessor with no new tombstone, see RhtWrite).
+            // Subtract exactly what the first registration added to gc, or
+            // the bytes stay charged there for the life of the document.
+            //
+            // Measured by the DC-B probe (CrdtRootGcToggleTest, non-RhtNode
+            // branch): JS's own toggle fix touches ONLY gc, with the SAME
+            // formula regardless of child type — no live adjustment, and no
+            // extra TIME_TICKET_SIZE reversal (that ticket exists only in
+            // [unregisterGCPair]'s EXPLICIT reversal, which also restores
+            // live; this toggle does not re-enter live, it just stops being
+            // charged anywhere, because the live side of a non-RhtNode
+            // child's first registration was never undone by a toggle in JS
+            // either — confirmed against the JS 190204f8 diff, which adds
+            // exactly one `subDataSize(docSize.gc, ...)` line and nothing
+            // else).
+            docSize = docSize.copy(
+                gc = subDataSize(docSize.gc, prev.gcOnlySize ?: prev.child.dataSize),
+            )
             gcPairMap.remove(pair.child)
             return
         }
@@ -564,6 +585,18 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     fun acc(diff: DataSize) {
         docSize = docSize.copy(
             live = addDataSizes(docSize.live, diff),
+        )
+    }
+
+    /**
+     * `accGC` accumulates the given DataSize to gc. Mirrors [acc] for the gc
+     * half of a style result's [DocSize] (a style op's gc-bound attribute
+     * writes — `accAttrWrite`'s `nodeIsLive = false` branch — need
+     * somewhere to fold into besides live).
+     */
+    fun accGC(diff: DataSize) {
+        docSize = docSize.copy(
+            gc = addDataSizes(docSize.gc, diff),
         )
     }
 

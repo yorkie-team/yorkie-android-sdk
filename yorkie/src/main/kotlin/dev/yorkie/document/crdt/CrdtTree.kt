@@ -1925,6 +1925,22 @@ internal data class CrdtTree(
     }
 
     /**
+     * Test-only accessor for [emptyRunReachesActor]: this predicate decides
+     * which side of a concurrent boundary an insertion lands on, and the
+     * regression it guards (reading [CrdtTreeNode.children] instead of
+     * [CrdtTreeNode.allChildren] and so disagreeing between replicas that
+     * saw the same insertions but not the same removals) is only reachable
+     * by calling the private method directly. Mirrors iOS's
+     * `emptyRunReachesActorForTest` (915dd77fe6).
+     */
+    @VisibleForTesting
+    internal fun emptyRunReachesActorForTest(
+        node: CrdtTreeNode,
+        actorID: String,
+        versionVector: VersionVector,
+    ): Boolean = emptyRunReachesActor(node, actorID, versionVector)
+
+    /**
      * Returns true when the creation of the split sibling [node] is known to
      * the given [versionVector]. Mirrors JS SDK `ticketKnown`. Used to stop
      * propagating a style/remove-style along the [CrdtTreeNode.insNextID] chain
@@ -2406,11 +2422,30 @@ internal data class CrdtTree(
      * split by offset) the node's own id is exact. Right-sibling anchors
      * always use the start offset, which floor-resolves to the leftmost
      * fragment — the true right neighbor.
+     *
+     * A text node with no characters has no last character to anchor on,
+     * and `offset + value.length - 1` would put the anchor one position
+     * before the node's own start -- offset -1 for a node at offset 0,
+     * which the server rejects. A local edit cannot create such a node
+     * ([dev.yorkie.document.json.JsonTree]'s edit path never inserts empty
+     * text), but a remote peer's decoded content can. The node's own id
+     * floor-resolves to the same node. Port JS SDK `tree.ts` `leftAnchorID`
+     * (ec7558e9, #1394).
      */
     private fun leftAnchorID(sibling: CrdtTreeNode): CrdtTreeNodeID {
-        if (!sibling.isText) return sibling.id
+        if (!sibling.isText || sibling.value.isEmpty()) return sibling.id
         return CrdtTreeNodeID(sibling.id.createdAt, sibling.id.offset + sibling.value.length - 1)
     }
+
+    /**
+     * Test-only accessor for [leftAnchorID]: the anchor guard that keeps an
+     * empty text node from resolving to offset -1 is only reachable from a
+     * hand-built node (a local edit cannot construct one), so the test needs
+     * direct access to the private method under test. Mirrors iOS's
+     * `leftAnchorIDForTest` (915dd77fe6).
+     */
+    @VisibleForTesting
+    internal fun leftAnchorIDForTest(sibling: CrdtTreeNode): CrdtTreeNodeID = leftAnchorID(sibling)
 
     /**
      * Finds the position of the given [index] in the tree.

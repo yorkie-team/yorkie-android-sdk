@@ -440,146 +440,172 @@ public class Document(
                 )
             }
 
-            val ops = if (isUndo) {
-                internalHistory.popUndo()
-            } else {
-                internalHistory.popRedo()
+            // NOTE: The refusal above must not drop the clone: an updater is
+            // holding a proxy over it, and `updateAsync` reads it again
+            // after the updater returns.
+            try {
+                executeUndoRedoInternal(isUndo)
+            } catch (err: Throwable) {
+                // Change.execute applies operations one at a time and does
+                // not roll back, so an undo/redo that throws partway leaves
+                // the clone ahead of the root. Drop it so the next access
+                // rebuilds it from the root, the way updateAsync already
+                // does on an updater throw. A throw here surfaces through
+                // this Deferred -- including CancellationException, which
+                // must still reset the clone before it propagates, never be
+                // swallowed. Port JS SDK `document.ts`
+                // `executeUndoRedo`/`executeUndoRedoInternal` (ec7558e9,
+                // #1394).
+                this@Document.clone = null
+                throw err
             }
-            if (ops == null) {
-                // Empty stack is a no-op so callers need not always guard with
-                // canUndo()/canRedo(). Mirrors JS SDK PR #1238.
-                return@async Result.success(Unit)
-            }
-
-            val clone = ensureClone()
-            val context = ChangeContext(
-                prevId = changeID,
-                root = clone.root,
-            )
-
-            for ((index, historyOp) in ops.withIndex()) {
-                when (historyOp) {
-                    is HistoryOperation.Op -> {
-                        val op = historyOp.operation
-                        val ticket = context.issueTimeTicket()
-                        op.executedAt = ticket
-
-                        // Strip split-sibling links from a reverse op's restored
-                        // value in place: this element is freshly reinstated by
-                        // the editing client -- never a split product of the live
-                        // tree it lands in -- but `execute()`'s deep copy of it
-                        // preserves whatever insPrevID/insNextID chain it already
-                        // carries. Must run before `context.push(op)`/`execute()`
-                        // below, and mirrors the identical strip the decode path
-                        // runs (ElementConverter.kt) so a local reverse value and
-                        // a peer-decoded one agree. Port JS SDK document.ts
-                        // (c8928853, #1375).
-                        when (op) {
-                            is SetOperation -> dropSplitLinksInElement(op.value)
-                            is AddOperation -> dropSplitLinksInElement(op.value)
-                            is ArraySetOperation -> dropSplitLinksInElement(op.value)
-                            else -> Unit
-                        }
-
-                        // Reconcile createdAt for ArraySet and Add operations
-                        if (op is ArraySetOperation) {
-                            val prev = op.createdAt
-                            val prevValueId = op.value.createdAt
-                            op.value.createdAt = ticket
-                            internalHistory.reconcileCreatedAt(prev, ticket)
-                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
-                            // The value is re-issued under a new id here too: member ops
-                            // built in the same update (`setNewObject(i)["k"] = v`) name
-                            // the value's OLD id as their parent, not the target slot's id
-                            // reconciled just above, so both must be retargeted.
-                            internalHistory.reconcileCreatedAt(prevValueId, ticket)
-                            reconcileOpsCreatedAt(ops, index + 1, prevValueId, ticket)
-                        } else if (op is AddOperation) {
-                            val prev = op.value.createdAt
-                            op.value.createdAt = ticket
-                            internalHistory.reconcileCreatedAt(prev, ticket)
-                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
-                        } else if (op is TreeEditOperation && op.removedNodeSnapshots != null) {
-                            // Copy-reinsert undo (port 4ec66cc0): buildFreshNodes
-                            // mints one fresh ticket per node in every snapshot
-                            // subtree, starting right after `ticket`'s delimiter,
-                            // but those tickets were never reserved in this
-                            // context — a later op in the same undo/redo batch
-                            // would otherwise repeat one via its own
-                            // issueTimeTicket() call. Reserve exactly that many
-                            // so the next op resumes after the range
-                            // buildFreshNodes will consume. Restore-mode
-                            // reverses (removedNodeSnapshots == null) never call
-                            // buildFreshNodes and need no reservation.
-                            val ticketCount = op.removedNodeSnapshots.sumOf { it.countNodes() }
-                            repeat(ticketCount) { context.issueTimeTicket() }
-                        }
-
-                        context.push(op)
-                    }
-
-                    is HistoryOperation.Presence -> {
-                        // Presence undo — not implemented in v0.6.36 scope
-                    }
-                }
-            }
-
-            if (!context.hasChange) {
-                return@async Result.success(Unit)
-            }
-
-            val change = context.toChange()
-            // Execute on clone (validation)
-            change.execute(clone.root, clone.presences, OpSource.UndoRedo)
-            // Execute on root (real application)
-            val undoRedoResult = change.execute(
-                root,
-                _presences.value,
-                OpSource.UndoRedo,
-            )
-            val opInfos = undoRedoResult.opInfos
-            val reverseOps = undoRedoResult.reverseOps
-
-            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
-            if (reverseHistoryOps.isNotEmpty()) {
-                if (isUndo) {
-                    internalHistory.pushRedo(reverseHistoryOps)
-                } else {
-                    internalHistory.pushUndo(reverseHistoryOps)
-                }
-            }
-
-            // The test is whether an operation RAN, not whether it produced an
-            // OpInfo. Those differ: a style may change CRDT state without
-            // anything an editor could render, because canStyle admits a node
-            // another client removed concurrently and a tombstone has no
-            // index to report. Gating on opInfos dropped such a reverse style
-            // on the floor -- it mutated this replica and never reached the
-            // others, the divergence canStyle exists to prevent, reintroduced
-            // through undo. executedOperations already excludes an operation
-            // whose target was garbage-collected while the undo was pending
-            // (its own execute found no target to act on), so that case is
-            // still gated out here. A target merely tombstoned by a peer is
-            // not: JS skips Set/Remove there under OpSource.UndoRedo, Android
-            // still executes, sends the change and emits LocalChange
-            // (replicas converge either way). The gate matches JS
-            // document.ts's `!operations.length`; a no-op restore or
-            // retombstone counts as not executed here, where JS always
-            // reports a result for it.
-            if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
-                return@async Result.success(Unit)
-            }
-
-            localChanges += change
-            onLocalChange?.invoke()
-            changeID = context.getNextId()
-
-            if (opInfos.isNotEmpty()) {
-                eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
-            }
-
-            Result.success(Unit)
         }
+    }
+
+    /**
+     * Pops the next history entry for [isUndo] and applies it to the clone
+     * and the root.
+     */
+    private suspend fun executeUndoRedoInternal(isUndo: Boolean): OperationResult {
+        val ops = if (isUndo) {
+            internalHistory.popUndo()
+        } else {
+            internalHistory.popRedo()
+        }
+        if (ops == null) {
+            // Empty stack is a no-op so callers need not always guard with
+            // canUndo()/canRedo(). Mirrors JS SDK PR #1238.
+            return Result.success(Unit)
+        }
+
+        val clone = ensureClone()
+        val context = ChangeContext(
+            prevId = changeID,
+            root = clone.root,
+        )
+
+        for ((index, historyOp) in ops.withIndex()) {
+            when (historyOp) {
+                is HistoryOperation.Op -> {
+                    val op = historyOp.operation
+                    val ticket = context.issueTimeTicket()
+                    op.executedAt = ticket
+
+                    // Strip split-sibling links from a reverse op's restored
+                    // value in place: this element is freshly reinstated by
+                    // the editing client -- never a split product of the live
+                    // tree it lands in -- but `execute()`'s deep copy of it
+                    // preserves whatever insPrevID/insNextID chain it already
+                    // carries. Must run before `context.push(op)`/`execute()`
+                    // below, and mirrors the identical strip the decode path
+                    // runs (ElementConverter.kt) so a local reverse value and
+                    // a peer-decoded one agree. Port JS SDK document.ts
+                    // (c8928853, #1375).
+                    when (op) {
+                        is SetOperation -> dropSplitLinksInElement(op.value)
+                        is AddOperation -> dropSplitLinksInElement(op.value)
+                        is ArraySetOperation -> dropSplitLinksInElement(op.value)
+                        else -> Unit
+                    }
+
+                    // Reconcile createdAt for ArraySet and Add operations
+                    if (op is ArraySetOperation) {
+                        val prev = op.createdAt
+                        val prevValueId = op.value.createdAt
+                        op.value.createdAt = ticket
+                        internalHistory.reconcileCreatedAt(prev, ticket)
+                        reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                        // The value is re-issued under a new id here too: member ops
+                        // built in the same update (`setNewObject(i)["k"] = v`) name
+                        // the value's OLD id as their parent, not the target slot's id
+                        // reconciled just above, so both must be retargeted.
+                        internalHistory.reconcileCreatedAt(prevValueId, ticket)
+                        reconcileOpsCreatedAt(ops, index + 1, prevValueId, ticket)
+                    } else if (op is AddOperation) {
+                        val prev = op.value.createdAt
+                        op.value.createdAt = ticket
+                        internalHistory.reconcileCreatedAt(prev, ticket)
+                        reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                    } else if (op is TreeEditOperation && op.removedNodeSnapshots != null) {
+                        // Copy-reinsert undo (port 4ec66cc0): buildFreshNodes
+                        // mints one fresh ticket per node in every snapshot
+                        // subtree, starting right after `ticket`'s delimiter,
+                        // but those tickets were never reserved in this
+                        // context — a later op in the same undo/redo batch
+                        // would otherwise repeat one via its own
+                        // issueTimeTicket() call. Reserve exactly that many
+                        // so the next op resumes after the range
+                        // buildFreshNodes will consume. Restore-mode
+                        // reverses (removedNodeSnapshots == null) never call
+                        // buildFreshNodes and need no reservation.
+                        val ticketCount = op.removedNodeSnapshots.sumOf { it.countNodes() }
+                        repeat(ticketCount) { context.issueTimeTicket() }
+                    }
+
+                    context.push(op)
+                }
+
+                is HistoryOperation.Presence -> {
+                    // Presence undo — not implemented in v0.6.36 scope
+                }
+            }
+        }
+
+        if (!context.hasChange) {
+            return Result.success(Unit)
+        }
+
+        val change = context.toChange()
+        // Execute on clone (validation)
+        change.execute(clone.root, clone.presences, OpSource.UndoRedo)
+        // Execute on root (real application)
+        val undoRedoResult = change.execute(
+            root,
+            _presences.value,
+            OpSource.UndoRedo,
+        )
+        val opInfos = undoRedoResult.opInfos
+        val reverseOps = undoRedoResult.reverseOps
+
+        val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+        if (reverseHistoryOps.isNotEmpty()) {
+            if (isUndo) {
+                internalHistory.pushRedo(reverseHistoryOps)
+            } else {
+                internalHistory.pushUndo(reverseHistoryOps)
+            }
+        }
+
+        // The test is whether an operation RAN, not whether it produced an
+        // OpInfo. Those differ: a style may change CRDT state without
+        // anything an editor could render, because canStyle admits a node
+        // another client removed concurrently and a tombstone has no
+        // index to report. Gating on opInfos dropped such a reverse style
+        // on the floor -- it mutated this replica and never reached the
+        // others, the divergence canStyle exists to prevent, reintroduced
+        // through undo. executedOperations already excludes an operation
+        // whose target was garbage-collected while the undo was pending
+        // (its own execute found no target to act on), so that case is
+        // still gated out here. A target merely tombstoned by a peer is
+        // not: JS skips Set/Remove there under OpSource.UndoRedo, Android
+        // still executes, sends the change and emits LocalChange
+        // (replicas converge either way). The gate matches JS
+        // document.ts's `!operations.length`; a no-op restore or
+        // retombstone counts as not executed here, where JS always
+        // reports a result for it.
+        if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
+            return Result.success(Unit)
+        }
+
+        localChanges += change
+        onLocalChange?.invoke()
+        changeID = context.getNextId()
+
+        if (opInfos.isNotEmpty()) {
+            eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
+        }
+
+        return Result.success(Unit)
     }
 
     /**
@@ -755,8 +781,25 @@ public class Document(
      * (defaults to [OpSource.Remote], the pre-existing behaviour of every
      * caller other than [restoreAppendedChanges], which applies a replayed
      * log as [OpSource.Local]).
+     *
+     * [Change.execute] applies its operations one at a time and does not
+     * roll back, so a change that throws partway leaves [clone] holding a
+     * prefix of it the root never took (the clone's own copy of this
+     * operation already ran before the root's copy threw). Drop the clone
+     * so the next access rebuilds it from the root, the way [updateAsync]
+     * already does on an updater throw. Port JS SDK `document.ts`
+     * `applyChange`/`applyChangeInternal` (ec7558e9, #1394).
      */
     private suspend fun applyChanges(changes: List<Change>, source: OpSource = OpSource.Remote) {
+        try {
+            applyChangesInternal(changes, source)
+        } catch (err: Throwable) {
+            this.clone = null
+            throw err
+        }
+    }
+
+    private suspend fun applyChangesInternal(changes: List<Change>, source: OpSource) {
         val clone = ensureClone()
         changes.forEach { change ->
             change.execute(clone.root, clone.presences, source).also { cloneResult ->

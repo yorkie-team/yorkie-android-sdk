@@ -38,8 +38,18 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
      * `ElementRHT.SetWithExecutedAt` in `yorkie/pkg/document/crdt/element_rht.go`,
      * whose anchoring this now mirrors (yorkie-js-sdk#1343).
      *
-     * The losing branch marks the incoming value removed only when it is not
-     * removed already (`!node.isRemoved && !value.isRemoved`, yorkie-js-sdk#1395).
+     * The losing branch marks the incoming value removed whenever it is not
+     * removed already (`!value.isRemoved`, yorkie-js-sdk#1398) -- a live loser
+     * is tombstoned even when the current occupant is itself already a
+     * tombstone. An earlier form of this gate also required `!node.isRemoved`
+     * (yorkie-js-sdk#1395): a live loser arriving against an already-removed
+     * occupant then stayed live in [nodeMapByCreatedAt] -- installed nowhere
+     * in [nodeMapByKey], so [has] and [get] correctly reported the key
+     * absent, yet still iterated (key iteration walks every node whose own
+     * [CrdtElement.isRemoved] is false, and this function always inserts the
+     * incoming value there), surfacing a phantom member under a key lookup
+     * said was empty.
+     *
      * The marking exists solely to keep a duplicate out of key iteration, and a
      * value that arrives removed is already excluded; but [CrdtElement.remove]
      * accepts any ticket later than the one it holds, so ungated it is not a
@@ -51,7 +61,8 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
      * re-serialized snapshots and `docSize.gc` disagree with replicas that
      * never reloaded. See `ElementRhtOrderTest`'s
      * `leaves a losing tombstone removedAt alone` /
-     * `preserves each tombstone removedAt across a decode`.
+     * `preserves each tombstone removedAt across a decode` -- that gate is
+     * `!value.isRemoved` alone already, unaffected by this change.
      */
     fun set(
         key: String,
@@ -69,12 +80,13 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
             }
             nodeMapByKey[key] = newNode
             value.movedAt = executedAt
-        } else if (!node.isRemoved && !value.isRemoved) {
+        } else if (!value.isRemoved) {
             // The new node loses the LWW conflict; tombstone it so it does not
-            // surface as a duplicate key during iteration. Skipped when the
-            // incoming value already arrived removed -- it is already excluded
-            // from iteration, and remarking it would bump its own removedAt
-            // (yorkie-js-sdk#1395).
+            // surface as a duplicate key during iteration, even when the
+            // current occupant (`node`) is itself already a tombstone
+            // (yorkie-js-sdk#1398). Skipped when the incoming value already
+            // arrived removed -- it is already excluded from iteration, and
+            // remarking it would bump its own removedAt (yorkie-js-sdk#1395).
             value.remove(node.value.getPositionedAt())
         }
         return removed

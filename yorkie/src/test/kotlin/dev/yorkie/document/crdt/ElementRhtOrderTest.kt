@@ -292,4 +292,46 @@ class ElementRhtOrderTest {
         JsonParser.parseString(d2.toJson())
         JsonParser.parseString(rebuilt.toJson())
     }
+
+    /**
+     * yorkie-js-sdk#1398 (`97f10734`): exercises the fix through the full
+     * local-execution path -- [dev.yorkie.document.operation.SetOperation.execute]
+     * and [CrdtRoot.registerElement] -- not a raw [ElementRht.set] call.
+     * Client 1 sets then deletes a key locally, tombstoning the eventual
+     * winner, before it ever learns of client 2's concurrent, lower-ticket
+     * set on the same key; syncing then delivers that loser to client 1
+     * AFTER its occupant is already a tombstone. Before this commit the
+     * loser stayed live and uncollectable in `nodeMapByCreatedAt`: `has`
+     * correctly reported the key absent while `toJson` leaked it back in via
+     * iteration, and `docSize.live` never released its charge to `gc`. Both
+     * replicas must converge, the key must resolve to absent everywhere, and
+     * `docSize` must agree with a from-scratch rebuild on both.
+     */
+    @Test
+    fun `tombstones a live loser arriving after the occupant is already removed`() = runTest {
+        val actorA = "000000000000000000000001"
+        val actorB = "000000000000000000000002"
+        val d1 = Document("test-doc").apply { setActor(actorA) }
+        val d2 = Document("test-doc").apply { setActor(actorB) }
+
+        // Advance d1's clock past d2's so the eventual winner's ticket
+        // compares higher than the loser's, regardless of delivery order.
+        d1.updateAsync { root, _ -> root["z"] = "warmup" }.await()
+        d1.updateAsync { root, _ -> root["key"] = "v1" }.await()
+        d1.updateAsync { root, _ -> root.remove("key") }.await()
+
+        d2.updateAsync { root, _ -> root["key"] = "v2" }.await()
+
+        crossSync(d1, d2)
+
+        assertEquals("""{"z":"warmup"}""", d1.toJson())
+        assertEquals("""{"z":"warmup"}""", d2.toJson())
+        assertFalse("the loser must not surface via has(key)", d1.getRootObject().has("key"))
+        assertFalse("the loser must not surface via has(key)", d2.getRootObject().has("key"))
+
+        val rebuiltD1 = CrdtRoot(d1.getRootObject().deepCopy())
+        val rebuiltD2 = CrdtRoot(d2.getRootObject().deepCopy())
+        assertEquals("docSize must agree with a rebuild on d1", rebuiltD1.docSize, d1.getDocSize())
+        assertEquals("docSize must agree with a rebuild on d2", rebuiltD2.docSize, d2.getDocSize())
+    }
 }

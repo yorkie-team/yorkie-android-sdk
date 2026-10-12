@@ -380,12 +380,21 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         element: CrdtElement,
         executedAt: TimeTicket,
     ): CrdtElement {
-        val entry = elementMapByCreatedAt[createdAt]
+        elementMapByCreatedAt[createdAt]
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
                 errorMessage = "cant find the given node: $createdAt",
             )
-        insertAfter(entry.positionNode.positionCreatedAt, element, executedAt)
+        // Anchor on the element's creation time, not its current position node: the
+        // op every peer replays (ArraySetOperation.execute -> CrdtArray.insertAfter)
+        // resolves the position map then the element map via insertAfter(createdAt,
+        // ...), so this local clone path must resolve identically. For an element
+        // that was moved, its original position node is still linked (dead until
+        // GC) under this same createdAt key, so both sides anchor on that node —
+        // anchoring on the current live position instead would diverge from the
+        // replayed op once the element has moved (yorkie-js-sdk `rga_tree_list.ts`
+        // set(); iOS `5054ed7e2a`).
+        insertAfter(createdAt, element, executedAt)
         return delete(createdAt, executedAt)
     }
 

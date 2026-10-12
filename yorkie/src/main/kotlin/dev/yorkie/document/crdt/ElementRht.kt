@@ -12,8 +12,31 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
     private val nodeMapByCreatedAt: MutableMap<TimeTicket, Node<T>> = mutableMapOf()
 
     /**
-     * Sets the [value] using the given [key].
-     * If the object exists in [nodeMapByKey] by same [key] then return [CrdtElement], otherwise null.
+     * Sets the value of the given key. An existing occupant is removed only when
+     * the incoming value wins the LWW comparison; when it loses, the occupant stays
+     * and the incoming value is marked removed instead.
+     *
+     * Both the win/lose decision and the eviction of the previous occupant are
+     * anchored on the occupant's [CrdtElement.getPositionedAt] (its `movedAt`, falling
+     * back to its `createdAt`). Anchoring them on different tickets lets them
+     * disagree: [CrdtElement.remove] gates on the raw `createdAt`, so for an occupant
+     * whose `createdAt < executedAt < positionedAt` -- which is what an undo/redo
+     * restore produces, since it re-places the original element under a fresh ticket
+     * -- the eviction fires and tombstones the occupant, while the winner check
+     * decides the incoming value must NOT replace it. The occupant is then
+     * tombstoned but still linked as the key's value, the incoming value is dropped
+     * without being registered as removed, and [get] reports the key as absent
+     * although no operation ever removed it.
+     *
+     * The inner `node.remove(executedAt)` gate is therefore redundant once the
+     * eviction sits inside the winner branch -- that branch already guarantees
+     * `executedAt > positionedAt >= createdAt`, which is what [CrdtElement.remove]
+     * checks. It is kept so this reads as the mirror of Go that it is.
+     *
+     * That made rebuilding an object from a snapshot depend on the order its members
+     * happened to arrive in -- see `ElementRhtOrderTest`, and
+     * `ElementRHT.SetWithExecutedAt` in `yorkie/pkg/document/crdt/element_rht.go`,
+     * whose anchoring this now mirrors (yorkie-js-sdk#1343).
      */
     fun set(
         key: String,
@@ -22,13 +45,13 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
     ): T? {
         var removed: T? = null
         val node = nodeMapByKey[key]
-        if (node != null && !node.isRemoved && node.remove(executedAt)) {
-            removed = node.value
-        }
 
         val newNode = Node(key, value)
         nodeMapByCreatedAt[value.createdAt] = newNode
         if (node == null || node.value.getPositionedAt() < executedAt) {
+            if (node != null && !node.isRemoved && node.remove(executedAt)) {
+                removed = node.value
+            }
             nodeMapByKey[key] = newNode
             value.movedAt = executedAt
         } else if (!node.isRemoved) {

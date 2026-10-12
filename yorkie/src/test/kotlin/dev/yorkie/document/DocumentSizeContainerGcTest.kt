@@ -23,6 +23,22 @@ import org.junit.Test
  * single-client cases from the merged yorkie-ios-sdk PR #271 squash
  * (`fd15fa3cf6`) as JVM unit tests (AC1-AC3, AC5, AC6, AC10, AC11).
  *
+ * Also pins three of the five `document_size_test.ts` cases added by
+ * yorkie-js-sdk `649fe5c6` (v0.7.22, yorkie-js-sdk#1350, "Fix docSize
+ * accounting for elements removed before registration"): "applying the
+ * losing side of a concurrent set", "restoring an array container holding
+ * an earlier tombstone" and "removing an array container that was
+ * restored" -- the case that drove `live` negative upstream. The fix is
+ * already on Android, landed in `b55bfc02` ("port the JS element ledger so
+ * a remote undo leaves replicas equal", PR #366 r2): `CrdtRoot.sizeInGC` is
+ * keyed by element identity, `registerElement` is `registerLive` +
+ * `adoptTombstones`, and `SetOperation` no longer double-refunds a
+ * born-removed element. These cases are a pin-only record (RED not
+ * constructible -- production code already present); JS case 1 already
+ * exists below as "undoing the removal of a container holding a
+ * tombstone", JS case 3 lives in `DocumentSizeTest`. Parity unverified --
+ * JS not executed this session.
+ *
  * Kept as a sibling suite to `DocumentSizeTest` (already 750+ lines) rather
  * than appended to it, mirroring iOS `DocumentSizeContainerGCTests.swift`.
  * Two-replica cases use the in-process [crossSync] helper with actors
@@ -353,6 +369,108 @@ class DocumentSizeContainerGcTest {
         assertEquals(DataSize(0, 0), document.getDocSize().gc)
         assertEquals(3, requireNotNull(document.clone).root.elementMapSize)
         assertEquals(0, document.garbageLength)
+    }
+
+    // yorkie-js-sdk#1350 pin (JS document_size_test.ts case 2) -----------
+
+    /**
+     * Pins yorkie-js-sdk `649fe5c6` (v0.7.22, #1350) case 2: the losing
+     * side of a concurrent `set` must count the same docSize as the
+     * winning side and a fresh document that only ever held the winner --
+     * the loser's registration must not leak extra live/gc bytes. Already
+     * on Android via `b55bfc02`; RED not constructible (production code
+     * already present).
+     */
+    @Test
+    fun `applying the losing side of a concurrent set`() = runTest {
+        val d1 = Document("test-doc")
+        val d2 = Document("test-doc")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+
+        d1.updateAsync { root, _ -> root["k"] = "1" }.await()
+        d2.updateAsync { root, _ -> root["k"] = "2" }.await()
+        crossSync(d1, d2)
+        assertJsonContentEquals("""{"k":"2"}""", d1.toJson())
+        assertJsonContentEquals("""{"k":"2"}""", d2.toJson())
+
+        val vector = maxVectorOf(listOf(actor1, actor2))
+        d1.garbageCollect(vector)
+        d2.garbageCollect(vector)
+
+        val fresh = Document("test-doc")
+        fresh.setActor(actor2)
+        fresh.updateAsync { root, _ -> root["k"] = "2" }.await()
+
+        assertEquals(d2.getDocSize(), d1.getDocSize())
+        assertEquals(fresh.getDocSize(), d1.getDocSize())
+    }
+
+    // yorkie-js-sdk#1350 pin (JS document_size_test.ts case 4) -----------
+
+    /**
+     * Pins yorkie-js-sdk `649fe5c6` (v0.7.22, #1350) case 4: undoing the
+     * removal of an array container that itself holds an earlier tombstone
+     * restores the pre-removal `live` size exactly, and GC afterward leaves
+     * `live` unchanged with nothing collectable. Already on Android via
+     * `b55bfc02`; RED not constructible (production code already present).
+     */
+    @Test
+    fun `restoring an array container holding an earlier tombstone`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewArray("k").putNewObject().apply {
+                this["a"] = "1"
+                this["b"] = "2"
+            }
+        }.await()
+        document.updateAsync { root, _ ->
+            (root.getAs<JsonArray>("k")[0] as JsonObject).remove("b")
+        }.await()
+        val before = document.getDocSize()
+        assertEquals(DataSize(2, 144), before.live)
+
+        document.updateAsync { root, _ -> root.getAs<JsonArray>("k").removeAt(0) }.await()
+        document.history.undoAsync().await()
+        assertJsonContentEquals("""{"k":[{"a":"1"}]}""", document.toJson())
+        assertEquals(before.live, document.getDocSize().live)
+
+        document.garbageCollect(maxVectorOf(listOf(document.changeID.actor)))
+        assertEquals(before.live, document.getDocSize().live)
+        assertEquals(DataSize(0, 0), document.getDocSize().gc)
+    }
+
+    // yorkie-js-sdk#1350 pin (JS document_size_test.ts case 5) -----------
+
+    /**
+     * Pins yorkie-js-sdk `649fe5c6` (v0.7.22, #1350) case 5: removing an
+     * array container that was previously restored by undo converges,
+     * after GC, to the same docSize as a fresh document that only ever set
+     * an empty array -- the case that drove `live` negative upstream.
+     * Already on Android via `b55bfc02`; RED not constructible (production
+     * code already present).
+     */
+    @Test
+    fun `removing an array container that was restored`() = runTest {
+        val document = Document("test-doc")
+        document.updateAsync { root, _ ->
+            root.setNewArray("k").putNewObject().apply {
+                this["a"] = "1"
+                this["b"] = "2"
+            }
+        }.await()
+        document.updateAsync { root, _ ->
+            (root.getAs<JsonArray>("k")[0] as JsonObject).remove("b")
+        }.await()
+        document.updateAsync { root, _ -> root.getAs<JsonArray>("k").removeAt(0) }.await()
+        document.history.undoAsync().await()
+        document.updateAsync { root, _ -> root.getAs<JsonArray>("k").removeAt(0) }.await()
+        document.garbageCollect(maxVectorOf(listOf(document.changeID.actor)))
+        assertJsonContentEquals("""{"k":[]}""", document.toJson())
+
+        val fresh = Document("test-doc")
+        fresh.updateAsync { root, _ -> root.setNewArray("k") }.await()
+        assertEquals(fresh.getDocSize(), document.getDocSize())
     }
 
     // T9 (yorkie-js-sdk#1349 item 2, fixed by #1341, two replicas) -------

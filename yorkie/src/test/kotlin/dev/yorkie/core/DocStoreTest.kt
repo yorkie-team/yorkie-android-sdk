@@ -9,16 +9,19 @@ import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 
 /**
- * Port of yorkie-js-sdk's `doc_store_test.ts` (`2291bf67`/#1338, RTCOLLABPLATFORM-771). Pins
- * [MemoryDocStore]'s round-trip, defensive-copy, overwrite, and remove contract, plus the
- * persistence loop through [Document.toBytes]/[Document.Companion.fromBytes].
+ * Port of yorkie-js-sdk's `doc_store_test.ts` (`2291bf67`/#1338),
+ * rewired onto the incremental `DocStore` shape (`aaa5cb15`/#1354).
+ * The round-trip/defensive-copy/overwrite/remove cases this file used to cover (T1-T6) moved
+ * to [DocStoreContractTest], which is stricter (11 cases incl. the append/meta contract) —
+ * no coverage loss. T7/T8 remain here: the persistence loop through
+ * [Document.toBytes]/[Document.Companion.fromBytes] via the new `saveSnapshot`/`load(...)
+ * ?.snapshot` shape.
  */
 class DocStoreTest {
 
@@ -45,66 +48,6 @@ class DocStoreTest {
     }
 
     @Test
-    fun `T1 round-trips saved bytes`() = runTest {
-        val store = MemoryDocStore()
-        val payload = byteArrayOf(1, 2, 3, 4)
-
-        store.save(docKey, payload)
-
-        assertEquals(payload.toList(), store.load(docKey)?.toList())
-    }
-
-    @Test
-    fun `T2 load returns the stored bytes unaffected by a caller mutation after save`() = runTest {
-        val store = MemoryDocStore()
-        val payload = byteArrayOf(1, 2, 3)
-
-        store.save(docKey, payload)
-        payload[0] = 99
-
-        assertEquals(listOf<Byte>(1, 2, 3), store.load(docKey)?.toList())
-    }
-
-    @Test
-    fun `T3 mutating a load result does not corrupt the store`() = runTest {
-        val store = MemoryDocStore()
-        store.save(docKey, byteArrayOf(1, 2, 3))
-
-        val loaded = store.load(docKey)
-        loaded?.set(0, 99)
-
-        assertEquals(listOf<Byte>(1, 2, 3), store.load(docKey)?.toList())
-    }
-
-    @Test
-    fun `T4 save overwrites a previous value`() = runTest {
-        val store = MemoryDocStore()
-        store.save(docKey, byteArrayOf(1))
-        store.save(docKey, byteArrayOf(2, 2))
-
-        assertEquals(listOf<Byte>(2, 2), store.load(docKey)?.toList())
-    }
-
-    @Test
-    fun `T5 remove clears a stored key`() = runTest {
-        val store = MemoryDocStore()
-        store.save(docKey, byteArrayOf(1))
-
-        store.remove(docKey)
-
-        assertNull(store.load(docKey))
-    }
-
-    @Test
-    fun `T6 remove of an absent key is a no-op`() = runTest {
-        val store = MemoryDocStore()
-
-        store.remove(docKey)
-
-        assertNull(store.load(docKey))
-    }
-
-    @Test
     fun `T7 the persistence loop reconstructs root, presence, checkpoint, changeID, and pending`() =
         runTest {
             val store = MemoryDocStore()
@@ -115,8 +58,8 @@ class DocStoreTest {
                 presence.put(mapOf("cursor" to "1"))
             }.await()
 
-            store.save(docKey, document.toBytes())
-            val restored = Document.fromBytes(docKey, checkNotNull(store.load(docKey)))
+            store.saveSnapshot(docKey, document.toBytes())
+            val restored = Document.fromBytes(docKey, checkNotNull(store.load(docKey)?.snapshot))
 
             assertEquals(document.toJson(), restored.toJson())
             assertEquals(document.allPresences.value[actorA], restored.allPresences.value[actorA])
@@ -136,8 +79,8 @@ class DocStoreTest {
             ChangePack(docKey, CheckPoint(5, 3u), emptyList(), null, false, INITIAL_VERSION_VECTOR),
         )
 
-        store.save(docKey, document.toBytes())
-        val restored = Document.fromBytes(docKey, checkNotNull(store.load(docKey)))
+        store.saveSnapshot(docKey, document.toBytes())
+        val restored = Document.fromBytes(docKey, checkNotNull(store.load(docKey)?.snapshot))
 
         assertEquals(5L, restored.checkPoint.serverSeq)
         assertEquals(5L, restored.createChangePack().checkPoint.serverSeq)

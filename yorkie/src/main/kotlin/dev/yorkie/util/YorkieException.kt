@@ -81,6 +81,12 @@ public data class YorkieException(
         // "session expired": the next refresh retries as a first call
         // (empty session_id).
         ErrSessionNotFound("ErrSessionNotFound"),
+
+        // ErrDocumentOpenElsewhere is returned when an offline-persistence attach
+        // finds the document already open in another session, so a consumer can fall
+        // back to a non-persisting client on exactly this condition without matching
+        // on message text.
+        ErrDocumentOpenElsewhere("ErrDocumentOpenElsewhere"),
     }
 }
 

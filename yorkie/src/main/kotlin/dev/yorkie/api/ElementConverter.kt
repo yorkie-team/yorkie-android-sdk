@@ -53,6 +53,7 @@ import dev.yorkie.document.crdt.dropSplitLinksInElement
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import dev.yorkie.util.traverseAll
@@ -249,8 +250,15 @@ internal fun PBCounter.toCrdtCounter(): CrdtCounter {
         }
     }
     val hllBytes = hllRegisters.toByteArray()
-    if (counter.isDedup() && hllBytes.isNotEmpty()) {
-        counter.restoreHll(hllBytes)
+    if (counter.isDedup() && hllBytes.isNotEmpty() && !counter.restoreHll(hllBytes)) {
+        // A rejected payload is logged and dropped rather than thrown on: snapshot
+        // decode has no handler, so throwing would stop this client from opening
+        // the document at all over one peer's malformed counter (ac60f3d9, #1422).
+        logError(
+            "ElementConverter",
+            "discarding malformed HLL registers for counter " +
+                "${counter.createdAt.toTestString()}: ${hllBytes.size} bytes",
+        )
     }
     return counter
 }

@@ -4,7 +4,6 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -146,14 +145,83 @@ class HllTest {
     }
 
     @Test
-    fun `restore rejects mismatched payload length`() {
-        // given
+    fun `restore rejects mismatched payload length instead of throwing`() {
+        // given - `restore` used to throw IllegalArgumentException on a wrong
+        // length; ac60f3d9 (#1422; D8) widened the fix so a malformed payload
+        // from a peer is refused rather than torn out of snapshot decode,
+        // which has no handler.
         val hll = Hll()
 
-        // when - then
-        assertThrows(IllegalArgumentException::class.java) {
-            hll.restore(ByteArray(10))
-        }
+        // when
+        val accepted = hll.restore(ByteArray(10))
+
+        // then
+        assertFalse(accepted)
+        assertArrayEquals(ByteArray(Hll.HllRegisterCount), hll.toBytes())
+    }
+
+    @Test
+    fun `restore accepts a register at the maximum value 51 but rejects 52`() {
+        // given - probe (ix): maxRegisterValue = 64 - HllPrecision + 1 = 51 at
+        // precision 14; a register value no `add` could have written (52)
+        // does not describe a cardinality (ac60f3d9, #1422; D8).
+        val accepted = ByteArray(Hll.HllRegisterCount).also { it[0] = 51 }
+        val rejected = ByteArray(Hll.HllRegisterCount).also { it[0] = 52 }
+        val acceptedHll = Hll()
+        val rejectedHll = Hll()
+
+        // when
+        val acceptedResult = acceptedHll.restore(accepted)
+        val rejectedResult = rejectedHll.restore(rejected)
+
+        // then
+        assertTrue(acceptedResult)
+        assertArrayEquals(accepted, acceptedHll.toBytes())
+        assertFalse(rejectedResult)
+        assertArrayEquals(ByteArray(Hll.HllRegisterCount), rejectedHll.toBytes())
+    }
+
+    @Test
+    fun `restore rejects an all-0xFF payload and leaves registers untouched`() {
+        // given - the probe's reproduction of the unfixed bug: a correct-length
+        // payload of out-of-range registers (0xFF = 255, unsigned) used to be
+        // accepted and `count()` computed the nonsensical estimate -1.
+        val hll = Hll()
+        val malformed = ByteArray(Hll.HllRegisterCount) { 0xFF.toByte() }
+
+        // when
+        val accepted = hll.restore(malformed)
+
+        // then
+        assertFalse(accepted)
+        assertArrayEquals(ByteArray(Hll.HllRegisterCount), hll.toBytes())
+        assertEquals(0L, hll.count())
+    }
+
+    @Test
+    fun `restore rejections leave prior state untouched, a well-formed payload still applies`() {
+        // given - a sketch already holding real state
+        val hll = Hll()
+        hll.add("user-1")
+        hll.add("user-2")
+        val before = hll.toBytes()
+
+        // when - a malformed payload is rejected
+        val rejectedWrongLength = hll.restore(ByteArray(10))
+        val rejectedOutOfRange = hll.restore(ByteArray(Hll.HllRegisterCount) { 0xFF.toByte() })
+
+        // then - state survives both rejections unchanged
+        assertFalse(rejectedWrongLength)
+        assertFalse(rejectedOutOfRange)
+        assertArrayEquals(before, hll.toBytes())
+
+        // when - a well-formed payload still applies afterward
+        val wellFormed = Hll().apply { add("user-3") }.toBytes()
+        val accepted = hll.restore(wellFormed)
+
+        // then
+        assertTrue(accepted)
+        assertArrayEquals(wellFormed, hll.toBytes())
     }
 
     @Test

@@ -61,12 +61,18 @@ internal data class CrdtCounter(
 
     /**
      * Restores the HLL state from [data] and recomputes [value] from the
-     * cardinality estimate.
+     * cardinality estimate, reporting whether [data] was accepted
+     * (`ac60f3d9`, #1422; D8). A rejected payload leaves both the HLL and
+     * [value] as they were: the value it would recompute is derived from the
+     * registers, and a malformed payload does not describe a cardinality.
      */
-    fun restoreHll(data: ByteArray) {
+    fun restoreHll(data: ByteArray): Boolean {
         val sketch = hll ?: Hll().also { hll = it }
-        sketch.restore(data)
+        if (!sketch.restore(data)) {
+            return false
+        }
         recomputeValue()
+        return true
     }
 
     fun increase(primitive: CrdtPrimitive) {
@@ -152,13 +158,19 @@ internal data class CrdtCounter(
             return CrdtCounter(value = 0, createdAt = createdAt, type = CounterType.IntDedup)
         }
 
-        fun ByteArray.asCounterValue(counterType: CounterType): Number =
-            with(ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN)) {
+        // A short counter payload reads as its zero-padded value, same as
+        // CrdtPrimitive.fromBytes (ac60f3d9, #1422; D8): `copyOf` pads with
+        // zero at the end (little-endian, so the missing high-order bytes)
+        // and truncates a longer one to the leading `width` bytes.
+        fun ByteArray.asCounterValue(counterType: CounterType): Number {
+            val width = if (counterType == CounterType.Long) Long.SIZE_BYTES else Int.SIZE_BYTES
+            return with(ByteBuffer.wrap(copyOf(width)).order(ByteOrder.LITTLE_ENDIAN)) {
                 when (counterType) {
                     CounterType.Int, CounterType.IntDedup -> int
                     CounterType.Long -> long
                 }
             }
+        }
     }
 
     enum class CounterType {

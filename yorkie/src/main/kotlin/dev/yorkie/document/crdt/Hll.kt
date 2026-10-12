@@ -79,15 +79,31 @@ internal class Hll {
     fun toBytes(): ByteArray = registers.copyOf()
 
     /**
-     * Restores the HLL registers from [data].
+     * Restores the HLL registers from [data], reporting whether the payload
+     * was well-formed. A rejected payload leaves the registers untouched.
      *
-     * @throws IllegalArgumentException when [data] length differs from [HllRegisterCount].
+     * The payload arrives from a remote peer, so neither its length nor its
+     * contents are ours to trust (`ac60f3d9`, #1422; D8). A malformed one is
+     * rejected without throwing: throwing tore out of snapshot decode, which
+     * has no handler, so one bad dedup counter stopped every other client
+     * from opening the document. But it is not clamped and applied either --
+     * a register value no [add] could have written is not an approximation
+     * of the sender's cardinality but an unrelated number.
+     *
+     * @return `true` when [data] has exactly [HllRegisterCount] bytes and
+     * every register is `<=` [maxRegisterValue]; `false` otherwise.
      */
-    fun restore(data: ByteArray) {
-        require(data.size == HllRegisterCount) {
-            "invalid HLL register payload: got ${data.size} bytes, want $HllRegisterCount"
+    fun restore(data: ByteArray): Boolean {
+        if (data.size != HllRegisterCount) {
+            return false
+        }
+        for (register in data) {
+            if (register.toInt() and 0xff > maxRegisterValue) {
+                return false
+            }
         }
         data.copyInto(registers)
+        return true
     }
 
     /**
@@ -106,6 +122,13 @@ internal class Hll {
 
         /** Number of registers = 2^[HllPrecision] = 16384. */
         const val HllRegisterCount: Int = 1 shl HllPrecision
+
+        /**
+         * The largest rho [add] can store: the bits left after the register
+         * index, plus one. Anything above it did not come from a HyperLogLog
+         * (`ac60f3d9`, #1422; D8).
+         */
+        private const val maxRegisterValue: Int = 64 - HllPrecision + 1
 
         // xxhash64 constants (cespare/xxhash/v2 compatible).
         // Use unsigned literals then cast so the bit patterns match Go/JS exactly.

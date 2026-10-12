@@ -80,7 +80,9 @@ import dev.yorkie.util.errorMetadataOf
 import dev.yorkie.util.handleConnectException
 import java.io.Closeable
 import java.io.InterruptedIOException
+import java.util.Collections
 import java.util.UUID
+import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -138,6 +140,63 @@ import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
  * overload instead.
  */
 public typealias InitialRoot = Map<String, suspend JsonObject.(key: String) -> Unit>
+
+/**
+ * Percent-encodes the separator and the escape character itself in [part], so a namespace
+ * component can never forge one. Without this, [namespaceOf]'s join is not injective:
+ * `apiKey`/`clientKey` come verbatim from [Client.Options] and `docKey` is caller-supplied, so a
+ * clientKey containing `/` could join to the same namespace as a different
+ * (apiKey, clientKey, docKey) triple — two distinct identities sharing one store namespace and
+ * one session lock. Escaping `%` before `/` keeps the encoding reversible and collision-free.
+ * Ported from JS `client.ts` (`3b9c668c`, #1402).
+ */
+private fun escapeNamespacePart(part: String) = part.replace("%", "%25").replace("/", "%2F")
+
+/**
+ * Builds the `apiKey/clientKey/docKey` identity namespace used for both the `DocStore` key and
+ * the single-active-session lock name (see [Client.storeKey]). Each component is escaped via
+ * [escapeNamespacePart], so the mapping from identity to namespace is one-to-one. Ported from JS
+ * `client.ts` (`3b9c668c`, #1402).
+ */
+private fun namespaceOf(
+    apiKey: String,
+    clientKey: String,
+    docKey: String,
+): String {
+    val safeApiKey = escapeNamespacePart(apiKey)
+    val safeClientKey = escapeNamespacePart(clientKey)
+    val safeDocKey = escapeNamespacePart(docKey)
+    return "$safeApiKey/$safeClientKey/$safeDocKey"
+}
+
+// Backs [generateClientKey]'s "was this key supplied or defaulted?" check (D4). A plain
+// `HashSet` would leak one entry per [Client.Options] ever constructed with a defaulted
+// [Client.Options.key]; `WeakHashMap`-backed membership lets a generated key be reclaimed once
+// nothing else references the `String` anymore (the [Client.Options] instance that minted it, or
+// any copy of its `key`), same lifetime as the string itself. `synchronizedSet` because
+// [Client.Options] instances — hence [generateClientKey] calls — can be constructed from any
+// thread.
+private val generatedClientKeys: MutableSet<String> =
+    Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap()))
+
+/**
+ * Default-value generator for [Client.Options.key]: mints a fresh random key and records it into
+ * [generatedClientKeys], so [Client]'s constructor can later tell a defaulted key apart from one
+ * the caller passed explicitly (D4 — [Client.Options] has no public "was key supplied?" bit of its
+ * own, unlike JS's optional `opts.key?: string`). Public signature/`copy`/`equals` of
+ * [Client.Options] are unchanged: this only replaces the default-value *expression*, not the
+ * property's type. A caller who explicitly re-passes a value that happens to already be in the set
+ * (e.g. re-supplying a previously generated key) is indistinguishable from a defaulted key and
+ * warns falsely — accepted (D4): the cost is one extra warning, not a correctness break. CSPRNG:
+ * `UUID.randomUUID()` is RFC 4122 v4 (variant 2) backed by the JDK's `SecureRandom`, so JS's
+ * `3b9c668c` CSPRNG half (replacing a `Math.random()`-seeded `uuid()`) is N/A here — Android's
+ * default was already cryptographically strong (probed at `b1fa0d39`, recorded in the spec).
+ */
+private fun generateClientKey(): String {
+    val key = UUID.randomUUID().toString()
+    generatedClientKeys.add(key)
+    return key
+}
 
 /**
  * Client that can communicate with the server.
@@ -230,12 +289,39 @@ public class Client(
     // enqueueWrite yet. Entries remove themselves on completion, like persistQueues.
     private val persistTriggers = ConcurrentHashMap<String, Job>()
 
+    init {
+        // A store with no caller-supplied key cannot survive a restart, by construction: the
+        // generated key (see [generateClientKey]) is per-instance, and it scopes both the store
+        // keys ([storeKey]) and the actor the server derives. The next launch addresses a fresh
+        // namespace, so it restores nothing and orphans what the last one wrote — no
+        // actor-mismatch event fires, because the old entries are never reached. Warn where the
+        // two options meet: neither is wrong alone, the loss is silent, and [DocStore] has no
+        // prune to reclaim the orphans. Ported from JS `client.ts`'s constructor warning
+        // (`3b9c668c`/#1402); `Options.key` has no "was it supplied?" bit of its own (D4 — a
+        // generator-recorded weak set stands in for JS's `opts.key` optionality), so this reads
+        // [generatedClientKeys] instead of an `opts.key` presence check.
+        if (options.docStore != null && options.key in generatedClientKeys) {
+            logError(
+                "PS",
+                "c:\"${options.key}\" offline persistence needs a stable clientKey: `docStore` " +
+                    "is set but `key` is not, so a random one was generated for this instance. " +
+                    "The next launch addresses a different namespace, silently restoring " +
+                    "nothing and stranding what this one persists. Pass `key` as an opaque " +
+                    "random value your app mints once and persists across launches (not a " +
+                    "user id or a device id).",
+            )
+        }
+    }
+
     /**
-     * Derives the [DocStore] key for [docKey]: `<apiKey>/<clientKey>/<docKey>`. Ported from JS
-     * `client.ts` (`2291bf67`/#1338); `apiKey` may be null on Android (`options.apiKey ?: ""` —
-     * determination, recorded in the build report).
+     * Derives the [DocStore] key for [docKey]: `<apiKey>/<clientKey>/<docKey>`, escaped via
+     * [namespaceOf] so a `/` or `%` inside any of the three parts cannot forge a collision with a
+     * different identity's namespace. The session lock name (`"yorkie-session:${storeKey(...)}"`)
+     * is derived from this same key, so this one change scopes both. Ported from JS `client.ts`
+     * (`2291bf67`/#1338, escaping added in `3b9c668c`/#1402); `apiKey` may be null on Android
+     * (`options.apiKey ?: ""` — determination, recorded in the build report).
      */
-    private fun storeKey(docKey: String) = "${options.apiKey ?: ""}/${options.key}/$docKey"
+    private fun storeKey(docKey: String) = namespaceOf(options.apiKey ?: "", options.key, docKey)
 
     /**
      * Chains [block] after any already-enqueued write for [key] so concurrent enqueues cannot
@@ -2999,10 +3085,38 @@ public class Client(
      */
     public data class Options(
         /**
-         * Client key used to identify the client.
-         * If not set, a random key is generated.
+         * Client key used to identify the client. If not set, a random key is generated —
+         * [generateClientKey], freshly minted per [Client] instance, so it differs on every
+         * launch.
+         *
+         * **Offline persistence requires a stable key**: the server derives the actor stamped
+         * into every change from the project and this key, and it also scopes the [docStore]
+         * keys (`apiKey/clientKey/docKey`, [Client.storeKey]). A new key therefore does not
+         * address the previous launch's entries at all — the restore finds nothing, the
+         * un-pushed edits are lost *silently* (no actor-mismatch diagnostic fires: that guard in
+         * [Document.restoreFromBytes] only fires when the *same* store key is reached under a
+         * different actor, which a fresh key by definition never does), and the previous
+         * namespace is orphaned. [DocStore] exposes no enumeration or prune, so nothing can
+         * reclaim those entries afterwards — a durable backend grows without bound, one dead
+         * namespace per launch.
+         *
+         * An app setting [docStore] must therefore pass a key it persists itself and reuses on
+         * the next launch. Make it an **opaque random value the app mints once** — a
+         * `UUID.randomUUID()` kept in local storage, say — scoped to the signed-in user and
+         * cleared on sign-out. Do **not** derive it from a user id, a device id, an email, or
+         * anything else guessable or shared:
+         * - The key is an identifier, not a credential. It is sent verbatim in the activate
+         *   request and nothing proves the caller owns it, so a guessable key lets another
+         *   client of the same project activate under the same derived actor and attribute
+         *   changes to it.
+         * - A key shared between users of one device gives them one store namespace:
+         *   [attachDocument] loads and rehydrates the persisted bytes locally before the attach
+         *   RPC, so the previous user's document content and un-pushed edits would surface in
+         *   the next user's session ahead of any server authorization.
+         *
+         * Ported from JS `client.ts`'s rewritten `ClientOptions.key` JSDoc (`3b9c668c`/#1402).
          */
-        public val key: String = UUID.randomUUID().toString(),
+        public val key: String = generateClientKey(),
         /**
          * API key of the project used to identify the project.
          */
@@ -3075,7 +3189,19 @@ public class Client(
          * previously [Document.toBytes]-persisted envelope before contacting the server, and the
          * document is persisted again on every local change, local presence change, and
          * successful sync. Unset (the default) disables persistence entirely — no load, no lease,
-         * no writes. Ported from JS `client.ts`'s `store` option (`2291bf67`/#1338).
+         * no writes.
+         *
+         * You **must** also set [key] to an opaque random value the app mints once and reuses
+         * across launches. Both the store keys and the actor the recovery is keyed by are derived
+         * from it, and the default is a fresh random key per [Client], so leaving it unset means
+         * every restart silently loses every un-pushed change and orphans the previous launch's
+         * entries. This cannot be defaulted correctly — only the app knows what identity should
+         * outlive the process — so the constructor warns rather than guessing (`init {}`, D4/D5).
+         * See [key] for why the value must not be a user id, a device id, or anything else
+         * guessable or shared between users of one device.
+         *
+         * Ported from JS `client.ts`'s `store` option (`2291bf67`/#1338); the `key`-pairing
+         * requirement and the constructor warning are from the rewritten JSDoc (`3b9c668c`/#1402).
          */
         public val docStore: DocStore? = null,
         /**

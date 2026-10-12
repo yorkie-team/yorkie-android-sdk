@@ -510,41 +510,51 @@ class TreeStyleMovedAnchorTest {
         assertNull(boldOf(requireNotNull(b)))
     }
 
-    // T-PIN (commit 1, scenario 9): removeStyle resolves the RAW
-    // findNodesAndSplitText anchors — no advancePastUnknownSplitSiblings —
-    // matching JS tree.ts@v0.7.18, which never advances inside removeStyle
-    // (style()/edit() do). B (the splitter) receives A's removeStyle whose
-    // declared from-anchor sits right after the whole (pre-split) <p>; on
-    // B the raw anchor resolves to the FIRST split product (holding "a"),
-    // so the traversal enters the unknown second split product (holding
-    // "c") and removes its "bold". Expected state is the executed JS
-    // v0.7.18 vitest probe's (spec 011 C10; test/unit/document/
-    // remove_style_raw_anchor_probe_test.ts against the JS worktree,
-    // `pnpm vitest run` exit 0 — see the build report): B ends up
-    // `<r><p><b bold="x">a</b></p><p><b>c</b></p><q>z</q></r>`.
+    // T-PIN (spec 033 commit 1, scenario 9) -- UPDATED, reverses the prior
+    // pin: removeStyle() now runs the same advancePastUnknownSplitSiblings
+    // pass style()/edit() always have, mirroring JS SDK c8928853 (#1375,
+    // RTCOLLABPLATFORM-787; iOS 915dd77fe6). The PRIOR version of this test
+    // (RTCOLLABPLATFORM-769, iOS 2e6979a0b1) pinned the RAW
+    // findNodesAndSplitText anchors to match JS tree.ts@v0.7.18, which at
+    // the time never advanced inside removeStyle either; JS has since
+    // caught up (c8928853) and Android re-ports the advance to match.
     //
-    // FINDING (drafted, not filed, as an upstream note per spec 021 AC2):
-    // A (the writer) and B disagree in this exact interleaving — A's own
-    // local execution resolves BEFORE it ever learns of B's split (so its
-    // traversal never reaches the split at all and "c" keeps "bold"),
-    // while B's remote application resolves AFTER the split already
-    // exists. reversedFromAnchorRecovery never fires here (its guard
-    // requires a MERGE-tombstoned declaredParent; a split does not remove
-    // the original parent), so this is a pre-existing, orthogonal JS
-    // defect unrelated to yorkie-js-sdk#1329, present at v0.7.18 (and,
-    // since removeStyle's raw-anchor resolution is unchanged since it was
-    // introduced, likely earlier tags too). Out of scope to fix here — the
-    // JS commit is the behavioral contract for this parity port (lesson
-    // all/003) — so this test pins ONLY B's state, not full A==B
-    // convergence, mirroring the spec's own "on B the applying-replica
-    // state equals the executed JS probe's" wording (not a blanket
-    // toJson() equality assertion like the other cases in this file).
+    // B (the splitter) receives A's removeStyle whose declared from-anchor
+    // sits right after the whole (pre-split) <p>; the advance now follows
+    // B's unknown split sibling (the second product, holding "c") past the
+    // removeStyle range entirely, the same way A's own unsplit view never
+    // reached "c" either -- so B ends up
+    // `<r><p><b bold="x">a</b></p><p><b bold="x">c</b></p><q>z</q></r>`,
+    // "c" keeping its "bold".
     //
-    // RED on b0df16bb: the OLD advancing anchor skips past the second
-    // split product entirely, so "c" keeps "bold" on B (converging with A
-    // by accident). GREEN after commit 1.
+    // RESOLVED (was: FINDING, drafted not filed, per spec 021 AC2): the
+    // PRIOR raw-anchor version of this test pinned ONLY B's state because A
+    // and B genuinely disagreed in this interleaving (A's local execution
+    // never reached "c" at all, so A always kept its "bold"; B's raw
+    // anchor incorrectly entered the unknown split product and stripped
+    // it) -- a pre-existing, orthogonal JS defect unrelated to
+    // yorkie-js-sdk#1329, present through v0.7.18. The advance closes that
+    // gap: B now resolves the same exclusion A's unsplit view always had,
+    // so A and B fully converge here, asserted the same way as every other
+    // case in this file (`toJson()` equality). CONFIRMED against JS SDK
+    // v0.7.24 itself (scratch worktree, vitest, same actor IDs/operation
+    // sequence, removed after the run): d2 (the splitter) XML came back
+    // exactly `<r><p><b bold="x">a</b></p><p><b bold="x">c</b></p><q>z</q></r>`,
+    // and `d1.toJSON() === d2.toJSON()` was true -- JS agrees with this
+    // test's expectation byte-for-byte. Cross-confirmed by running JS's own
+    // `tree_remove_style_split_test.ts` (`removeStyle over a concurrently
+    // split boundary`) on the same v0.7.24 checkout: both of its cases
+    // ("converges whichever side arrives first" / "converges when both
+    // replicas split and one removes the style") passed.
+    //
+    // RED on 0d0b2aac (spec 033 base): the OLD non-advancing removeStyle
+    // lets B's raw anchor enter the unknown split product and strip "c"'s
+    // "bold", producing
+    // `<r><p><b bold="x">a</b></p><p><b>c</b></p><q>z</q></r>` and A/B
+    // divergence (`ComparisonFailure`, captured in the round build report).
+    // GREEN after this commit's `removeStyle` advance.
     @Test
-    fun `removeStyle resolves raw anchors past an unknown split`() = runTest {
+    fun `removeStyle advances past an unknown split, like style() does`() = runTest {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
@@ -591,9 +601,10 @@ class TreeStyleMovedAnchorTest {
         crossSync(d1, d2)
 
         assertEquals(
-            "<r><p><b bold=\"x\">a</b></p><p><b>c</b></p><q>z</q></r>",
+            "<r><p><b bold=\"x\">a</b></p><p><b bold=\"x\">c</b></p><q>z</q></r>",
             d2.getRoot().getAs<JsonTree>("t").toXml(),
         )
+        assertEquals(d1.toJson(), d2.toJson())
     }
 
     // AC7 (case 7): three-client convergence — d3 concurrently inserts at

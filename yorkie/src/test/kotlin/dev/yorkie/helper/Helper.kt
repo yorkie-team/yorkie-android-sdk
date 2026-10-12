@@ -114,6 +114,68 @@ suspend fun crossSync(
 }
 
 /**
+ * Exchanges pending local changes among [docs], in-process, mirroring the JS
+ * SDK unit test `exchange` helper: every document's pending changes are
+ * captured ONCE up front (`createChangePack` on each, before any delivery),
+ * so a three-way concurrent edit is captured the same way regardless of
+ * delivery order, then [orders] controls, per document index, which OTHER
+ * documents' captured changes are delivered to it and in what sequence —
+ * letting a three-replica convergence case apply one concurrent change set
+ * in three different arrival orders. Each document then self-acks its own
+ * captured pack (by the clientSeq [Document.createChangePack] already
+ * bumped its checkpoint to) so its pushed local changes are cleared and are
+ * not resent by a later call. See [crossSync] for what [overWire] does and
+ * why this follows the same neutral-checkpoint/empty-version-vector
+ * delivery shape for N documents instead of two.
+ */
+suspend fun exchange(
+    docs: List<Document>,
+    orders: List<List<Int>>,
+    overWire: Boolean = false,
+) {
+    fun List<Change>.relay() = if (!overWire) {
+        this
+    } else {
+        map { change ->
+            change.copy(
+                operations = change.operations.map { it.toPBOperation() }.toOperations(),
+            )
+        }
+    }
+
+    val packs = docs.map { it.createChangePack() }
+
+    docs.forEachIndexed { i, doc ->
+        orders[i].forEach { j ->
+            if (j == i) return@forEach
+            doc.applyChangePack(
+                ChangePack(
+                    docs[j].getKey(),
+                    CheckPoint.InitialCheckPoint,
+                    packs[j].changes.relay(),
+                    null,
+                    false,
+                    VersionVector(),
+                ),
+            )
+        }
+    }
+
+    docs.forEachIndexed { i, doc ->
+        doc.applyChangePack(
+            ChangePack(
+                doc.getKey(),
+                CheckPoint(0, packs[i].checkPoint.clientSeq),
+                emptyList(),
+                null,
+                false,
+                VersionVector(),
+            ),
+        )
+    }
+}
+
+/**
  * S5: same delivery shape as [crossSync], but routes each pack's `changes`
  * through a protobuf round-trip (`toPBChangePack()` -> `toChangePack()`)
  * before delivery, so identity-preserving restore payloads (`restoreSpans`)

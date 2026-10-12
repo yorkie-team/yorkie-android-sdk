@@ -27,6 +27,7 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.countNodes
+import dev.yorkie.document.crdt.dropSplitLinksInElement
 import dev.yorkie.document.history.History
 import dev.yorkie.document.history.HistoryOperation
 import dev.yorkie.document.json.JsonArray
@@ -37,6 +38,7 @@ import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
@@ -461,6 +463,23 @@ public class Document(
                         val op = historyOp.operation
                         val ticket = context.issueTimeTicket()
                         op.executedAt = ticket
+
+                        // Strip split-sibling links from a reverse op's restored
+                        // value in place: this element is freshly reinstated by
+                        // the editing client -- never a split product of the live
+                        // tree it lands in -- but `execute()`'s deep copy of it
+                        // preserves whatever insPrevID/insNextID chain it already
+                        // carries. Must run before `context.push(op)`/`execute()`
+                        // below, and mirrors the identical strip the decode path
+                        // runs (ElementConverter.kt) so a local reverse value and
+                        // a peer-decoded one agree. Port JS SDK document.ts
+                        // (c8928853, #1375).
+                        when (op) {
+                            is SetOperation -> dropSplitLinksInElement(op.value)
+                            is AddOperation -> dropSplitLinksInElement(op.value)
+                            is ArraySetOperation -> dropSplitLinksInElement(op.value)
+                            else -> Unit
+                        }
 
                         // Reconcile createdAt for ArraySet and Add operations
                         if (op is ArraySetOperation) {

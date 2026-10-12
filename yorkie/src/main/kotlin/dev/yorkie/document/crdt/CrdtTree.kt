@@ -261,12 +261,20 @@ internal data class CrdtTree(
         val fromLeft = if (fromLeftRaw === fromParent) {
             fromLeftRaw
         } else {
-            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector)
+            advancePastUnknownSplitSiblings(
+                fromLeftRaw,
+                versionVector,
+                skipActorID = executedAt.actorID,
+            )
         }
         val toLeft = if (toLeftRaw === toParent) {
             toLeftRaw
         } else {
-            advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
+            advancePastUnknownSplitSiblings(
+                toLeftRaw,
+                versionVector,
+                skipActorID = executedAt.actorID,
+            )
         }
 
         // §9.4 from-side recovery (port ea693307, yorkie-js-sdk#1329): when a
@@ -370,10 +378,14 @@ internal data class CrdtTree(
                 // covers the right part of the split. Mirrors JS SDK PR #1224.
                 if (tokenType == TokenType.Start && versionVector != null) {
                     var current = node
+                    val walker = InsNextWalker()
+                    walker.visit(current)
                     while (true) {
                         val nextID = current.insNextID ?: break
                         val next = findFloorNode(nextID) ?: break
                         if (next.isText) break
+                        // Stop on a chain that loops back on itself; see InsNextWalker.
+                        if (!walker.visit(next)) break
                         if (isSplitSiblingKnown(next, versionVector)) break
 
                         val siblingPairs = next.setAttributes(attributes, executedAt)
@@ -503,12 +515,20 @@ internal data class CrdtTree(
         val fromLeft = if (fromLeftRaw === fromParent) {
             fromLeftRaw
         } else {
-            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector)
+            advancePastUnknownSplitSiblings(
+                fromLeftRaw,
+                versionVector,
+                skipActorID = executedAt.actorID,
+            )
         }
         val toLeft = if (toLeftRaw === toParent) {
             toLeftRaw
         } else {
-            advancePastUnknownSplitSiblings(toLeftRaw, versionVector)
+            advancePastUnknownSplitSiblings(
+                toLeftRaw,
+                versionVector,
+                skipActorID = executedAt.actorID,
+            )
         }
 
         val fromIndex = toIndex(fromParent, fromLeft)
@@ -524,10 +544,14 @@ internal data class CrdtTree(
         var collectFromLeft = fromLeft
         if (fromLeft !== fromParent && fromParent !== toParent) {
             var current = fromLeft
+            val narrowingWalker = InsNextWalker()
+            narrowingWalker.visit(current)
             while (true) {
                 val nextID = current.insNextID ?: break
                 val next = findFloorNode(nextID) ?: break
                 if (next.isText) break
+                // Stop on a chain that loops back on itself; see InsNextWalker.
+                if (!narrowingWalker.visit(next)) break
                 if (next.parent === toParent) {
                     // Narrow once a split sibling is found in toParent, matching
                     // JS #1233 §3 / iOS narrowedCollectRange. Skip narrowing when
@@ -627,7 +651,13 @@ internal data class CrdtTree(
                     val splitHead = node.insNextID
                     if (!node.isText && splitHead != null && node !in toBeMergedNodes) {
                         var next = findFloorNode(splitHead)
+                        val cascadeWalker = InsNextWalker()
+                        cascadeWalker.visit(node)
                         while (next != null) {
+                            // Stop on a chain that loops back on itself; see
+                            // InsNextWalker. Unguarded, this also grows
+                            // nodesToBeRemoved without bound.
+                            if (!cascadeWalker.visit(next)) break
                             val splitCreationKnown = if (isLocal) {
                                 true
                             } else {
@@ -827,9 +857,24 @@ internal data class CrdtTree(
                         )
                         return@run
                     }
-                    val (_, splitDiff) = parent.split(
-                        this,
+                    // Order a same-boundary split by ticket (newest first)
+                    // instead of letting it land on `parent` directly: a
+                    // concurrent split of this same boundary, applied first
+                    // on another replica, placed its product right after
+                    // `parent`, so splitting `parent` here would put the two
+                    // products in arrival order instead of one converged
+                    // order. `target`/`offset` fall back to `parent`/
+                    // `splitOffset` whenever this is not a same-boundary
+                    // case.
+                    val (target, offset) = orderSameBoundarySplit(
+                        parent,
                         splitOffset,
+                        executedAt,
+                        versionVector,
+                    )
+                    val (_, splitDiff) = target.split(
+                        this,
+                        offset,
                         issueTimeTicket,
                         versionVector,
                     )
@@ -1125,26 +1170,49 @@ internal data class CrdtTree(
 
         // Boundary.Range (port 5c158690): see the matching comment in style().
         val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
-        val (fromParent, fromLeft) = from
+        val (fromParent, fromLeftRaw) = from
         val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
-        val (toParent, toLeft) = to
+        val (toParent, toLeftRaw) = to
 
         diff = addDataSizes(diff, diffTo, diffFrom)
 
-        // NOTE (iOS 2e6979a0b1, ported RTCOLLABPLATFORM-769): unlike style()
-        // and edit(), removeStyle() resolves the RAW findNodesAndSplitText
-        // anchors and does NOT call advancePastUnknownSplitSiblings. JS
-        // tree.ts@v0.7.18 calls that advance from style() and edit() (and
-        // the split loop) but never from removeStyle(), at this tag or any
-        // earlier one. Android's removeStyle mirrored style()'s advance
-        // since the v0.7.6 sync (0b3eb7f5) — a convergence divergence: for
-        // a remote removeStyle whose anchor precedes an element split the
-        // remover did not know about, an advancing replica traverses a
-        // different node set than a JS (or now iOS) replica for the same
-        // operation history, so attributes are removed on one peer and not
-        // another. Local operations (versionVector == null) were never
-        // affected, since advancePastUnknownSplitSiblings returns early for
-        // them either way.
+        // NOTE (reverses iOS 2e6979a0b1 / RTCOLLABPLATFORM-769, re-ported
+        // RTCOLLABPLATFORM-787): removeStyle() now advances past unknown
+        // split siblings on both range anchors, the same as style() and
+        // edit() do. The earlier port deliberately dropped this advance
+        // because, at the v0.7.18 tag it was ported against, JS tree.ts
+        // never called advancePastUnknownSplitSiblings from removeStyle()
+        // either — style()'s own advance was itself a divergence Android
+        // introduced at the v0.7.6 sync (0b3eb7f5), so dropping removeStyle's
+        // copy of it restored parity at the time. JS SDK c8928853 (#1375,
+        // mirrored by iOS 915dd77fe6) now runs the advance from
+        // removeStyle() too — order concurrent splits of one boundary by
+        // ticket depends on both styling and removal ranges agreeing on
+        // where split products that ARE visible to them, but not to each
+        // other, land. Without it, a remote removeStyle whose anchor
+        // precedes an element split the remover did not know about
+        // traverses a different node set than a peer that advances, so
+        // attributes converge on one replica and not the other. Local
+        // operations (versionVector == null) are unaffected either way,
+        // since advancePastUnknownSplitSiblings returns early for them.
+        val fromLeft = if (fromLeftRaw === fromParent) {
+            fromLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(
+                fromLeftRaw,
+                versionVector,
+                skipActorID = executedAt.actorID,
+            )
+        }
+        val toLeft = if (toLeftRaw === toParent) {
+            toLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(
+                toLeftRaw,
+                versionVector,
+                skipActorID = executedAt.actorID,
+            )
+        }
 
         // §9.4 from-side recovery (port ea693307, yorkie-js-sdk#1329), on top
         // of the raw anchors above: when a concurrent merge unknown to this
@@ -1227,10 +1295,14 @@ internal data class CrdtTree(
                 // also covers the right part. Mirrors JS SDK PR #1224.
                 if (tokenType == TokenType.Start && versionVector != null) {
                     var current = node
+                    val walker = InsNextWalker()
+                    walker.visit(current)
                     while (true) {
                         val nextID = current.insNextID ?: break
                         val next = findFloorNode(nextID) ?: break
                         if (next.isText) break
+                        // Stop on a chain that loops back on itself; see InsNextWalker.
+                        if (!walker.visit(next)) break
                         if (isSplitSiblingKnown(next, versionVector)) break
 
                         var removedAny = false
@@ -1459,6 +1531,105 @@ internal data class CrdtTree(
     }
 
     /**
+     * Decides which node a split at [offset] of [parent] actually splits, so
+     * that concurrent splits of one node at one boundary land in the same
+     * order on every replica.
+     *
+     * [CrdtTreeNode.split] places its product directly after the node it
+     * splits. When a concurrent split of the same boundary has already been
+     * applied, that puts the products in arrival order, which differs per
+     * replica. The XML still matches (all but the last product are empty)
+     * but position-based operations that follow do not.
+     *
+     * Orders them by ticket instead, newest first, as RGA orders concurrent
+     * inserts after the same node: skips the unknown split siblings with a
+     * newer ticket and splits the last of them at its start. The right half
+     * lives in that sibling on this replica, so it moves into our product
+     * exactly as it would have moved out of [parent] on a replica that
+     * applied us first.
+     *
+     * Treats a missing OR size-0 [versionVector] as a local operation — the
+     * same convention [advancePastUnknownSplitSiblings] uses (`:1657`),
+     * rather than JS's `!versionVector`-only guard, so both functions share
+     * one empty-vector convention. Port JS SDK `tree.ts`
+     * `orderSameBoundarySplit` (c8928853, #1375).
+     */
+    private fun orderSameBoundarySplit(
+        parent: CrdtTreeNode,
+        offset: Int,
+        editedAt: TimeTicket,
+        versionVector: VersionVector?,
+    ): Pair<CrdtTreeNode, Int> {
+        // A concurrent split of the same boundary took everything to the
+        // right of it, so only a split at the end of `parent` can be one.
+        if (versionVector == null ||
+            versionVector.size() == 0 ||
+            offset != parent.allChildren.size
+        ) {
+            return parent to offset
+        }
+
+        var target = parent
+        val walker = InsNextWalker()
+        walker.visit(target)
+        while (true) {
+            val nextID = target.insNextID ?: break
+            val next = findFloorNode(nextID) ?: break
+            if (next.isText || next.parent == null) break
+
+            // Stop on a chain that loops back on itself; see InsNextWalker.
+            if (!walker.visit(next)) break
+
+            // The sibling has to belong to target's own split family. The
+            // strict parent-equality check §7.5 uses is too strong here —
+            // at a multi-level split the sibling may already sit under the
+            // next level's product — but dropping the check entirely would
+            // let an insNextID that did not come from a split redirect this
+            // split onto an arbitrary element elsewhere in the tree.
+            if (!sharesSplitFamilyParent(target, next)) break
+
+            // Splitting a tombstoned sibling would make our product born
+            // tombstoned, which a replica that applied us before the
+            // concurrent split never does. Fall back to splitting parent,
+            // as that replica did, rather than diverge on liveness.
+            if (next.isRemoved) break
+
+            val createdAt = next.id.createdAt
+            if (createdAt.actorID == editedAt.actorID) break
+            val knownLamport = versionVector.get(createdAt.actorID)
+            if (knownLamport != null && knownLamport >= createdAt.lamport) break
+            if (!(createdAt > editedAt)) break
+
+            target = next
+        }
+
+        return if (target === parent) parent to offset else target to 0
+    }
+
+    /**
+     * Reports whether [next] sits under [node]'s parent, or under a split
+     * product of that parent. A multi-level split moves a sibling under the
+     * next level's product, so the two parents legitimately differ — but
+     * only within one split family. Anything beyond that is not a split
+     * sibling of [node], whatever its [CrdtTreeNode.insNextID] claims. Port
+     * JS SDK `tree.ts` `sharesSplitFamilyParent` (c8928853, #1375).
+     */
+    private fun sharesSplitFamilyParent(node: CrdtTreeNode, next: CrdtTreeNode): Boolean {
+        val nodeParent = node.parent ?: return false
+        val nextParent = next.parent ?: return false
+        if (nodeParent === nextParent) return true
+
+        val walker = InsNextWalker()
+        var current: CrdtTreeNode? = nodeParent
+        while (current != null && walker.visit(current)) {
+            if (current === nextParent) return true
+            val nextID = current.insNextID ?: return false
+            current = findFloorNode(nextID)
+        }
+        return false
+    }
+
+    /**
      * Follows the [CrdtTreeNode.mergedInto] forwarding chain from [node]
      * while the current node is a merge-away tombstone, returning the final
      * live target. When a merge lands on a parent that a prior concurrent
@@ -1643,10 +1814,16 @@ internal data class CrdtTree(
     /**
      * Walks the [CrdtTreeNode.insNextID] chain from [node], returning the last
      * element-type sibling whose creation the editor did not know about.
-     * Stops at text nodes, on a sibling whose parent differs from the current
-     * node's parent (moved by a higher-level split), or as soon as a known
-     * sibling is encountered. Treats null or empty [versionVector] as a local
-     * operation and returns [node] unchanged.
+     * Stops at text nodes, on a cyclic chain (see [InsNextWalker]), on a
+     * sibling whose parent differs from the current node's parent (moved by
+     * a higher-level split), as soon as a known sibling is encountered, or
+     * — when [skipActorID] is given — in front of a run of empty unknown
+     * siblings that ends at a node [skipActorID] created (see
+     * [emptyRunReachesActor]): those are concurrent splits of the SAME
+     * boundary, already ordered ahead of ours by [orderSameBoundarySplit],
+     * not content the editor meant to keep on its left. Treats null or
+     * empty [versionVector] as a local operation and returns [node]
+     * unchanged.
      */
     private fun advancePastUnknownSplitSiblings(
         node: CrdtTreeNode,
@@ -1657,10 +1834,14 @@ internal data class CrdtTree(
         if (versionVector == null || versionVector.size() == 0) return node
 
         var current = node
+        val walker = InsNextWalker()
+        walker.visit(current)
         while (true) {
             val nextID = current.insNextID ?: return current
             val next = findFloorNode(nextID) ?: return current
             if (next.isText) return current
+            // Stop on a chain that loops back on itself; see InsNextWalker.
+            if (!walker.visit(next)) return current
             // §7.5: skip the parent check at ancestor iterations of the split
             // loop, where a concurrent recursive split may have moved the
             // sibling to a different parent.
@@ -1675,8 +1856,43 @@ internal data class CrdtTree(
             val isUnknown = knownLamport == null || knownLamport < next.id.createdAt.lamport
             if (!isUnknown) return current
 
+            if (skipActorID != null && emptyRunReachesActor(next, skipActorID, versionVector)) {
+                return current
+            }
+
             current = next
         }
+    }
+
+    /**
+     * Reports whether the [CrdtTreeNode.insNextID] chain starting at [node]
+     * runs through empty, unknown element split siblings only and then
+     * reaches a node [actorID] created. Reads [CrdtTreeNode.allChildren]
+     * (tombstones included), not the filtered visible children: a sibling
+     * that already gained content is never part of a still-open same-
+     * boundary run. Port JS SDK `tree.ts` `emptyRunReachesActor` (c8928853,
+     * #1375).
+     */
+    private fun emptyRunReachesActor(
+        node: CrdtTreeNode,
+        actorID: String,
+        versionVector: VersionVector,
+    ): Boolean {
+        val walker = InsNextWalker()
+        var current = node
+        while (!current.isText && walker.visit(current)) {
+            val createdAt = current.id.createdAt
+            if (createdAt.actorID == actorID) return current !== node
+
+            val knownLamport = versionVector.get(createdAt.actorID)
+            if (current.allChildren.isNotEmpty() ||
+                (knownLamport != null && knownLamport >= createdAt.lamport)
+            ) {
+                return false
+            }
+            current = current.insNextID?.let { findFloorNode(it) } ?: return false
+        }
+        return false
     }
 
     /**

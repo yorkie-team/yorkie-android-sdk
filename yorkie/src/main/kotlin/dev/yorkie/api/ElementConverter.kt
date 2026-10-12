@@ -48,6 +48,8 @@ import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.RhtNode
 import dev.yorkie.document.crdt.TextValue
+import dev.yorkie.document.crdt.dropSplitLinks
+import dev.yorkie.document.crdt.dropSplitLinksInElement
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
@@ -459,7 +461,8 @@ internal fun List<CrdtTreeNode>.toPBTreeNodesWhenEdit(): List<PBTreeNodes> {
 }
 
 internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
-    return mapNotNull { it.contentList.toCrdtTreeRootNode() }.ifEmpty { null }
+    return mapNotNull { it.contentList.toCrdtTreeRootNode()?.apply { dropSplitLinks() } }
+        .ifEmpty { null }
 }
 
 internal fun CrdtTreePos.toPBTreePos(): PBTreePos {
@@ -640,7 +643,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
                     memberNodes = ElementRht(),
                 )
             } else {
-                value.toCrdtObject()
+                dropSplitLinksInElement(value.toCrdtObject())
             }
         }
 
@@ -648,7 +651,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             if (value.isEmpty) {
                 CrdtArray(createdAt.toTimeTicket())
             } else {
-                value.toCrdtArray()
+                dropSplitLinksInElement(value.toCrdtArray())
             }
         }
 
@@ -679,7 +682,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
         PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT ->
             CrdtCounter.createDedup(createdAt.toTimeTicket())
 
-        PBValueType.VALUE_TYPE_TREE -> value.toCrdtTree()
+        PBValueType.VALUE_TYPE_TREE -> dropSplitLinksInElement(value.toCrdtTree())
 
         else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $this")
     }

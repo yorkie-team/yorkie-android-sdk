@@ -55,14 +55,15 @@ internal data class CrdtArray(
 
     /**
      * Moves the given [createdAt] element after the [prevCreatedAt] element using an LWW
-     * position register. Returns the displaced dead position node the caller must register
-     * for GC, or `null` when the move lost the LWW race / was already processed.
+     * position register. Returns an [RgaTreeListMove] — the displaced dead position node
+     * the caller must register for GC (absent when the move lost the LWW race / was
+     * already processed) and the size the move added to the moved element itself (#1392).
      */
     fun moveAfter(
         prevCreatedAt: TimeTicket,
         createdAt: TimeTicket,
         executedAt: TimeTicket,
-    ): RgaTreeList.Node? {
+    ): RgaTreeListMove {
         return elements.moveAfter(prevCreatedAt, createdAt, executedAt)
     }
 

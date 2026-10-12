@@ -160,14 +160,15 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
      * Moves the element identified by [createdAt] to after [prevCreatedAt].
      *
      * Uses an LWW position register: the winning position is the one with the latest
-     * [executedAt]. Returns the dead position node the caller must register for GC, or
-     * `null` when the move was already processed (idempotency).
+     * [executedAt]. Returns an [RgaTreeListMove] carrying the dead position node the
+     * caller must register for GC (absent when the move was already processed —
+     * idempotency) and the size the move added to the MOVED ELEMENT itself (#1392).
      */
     fun moveAfter(
         prevCreatedAt: TimeTicket,
         createdAt: TimeTicket,
         executedAt: TimeTicket,
-    ): Node? {
+    ): RgaTreeListMove {
         val entry = elementMapByCreatedAt[createdAt]
             ?: throw YorkieException(
                 code = YorkieException.Code.ErrInvalidArgument,
@@ -181,15 +182,25 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
 
         // Idempotency: a node with this executedAt already exists.
         if (executedAt in nodeMapByPositionCreatedAt) {
-            return null
+            return RgaTreeListMove(movedDiff = DataSize(data = 0, meta = 0))
         }
 
         // LWW loser: superseded by a later move of the same element. Still create a bare
         // dead position node so the GC pair set is complete.
         val posMovedAt = entry.posMovedAt
         if (posMovedAt != null && executedAt <= posMovedAt) {
-            return insertDeadPositionAfter(prevNode, executedAt)
+            return RgaTreeListMove(
+                deadNode = insertDeadPositionAfter(prevNode, executedAt),
+                movedDiff = DataSize(data = 0, meta = 0),
+            )
         }
+
+        // `firstStamp` must be read BEFORE `entry.element.movedAt` is overwritten below:
+        // the `movedAt` stamp is one ticket in `CrdtElement.getMetaUsage`, charged only
+        // the first time an element is stamped — a re-move overwrites a ticket already
+        // charged, and charging it again would walk `docSize` up without bound on a list
+        // the user reorders repeatedly.
+        val firstStamp = entry.element.movedAt == null
 
         // LWW winner: build the new position node carrying the element, wire the entry,
         // then kill the old position node.
@@ -209,7 +220,10 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         oldPositionNode.markDead(executedAt)
         nodeMapByIndex.updateWeight(oldPositionNode.indexNode)
 
-        return oldPositionNode
+        return RgaTreeListMove(
+            deadNode = oldPositionNode,
+            movedDiff = DataSize(data = 0, meta = if (firstStamp) TIME_TICKET_SIZE else 0),
+        )
     }
 
     /**
@@ -520,3 +534,21 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
         }
     }
 }
+
+/**
+ * [RgaTreeListMove] is what [RgaTreeList.moveAfter] reports back.
+ *
+ * [deadNode] is the position node the move abandoned, for GC registration.
+ * Absent when the move was discarded by LWW and its position node already
+ * existed (idempotent replay).
+ *
+ * [movedDiff] is the size the move added to the MOVED ELEMENT itself — one
+ * ticket for the `movedAt` stamp, charged only the first time the element is
+ * stamped. It is not the dead position node's size: that node was never
+ * counted in live, and the caller books it through a `gcOnlySize` GC pair
+ * instead.
+ */
+internal data class RgaTreeListMove(
+    val deadNode: RgaTreeList.Node? = null,
+    val movedDiff: DataSize,
+)

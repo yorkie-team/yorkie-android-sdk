@@ -74,10 +74,17 @@ class Rht : Collection<RhtNode> {
 
     /**
      * Removes the Element of the given [key].
+     *
+     * The tombstone still STORES the value — what goes on the wire is
+     * unchanged — but stops being CHARGED for it, because [RhtNode.dataSize]
+     * skips a removed node's value (#1392). [RhtRemoval.valueDropped] is what
+     * the caller takes back out of whichever side of the ledger was holding
+     * those bytes.
      */
-    fun remove(key: String, executedAt: TimeTicket): List<RhtNode> {
+    fun remove(key: String, executedAt: TimeTicket): RhtRemoval {
         val prev = nodeMapByKey[key]
-        return buildList {
+        var valueDropped = DataSize(data = 0, meta = 0)
+        val gcNodes = buildList {
             if (prev == null) {
                 numberOfRemovedElements++
                 nodeMapByKey[key] = RhtNode(key, "", executedAt, true).also { add(it) }
@@ -86,10 +93,12 @@ class Rht : Collection<RhtNode> {
                     add(prev)
                 } else {
                     numberOfRemovedElements++
+                    valueDropped = DataSize(data = valueSize(prev.value), meta = 0)
                 }
                 nodeMapByKey[key] = RhtNode(key, prev.value, executedAt, true).also { add(it) }
             }
         }
+        return RhtRemoval(gcNodes, valueDropped)
     }
 
     /**
@@ -170,12 +179,39 @@ data class RhtNode(
 
     override val removedAt: TimeTicket? = executedAt.takeIf { isRemoved }
 
+    /**
+     * A tombstone charges its key only (#1392). The value it still carries
+     * is dead weight — nothing reads it, [Rht.has]/[Rht.toJson]/[Rht.toXml]
+     * all gate on [isRemoved] — and charging it made the running `docSize`
+     * disagree with a rebuild of the same document, which replays the same
+     * removals. The value is left on the node rather than cleared so that
+     * what this SDK stores and serializes for a tombstone is byte-for-byte
+     * what it was, and what a peer sends us is kept verbatim: the
+     * convergence fix belongs in the accounting, not the wire format.
+     */
     override val dataSize: DataSize
         get() = DataSize(
-            data = (utf8Length(key) + utf8Length(logicalValue(value))) * 2,
+            data = utf8Length(key) * 2 + (if (isRemoved) 0 else valueSize(value)),
             meta = TIME_TICKET_SIZE,
         )
 }
+
+/**
+ * [RhtRemoval] is what [Rht.remove] reports back.
+ *
+ * [gcNodes] are the tombstones this removal made collectable.
+ *
+ * [valueDropped] is the size of the value the removal stopped charging for,
+ * which no node's [RhtNode.dataSize] accounts for any more. The caller
+ * subtracts it from whichever side of the ledger was holding it: live for an
+ * attribute that was live on a live node, gc for one on a node that is
+ * itself a tombstone. Zero when the attribute was already a tombstone, since
+ * a tombstone's value was not being charged in the first place.
+ */
+data class RhtRemoval(
+    val gcNodes: List<RhtNode>,
+    val valueDropped: DataSize,
+)
 
 /**
  * [RhtWrite] is what [Rht.set] reports back.
@@ -232,6 +268,12 @@ private fun utf8Length(s: String): Int {
     }
     return length
 }
+
+/**
+ * Returns the [DataSize.data] bytes an attribute value of the given stored
+ * form contributes, on the same terms as [RhtNode.dataSize].
+ */
+private fun valueSize(stored: String): Int = utf8Length(logicalValue(stored)) * 2
 
 /**
  * Returns [stored] as a peer storing attribute values raw would hold it. JS

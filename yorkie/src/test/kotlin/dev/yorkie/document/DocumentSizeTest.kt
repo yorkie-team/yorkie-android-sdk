@@ -618,9 +618,18 @@ class DocumentSizeTest {
             ),
             actual = document.getDocSize().live,
         )
+        // #1392 (8fb5a71c): a removed attribute holds no value, so the 8
+        // bytes "true" was charging leave live without arriving in gc — gc
+        // gains only the tombstone's key ("bold", 4 chars, 8 bytes). This
+        // used to read 36 because RhtNode.dataSize charged the tombstone's
+        // full key+value (16 bytes) into gc via attrGcPair's live->gc move;
+        // the fix makes dataSize key-only when removed, so that move now
+        // carries only the 8 key bytes. Matches the JS test diff's own
+        // 36->28 change at this exact assertion (8fb5a71c,
+        // document_size_test.ts).
         assertEquals(
             expected = DataSize(
-                data = 36,
+                data = 28,
                 meta = 168,
             ),
             actual = document.getDocSize().gc,

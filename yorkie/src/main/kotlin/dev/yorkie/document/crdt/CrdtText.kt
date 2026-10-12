@@ -7,6 +7,7 @@ import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.SplayTreeSet
 import dev.yorkie.util.addDataSizes
+import dev.yorkie.util.subDataSize
 import java.util.TreeMap
 
 /**
@@ -289,6 +290,10 @@ internal data class CrdtText(
         versionVector: VersionVector? = null,
     ): TextStyleResult {
         var diff = DataSize(data = 0, meta = 0)
+        // #1392: a removeStyle landing on a node that is itself a tombstone
+        // drops its attribute's value out of gc, not live — the text's own
+        // canStyle admits such a node, but it was never counted into live.
+        var gcDiff = DataSize(data = 0, meta = 0)
 
         val (_, toRight, diffTo) = rgaTreeSplit.findNodeWithSplit(range.second, executedAt)
         val (_, fromRight, diffFrom) = rgaTreeSplit.findNodeWithSplit(range.first, executedAt)
@@ -329,7 +334,16 @@ internal data class CrdtText(
                 // The node holding the attribute may itself be a tombstone
                 // (canStyle admits one) — attrGcPair's third question.
                 var wasLive = node.value.getAttrs().has(key)
-                node.value.getAttrs().remove(key, executedAt).forEach { rhtNode ->
+                val (gcNodes, valueDropped) = node.value.getAttrs().remove(key, executedAt)
+                // The tombstone is not charged for its value (#1392); those
+                // bytes leave whichever side was holding them. See
+                // attrGcPair for the same live/gc split.
+                if (nodeIsLive) {
+                    diff = subDataSize(diff, valueDropped)
+                } else {
+                    gcDiff = subDataSize(gcDiff, valueDropped)
+                }
+                gcNodes.forEach { rhtNode ->
                     gcPairs.add(attrGcPair(node.value, rhtNode, wasLive, nodeIsLive))
                     // Only the node replacing the live value takes a size
                     // out of live; a second one in the same call is the
@@ -360,14 +374,20 @@ internal data class CrdtText(
         // pendingGCPairs.
         gcPairs.addAll(rgaTreeSplit.drainAllPendingGcPairs())
 
-        // removeStyle's attribute accounting moves entirely through the
+        // Most of removeStyle's attribute accounting moves through the
         // attrGcPair-registered gcPairs above (CrdtRoot.registerGCPair moves
-        // the bytes live -> gc when they are registered); diff here is only
-        // the two boundary splits, always live-bound.
+        // the TOMBSTONE's own, now key-only, size live -> gc when it is
+        // registered) plus the two boundary splits (live-bound, folded into
+        // `diff` up front). The dropped VALUE bytes are a separate leg
+        // (#1392): a tombstone is never charged for its value, so
+        // registerGCPair's node-dataSize-based move does not reach them —
+        // `diff`/`gcDiff` carry that subtraction out of whichever side
+        // (live for a live node, gc for a node that is itself a tombstone)
+        // was still holding them.
         return TextStyleResult(
             changes,
             gcPairs,
-            DocSize(live = diff, gc = DataSize(0, 0)),
+            DocSize(live = diff, gc = gcDiff),
             prevAttributes,
         )
     }

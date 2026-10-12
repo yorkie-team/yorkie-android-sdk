@@ -222,7 +222,10 @@ public class JsonArray internal constructor(
         // MoveOperation.execute's root-side registration: without it, the clone's
         // docSize/garbageLength drifts from the root, and the clone keeps a node the
         // root purges on GC, which re-diverges a later set's anchor resolution.
-        val deadNode = target.moveAfter(prevPosCreatedAt, createdAt, executedAt)
+        val (deadNode, movedDiff) = target.moveAfter(prevPosCreatedAt, createdAt, executedAt)
+        // The `movedAt` stamp is part of the moved element's size; see
+        // CrdtRoot.accMovedElement for why it cannot simply go to live.
+        context.accMovedElement(target[createdAt]!!, movedDiff)
         if (deadNode != null) {
             // gcOnlySize: never counted in live, mirrors JS array.ts (see moveInternal).
             context.registerGCPair(
@@ -332,7 +335,10 @@ public class JsonArray internal constructor(
             ),
         )
         // Register the displaced dead position node on the clone (see moveInternal).
-        val deadNode = target.moveAfter(prevPosCreatedAt, targetElem.createdAt, ticket)
+        val (deadNode, movedDiff) = target.moveAfter(prevPosCreatedAt, targetElem.createdAt, ticket)
+        // The `movedAt` stamp is part of the moved element's size; see
+        // CrdtRoot.accMovedElement for why it cannot simply go to live.
+        context.accMovedElement(target[targetElem.createdAt]!!, movedDiff)
         if (deadNode != null) {
             // gcOnlySize: never counted in live (see moveInternal).
             context.registerGCPair(

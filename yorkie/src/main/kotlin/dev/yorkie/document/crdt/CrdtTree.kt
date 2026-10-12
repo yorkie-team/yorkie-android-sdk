@@ -25,6 +25,7 @@ import dev.yorkie.util.TreeToken
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.addDataSizes
+import dev.yorkie.util.subDataSize
 import dev.yorkie.util.traverseAll
 import dev.yorkie.util.traverseAllPreorder
 import java.util.Collections
@@ -1167,6 +1168,14 @@ internal data class CrdtTree(
             data = 0,
             meta = 0,
         )
+        // #1392: a removeStyle landing on a node that is itself a tombstone
+        // drops its attribute's value out of gc, not live — the container
+        // never counted that node into live in the first place. Starts at
+        // zero like `diff`; the boundary splits above are always live-bound.
+        var gcDiff = DataSize(
+            data = 0,
+            meta = 0,
+        )
 
         // Boundary.Range (port 5c158690): see the matching comment in style().
         val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
@@ -1267,7 +1276,16 @@ internal data class CrdtTree(
                 val nodeIsLive = !node.isRemoved
                 attributeToRemove.forEach { key ->
                     var wasLive = node.getAttrs().has(key)
-                    node.removeAttribute(key, executedAt).forEach { rhtNode ->
+                    val (gcNodes, valueDropped) = node.removeAttribute(key, executedAt)
+                    // The tombstone is not charged for its value (#1392); those
+                    // bytes leave whichever side was holding them. See
+                    // attrGcPair for the same live/gc split.
+                    if (nodeIsLive) {
+                        diff = subDataSize(diff, valueDropped)
+                    } else {
+                        gcDiff = subDataSize(gcDiff, valueDropped)
+                    }
+                    gcNodes.forEach { rhtNode ->
                         gcPairs.add(attrGcPair(node, rhtNode, wasLive, nodeIsLive))
                         wasLive = false
                     }
@@ -1309,9 +1327,14 @@ internal data class CrdtTree(
                         val nextIsLive = !next.isRemoved
                         attributeToRemove.forEach { key ->
                             var wasLive = next.getAttrs().has(key)
-                            val removed = next.removeAttribute(key, executedAt)
-                            if (removed.isNotEmpty()) removedAny = true
-                            removed.forEach { rhtNode ->
+                            val (gcNodes, valueDropped) = next.removeAttribute(key, executedAt)
+                            if (nextIsLive) {
+                                diff = subDataSize(diff, valueDropped)
+                            } else {
+                                gcDiff = subDataSize(gcDiff, valueDropped)
+                            }
+                            if (gcNodes.isNotEmpty()) removedAny = true
+                            gcNodes.forEach { rhtNode ->
                                 gcPairs.add(attrGcPair(next, rhtNode, wasLive, nextIsLive))
                                 wasLive = false
                             }
@@ -1341,11 +1364,17 @@ internal data class CrdtTree(
         return TreeOperationResult(
             changes,
             gcPairs,
-            // removeStyle's attribute accounting moves entirely through the
+            // Most of removeStyle's attribute accounting moves through the
             // attrGcPair-registered gcPairs above (CrdtRoot.registerGCPair
-            // moves the bytes live -> gc when they are registered); diff
-            // here is only the two boundary splits, always live-bound.
-            DocSize(live = diff, gc = DataSize(0, 0)),
+            // moves the TOMBSTONE's own, now key-only, size live -> gc when
+            // it is registered) plus the two boundary splits (live-bound,
+            // folded into `diff` up front). The dropped VALUE bytes are a
+            // separate leg (#1392): a tombstone is never charged for its
+            // value, so registerGCPair's node-dataSize-based move does not
+            // reach them — `diff`/`gcDiff` carry that subtraction out of
+            // whichever side (live for a live node, gc for a node that is
+            // itself a tombstone) was still holding them.
+            DocSize(live = diff, gc = gcDiff),
             prevAttributes = prevAttributes,
         )
     }
@@ -2863,7 +2892,7 @@ internal data class CrdtTreeNode(
         return attributes.map { (key, value) -> _attributes.set(key, value, executedAt) }
     }
 
-    fun removeAttribute(key: String, executedAt: TimeTicket): List<RhtNode> {
+    fun removeAttribute(key: String, executedAt: TimeTicket): RhtRemoval {
         return _attributes.remove(key, executedAt)
     }
 

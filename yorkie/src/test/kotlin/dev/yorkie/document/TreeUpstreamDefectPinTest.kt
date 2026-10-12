@@ -13,17 +13,19 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Characterization tests for four KNOWN DEFECTS that this SDK deliberately
- * shares with yorkie-js-sdk v0.7.14 (PR #360 reviews 5165084872 and
- * 5194612367, findings F1–F4; specs 014 and 016). All are faithful ports:
- * fixing any of them Android-only would make an Android replica resolve the
- * same relayed operations to a different tree than a JS or iOS peer, which
- * is worse than the shared defect (lesson all/003, #359 B2). The fix must
- * land in yorkie-js-sdk (and, for F1, the server) first and then be ported.
+ * Characterization tests for KNOWN DEFECTS that this SDK deliberately shares
+ * with yorkie-js-sdk (PR #360 reviews 5165084872 and 5194612367, findings
+ * F1–F4). All are faithful ports: fixing any of them Android-only would make
+ * an Android replica resolve the same relayed operations to a different tree
+ * than a JS or iOS peer, which is worse than the shared defect (lesson
+ * all/003, #359 B2). The fix must land in yorkie-js-sdk (and, for F1, the
+ * server) first and then be ported.
  *
- * These tests pin the CURRENT outcome so the port is a deliberate, visible
+ * These tests pin the CURRENT outcome so a port is a deliberate, visible
  * flip — when one of them fails after a sync-up, update the expectation
- * together with the port and delete the defect note.
+ * together with the port and delete the defect note. F2's RECREATE route was
+ * flipped this way (yorkie-js-sdk 248551a1, #1364): see `recreate under a
+ * tombstoned parent is now born tombstoned` below.
  *
  * - F1: `CrdtTree.edit`'s merge phase relocates the merge source's TOMBSTONED
  *   children into the live merge target (`allChildren` + `moveChild`, port of
@@ -38,16 +40,29 @@ import org.junit.Test
  *   `Document.reconcileHistoryEdits` shifts pending tree undos by 0 although
  *   the restore changed the index space; a later undo of a pure split then
  *   deletes live text. Backlog candidate 009 (`tree-restore-history-reconcile-delta`).
- * - F2: `CrdtTree.restore` un-tombstones a target (and `recreateFromSpan`
- *   places a purged one live) with no removed-ancestor guard, exactly like JS
- *   `tree.ts` `restore`/`recreateFromSpan`. The node is invisible yet counted
- *   live, and a replica that already purged the parent diverges from one that
- *   still holds its tombstone once the parent is revived. An Android-only
- *   guard (spec 014) was reverted in spec 016 on review 5194612367: same
- *   relayed op, different state on Android vs JS/iOS.
+ * - F2 (UNREMOVE route, STILL OPEN): `CrdtTree.restore` un-tombstones a
+ *   target with no removed-ancestor guard, exactly like JS `tree.ts`
+ *   `restore`. The node is invisible yet counted live, and a replica that
+ *   already purged the parent diverges from one that still holds its
+ *   tombstone once the parent is revived. An Android-only guard was reverted
+ *   on review 5194612367: same relayed op, different state on Android vs
+ *   JS/iOS. yorkie-js-sdk #1364 does not touch this route — still pinned by
+ *   `restore under a tombstoned parent diverges`.
+ * - F2 (RECREATE route, FIXED): `recreateFromSpan` used to place a purged
+ *   node LIVE under a still-tombstoned parent (same JS v0.7.14 shape as the
+ *   unremove route). Port yorkie-js-sdk 248551a1 (#1364) now attaches it
+ *   tombstoned with the parent's own `removedAt` and a pending `gcOnlySize`
+ *   pair instead — never counted live, no orphan at the next purge. Both
+ *   replicas resolve the same relayed op identically, so this stays
+ *   convergent; see `recreate under a tombstoned parent is now born
+ *   tombstoned` below (was `... is counted live`).
  * - F4: `recreateFromSpan` deep-copies the span's attribute snapshot with its
  *   tombstoned `RhtNode`s and registers no GC pair for them (JS does the
- *   same), so the copies are unreachable by any sweep until a snapshot reload.
+ *   same), so the copies are unreachable by any sweep until a snapshot
+ *   reload. UNRELATED to, and not fixed by, the split-path fix above (port
+ *   #1363, which covers only `CrdtTreeNode.split`'s own copied tombstones,
+ *   not `recreateFromSpan`'s) — still pinned by `copied attribute tombstones
+ *   are never swept`.
  */
 class TreeUpstreamDefectPinTest {
 
@@ -172,12 +187,15 @@ class TreeUpstreamDefectPinTest {
         )
     }
 
-    // F2, recreate route: "hello" is purged on BOTH replicas before <p> is
-    // tombstoned, so d1's undo recreates it from its span under the tombstone.
-    // JS `recreateFromSpan` returns the node live and placed: the replicas
-    // converge here, but both count the hidden node as live.
+    // F2, recreate route — NOW FIXED (port yorkie-js-sdk 248551a1, #1364):
+    // "hello" is purged on BOTH replicas before <p> is tombstoned, so d1's
+    // undo recreates it from its span under the tombstone. recreateFromSpan's
+    // attach() now stamps the recreated node with <p>'s own removedAt instead
+    // of placing it live: the node is NOT counted live, and registers a
+    // pending gcOnlySize pair so a later purge of <p> does not orphan it.
+    // Figures below are read off the executed GREEN run, not guessed.
     @Test
-    fun `known upstream defect - recreate under a tombstoned parent is counted live`() = runTest {
+    fun `recreate under a tombstoned parent is now born tombstoned`() = runTest {
         val (d1, d2) = pair { element("doc") { element("p") { text { "hello" } } } }
         val vector = maxVectorOf(listOf(actor1, actor2))
         d1.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(1, 6) }.await()
@@ -191,15 +209,26 @@ class TreeUpstreamDefectPinTest {
 
         d1.history.undoAsync().await()
         crossSync(d1, d2)
-        // Pinned: nothing renders, yet both replicas count "hello" live.
+        // FIXED: nothing renders (same as before the fix), but the recreated
+        // node is NOT counted live — live size stays exactly what it was
+        // pre-undo; its size instead lands in gc (gcOnlySize pair).
         assertEquals("<doc></doc>", d1.xml())
         assertEquals(d1.xml(), d2.xml())
-        assertEquals(DataSize(data = 10, meta = 120), d1.getDocSize().live)
+        assertEquals(DataSize(data = 0, meta = 96), d1.getDocSize().live)
+        assertEquals(DataSize(data = 10, meta = 96), d1.getDocSize().gc)
         assertEquals(d1.getDocSize(), d2.getDocSize())
 
+        // The recreated node's gcOnlySize pair is reachable — a purge sweeps
+        // it (plus <p>'s own tombstone) instead of leaving either an orphan.
+        assertEquals(2, d1.garbageCollect(vector))
+        assertEquals(DataSize(data = 0, meta = 0), d1.getDocSize().gc)
+
+        // "hello" was purged, not revived, so reviving <p> leaves it empty —
+        // both replicas converge on the SAME (correct) outcome, unlike the
+        // pre-fix divergence this test used to pin.
         d2.history.undoAsync().await()
         crossSync(d1, d2)
-        assertEquals("<doc><p>hello</p></doc>", d1.xml())
+        assertEquals("<doc><p></p></doc>", d1.xml())
         assertEquals(d1.xml(), d2.xml())
     }
 

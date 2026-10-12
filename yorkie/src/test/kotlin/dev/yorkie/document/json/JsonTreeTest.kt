@@ -12,6 +12,7 @@ import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo.TreeEditOpInfo
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.YorkieException
 import kotlin.test.assertContentEquals
@@ -1127,6 +1128,129 @@ class JsonTreeTest {
 
         val result = document.updateAsync { root, _ ->
             root.tree().mergeByPath(listOf(0))
+        }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+    }
+
+    /**
+     * Ports JS `test/integration/tree_test.ts` `Tree.splitByPath/mergeByPath`
+     * (v0.7.23, #1358, `9c15ab29`). Builds `<doc><p><span>abc</span>
+     * <span>de</span></p></doc>`, matching JS's `docWithTwoSpans`.
+     */
+    private suspend fun twoSpansDocument(): Document {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") {
+                        element("span") { text { "abc" } }
+                        element("span") { text { "de" } }
+                    }
+                },
+            )
+        }.await()
+        return document
+    }
+
+    private fun JsonObject.tree() = getAs<JsonTree>("t")
+
+    @Test
+    fun `JS parity - can split a text position and a child position`() = runTest {
+        val document = twoSpansDocument()
+
+        document.updateAsync { root, _ -> root.tree().splitByPath(listOf(0, 0, 1)) }.await()
+        assertEquals(
+            "<doc><p><span>a</span><span>bc</span><span>de</span></p></doc>",
+            document.getRoot().tree().toXml(),
+        )
+
+        document.updateAsync { root, _ -> root.tree().splitByPath(listOf(0, 1)) }.await()
+        assertEquals(
+            "<doc><p><span>a</span></p><p><span>bc</span><span>de</span></p></doc>",
+            document.getRoot().tree().toXml(),
+        )
+    }
+
+    @Test
+    fun `JS parity - can merge a boundary back together`() = runTest {
+        val document = twoSpansDocument()
+
+        document.updateAsync { root, _ -> root.tree().mergeByPath(listOf(0, 1)) }.await()
+        assertEquals(
+            "<doc><p><span>abcde</span></p></doc>",
+            document.getRoot().tree().toXml(),
+        )
+    }
+
+    @Test
+    fun `JS parity - should not leave garbage content behind`() = runTest {
+        // Neither helper copies content any more, so neither leaves a
+        // tombstone holding a copy of it. A split removes nothing at all; a
+        // merge removes only the two boundary nodes, which carry no data of
+        // their own (the old copy-based helpers left a deleted copy of the
+        // split/merged content behind as gc).
+        val document = twoSpansDocument()
+
+        document.updateAsync { root, _ -> root.tree().splitByPath(listOf(0, 0, 1)) }.await()
+        assertEquals(DataSize(data = 0, meta = 0), document.getDocSize().gc)
+
+        document.updateAsync { root, _ -> root.tree().mergeByPath(listOf(0, 1)) }.await()
+        assertEquals(0, document.getDocSize().gc.data)
+    }
+
+    @Test
+    fun `JS parity - should throw when splitByPath targets the root`() = runTest {
+        val document = twoSpansDocument()
+
+        for (path in listOf(listOf(0), listOf(1))) {
+            val result = document.updateAsync { root, _ -> root.tree().splitByPath(path) }.await()
+            assertTrue(result.isFailure)
+            val exception = result.exceptionOrNull() as YorkieException
+            assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+        }
+        assertEquals(
+            "<doc><p><span>abc</span><span>de</span></p></doc>",
+            document.getRoot().tree().toXml(),
+        )
+    }
+
+    @Test
+    fun `JS parity - should throw when splitByPath targets text held by the root`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewTree("t", element("doc") { text { "abcde" } })
+        }.await()
+
+        // The position resolves to a text node, so the node that would split
+        // is its parent -- the root again.
+        val result = document.updateAsync { root, _ -> root.tree().splitByPath(listOf(2)) }.await()
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull() as YorkieException
+        assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+        assertEquals("<doc>abcde</doc>", document.getRoot().tree().toXml())
+    }
+
+    @Test
+    fun `JS parity - should throw when mergeByPath targets a first child`() = runTest {
+        val document = twoSpansDocument()
+
+        for (path in listOf(listOf(0, 0), listOf(0))) {
+            val result = document.updateAsync { root, _ -> root.tree().mergeByPath(path) }.await()
+            assertTrue(result.isFailure)
+            val exception = result.exceptionOrNull() as YorkieException
+            assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
+        }
+    }
+
+    @Test
+    fun `JS parity - should throw when mergeByPath targets a text position`() = runTest {
+        val document = twoSpansDocument()
+
+        val result = document.updateAsync { root, _ ->
+            root.tree().mergeByPath(listOf(0, 0, 1))
         }.await()
         assertTrue(result.isFailure)
         val exception = result.exceptionOrNull() as YorkieException

@@ -55,16 +55,35 @@ public data class Change internal constructor(
         val allOpInfos = mutableListOf<OperationInfo>()
         val opInfoCounts = mutableListOf<Int>()
         val reverseOps = mutableListOf<Operation>()
+        val executedOperations = mutableListOf<Operation>()
 
         for (op in operations) {
             val result = op.execute(root, source, id.versionVector)
             allOpInfos.addAll(result.opInfos)
-            opInfoCounts.add(result.opInfos.size)
             // addAll(0, ...) preserves internal order of multi-op reverses
             // while reversing the outer operation order (first op's reverse runs last)
             reverseOps.addAll(0, result.reverseOps)
+            // Only an operation that actually ran (found its target) counts as
+            // executed -- mirrors JS change.ts, which omits an operation from
+            // its own `operations` result when `execute` returns undefined. A
+            // style/tree-style that ran and admitted a tombstone (canStyle)
+            // still belongs here even though its own opInfos can be empty.
+            // opInfoCounts is filtered in lockstep so reconcileHistoryEdits's
+            // index pairing with executedOperations stays aligned; an
+            // unexecuted op always contributes an empty opInfos list (count
+            // 0), so dropping it here changes nothing it would have sliced.
+            if (result.executed) {
+                executedOperations.add(op)
+                opInfoCounts.add(result.opInfos.size)
+            }
         }
 
-        return ChangeExecutionResult(allOpInfos, newPresences, reverseOps, operations, opInfoCounts)
+        return ChangeExecutionResult(
+            allOpInfos,
+            newPresences,
+            reverseOps,
+            executedOperations,
+            opInfoCounts,
+        )
     }
 }

@@ -4,6 +4,7 @@ import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID.Companion.InitialCrdtTreeNodeID
+import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -358,6 +359,134 @@ class IndexTreeTest {
         pos = tree.pathToIndex(listOf(0, 1))
         assertEquals(11, pos)
         assertEquals(listOf(1), tree.indexToPath(pos + 1))
+    }
+
+    /**
+     * Ports the tombstone-aware size bookkeeping [moveChild] already has
+     * onto [moveChildBefore] (port `e41069df`, yorkie-js-sdk#1360,
+     * `tree.ts:730`): moving a LIVE child still charges both parents'
+     * visible size; moving a REMOVED child only moves `totalSize` (its own
+     * padding never counted toward either parent's visible size), and it
+     * lands immediately before the named reference instead of at the end.
+     */
+    @Test
+    fun `moveChildBefore inserts before the reference with tombstone-aware sizing`() {
+        val source = createElementNode("src")
+        val reference = createElementNode("ref")
+        val target = createElementNode("target", reference)
+        val liveChild = createElementNode("live")
+        val removedChild = createElementNode("removed")
+        source.append(liveChild)
+        source.append(removedChild)
+        removedChild.remove(InitialTimeTicket)
+
+        val targetVisibleBefore = target.visibleSize
+        val targetTotalBefore = target.totalSize
+        val sourceVisibleBefore = source.visibleSize
+        val sourceTotalBefore = source.totalSize
+
+        target.moveChildBefore(liveChild, reference)
+        assertEquals(listOf("live", "ref"), target.children.map { it.toDiagnostic() })
+        assertEquals(targetVisibleBefore + liveChild.paddedSize(), target.visibleSize)
+        assertEquals(targetTotalBefore + liveChild.paddedSize(true), target.totalSize)
+        // The source parent must give back exactly what the target gained --
+        // the live child's departure shrinks both of ITS size dimensions.
+        assertEquals(sourceVisibleBefore - liveChild.paddedSize(), source.visibleSize)
+        assertEquals(sourceTotalBefore - liveChild.paddedSize(true), source.totalSize)
+
+        val targetVisibleAfterLive = target.visibleSize
+        val targetTotalAfterLive = target.totalSize
+        val sourceVisibleAfterLive = source.visibleSize
+        val sourceTotalAfterLive = source.totalSize
+
+        target.moveChildBefore(removedChild, reference)
+        // Landed immediately before "ref" in full (tombstone-including) order,
+        // but stays absent from the live-only children list.
+        assertEquals(
+            listOf("live", "removed", "ref"),
+            target.allChildren.map { it.toDiagnostic() },
+        )
+        assertEquals(listOf("live", "ref"), target.children.map { it.toDiagnostic() })
+        // No live-size change for the removed child's own move:
+        // visibleSize is unaffected, only totalSize grows by its padding.
+        assertEquals(targetVisibleAfterLive, target.visibleSize)
+        assertEquals(targetTotalAfterLive + removedChild.paddedSize(true), target.totalSize)
+        // Mirror on the source side: a removed child never counted toward
+        // source's visibleSize, so only totalSize shrinks when it leaves.
+        assertEquals(sourceVisibleAfterLive, source.visibleSize)
+        assertEquals(sourceTotalAfterLive - removedChild.paddedSize(true), source.totalSize)
+    }
+
+    // The old buggy order detached `child` from its old parent BEFORE
+    // validating that `reference` actually belongs to the target node --
+    // a missing reference left `child` detached-but-unattached, corrupting
+    // BOTH trees (lost from source, never inserted into target). Validate
+    // that neither tree moves when the call throws.
+    @Test
+    fun `moveChildBefore throws and leaves both trees untouched when reference is not a child`() {
+        val source = createElementNode("src")
+        val child = createElementNode("live")
+        source.append(child)
+
+        val target = createElementNode("target")
+        val strayReference = createElementNode("stray") // never added to target
+
+        val sourceChildrenBefore = source.children.map { it.toDiagnostic() }
+        val targetChildrenBefore = target.children.map { it.toDiagnostic() }
+        val sourceVisibleBefore = source.visibleSize
+        val sourceTotalBefore = source.totalSize
+        val targetVisibleBefore = target.visibleSize
+        val targetTotalBefore = target.totalSize
+
+        assertThrows(NoSuchElementException::class.java) {
+            target.moveChildBefore(child, strayReference)
+        }
+
+        assertEquals(sourceChildrenBefore, source.children.map { it.toDiagnostic() })
+        assertEquals(targetChildrenBefore, target.children.map { it.toDiagnostic() })
+        assertEquals(sourceVisibleBefore, source.visibleSize)
+        assertEquals(sourceTotalBefore, source.totalSize)
+        assertEquals(targetVisibleBefore, target.visibleSize)
+        assertEquals(targetTotalBefore, target.totalSize)
+    }
+
+    // JS parity (index_tree.ts v0.7.23 moveChildBefore): moving a node
+    // before itself is a no-op, not an error -- even though `reference`
+    // trivially "is" one of `child`'s own siblings (itself).
+    @Test
+    fun `moveChildBefore is a no-op when child and reference are the same node`() {
+        val target = createElementNode("target")
+        val child = createElementNode("child")
+        target.append(child)
+
+        val childrenBefore = target.children.map { it.toDiagnostic() }
+        val visibleBefore = target.visibleSize
+        val totalBefore = target.totalSize
+
+        target.moveChildBefore(child, child)
+
+        assertEquals(childrenBefore, target.children.map { it.toDiagnostic() })
+        assertEquals(visibleBefore, target.visibleSize)
+        assertEquals(totalBefore, target.totalSize)
+    }
+
+    // `child.parent` is allowed to be null (e.g. a freshly constructed node
+    // never yet attached anywhere) -- the detach branch must simply be
+    // skipped, not throw.
+    @Test
+    fun `moveChildBefore works for a parentless child`() {
+        val reference = createElementNode("ref")
+        val target = createElementNode("target", reference)
+        val orphan = createElementNode("orphan")
+
+        val visibleBefore = target.visibleSize
+        val totalBefore = target.totalSize
+
+        target.moveChildBefore(orphan, reference)
+
+        assertEquals(listOf("orphan", "ref"), target.children.map { it.toDiagnostic() })
+        assertEquals(visibleBefore + orphan.paddedSize(), target.visibleSize)
+        assertEquals(totalBefore + orphan.paddedSize(true), target.totalSize)
     }
 
     private fun CrdtTreeNode.toDiagnostic() = if (isText) value else type

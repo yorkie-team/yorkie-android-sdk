@@ -500,6 +500,7 @@ internal fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
                 attributes[it.key] = nodeAttr {
                     value = it.value
                     updatedAt = it.executedAt.toPBTimeTicket()
+                    isRemoved = it.isRemoved
                 }
             }
         }
@@ -535,7 +536,17 @@ internal fun PBTextNodeID.toRgaTreeSplitNodeID(): RgaTreeSplitNodeID {
 internal fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
     val textValue = TextValue(value).apply {
         attributesMap.forEach { (key, attr) ->
-            setAttribute(key, attr.value, attr.updatedAt.toTimeTicket())
+            // isRemoved defaults to false on a proto decoded from an older
+            // peer (the field is absent) -> decodes live, matching the
+            // pre-fix (JS-before) behaviour. A REMOVED attribute with no
+            // updatedAt (a corrupt shape no Android or JS encoder emits)
+            // decodes its ticket as TimeTicket(0,0,"") rather than being
+            // rejected -- a deliberate yorkie-js-sdk parity choice: JS's own
+            // decode does not guard this shape either, while the Go server
+            // twin (3891d70d) does reject it ("text node attribute missing
+            // updatedAt"). Exposure is low (decode of trusted server/own-
+            // store bytes); add a guard here only if/when JS ports one.
+            getAttrs().setInternal(key, attr.value, attr.updatedAt.toTimeTicket(), attr.isRemoved)
         }
     }
     return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), textValue).apply {

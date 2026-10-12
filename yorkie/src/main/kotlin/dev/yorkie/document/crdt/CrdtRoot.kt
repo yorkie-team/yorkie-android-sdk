@@ -41,6 +41,17 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * of the map; [CrdtTreeNode]'s data-class hash changes with its children
      * and attributes, so a value-keyed entry could become unreachable.
      * Purge order in [garbageCollect] does not depend on iteration order.
+     *
+     * No re-keying needed for a tree split's copied attribute tombstones
+     * (port yorkie-js-sdk 99dbec9d, #1363): JS keyed `gcPairMap` on
+     * `child.toIDString()` (`updatedAt` + key, both preserved by `RHT.deepcopy`),
+     * so splitting a node with a tombstoned attribute produced a second
+     * registration whose key collided with the original's and was read as an
+     * un-registration, cancelling it — JS re-keyed to `${parentID}:${child
+     * id}` to fix this. Android was never exposed: `gcPairMap` here is keyed
+     * on [GCChild] object IDENTITY (above), and [Rht.deepCopy] builds fresh
+     * [RhtNode] instances, so a split's copied tombstone is a distinct object
+     * from the original and registers as a distinct, non-colliding entry.
      */
     private val gcPairMap: MutableMap<GCChild, GCPair<*>> = IdentityHashMap()
 
@@ -106,7 +117,12 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             if (element is CrdtArray) {
                 element.getAllRGANodes().forEach { node ->
                     if (node.elementEntry == null && node.positionRemovedAt != null) {
-                        registerGCPair(GCPair(element.getRGATreeList(), node))
+                        // A dead position node's size was never counted in
+                        // live (it holds no element); gcOnlySize says so,
+                        // mirroring JS root.ts's constructor scan.
+                        registerGCPair(
+                            GCPair(element.getRGATreeList(), node, gcOnlySize = node.dataSize),
+                        )
                     }
                 }
             }
@@ -364,6 +380,43 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     fun registerGCPair(pair: GCPair<*>) {
         val prev = gcPairMap[pair.child]
         if (prev != null) {
+            // Port yorkie-js-sdk 190204f8 root.ts, refined by e0609c7a/#1368:
+            // a second registration under the SAME child un-registers — the
+            // child is no longer collectable, it was
+            // revived (an RHT overwrite dropped its predecessor with no new
+            // tombstone, see RhtWrite). Subtract exactly what the map is
+            // CURRENTLY contributing, or the bytes stay charged to gc for the
+            // life of the document.
+            //
+            // An RhtNode always contributes its OWN CURRENT size while it is
+            // in the map (collection reads [GCChild.dataSize] on purge, not
+            // the size captured at registration), so the toggle must do the
+            // same — never the stale gcOnlySize: a pair first registered with
+            // a zero gcOnlySize (a live attribute removed from a node that
+            // was ALREADY a tombstone, whose bytes were still inside that
+            // node's own charge at the time) would otherwise give back
+            // nothing when later revived with real content. Measured by
+            // `StyleTombstoneConvergenceTest`'s "gives an attribute back its
+            // own size when a revive unregisters it", which fails without
+            // this RhtNode branch. A non-RhtNode child keeps the original
+            // formula — a born-dead split piece's bytes really are inside a
+            // sibling's charge, so it gives back exactly what registration
+            // added, which IS its gcOnlySize. The only real non-RhtNode case
+            // (a dead array position node, `CrdtRootGcToggleTest`'s "toggle
+            // for a non-RhtNode child..." tests) never actually exercises the
+            // `gcOnlySize` half of this `?:` — its dataSize is fixed the
+            // moment it is dead, so gcOnlySize and the child's current
+            // dataSize always agree there; a THIRD `CrdtRootGcToggleTest`
+            // ("...releases the STORED gcOnlySize, not the child's current
+            // size") registers a non-RhtNode child with a deliberately
+            // mismatched gcOnlySize to pin that this branch reads the STORED
+            // value, not the child's current size.
+            val releasedSize = if (prev.child is RhtNode) {
+                prev.child.dataSize
+            } else {
+                prev.gcOnlySize ?: prev.child.dataSize
+            }
+            docSize = docSize.copy(gc = subDataSize(docSize.gc, releasedSize))
             gcPairMap.remove(pair.child)
             return
         }
@@ -553,6 +606,18 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     fun acc(diff: DataSize) {
         docSize = docSize.copy(
             live = addDataSizes(docSize.live, diff),
+        )
+    }
+
+    /**
+     * `accGC` accumulates the given DataSize to gc. Mirrors [acc] for the gc
+     * half of a style result's [DocSize] (a style op's gc-bound attribute
+     * writes — `accAttrWrite`'s `nodeIsLive = false` branch — need
+     * somewhere to fold into besides live).
+     */
+    fun accGC(diff: DataSize) {
+        docSize = docSize.copy(
+            gc = addDataSizes(docSize.gc, diff),
         )
     }
 

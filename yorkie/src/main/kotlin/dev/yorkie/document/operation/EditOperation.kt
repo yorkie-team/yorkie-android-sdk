@@ -139,9 +139,10 @@ internal data class EditOperation(
             } catch (e: RuntimeException) {
                 // The first of RgaTreeSplit.edit's two sequential
                 // findNodeWithSplit calls can have already buffered a
-                // born-dead split piece before the second throws; drain and
-                // register it before propagating (F11).
-                parentObject.rgaTreeSplit.drainPendingGcPairs().forEach(root::registerGCPair)
+                // born-dead split piece — and a copied attribute tombstone —
+                // before the second throws; drain and register both before
+                // propagating (F11).
+                parentObject.rgaTreeSplit.drainAllPendingGcPairs().forEach(root::registerGCPair)
                 throw e
             }
 
@@ -185,7 +186,7 @@ internal data class EditOperation(
                 logError(TAG, "fail to find $parentCreatedAt")
             }
             logError(TAG, "fail to execute, only Text can execute edit")
-            ExecutionResult(opInfos = emptyList())
+            ExecutionResult(opInfos = emptyList(), executed = false)
         }
     }
 
@@ -274,7 +275,16 @@ internal data class EditOperation(
             emptyList()
         }
 
-        return ExecutionResult(opInfos = opInfos, reverseOps = reverseOps)
+        // executed mirrors opInfos' own idempotent-skip distinction: nothing
+        // changed means no peer needs to know, so this must still count as
+        // not-executed for Document's executedOperations gate -- the
+        // reverse/redo push above is independent of this and stays
+        // unconditional either way.
+        return ExecutionResult(
+            opInfos = opInfos,
+            reverseOps = reverseOps,
+            executed = opInfos.isNotEmpty(),
+        )
     }
 
     /**

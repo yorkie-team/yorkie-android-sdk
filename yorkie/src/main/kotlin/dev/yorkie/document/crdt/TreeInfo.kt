@@ -1,7 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.json.JsonTree
-import dev.yorkie.util.DataSize
+import dev.yorkie.util.DocSize
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 
 /**
@@ -92,7 +92,13 @@ enum class TreeChangeType {
 internal data class TreeOperationResult(
     val changes: List<TreeChange>,
     val gcPairs: List<GCPair<*>> = emptyList(),
-    val dataSize: DataSize,
+    // A style/removeStyle write can land on an already-removed node
+    // (canStyle admits one unconditionally, since #1368) whose bytes must
+    // move through gc, not live — see accAttrWrite in GC.kt. edit()'s own
+    // diff is always live-bound (a split piece born already-removed goes
+    // through its own gcOnlySize pair instead), so edit() always reports a
+    // zero gc half here.
+    val docSize: DocSize,
     /**
      * Deep-copy snapshots of top-level nodes that were deleted by this edit,
      * captured before they were tombstoned.  Used to build the reverse
@@ -138,4 +144,14 @@ internal data class TreeOperationResult(
      * past what was actually inserted. Port 2ed28322.
      */
     val insertedContentSize: Int = 0,
+    /**
+     * Net growth of the visible index this edit's own split step (04)
+     * produced, measured as `size` right after the split walk minus `size`
+     * right before it. Zero for an edit with no split step. Used by
+     * [dev.yorkie.document.operation.TreeEditOperation.getContentSize] and
+     * by its pure-split reverse, which sizes the boundary deletion from this
+     * measured value instead of assuming `2 * splitLevel`. Port `e41069df`
+     * (yorkie-js-sdk#1360).
+     */
+    val splitSize: Int = 0,
 )

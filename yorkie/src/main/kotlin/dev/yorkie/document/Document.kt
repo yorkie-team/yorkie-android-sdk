@@ -390,9 +390,33 @@ public class Document(
                 // the updater proxy above). Drop it so the next access rebuilds it
                 // from the root -- the local source passes err through unchanged
                 // (Change.execute never wraps a non-Remote source). Port JS SDK
-                // `document.ts` `update()` (`4251ab7e`, #1403); Commit 4 (#1397)
-                // burns the lamport here too.
+                // `document.ts` `update()` (`4251ab7e`, #1403).
                 this@Document.clone = null
+                // The root pass above still consumed this context's lamport-advanced
+                // TimeTickets for whatever prefix of operations landed on the root
+                // before it threw (Change.execute does not roll back). Leaving
+                // changeID at its pre-change value would let the NEXT change's
+                // context re-mint the exact same tickets (same lamport, same
+                // per-context delimiter sequence) -- reproduced: a failed 2-op
+                // change's landed first element and the next change's element end
+                // up sharing one createdAt, and the first becomes unreachable.
+                // Burn the lamport and this actor's version-vector entry via
+                // context.getNextId() (prevId.next() for an operation change,
+                // which also sets this actor's entry in a copy of the version
+                // vector), but pin clientSeq back to its pre-change value: this
+                // change was never appended to localChanges (only the success path
+                // below does that) and never claims a clientSeq slot, so advancing
+                // it here would open a gap the next real change's clientSeq must
+                // not have to skip over. Skipped for a presence-only context (no
+                // operations landed on the root, nothing to burn tickets against).
+                // Never reached for a Remote source (applyChangesInternal has its
+                // own, unrelated catch) -- a replica never burns another actor's
+                // tickets. Port JS SDK `document.ts` `update()`'s catch
+                // (`e29d17e0`, #1397; iOS `915dd77fe6`): JS's `this.changeID =
+                // ctx.getNextID().setClientSeq(this.changeID.getClientSeq())`.
+                if (!context.isPresenceOnlyChange()) {
+                    changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+                }
                 throw err
             }
             val operationInfos = localResult.opInfos
@@ -571,14 +595,30 @@ public class Document(
         }
 
         val change = context.toChange()
-        // Execute on clone (validation)
+        // Execute on clone (validation). Never touches the root, so a throw
+        // here needs no lamport burn -- it propagates to executeUndoRedo's
+        // outer catch, which resets the clone the same as every other path.
         change.execute(clone.root, clone.presences, OpSource.UndoRedo)
-        // Execute on root (real application)
-        val undoRedoResult = change.execute(
-            root,
-            _presences.value,
-            OpSource.UndoRedo,
-        )
+        // Execute on root (real application). Mirrors updateAsync's own
+        // root-pass catch above: a throw partway through still consumed
+        // this context's lamport-advanced tickets for whatever prefix
+        // landed, so burn the lamport and this actor's version-vector entry
+        // here too, clientSeq unchanged (this undo/redo change is never
+        // appended to localChanges on this path -- that happens only below,
+        // on success). Port JS SDK `document.ts` `executeUndoRedo`'s root
+        // pass (`e29d17e0`, #1397; iOS `915dd77fe6`).
+        val undoRedoResult = try {
+            change.execute(
+                root,
+                _presences.value,
+                OpSource.UndoRedo,
+            )
+        } catch (err: Throwable) {
+            if (!context.isPresenceOnlyChange()) {
+                changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+            }
+            throw err
+        }
         val opInfos = undoRedoResult.opInfos
         val reverseOps = undoRedoResult.reverseOps
 

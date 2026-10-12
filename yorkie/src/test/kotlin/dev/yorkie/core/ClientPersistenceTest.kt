@@ -10,6 +10,7 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_STABLE_ACTOR_ID
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.time.ActorID
@@ -25,6 +26,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -2392,6 +2394,321 @@ class ClientPersistenceTest {
         assertTrue(dropped.changes.isNotEmpty())
         // The recovery attach writes a fresh base for the key (like T11).
         assertFreshBase(store, storeKeyFor(docKey), seeded)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    // --- #1401 (`bed81143`) a pack dropped in PushOnly/SyncOff still persists the ack ------
+
+    // Port of JS `offline_persist_sync_test.ts`'s
+    // `describe('A pack dropped in PushOnly/SyncOff still persists the ack')` (6 cases).
+    // All six attach directly with RealtimeSyncOff -- not RealtimePushOnly -- because
+    // RealtimePushOnly's `needRealTimeSync()` is `hasLocalChanges()`-driven (true the moment
+    // the local edit below is made), so the client's REAL background sync loop (a real
+    // single-threaded dispatcher ticking on real wall-clock time, independent of this
+    // `runTest`'s virtual clock) can race the test's own explicit `syncAsync` call.
+    // RealtimeSyncOff's `needRealTimeSync()` is unconditionally false (`Attachment.kt`), so
+    // it never auto-syncs and exercises the exact same `dropsRemoteState` branch with zero
+    // race (unit 1B's `ClientPushOnlySnapshotGuardSmokeTest` made the same determination;
+    // its one case is superseded by PO2 below and the file has been deleted).
+    // RED (all six, at `b1fa0d39`): revert the `Client.kt:1063-1076` guard rewrite back to
+    // `if (responsePack.hasChanges && (pushOnly||syncOff)) return@runCatching` else
+    // unconditional `applyChangePack` -- see this unit's own RED run quoted in the build
+    // report for the actual failures each case hits.
+
+    @Test
+    fun `PO1 writes the header for a dropped pack, and re-snapshots nothing`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po1-dropped-changes-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        val base = awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.pullWithAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertFalse(document.toJson().contains("\"pull"), "the pulled change is dropped")
+        assertFalse(document.hasLocalChanges(), "the push is still acked")
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        assertTrue(
+            stored.snapshot.contentEquals(base.snapshot),
+            "a dropped pack did not move the root, so it must not re-snapshot",
+        )
+        // Not asserted empty: the onLocalChange-triggered append for "mine" is independent
+        // of this sync's ack and may have already landed in the incremental log (Android's
+        // split snapshot/log/meta design has no JS equivalent of "the one envelope" this
+        // case's title refers to) -- what matters is the SNAPSHOT bytes above and that the
+        // acked content below still reconstructs.
+        val restored = reconstruct(docKey, stored)
+        assertEquals(document.toJson(), restored.toJson())
+        assertEquals(0L, document.checkPoint.serverSeq)
+        assertEquals(document.checkPoint.serverSeq, restored.checkPoint.serverSeq)
+        assertEquals(document.checkPoint.clientSeq, restored.checkPoint.clientSeq)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `PO2 persists the ack when the dropped pack carried a snapshot`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po2-dropped-snapshot-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        val base = awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.snapshotWithAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertTrue(
+            document.toJson().contains("\"mine\":1"),
+            "the pulled snapshot is dropped, not applied to the root",
+        )
+        assertFalse(document.hasLocalChanges(), "the push is still acked")
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        assertTrue(
+            stored.snapshot.contentEquals(base.snapshot),
+            "a dropped snapshot must not be written to the store",
+        )
+        // Not asserted empty -- see PO1's note: the incremental log may already carry
+        // "mine" independently of this sync's ack.
+        val restored = reconstruct(docKey, stored)
+        assertEquals(document.toJson(), restored.toJson())
+        assertEquals(document.checkPoint.serverSeq, restored.checkPoint.serverSeq)
+        assertEquals(document.checkPoint.clientSeq, restored.checkPoint.clientSeq)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `PO3 repairs a poisoned log on a dropped-pack sync`() = runTest {
+        val store = FlakyAppendStore(failCount = 1)
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po3-dropped-poisoned-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        // Wait for the POISON FLAG (the IO failure callback), not the attempt counter --
+        // same race note as U6.
+        awaitCondition {
+            client.persistStates[storeKeyFor(docKey)]?.takeIf { it.poisoned }
+        }
+        assertEquals(1, store.appendAttempts)
+
+        service.pullWithAckPushPullKeys += docKey
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertFalse(document.toJson().contains("\"pull"), "the pulled change is dropped")
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf {
+                Document.fromBytes(docKey, it.snapshot).toJson().contains("\"mine\":1")
+            }
+        }
+        assertTrue(
+            stored.changes.isEmpty(),
+            "the repair must fold the unappended change into a snapshot",
+        )
+        assertEquals(null, stored.meta)
+        assertFalse(
+            client.persistStates[storeKeyFor(docKey)]?.poisoned ?: false,
+            "a successful repair clears the poison",
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `PO4 marks the sync Synced -- the heartbeat half of the JS case is N-A on Android`() =
+        runTest {
+            // Android's updateHeartbeatTime() is already scoped to Polling/Realtime
+            // attachments only (Client.kt's two syncInternal call sites), orthogonal to
+            // dropsRemoteState in BOTH the old and the new code -- RealtimePushOnly/SyncOff
+            // never call it regardless of this guard, so JS's "refreshes the heartbeat"
+            // half of this case does not apply on Android (recorded; see the commit body).
+            // The testable half -- the early `return@runCatching` used to also skip the
+            // Synced publish for a dropped CHANGES pack, so this IS the RED this guard fixes.
+            val service = MockYorkieService()
+            val client = newClient(service)
+            client.activateAsync().await()
+            val docKey = "po4-dropped-synced-doc"
+            val document = Document(docKey)
+            client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+            document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+            service.pullWithAckPushPullKeys += docKey
+
+            val syncedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<SyncStatusChanged>().first()
+            }
+            val syncResult = client.syncAsync(document).await()
+
+            assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+            assertIs<SyncStatusChanged.Synced>(syncedDeferred.await())
+
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+
+    @Test
+    fun `PO5 acts on the removal flag of a dropped pack`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po5-dropped-removal-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.removedAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+
+        assertEquals(ResourceStatus.Removed, document.getStatus())
+        assertFalse(client.has(docKey), "a removal reaches the document even on a dropped pack")
+        awaitCondition(
+            timeoutMs = 2_000,
+        ) { if (store.load(storeKeyFor(docKey)) == null) true else null }
+        assertNull(store.load(storeKeyFor(docKey)), "clears the envelope pointing at a dead row")
+
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `PO6 adopts the compaction epoch of a dropped pack`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po6-dropped-epoch-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.epochSnapshotAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertEquals(3L, document.epoch, "the epoch is metadata, not remote state")
+        assertTrue(
+            document.toJson().contains("\"mine\":1"),
+            "the dropped snapshot must not replace the root either",
+        )
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        val restored = reconstruct(docKey, stored)
+        assertEquals(3L, restored.epoch, "and it must reach the persisted envelope")
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    // --- #1401 D9: the decide-deferral (Android-only) ----------------------------------
+
+    /**
+     * Delays [delayMs] before FAILING the next [appendChange] call once, like
+     * [FlakyAppendStore] with `failCount = 1` except the failure lands asynchronously after a
+     * real delay instead of synchronously -- the exact shape D9's `persistQueues[key]?.join()`
+     * exists to close the window around (exec-plan Commit 1 unit 1C).
+     */
+    private class DelayedFailingAppendStore(
+        private val delayMs: Long,
+        private val inner: DocStore = MemoryDocStore(),
+    ) : DocStore {
+        var appendAttempts = 0
+        override suspend fun load(docKey: String): StoredDoc? = inner.load(docKey)
+        override suspend fun saveSnapshot(docKey: String, bytes: ByteArray) =
+            inner.saveSnapshot(docKey, bytes)
+
+        override suspend fun appendChange(docKey: String, change: StoredChange) {
+            appendAttempts++
+            if (appendAttempts == 1) {
+                delay(delayMs)
+                throw java.io.IOException("append failed after a delay (#$appendAttempts)")
+            }
+            inner.appendChange(docKey, change)
+        }
+
+        override suspend fun saveMeta(docKey: String, bytes: ByteArray) =
+            inner.saveMeta(docKey, bytes)
+
+        override suspend fun remove(docKey: String) = inner.remove(docKey)
+    }
+
+    // RED (revert ONLY the `persistQueues[key]?.join()` hunk, keep this test): without the
+    // join, `persistAfterSync`'s pure-ack branch re-samples `persistStates[key]` immediately
+    // after the no-op catch-up `append()` call (the watermark was already bumped
+    // synchronously by the ORIGINAL onLocalChange-triggered append, before its IO write —
+    // this store's artificial delay — even started), so it reads `poisoned=false` and
+    // `ackedPastLog=false` and takes the healthy branch: `saveMetaToStore` writes a header
+    // claiming the edit is acked while the chained append for it is still in flight and
+    // about to fail. The awaitCondition below then times out (no snapshot ever embeds
+    // "mine":1, since the actual write was a meta-only header over the hole) --
+    // `check(...) { "condition not met within ${timeoutMs}ms" }` fails the test. See the
+    // build report for the executed RED output.
+    @Test
+    fun `D9 a failing in-flight append is not outraced by the ack-only poison sample`() = runTest {
+        val store = DelayedFailingAppendStore(delayMs = 300)
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "d9-inflight-append-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        // The onLocalChange-triggered append for this edit is now chained on
+        // Dispatchers.IO, delaying before it throws -- exactly the window D9 closes.
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+
+        val stored = awaitCondition(timeoutMs = 3_000) {
+            store.load(storeKeyFor(docKey))?.takeIf {
+                Document.fromBytes(docKey, it.snapshot).toJson().contains("\"k\":1")
+            }
+        }
+        assertTrue(
+            stored.changes.isEmpty(),
+            "the repair must fold the in-flight change into a fresh snapshot",
+        )
+        assertEquals(null, stored.meta, "never a meta header claiming an ack past the hole")
+        assertEquals(1, store.appendAttempts)
 
         client.detachDocument(document).await()
         client.deactivateAsync().await()

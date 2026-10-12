@@ -51,7 +51,6 @@ import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.RestoreResult
 import dev.yorkie.document.change.Change
-import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
@@ -708,38 +707,48 @@ public class Client(
     }
 
     /**
-     * The post-sync persist decision, run after [Document.applyChangePack] under the document's
-     * mutex (JS `client.ts`'s sync-site persist). A pull (changes or a snapshot in the response)
-     * rewrites the base, because the append log holds only LOCAL changes — writing meta alone
+     * The post-sync persist decision, run after [Document.applyChangePack]/
+     * [Document.acknowledgePushedChanges] under the document's mutex (JS `client.ts`'s sync-site
+     * persist). [movedRoot] is true only when the response's remote state (changes or a snapshot)
+     * was actually applied to the root this sync -- a dropped push-only/sync-off pack never moves
+     * it, even though it carried changes or a snapshot (#1401, `bed81143`). A moved root rewrites
+     * the base, because the append log holds only LOCAL changes — writing meta alone
      * would advance the persisted `serverSeq` past a root the store never received. A poisoned
      * pure ack repairs the same way: the append's repair-on-next-edit path cannot cover a
-     * client with nothing left to edit. A healthy pure ack writes meta only, leaving the
-     * snapshot and the log untouched.
+     * client with nothing left to edit. A healthy pure ack (including a dropped pack's ack)
+     * writes meta only, leaving the snapshot and the log untouched.
      *
-     * Two Kotlin-forced guards keep meta from ever leading the log. JS persists synchronously inside the event publish,
+     * Three Kotlin-forced guards keep meta from ever leading the log. JS persists synchronously inside the event publish,
      * so by the time its sync site runs every local change is already in the log; Android's
-     * the triggered append is asynchronous. A base write needs neither guard — it embeds the whole pending
+     * the triggered append is asynchronous. A base write needs none of them — it embeds the whole pending
      * queue. Before a meta-only write, first, the catch-up [append] runs — cheap and idempotent
      * ([DocStore.appendChange] is an upsert, and the watermark skips what is carried) — closing
-     * the window where the triggered append has not run yet for a change still pending. Second, a
-     * change the server acked that the log never received (the triggered append's dispatcher hop
-     * resumed after [Document.applyChangePack] had already dropped it from the pending queue, so
-     * no later append can ever see it) shows as a checkpoint ahead of the watermark; that takes
-     * the snapshot-repair branch, whose base embeds the acked content, instead of a meta-only
-     * write that would claim a position the log cannot back.
+     * the window where the triggered append has not run yet for a change still pending. Second,
+     * [persistQueues]`[key]?.join()` awaits that catch-up append's own store write (JS `decide`
+     * deferral, D9): [append] chains its write via [enqueueWrite] and returns before the write
+     * lands, so without this join a write that is about to fail (and poison the key) can still be
+     * in flight when the re-sample below runs — a hung store write delays this sync's tail no
+     * longer than the store's own timeout bounds it to; Kotlin awaits this under the document
+     * mutex rather than JS's promise `.then`. Third, a change the server acked that the log never
+     * received (the triggered append's dispatcher hop resumed after [Document.applyChangePack]
+     * had already dropped it from the pending queue, so no later append can ever see it) shows as
+     * a checkpoint ahead of the watermark; that takes the snapshot-repair branch, whose base
+     * embeds the acked content, instead of a meta-only write that would claim a position the log
+     * cannot back.
      */
     private suspend fun persistAfterSync(
         attachment: Attachment<out Attachable>,
-        responsePack: ChangePack,
+        movedRoot: Boolean,
     ) {
         val document = attachment.resource as? Document ?: return
         val key = storeKey(document.getKey())
         val state = persistStates[key] ?: return
-        if (responsePack.hasChanges || responsePack.hasSnapshot || state.poisoned) {
+        if (movedRoot || state.poisoned) {
             persistBaseOrPoison(key, document)
             return
         }
         append(attachment)
+        persistQueues[key]?.join()
         val caughtUp = persistStates[key] ?: return
         val ackedPastLog = document.checkPoint.clientSeq > caughtUp.lastAppendedClientSeq
         if (caughtUp.poisoned || ackedPastLog) {
@@ -1041,26 +1050,40 @@ public class Client(
                         ).getOrThrow()
                         val responsePack = response.changePack.toChangePack()
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
-                        // PushPull, ignore the response when the syncMode is PushOnly.
+                        // PushPull, drop the response's remote state (changes OR a snapshot) when
+                        // the syncMode is PushOnly/SyncOff -- but the pushed changes still need
+                        // their ack (and the pack's epoch/removal flag), or they are re-pushed and
+                        // double-counted by the server's next snapshot. Ports JS SDK `client.ts`
+                        // `dropsRemoteState` (`bed81143`, #1401): the OLD guard tested only
+                        // `hasChanges`, so a snapshot-only pack (the server's answer once another
+                        // client pushed the document past the snapshot threshold) still replaced
+                        // the root here. The tail below (heartbeat, Synced, the removal check)
+                        // always runs now -- unlike the old `return@runCatching`, which also
+                        // skipped the ack for a dropped CHANGES pack.
                         val currentSyncMode = attachments[documentKey]?.syncMode
-                        if (responsePack.hasChanges &&
+                        val hasRemoteState =
+                            responsePack.hasChanges || responsePack.hasSnapshot
+                        val dropsRemoteState = hasRemoteState &&
                             (
                                 currentSyncMode == SyncMode.RealtimePushOnly ||
                                     currentSyncMode == SyncMode.RealtimeSyncOff
                                 )
-                        ) {
-                            return@runCatching
+                        if (dropsRemoteState) {
+                            resource.acknowledgePushedChanges(responsePack)
+                        } else {
+                            resource.applyChangePack(responsePack)
                         }
-                        resource.applyChangePack(responsePack)
+                        val movedRoot = !dropsRemoteState && hasRemoteState
                         // An ack-only push advances the checkpoint and drops the
                         // pushed changes from localChanges without recording a new
                         // local change, so the Document.onLocalChange hook alone
                         // would leave a stale envelope in the store. Gated on
                         // persistsToStore like the other site.
-                        // persistAfterSync branches on whether the response carried
-                        // remote content.
+                        // persistAfterSync branches on movedRoot -- whether the
+                        // document's root actually moved this sync (a dropped pack's
+                        // ack, like a healthy pure ack, never moves it).
                         if (attachment.persistsToStore) {
-                            persistAfterSync(attachment, responsePack)
+                            persistAfterSync(attachment, movedRoot)
                         }
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,

@@ -743,6 +743,32 @@ public class Document(
     }
 
     /**
+     * Removes the local changes the server has confirmed, and forwards only
+     * the client seq of the checkpoint. Used for a response [pack] dropped
+     * without applying its remote state: the server seq must stay put so the
+     * skipped state is pulled again once realtime sync resumes, while the
+     * confirmed changes must not be pushed again.
+     *
+     * The pack's metadata is not remote state, and is taken in full: the
+     * compaction epoch and the removal flag describe the document itself,
+     * not the content being skipped, and neither is re-sent by a later pull
+     * the way the skipped changes are. Ports JS SDK `document.ts`
+     * `acknowledgePushedChanges` (`bed81143`, #1401).
+     */
+    internal suspend fun acknowledgePushedChanges(pack: ChangePack): Unit =
+        withContext(dispatcher) {
+            removePushedLocalChanges(pack.checkPoint.clientSeq)
+            checkPoint = checkPoint.forward(
+                CheckPoint(checkPoint.serverSeq, pack.checkPoint.clientSeq),
+            )
+            epoch = pack.epoch
+
+            if (pack.isRemoved) {
+                applyStatus(ResourceStatus.Removed)
+            }
+        }
+
+    /**
      * Applies the given [snapshot] into this document.
      */
     private suspend fun applySnapshot(

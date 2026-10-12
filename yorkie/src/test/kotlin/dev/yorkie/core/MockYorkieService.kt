@@ -8,6 +8,7 @@ import com.connectrpc.ServerOnlyStreamInterface
 import com.google.protobuf.ByteString
 import com.google.protobuf.kotlin.toByteString
 import com.google.rpc.ErrorInfo
+import dev.yorkie.api.snapshotToBytes
 import dev.yorkie.api.toPBChange
 import dev.yorkie.api.toPBTimeTicket
 import dev.yorkie.api.v1.ActivateClientRequest
@@ -81,6 +82,7 @@ import dev.yorkie.api.v1.watchInitialization
 import dev.yorkie.api.v1.watchResponse
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
+import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -188,6 +190,37 @@ class MockYorkieService(
      */
     val pullWithAckPushPullKeys = mutableSetOf<String>()
     private var pullCount = 0
+
+    /**
+     * Document keys whose [pushPullChanges] response is a SNAPSHOT that is also an ack: the
+     * request's own checkpoint echoed back (as [ackOnlyPushPullKeys]) plus a minimal valid
+     * snapshot (an empty [CrdtObject] rooted at [InitialTimeTicket], encoded via
+     * [dev.yorkie.api.snapshotToBytes]) so [dev.yorkie.document.change.ChangePack.hasSnapshot] is
+     * true and `hasChanges` is false — models the real server's answer to an explicit sync once
+     * another client has pushed the document past the snapshot threshold (#1401, `bed81143`): in
+     * push-only/sync-off this response must still be ACKED (clientSeq forwarded) without being
+     * applied to the root.
+     */
+    val snapshotWithAckPushPullKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose [pushPullChanges] response is a PULL-with-ack (as
+     * [pullWithAckPushPullKeys]) that ALSO reports the document Removed (`isRemoved`) --
+     * models the server telling a push-only/sync-off client, in the SAME round trip that
+     * acks its pushed edit, that the document's row is gone (#1401, `bed81143`): the
+     * removal flag reaches the document even though the accompanying peer change is
+     * dropped.
+     */
+    val removedAckPushPullKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose [pushPullChanges] response is a SNAPSHOT-with-ack (as
+     * [snapshotWithAckPushPullKeys]) at a new compaction epoch -- models a dropped pack
+     * that is also a compaction (#1401, `bed81143`): the epoch is metadata describing the
+     * document itself, not the remote content being dropped, and must be adopted even
+     * though the snapshot is not.
+     */
+    val epochSnapshotAckPushPullKeys = mutableSetOf<String>()
 
     /**
      * Document keys whose [detachDocument] response reports the document Removed
@@ -417,6 +450,18 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.changePack.documentKey in snapshotWithAckPushPullKeys) {
+            return ResponseMessage.Success(
+                pushPullChangesResponse {
+                    changePack = changePack {
+                        checkpoint = request.changePack.checkpoint
+                        snapshot = snapshotToBytes(CrdtObject(InitialTimeTicket), emptyMap())
+                    }
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+        }
         if (request.changePack.documentKey in pullWithAckPushPullKeys) {
             pullCount += 1
             return ResponseMessage.Success(
@@ -426,6 +471,32 @@ class MockYorkieService(
                         changes.add(
                             change { operations.add(createSetOperation("pull$pullCount")) },
                         )
+                    }
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in removedAckPushPullKeys) {
+            return ResponseMessage.Success(
+                pushPullChangesResponse {
+                    changePack = changePack {
+                        checkpoint = request.changePack.checkpoint
+                        changes.add(change { operations.add(createSetOperation("peer")) })
+                        isRemoved = true
+                    }
+                },
+                emptyMap(),
+                emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in epochSnapshotAckPushPullKeys) {
+            return ResponseMessage.Success(
+                pushPullChangesResponse {
+                    changePack = changePack {
+                        checkpoint = request.changePack.checkpoint
+                        snapshot = snapshotToBytes(CrdtObject(InitialTimeTicket), emptyMap())
+                        epoch = 3L
                     }
                 },
                 emptyMap(),

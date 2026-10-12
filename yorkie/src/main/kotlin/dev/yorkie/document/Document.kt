@@ -1349,6 +1349,40 @@ public class Document(
     }
 
     /**
+     * Moves this document's [ChangeID.clientSeq] counter forward to [clientSeq], never
+     * backward. Mirrors JS `Document.advanceClientSeqTo` (yorkie-js-sdk#1395).
+     *
+     * Exists for the one caller (the store-backed restore's log-discontinuity repair, in
+     * `Client.kt`) that has to undo a persisted header without undoing the counter inside
+     * it. [restoreFromBytes] returns [checkPoint], [epoch] and [changeID] to what the
+     * snapshot carries, which is right for a header the appended log cannot back — except
+     * for the counter. A counter is not a claim about content the way a checkpoint is: it
+     * records which [ChangeID.clientSeq] values this client has already MINTED, and the
+     * server has taken some of them. Rewinding it to the snapshot's counter mints those
+     * sequences a second time; the server skips them as duplicates, and the next ack —
+     * whose clientSeq covers them — drops them from [localChanges] as pushed. The edits are
+     * lost with no event.
+     *
+     * The position the caller hands over is the acked checkpoint, not the header's own
+     * counter: the server validates continuity from the position it holds, so the next
+     * change must be its clientSeq plus one; the counter can lead that (an edit minted
+     * while a sync was in flight), and resuming there would mint past the server and wedge
+     * every later push on `ErrInvalidClientSeq`.
+     *
+     * Forward-only by construction: a caller that hands over a stale position cannot pull
+     * this document back into reusing sequence numbers. `internal`, not `public` — JS
+     * exposes this on `Document` for its client code only (no module-private concept in
+     * JS); every other store-backed-restore helper on this class ([restoreFromBytes],
+     * [restoreMetaFromBytes], [restoreAppendedChanges], [persistBase]) is `internal` too,
+     * and this matches them rather than the exec-plan's literal "public" wording.
+     */
+    internal suspend fun advanceClientSeqTo(clientSeq: UInt): Unit = withContext(dispatcher) {
+        if (clientSeq > changeID.clientSeq) {
+            changeID = changeID.copy(clientSeq = clientSeq)
+        }
+    }
+
+    /**
      * Mirrors constructing a brand-new Document instance without forcing the
      * caller to swap the object reference it already holds.
      */

@@ -37,6 +37,21 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
      * happened to arrive in -- see `ElementRhtOrderTest`, and
      * `ElementRHT.SetWithExecutedAt` in `yorkie/pkg/document/crdt/element_rht.go`,
      * whose anchoring this now mirrors (yorkie-js-sdk#1343).
+     *
+     * The losing branch marks the incoming value removed only when it is not
+     * removed already (`!node.isRemoved && !value.isRemoved`, yorkie-js-sdk#1395).
+     * The marking exists solely to keep a duplicate out of key iteration, and a
+     * value that arrives removed is already excluded; but [CrdtElement.remove]
+     * accepts any ticket later than the one it holds, so ungated it is not a
+     * no-op. The decoder replays a decoded object through this function one
+     * member at a time, and a decoded tombstone that sorts after the live
+     * occupant would have its `removedAt` bumped from the ticket of the
+     * removal that actually happened to the occupant's `positionedAt` --
+     * making GC on this replica wait on the wrong ticket, and its
+     * re-serialized snapshots and `docSize.gc` disagree with replicas that
+     * never reloaded. See `ElementRhtOrderTest`'s
+     * `leaves a losing tombstone removedAt alone` /
+     * `preserves each tombstone removedAt across a decode`.
      */
     fun set(
         key: String,
@@ -54,9 +69,12 @@ internal class ElementRht<T : CrdtElement> : Iterable<ElementRht.Node<T>> {
             }
             nodeMapByKey[key] = newNode
             value.movedAt = executedAt
-        } else if (!node.isRemoved) {
+        } else if (!node.isRemoved && !value.isRemoved) {
             // The new node loses the LWW conflict; tombstone it so it does not
-            // surface as a duplicate key during iteration.
+            // surface as a duplicate key during iteration. Skipped when the
+            // incoming value already arrived removed -- it is already excluded
+            // from iteration, and remarking it would bump its own removedAt
+            // (yorkie-js-sdk#1395).
             value.remove(node.value.getPositionedAt())
         }
         return removed

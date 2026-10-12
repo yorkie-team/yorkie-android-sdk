@@ -84,6 +84,38 @@ class ElementRhtOrderTest {
         }
     }
 
+    /**
+     * The losing branch marks the incoming value removed so key iteration
+     * skips it. A value that arrives already removed is already skipped, so
+     * the marking has nothing to do -- but [CrdtElement.remove] accepts any
+     * later ticket, so ungated it is not a no-op: it moves the tombstone's
+     * `removedAt` off the ticket of the removal that actually happened and
+     * onto the occupant's `positionedAt`.
+     *
+     * That is the shape the decoder replays on every snapshot load
+     * (yorkie-js-sdk#1377, fixed yorkie-js-sdk#1395 `8d965dd2`): GC then waits
+     * on the wrong ticket, and the replica's re-serialized snapshots and
+     * `docSize.gc` differ from replicas that never reloaded. RED at
+     * `4d353504` (the reverted hunk, `else if (!node.isRemoved)`), GREEN after
+     * this commit's `else if (!node.isRemoved && !value.isRemoved)`.
+     */
+    @Test
+    fun `leaves a losing tombstone removedAt alone`() {
+        for (order in permute(listOf(0, 1))) {
+            val rht = ElementRht<CrdtElement>()
+            val elems = members()
+            val tomb = elems[1]
+            for (idx in order) rht.set("frame", elems[idx], elems[idx].getPositionedAt())
+
+            assertTrue("order $order: tombstone revived", tomb.isRemoved)
+            assertEquals(
+                "order $order: removedAt moved from $t4 to ${tomb.removedAt}",
+                t4,
+                tomb.removedAt,
+            )
+        }
+    }
+
     @Test
     fun `keeps the key readable when the loser is live`() {
         // Three readers of the tombstoned-winner bug would disagree: `has(key)` says false,
@@ -184,6 +216,50 @@ class ElementRhtOrderTest {
     @Test
     fun `decodes identically in every member order - key restored by undo then redo`() =
         decodesIdentically(true)
+
+    /**
+     * A snapshot round-trip must be a fixpoint on the tombstones it carries.
+     * The decoder replays every decoded member through [ElementRht.set], and a
+     * tombstone that sorts after the live occupant takes the losing branch --
+     * which used to bump its `removedAt` to the occupant's `positionedAt`. The
+     * document then measures differently depending on whether it has been
+     * through a snapshot load (yorkie-js-sdk#1377, fixed yorkie-js-sdk#1395
+     * `8d965dd2`).
+     *
+     * `createdAt(live) < createdAt(tomb) < removedAt(tomb) < movedAt(live)`:
+     * the tombstone loses to the undo-restored occupant, and its own removal
+     * is strictly older than the ticket that restored the occupant. Actor IDs
+     * must be the wire's 24-hex form -- anything else fails
+     * [dev.yorkie.api.toByteString]'s hex decode before the comparison is
+     * even reached.
+     */
+    @Test
+    fun `preserves each tombstone removedAt across a decode`() {
+        val actorA = "000000000000000000000001"
+        val actorB = "000000000000000000000002"
+        val live = CrdtPrimitive("kept", TimeTicket(1, 0u, actorA)).apply {
+            movedAt = TimeTicket(5, 0u, actorA)
+        }
+        val tomb = CrdtPrimitive("displaced", TimeTicket(3, 0u, actorB)).apply {
+            remove(TimeTicket(4, 0u, actorB))
+        }
+        val rht = ElementRht<CrdtElement>()
+        rht.set("frame", live, live.getPositionedAt())
+        rht.set("frame", tomb, tomb.getPositionedAt())
+        val root = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = rht)
+
+        fun removedAts(obj: CrdtObject): Map<TimeTicket, TimeTicket?> =
+            obj.memberNodes.associate { it.value.createdAt to it.value.removedAt }
+
+        val want = removedAts(root)
+        assertTrue(
+            "the key must carry a tombstone for this to test anything",
+            want.values.any { it != null },
+        )
+
+        val rebuilt = root.toPBJsonObject().toCrdtElement() as CrdtObject
+        assertEquals(want, removedAts(rebuilt))
+    }
 
     /**
      * The single-replica decoder cases above are pinned again over the

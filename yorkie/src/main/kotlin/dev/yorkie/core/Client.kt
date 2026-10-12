@@ -553,10 +553,23 @@ public class Client(
         // Kept because the ordering it asserts is what makes
         // the two-watermark split correct, and a future change
         // that reintroduces trimming would need it again.
+        //
+        // The document's own counter joins the max too (yorkie-js-sdk#1395):
+        // it is the highest clientSeq this client has MINTED, and a minted
+        // sequence is never replayable whether the snapshot carries it or
+        // the log lost it. It normally ties the other two (the counter
+        // equals the last pending entry, or the checkpoint when the queue
+        // is empty), so it only leads for a base THIS branch's own repair
+        // rewrote: the repair below persists the snapshot with the acked
+        // checkpoint carried forward as the counter, deliberately ahead of
+        // the snapshot's own checkpoint. Without it, the first edit
+        // appended after such a repair starts above `watermark + 1` and
+        // the contiguity guard below discards it.
         val carried = document.pendingChangesAfter(0u)
         val snapshotWatermark = maxOf(
             carried.lastOrNull()?.id?.clientSeq ?: 0u,
             document.checkPoint.clientSeq,
+            document.changeID.clientSeq,
         )
 
         // A corrupt or zero-length meta header only loses the header, not the snapshot or the
@@ -653,14 +666,37 @@ public class Client(
                 // restore above: cannot mismatch, so
                 // the RestoreResult is not consulted.
                 document.restoreFromBytes(stored.snapshot)
-                // Re-persists the SAME bytes
-                // fire-and-forget: writing them back
-                // costs no serialization, and
-                // re-serializing here would bake the
-                // rejected header into the new base.
+                // ...except the counter, which is not a
+                // claim about content (yorkie-js-sdk#1395).
+                // The snapshot's own counter can trail the
+                // header's ACKED checkpoint (an edit minted
+                // while a sync was in flight): resuming at
+                // the snapshot's counter mints those
+                // sequences again, the server skips them as
+                // duplicates, and the next ack -- whose
+                // clientSeq covers them -- drops them from
+                // the pending queue as pushed. Carrying the
+                // ACKED CHECKPOINT forward, not the header's
+                // raw counter: the server validates
+                // continuity from the position it holds, so
+                // the next change is that position plus one,
+                // and resuming at the counter could lead
+                // past it and wedge every later push on
+                // ErrInvalidClientSeq.
+                document.advanceClientSeqTo(ackedWatermark)
+                // Re-serializes the repaired document rather
+                // than writing `stored.snapshot` straight
+                // back: restoreFromBytes above already
+                // returned every OTHER field to the
+                // snapshot's own values, so toBytes() here
+                // re-emits that identical envelope with the
+                // advanced counter as the one difference.
+                // Persisting the stale bytes instead would
+                // silently repeat this same repair -- and its
+                // clientSeq reuse -- on the next reload.
                 persistToStore(
                     storeKey(documentKey),
-                    stored.snapshot,
+                    document.toBytes(),
                 )
             } else {
                 document.restoreAppendedChanges(

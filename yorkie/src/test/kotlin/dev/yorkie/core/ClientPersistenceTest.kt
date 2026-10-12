@@ -1655,9 +1655,18 @@ class ClientPersistenceTest {
         assertEquals(Document.Event.Reason.LogDiscontinuity, dropped.reason)
 
         // The next edit is pushable — no ErrInvalidClientSeq wedge, no re-anchor needed.
+        // 8d965dd2 (#1395): MODIFIED from `document.checkPoint.clientSeq + 1u`. That
+        // compared against the DOCUMENT's own post-repair checkpoint, which the repair
+        // deliberately leaves at the snapshot's (0) rather than the server's -- so it was
+        // satisfied by minting clientSeq 1, a sequence the header's acked checkpoint (1,
+        // `CheckPoint(0, 1u)` above) says the server ALREADY holds. advanceClientSeqTo
+        // carries that acked checkpoint across the repair, so the next mint must be
+        // measured against it instead: the server validates continuity from the position
+        // it holds, so the next change is that position plus one.
+        val ackedCheckpointClientSeq = 1u
         document.updateAsync { root, _ -> root["after"] = true }.await()
         assertEquals(
-            document.checkPoint.clientSeq + 1u,
+            ackedCheckpointClientSeq + 1u,
             document.pendingChanges().last().id.clientSeq,
         )
 
@@ -1699,6 +1708,9 @@ class ClientPersistenceTest {
             store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 2 && it.meta != null }
         }
         assertTrue(document.changeID.clientSeq > document.checkPoint.clientSeq)
+        // Captured before close(): the ack-only sync's acked checkpoint (e1 only -- e2
+        // was minted inside the hook, after the push pack was already built).
+        val ackedCheckpointClientSeq = document.checkPoint.clientSeq
 
         // Simulate losing the newest entry (e.g. a crash right after the first append
         // landed but before the second): a fresh store carrying only changes[0].
@@ -1720,12 +1732,189 @@ class ClientPersistenceTest {
             disablePresence = true,
         ).await()
         assertEquals(Document.Event.Reason.LogDiscontinuity, droppedDeferred.await().reason)
+        // 8d965dd2 (#1395): MODIFIED from `restored.checkPoint.clientSeq + 1u`, the same
+        // way as U14 above -- the repair now carries the acked checkpoint forward via
+        // advanceClientSeqTo, so it is what the next mint must be measured against, not
+        // `restored`'s own (deliberately stale, snapshot-level) checkpoint.
         restored.updateAsync { root, _ -> root["after"] = 1 }.await()
         assertEquals(
-            restored.checkPoint.clientSeq + 1u,
+            ackedCheckpointClientSeq + 1u,
             restored.pendingChanges().last().id.clientSeq,
         )
         client2.close()
+    }
+
+    @Test
+    fun `does not reuse clientSeqs the discarded header said were acked`() = runTest {
+        // Port of JS offline_persist_sync_test.ts's case of the same name (8d965dd2, #1395).
+        // The repair undoes the header by re-restoring from the snapshot bytes. That is right
+        // for the checkpoint and the epoch and wrong for the counter: the header's checkpoint
+        // names sequences the server has already taken, and the snapshot's counter sits below
+        // it. Minting them again gets them skipped as duplicates on push, and the next ack --
+        // whose clientSeq covers them -- drops them from the pending queue as pushed. The
+        // edits are gone with no event, which is the one outcome the repair exists to avoid.
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "no-reuse-doc"
+        val document = Document(docKey)
+        client.attachDocument(
+            document,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        awaitCondition { store.load(storeKeyFor(docKey))?.snapshot }
+
+        // Three edits, all minted against the attach-time base (clientSeq 0) -- the base
+        // written at attach knows nothing about them.
+        document.updateAsync { root, _ -> root["c0"] = 0 }.await()
+        document.updateAsync { root, _ -> root["c1"] = 1 }.await()
+        document.updateAsync { root, _ -> root["c2"] = 2 }.await()
+        awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 3 }
+        }
+        // Ack everything: a healthy pure ack writes meta only, leaving the snapshot (still the
+        // attach-time base) and the log untouched.
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+        val header = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 3 && it.meta != null }
+        }
+
+        val acked: UInt
+        Document.fromBytes(docKey, header.snapshot).let { probe ->
+            try {
+                assertTrue(
+                    probe.changeID.clientSeq == 0u,
+                    "the snapshot must predate every edit for this to test anything",
+                )
+                probe.restoreMetaFromBytes(header.meta!!)
+                acked = probe.checkPoint.clientSeq
+            } finally {
+                probe.close()
+            }
+        }
+        assertTrue(
+            acked > 0u,
+            "the acked checkpoint must lead the snapshot's own counter for this to test anything",
+        )
+
+        // Lose the whole log: the header now claims a position nothing backs.
+        val lossyStore = MemoryDocStore()
+        lossyStore.saveSnapshot(storeKeyFor(docKey), header.snapshot)
+        lossyStore.saveMeta(storeKeyFor(docKey), header.meta!!)
+        client.close()
+
+        val client2 = newClient(MockYorkieService(), docStore = lossyStore)
+        client2.activateAsync().await()
+        val restored = Document(docKey)
+        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            restored.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
+        }
+        client2.attachDocument(
+            restored,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        assertEquals(Document.Event.Reason.LogDiscontinuity, droppedDeferred.await().reason)
+        // The header is undone where it describes content...
+        assertEquals(0u, restored.checkPoint.clientSeq)
+        // ...and carried where it describes sequences already spent: a new edit must not reuse
+        // a clientSeq the server has already taken.
+        restored.updateAsync { root, _ -> root["after"] = 0 }.await()
+        assertEquals(acked + 1u, restored.pendingChanges().last().id.clientSeq)
+        client2.close()
+    }
+
+    @Test
+    fun `persists the repaired counter so a second reload does not reuse it`() = runTest {
+        // Port of JS offline_persist_sync_test.ts's case of the same name (8d965dd2, #1395).
+        // The repair is only worth anything if it survives the reload after it: writing the
+        // ORIGINAL snapshot bytes back would rebase onto an envelope whose changeID still holds
+        // the pre-ack counter, so the very next attach would repeat the repair and mint the
+        // acked sequences again. The edit appended after the repair must also still replay.
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "persist-repair-doc"
+        val document = Document(docKey)
+        client.attachDocument(
+            document,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        awaitCondition { store.load(storeKeyFor(docKey))?.snapshot }
+
+        document.updateAsync { root, _ -> root["c0"] = 0 }.await()
+        document.updateAsync { root, _ -> root["c1"] = 1 }.await()
+        awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 2 }
+        }
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+        val header = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 2 && it.meta != null }
+        }
+
+        val acked: UInt
+        Document.fromBytes(docKey, header.snapshot).let { probe ->
+            try {
+                assertTrue(
+                    probe.changeID.clientSeq == 0u,
+                    "the snapshot must predate every edit for this to test anything",
+                )
+                probe.restoreMetaFromBytes(header.meta!!)
+                acked = probe.checkPoint.clientSeq
+            } finally {
+                probe.close()
+            }
+        }
+        assertTrue(acked > 0u)
+
+        // Lose the whole log, so the next attach takes the repair branch.
+        val lossyStore = MemoryDocStore()
+        lossyStore.saveSnapshot(storeKeyFor(docKey), header.snapshot)
+        lossyStore.saveMeta(storeKeyFor(docKey), header.meta!!)
+        client.close()
+
+        val client2 = newClient(MockYorkieService(), docStore = lossyStore)
+        client2.activateAsync().await()
+        val restored = Document(docKey)
+        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            restored.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
+        }
+        client2.attachDocument(
+            restored,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        assertEquals(Document.Event.Reason.LogDiscontinuity, droppedDeferred.await().reason)
+
+        // The rebase must have carried the counter into the persisted base, not the snapshot's.
+        val rebased = awaitCondition {
+            lossyStore.load(storeKeyFor(docKey))
+                ?.takeIf { !it.snapshot.contentEquals(header.snapshot) }
+        }
+        Document.fromBytes(docKey, rebased.snapshot).let { probe ->
+            try {
+                assertTrue(probe.changeID.clientSeq >= acked)
+            } finally {
+                probe.close()
+            }
+        }
+
+        // One edit after the repair, appended to the freshly cleared log.
+        restored.updateAsync { root, _ -> root["after"] = 0 }.await()
+        awaitCondition {
+            lossyStore.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+        client2.close()
+
+        // The reload after the repair must be quiet: no second repair, no dropped edit.
+        val (_, dropped) = restoreWithFreshClient(lossyStore, docKey)
+        assertFalse(dropped, "the edit appended after a repair must replay, not be discarded")
     }
 
     @Test

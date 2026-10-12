@@ -260,6 +260,7 @@ class RecordingLogger : Logger {
     override val minimumPriority: Int = Log.DEBUG
 
     val debugMessages = mutableListOf<String>()
+    val errorMessages = mutableListOf<String>()
 
     override fun d(
         tag: String,
@@ -274,6 +275,6 @@ class RecordingLogger : Logger {
         message: String?,
         throwable: Throwable?,
     ) {
-        // Not needed by current tests; error-level capture can be added when used.
+        message?.let(errorMessages::add)
     }
 }

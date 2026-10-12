@@ -4,12 +4,15 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.ChangeApplyError
+import dev.yorkie.util.YorkieException
 import io.mockk.every
 import io.mockk.mockkConstructor
 import io.mockk.spyk
 import io.mockk.unmockkAll
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -27,7 +30,17 @@ import org.junit.Test
  * holding a prefix of it the root never took. [Document.applyChanges] and
  * [Document.executeUndoRedo] (both private) now drop the clone in a catch
  * that rethrows, mirroring [Document.updateAsync]'s existing behavior on an
- * updater throw. `clone` is `internal`, so it is read directly here rather
+ * updater throw.
+ *
+ * **Disclosure (spec 034 Commit 2, JS `4251ab7e`, #1403):** "drops the clone when a
+ * remote change fails partway" originally asserted the raw [IllegalStateException]
+ * escaped [Document.applyChangePack] unnamed; it now asserts a [ChangeApplyError]
+ * wrapping that same exception as [Throwable.cause] -- the clone-reset assertion this
+ * test exists for is unchanged, only the exception type naming the failure is. The
+ * undo/redo case below is unaffected: `OpSource.UndoRedo` is not named (D2), so its
+ * raw [IllegalStateException] still escapes unchanged.
+ *
+ * `clone` is `internal`, so it is read directly here rather
  * than through a cast-based accessor the way JS's `internals()` helper does.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -56,7 +69,7 @@ class DocumentCloneResetTest {
         val throwingChange = change.copy(operations = listOf(spiedOp))
 
         val target = Document("d")
-        assertFailsWith<IllegalStateException> {
+        val thrown = assertFailsWith<ChangeApplyError> {
             target.applyChangePack(
                 ChangePack(
                     target.getKey(),
@@ -68,8 +81,35 @@ class DocumentCloneResetTest {
                 ),
             )
         }
+        assertEquals("boom", thrown.cause?.message)
 
         assertNull(target.clone)
+    }
+
+    /**
+     * JS `change_apply_error_test.ts` "leaves the error of a local update untouched"
+     * (`4251ab7e`, #1403): `OpSource.Local` is never named (D2) -- the caller of
+     * `updateAsync` asked for this failure and matches on the [YorkieException.code]
+     * the operation threw, so the raw error (code and all) must reach it unchanged --
+     * but the clone must still drop (same as the remote case above): the root took only
+     * a prefix of the change while the clone took all of it.
+     */
+    @Test
+    fun `leaves the error of a local update untouched, but still drops the clone`() = runTest {
+        mockkConstructor(SetOperation::class)
+        every {
+            anyConstructed<SetOperation>().execute(any(), any(), any())
+        } throws YorkieException(YorkieException.Code.ErrInvalidArgument, "nope")
+
+        val doc = Document("d")
+        val thrown = assertFailsWith<YorkieException> {
+            doc.updateAsync { root, _ -> root["k"] = 1 }.await()
+        }
+
+        assertFalse(thrown is ChangeApplyError)
+        assertEquals(YorkieException.Code.ErrInvalidArgument, thrown.code)
+        assertEquals("nope", thrown.errorMessage)
+        assertNull(doc.clone)
     }
 
     @Test

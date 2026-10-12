@@ -27,6 +27,14 @@ public data class TimeTicket(
         return TimeTicketStruct(lamport.toString(), delimiter, actorID)
     }
 
+    /**
+     * Returns a string containing the metadata of this ticket for debugging.
+     * Ported from JS SDK `ticket.ts` `toTestString` (`4251ab7e`, #1403).
+     */
+    internal fun toTestString(): String {
+        return "$lamport:${actorID.takeLast(2)}:$delimiter"
+    }
+
     companion object {
         internal const val INITIAL_LAMPORT = 0L
         internal const val INITIAL_DELIMITER = 0u

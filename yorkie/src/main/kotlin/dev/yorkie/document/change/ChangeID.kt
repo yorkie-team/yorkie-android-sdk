@@ -137,6 +137,14 @@ public data class ChangeID(
      */
     fun setVersionVector(vector: VersionVector) = copy(versionVector = vector)
 
+    /**
+     * Returns a string containing the metadata of this ID for debugging.
+     * Ported from JS SDK `change_id.ts` `toTestString` (`4251ab7e`, #1403).
+     */
+    internal fun toTestString(): String {
+        return "$lamport:${actor.takeLast(2)}:$clientSeq"
+    }
+
     companion object {
         /**
          * Represents the initial state ID.

@@ -13,14 +13,18 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.presence.Channel
+import dev.yorkie.util.ChangeApplyError
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentOpenElsewhere
 import io.mockk.every
+import io.mockk.mockkConstructor
 import io.mockk.mockkStatic
+import io.mockk.unmockkConstructor
 import io.mockk.unmockkStatic
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
@@ -2714,6 +2718,54 @@ class ClientPersistenceTest {
         client.deactivateAsync().await()
         client.close()
     }
+
+    /**
+     * Spec 034 Commit 2 (JS `4251ab7e`, #1403) unit 2D: a remote change that fails to
+     * apply during a sync must surface as [SyncStatusChanged.SyncFailed] whose
+     * [SyncStatusChanged.SyncFailed.cause] is the [ChangeApplyError] [Document.applyChangePack]
+     * throws (AC2's "SyncFailed case"), not the raw error the operation threw.
+     * `mockkConstructor(SetOperation::class)` forces the throw: no CRDT operation in this
+     * tree naturally throws on a malformed target (a missing parent just reports
+     * `executed = false`, see [SetOperation.execute]'s own `else` branch), so there is no
+     * natural fault to drive this without it.
+     */
+    @Test
+    fun `a remote apply failure during sync publishes SyncFailed with a ChangeApplyError cause`() =
+        runTest {
+            val service = MockYorkieService()
+            val client = newClient(service)
+            client.activateAsync().await()
+            val docKey = "sync-failed-change-apply-error-doc"
+            val document = Document(docKey)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            // The server answers with an ack plus one peer SetOperation -- the mocked
+            // constructor below makes applying it throw.
+            service.pullWithAckPushPullKeys += docKey
+
+            mockkConstructor(SetOperation::class)
+            every {
+                anyConstructed<SetOperation>().execute(any(), any(), any())
+            } throws IllegalStateException("boom")
+
+            val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<SyncStatusChanged>().first()
+            }
+
+            val syncResult = client.syncAsync(document).await()
+            assertTrue(syncResult.isFailure)
+
+            val event = syncEventDeferred.await()
+            assertIs<SyncStatusChanged.SyncFailed>(event)
+            val cause = event.cause
+            assertIs<ChangeApplyError>(cause)
+            assertEquals("boom", cause.cause?.message)
+
+            unmockkConstructor(SetOperation::class)
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
 }
 
 /**

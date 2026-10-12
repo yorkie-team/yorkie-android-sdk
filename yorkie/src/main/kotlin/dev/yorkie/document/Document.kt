@@ -52,8 +52,10 @@ import dev.yorkie.document.schema.validateYorkieRuleset
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.ChangeApplyError
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logDebug
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentRemoved
@@ -375,11 +377,24 @@ public class Document(
                 return@async result
             }
             val change = context.toChange()
-            val localResult = change.execute(
-                root,
-                _presences.value,
-                if (skipHistory) OpSource.LocalNoHistory else OpSource.Local,
-            )
+            val localResult = try {
+                change.execute(
+                    root,
+                    _presences.value,
+                    if (skipHistory) OpSource.LocalNoHistory else OpSource.Local,
+                )
+            } catch (err: Throwable) {
+                // Change.execute applies operations one at a time and does not roll
+                // back, so a root-pass throw here leaves the clone ahead of the root
+                // (the clone's own copy of a prefix of this change already ran via
+                // the updater proxy above). Drop it so the next access rebuilds it
+                // from the root -- the local source passes err through unchanged
+                // (Change.execute never wraps a non-Remote source). Port JS SDK
+                // `document.ts` `update()` (`4251ab7e`, #1403); Commit 4 (#1397)
+                // burns the lamport here too.
+                this@Document.clone = null
+                throw err
+            }
             val operationInfos = localResult.opInfos
             val newPresences = localResult.newPresences
             val reverseOps = localResult.reverseOps
@@ -715,17 +730,46 @@ public class Document(
      * Applies the given [pack] into this document.
      * 1. Update the checkpoint.
      * 2. Do Garbage collection.
+     *
+     * The checkpoint only advances past this point, so a pack whose apply throws is
+     * redelivered by the server on every subsequent pull until the cause is fixed; one
+     * metadata-only line (document key + the pre-forward [checkPoint] + the failing
+     * exception's class name ONLY, never its message -- a cause's own message can
+     * carry content, e.g. a collection's "requested value: ..." text; the full message
+     * -- including the cause's -- is still reachable via a thrown [ChangeApplyError]'s
+     * own `errorMessage`/[Throwable.message], see its KDoc) is logged before
+     * rethrowing, so the stuck document is diagnosable instead of silently retried
+     * forever. [err] reaching this catch for a Remote source is always a
+     * [ChangeApplyError] by construction ([applyChanges]'s own catch already wrapped
+     * it); the class name logged is [err]'s own [Throwable.cause] (the original,
+     * innermost failure) when present, so the line names the root failure type rather
+     * than the uninformative "ChangeApplyError" every entry would otherwise share. A
+     * [CancellationException] skips the log line and propagates unchanged: it is the
+     * caller's scope tearing down, not the document getting stuck. Ports JS SDK
+     * `document.ts` `applyChangePack` (`4251ab7e`, #1403).
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
-        if (pack.hasSnapshot) {
-            applySnapshot(
-                pack.versionVector,
-                checkNotNull(pack.snapshot),
-                pack.checkPoint.clientSeq,
+        try {
+            if (pack.hasSnapshot) {
+                applySnapshot(
+                    pack.versionVector,
+                    checkNotNull(pack.snapshot),
+                    pack.checkPoint.clientSeq,
+                )
+            } else {
+                applyChanges(pack.changes)
+                removePushedLocalChanges(pack.checkPoint.clientSeq)
+            }
+        } catch (err: CancellationException) {
+            throw err
+        } catch (err: Throwable) {
+            logError(
+                "Document.applyChangePack",
+                "\"$key\" cannot apply the pack at checkpoint ${checkPoint.toTestString()}; " +
+                    "the server will redeliver it until this is resolved: " +
+                    (err.cause ?: err)::class.simpleName,
             )
-        } else {
-            applyChanges(pack.changes)
-            removePushedLocalChanges(pack.checkPoint.clientSeq)
+            throw err
         }
 
         checkPoint = checkPoint.forward(pack.checkPoint)
@@ -815,81 +859,125 @@ public class Document(
      * so the next access rebuilds it from the root, the way [updateAsync]
      * already does on an updater throw. Port JS SDK `document.ts`
      * `applyChange`/`applyChangeInternal` (ec7558e9, #1394).
+     *
+     * A [source] of [OpSource.Remote] that throws is always a [ChangeApplyError] by
+     * construction ([Change.execute] names an operation failure; [applyChangesInternal]
+     * names a change-level failure that is not already one) -- this adds the document
+     * key, the one piece neither of those call sites can know. The `?:` fallback only
+     * covers a pre-loop [ensureClone] failure, which is outside #1403's scope. Every
+     * other [source] rethrows the original error unchanged (JS SDK `document.ts`
+     * `applyChangePack`/`applyChange`, `4251ab7e`, #1403). Two exceptions are never
+     * named/wrapped even for a Remote source, and only reset the clone before
+     * propagating: a [CancellationException] -- [applyChangesInternal] suspends
+     * (`ensureClone`'s `withContext`, the event publish, `emitPresences`), so this can
+     * be the caller's scope tearing down, not a change failing to apply -- and a
+     * [java.lang.Error] (e.g. `OutOfMemoryError`), which an application may be relying
+     * on catching by its real type.
      */
     private suspend fun applyChanges(changes: List<Change>, source: OpSource = OpSource.Remote) {
         try {
             applyChangesInternal(changes, source)
-        } catch (err: Throwable) {
+        } catch (err: CancellationException) {
             this.clone = null
             throw err
+        } catch (err: Throwable) {
+            this.clone = null
+            if (source != OpSource.Remote || err is Error) {
+                throw err
+            }
+            throw (err as? ChangeApplyError)?.withDocKey(key) ?: ChangeApplyError(
+                docKey = key,
+                changeID = "<unavailable>",
+                cause = err,
+            )
         }
     }
 
     private suspend fun applyChangesInternal(changes: List<Change>, source: OpSource) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, clone.presences, source).also { cloneResult ->
-                this.clone = clone.copy(presences = cloneResult.newPresences ?: return@also)
-            }
-            val actorID = change.id.actor
-            var presenceEvent: PresenceChanged? = null
-            if (change.hasPresenceChange && actorID in onlineClients.value) {
-                val presenceChange = change.presenceChange ?: return@forEach
-                presenceEvent = when (presenceChange) {
-                    is PresenceChange.Put -> {
-                        if (actorID in _presences.value) {
-                            createPresenceChangedEvent(actorID, presenceChange.presence)
-                        } else {
+            try {
+                change.execute(clone.root, clone.presences, source).also { cloneResult ->
+                    this.clone = clone.copy(presences = cloneResult.newPresences ?: return@also)
+                }
+                val actorID = change.id.actor
+                var presenceEvent: PresenceChanged? = null
+                if (change.hasPresenceChange && actorID in onlineClients.value) {
+                    val presenceChange = change.presenceChange ?: return@forEach
+                    presenceEvent = when (presenceChange) {
+                        is PresenceChange.Put -> {
+                            if (actorID in _presences.value) {
+                                createPresenceChangedEvent(actorID, presenceChange.presence)
+                            } else {
+                                // NOTE(chacha912): When the user exists in onlineClients, but
+                                // their presence was initially absent, we can consider that we have
+                                // received their initial presence, so trigger the 'watched' event.
+                                Others.Watched(PresenceInfo(actorID, presenceChange.presence))
+                            }
+                        }
+
+                        is PresenceChange.Clear -> {
                             // NOTE(chacha912): When the user exists in onlineClients, but
-                            // their presence was initially absent, we can consider that we have
-                            // received their initial presence, so trigger the 'watched' event.
-                            Others.Watched(PresenceInfo(actorID, presenceChange.presence))
+                            // PresenceChange(clear) is received, we can consider it as detachment
+                            // occurring before unwatching.
+                            // Detached user is no longer participating in the document, we remove
+                            // them from the online clients and trigger the 'unwatched' event.
+                            presences.value[actorID]?.let { presence ->
+                                Others.Unwatched(PresenceInfo(actorID, presence))
+                            }.takeIf { actorID in onlineClients.value }
+                                ?.also { removeOnlineClient(actorID) }
                         }
                     }
-
-                    is PresenceChange.Clear -> {
-                        // NOTE(chacha912): When the user exists in onlineClients, but
-                        // PresenceChange(clear) is received, we can consider it as detachment
-                        // occurring before unwatching.
-                        // Detached user is no longer participating in the document, we remove
-                        // them from the online clients and trigger the 'unwatched' event.
-                        presences.value[actorID]?.let { presence ->
-                            Others.Unwatched(PresenceInfo(actorID, presence))
-                        }.takeIf { actorID in onlineClients.value }
-                            ?.also { removeOnlineClient(actorID) }
-                    }
                 }
-            }
 
-            val remoteResult = change.execute(root, _presences.value, source)
-            val opInfos = remoteResult.opInfos
-            val newPresences = remoteResult.newPresences
+                val remoteResult = change.execute(root, _presences.value, source)
+                val opInfos = remoteResult.opInfos
+                val newPresences = remoteResult.newPresences
 
-            // Reconcile text and tree undo/redo stack entries against remote edits.
-            // Only reconcile against changes from other clients.
-            if (change.id.actor != changeID.actor) {
-                reconcileHistoryEdits(remoteResult)
-            }
+                // Reconcile text and tree undo/redo stack entries against remote edits.
+                // Only reconcile against changes from other clients.
+                if (change.id.actor != changeID.actor) {
+                    reconcileHistoryEdits(remoteResult)
+                }
 
-            if (opInfos.isNotEmpty()) {
-                val info = change.toChangeInfo(opInfos)
-                eventStream.emit(
-                    if (source == OpSource.Local) {
-                        Event.LocalChange(
-                            info,
-                        )
-                    } else {
-                        Event.RemoteChange(info)
-                    },
-                )
-            }
-            newPresences?.let {
-                emitPresences(it, presenceEvent)
-            }
-            changeID = if (disableGC) {
-                changeID.syncLamport(change.id)
-            } else {
-                changeID.syncClocks(change.id)
+                if (opInfos.isNotEmpty()) {
+                    val info = change.toChangeInfo(opInfos)
+                    eventStream.emit(
+                        if (source == OpSource.Local) {
+                            Event.LocalChange(
+                                info,
+                            )
+                        } else {
+                            Event.RemoteChange(info)
+                        },
+                    )
+                }
+                newPresences?.let {
+                    emitPresences(it, presenceEvent)
+                }
+                changeID = if (disableGC) {
+                    changeID.syncLamport(change.id)
+                } else {
+                    changeID.syncClocks(change.id)
+                }
+            } catch (e: CancellationException) {
+                // eventStream.emit/emitPresences above suspend; a cancellation here is
+                // the caller's scope tearing down, not a change failing to apply --
+                // never name/wrap it.
+                throw e
+            } catch (e: Throwable) {
+                // Names the change alone when no single operation's own throw already
+                // named it (Change.execute only names an operation-level failure);
+                // Local/LocalNoHistory/UndoRedo pass their error through unchanged --
+                // only a Remote change blocks the whole replica set's progress and
+                // needs naming (D2/D3, JS SDK `document.ts`, `4251ab7e`, #1403). A
+                // java.lang.Error (e.g. OutOfMemoryError) is never wrapped either: an
+                // application catching Error-level conditions specially must still see
+                // the real type, not a ChangeApplyError standing in for it.
+                if (source == OpSource.Remote && e !is ChangeApplyError && e !is Error) {
+                    throw ChangeApplyError(changeID = change.id.toTestString(), cause = e)
+                }
+                throw e
             }
         }
     }

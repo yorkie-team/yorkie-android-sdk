@@ -16,17 +16,26 @@ internal const val MaxUndoRedoStackDepth = 50
 
 /**
  * Stores the undo/redo history of a [Document][dev.yorkie.document.Document].
+ *
+ * @param maxDepth how many entries each of the undo and redo stacks keeps before
+ * dropping the oldest. Defaults to [MaxUndoRedoStackDepth].
  */
-internal class History {
+internal class History(private val maxDepth: Int = MaxUndoRedoStackDepth) {
     private val undoStack = ArrayDeque<List<HistoryOperation>>()
     private val redoStack = ArrayDeque<List<HistoryOperation>>()
+
+    /**
+     * Returns how many entries each of the undo and redo stacks keeps before
+     * dropping the oldest.
+     */
+    fun getMaxDepth(): Int = maxDepth
 
     fun hasUndo(): Boolean = undoStack.isNotEmpty()
 
     fun hasRedo(): Boolean = redoStack.isNotEmpty()
 
     fun pushUndo(ops: List<HistoryOperation>) {
-        if (undoStack.size >= MaxUndoRedoStackDepth) {
+        if (undoStack.size >= maxDepth) {
             undoStack.removeFirst()
         }
         undoStack.addLast(ops)
@@ -37,7 +46,7 @@ internal class History {
     }
 
     fun pushRedo(ops: List<HistoryOperation>) {
-        if (redoStack.size >= MaxUndoRedoStackDepth) {
+        if (redoStack.size >= maxDepth) {
             redoStack.removeFirst()
         }
         redoStack.addLast(ops)

@@ -30,6 +30,7 @@ import dev.yorkie.document.crdt.countNodes
 import dev.yorkie.document.crdt.dropSplitLinksInElement
 import dev.yorkie.document.history.History
 import dev.yorkie.document.history.HistoryOperation
+import dev.yorkie.document.history.MaxUndoRedoStackDepth
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
@@ -106,7 +107,7 @@ public class Document(
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
-    private val internalHistory = History()
+    private val internalHistory = History(options.maxUndoDepth)
 
     /**
      * Fired synchronously, right after a local [Change] is appended to [localChanges] (both
@@ -1929,7 +1930,26 @@ public class Document(
          * value from the attach response takes precedence once attached.
          */
         public val disablePresence: Boolean = false,
-    )
+        /**
+         * How many entries `history.undo()` can go back, and likewise for
+         * `history.redo()`. Each [updateAsync] that changes the document is
+         * one entry; the oldest is dropped once a stack is full. Must be a
+         * positive integer, otherwise construction throws
+         * [YorkieException] with [ErrInvalidArgument]. Defaults to
+         * [MaxUndoRedoStackDepth] (50). A reverse entry keeps a copy of the
+         * content it would restore, so a larger depth holds more memory.
+         */
+        public val maxUndoDepth: Int = MaxUndoRedoStackDepth,
+    ) {
+        init {
+            if (maxUndoDepth < 1) {
+                throw YorkieException(
+                    ErrInvalidArgument,
+                    "maxUndoDepth must be a positive integer: $maxUndoDepth",
+                )
+            }
+        }
+    }
 
     /**
      * `BroadcastOptions` are the options to create a new broadcast.

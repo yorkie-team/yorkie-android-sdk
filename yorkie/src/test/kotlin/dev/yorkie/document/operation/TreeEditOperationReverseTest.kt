@@ -259,6 +259,27 @@ class TreeEditOperationReverseTest {
     }
 
     @Test
+    fun `split into a tombstoned parent grows nothing so it has no reverse op`() {
+        // given: <root><p>ab</p></root>, with a split op addressed into <p> before <p> is removed
+        val (tree, root) = buildTreeRoot()
+        val pNode = CrdtTreeElement(CrdtTreeNodeID(makeTicket(3), 0), "p")
+        makeTreeEditOp(tree, 0, 0, listOf(pNode), 3).execute(root, OpSource.Local, null)
+        val textNode = CrdtTreeText(CrdtTreeNodeID(makeTicket(4), 0), "ab")
+        makeTreeEditOp(tree, 1, 1, listOf(textNode), 4).execute(root, OpSource.Local, null)
+        val splitOp = makeTreeEditOp(tree, 2, 2, null, 6, splitLevel = 1)
+        makeTreeEditOp(tree, 0, 4, null, 5).execute(root, OpSource.Local, null)
+        assertEquals("<root></root>", tree.toXml())
+
+        // when: the split lands in the tombstoned <p>; its new piece is born tombstoned
+        val result = splitOp.execute(root, OpSource.UndoRedo, null)
+
+        // then: no visible growth (splitSize == 0), so nothing for an undo to reverse
+        assertEquals(0, splitOp.splitSize)
+        assertTrue(result.reverseOps.isEmpty())
+        assertEquals("<root></root>", tree.toXml())
+    }
+
+    @Test
     fun `split with content is not treated as a pure split`() {
         // given: <root><p>ab</p></root>
         val (tree, root) = buildTreeRoot()

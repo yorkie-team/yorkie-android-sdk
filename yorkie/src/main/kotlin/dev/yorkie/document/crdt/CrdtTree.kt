@@ -1516,9 +1516,7 @@ internal data class CrdtTree(
         if (!declaredParent.isRemoved || declaredParent.mergedInto == null || removedAt == null) {
             return null
         }
-        val isRemovalUnknown = versionVector.get(removedAt.actorID)
-            .let { it == null || it < removedAt.lamport }
-        if (!isRemovalUnknown) return null
+        if (ticketKnown(versionVector, removedAt)) return null
 
         val target = resolveMergeTarget(declaredParent)
         if (target === declaredParent || declaredParent.parent !== target) return null
@@ -1687,10 +1685,8 @@ internal data class CrdtTree(
      * propagating a style/remove-style along the [CrdtTreeNode.insNextID] chain
      * once a sibling the editor already knew about is reached.
      */
-    private fun isSplitSiblingKnown(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
-        val knownLamport = versionVector.get(node.createdAt.actorID) ?: return false
-        return knownLamport >= node.createdAt.lamport
-    }
+    private fun isSplitSiblingKnown(node: CrdtTreeNode, versionVector: VersionVector): Boolean =
+        ticketKnown(versionVector, node.createdAt)
 
     private fun hasUnknownSplitSibling(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
         val insNextID = node.insNextID ?: return false

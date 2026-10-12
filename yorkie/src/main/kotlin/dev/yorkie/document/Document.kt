@@ -538,9 +538,15 @@ public class Document(
             // on the floor -- it mutated this replica and never reached the
             // others, the divergence canStyle exists to prevent, reintroduced
             // through undo. executedOperations already excludes an operation
-            // whose target vanished while the undo was pending (its own
-            // execute found no target to act on), so that case is still
-            // gated out here. Mirrors JS document.ts's `!operations.length`.
+            // whose target was garbage-collected while the undo was pending
+            // (its own execute found no target to act on), so that case is
+            // still gated out here. A target merely tombstoned by a peer is
+            // not: JS skips Set/Remove there under OpSource.UndoRedo, Android
+            // still executes, sends the change and emits LocalChange
+            // (replicas converge either way). The gate matches JS
+            // document.ts's `!operations.length`; a no-op restore or
+            // retombstone counts as not executed here, where JS always
+            // reports a result for it.
             if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
                 return@async Result.success(Unit)
             }

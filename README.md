@@ -125,6 +125,7 @@ the removal is later undone. Replicas agree on those attributes only if every pa
 | Yorkie server | 0.7.23 |
 | yorkie-android-sdk peers | this release |
 | yorkie-js-sdk peers | 0.7.23 |
+| yorkie-ios-sdk peers | 0.7.23 |
 
 Two cases still diverge, with every participant on 0.7.23. First, if a replica garbage-collects the
 removed content before a peer undoes the removal, that replica rebuilds the text from the peer's

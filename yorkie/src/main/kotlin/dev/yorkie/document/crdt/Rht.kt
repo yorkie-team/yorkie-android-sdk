@@ -26,7 +26,6 @@ class Rht : Collection<RhtNode> {
         key: String,
         value: String,
         executedAt: TimeTicket,
-        isRemoved: Boolean = false,
     ): RhtWrite {
         val prev = nodeMapByKey[key]
         if (prev?.isRemoved == true && prev.executedAt < executedAt) {
@@ -34,7 +33,7 @@ class Rht : Collection<RhtNode> {
         }
 
         if (prev?.executedAt < executedAt) {
-            val node = RhtNode(key, value, executedAt, isRemoved)
+            val node = RhtNode(key, value, executedAt, isRemoved = false)
             nodeMapByKey[key] = node
             return when {
                 prev == null -> RhtWrite(installed = node)

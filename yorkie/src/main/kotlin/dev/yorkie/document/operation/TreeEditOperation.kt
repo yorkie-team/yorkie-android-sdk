@@ -117,6 +117,22 @@ internal data class TreeEditOperation(
     val isRestoreOp: Boolean
         get() = restoreSpans != null || retombstoneSpans != null
 
+    /**
+     * Re-stamps [executedAt] (via `super`) AND every ticket in
+     * [splitTickets] with [actorID]. Port JS SDK `tree_edit_operation.ts`
+     * (b69169c0, #1404): a split's recorded tickets belong to the same
+     * change as [executedAt], so when a change written under a placeholder
+     * actor (e.g. before `Client.attach`) is re-stamped with the real one,
+     * the split tickets must move with it or every replica mints that
+     * split's elements under the WRONG actor while the rest of the change
+     * carries the right one. Lamport/delimiter are untouched -- only the
+     * actor component changes (D5).
+     */
+    override fun setActor(actorID: String) {
+        super.setActor(actorID)
+        splitTickets = splitTickets.map { it.setActor(actorID) }
+    }
+
     override fun execute(
         root: CrdtRoot,
         source: OpSource,

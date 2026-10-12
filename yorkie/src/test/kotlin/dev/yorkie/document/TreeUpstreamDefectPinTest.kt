@@ -25,14 +25,24 @@ import org.junit.Test
  * flip — when one of them fails after a sync-up, update the expectation
  * together with the port and delete the defect note. F2's RECREATE route was
  * flipped this way (yorkie-js-sdk 248551a1, #1364): see `recreate under a
- * tombstoned parent is now born tombstoned` below.
+ * tombstoned parent is now born tombstoned` below. F1's style/removeStyle
+ * case was flipped the same way by b69169c0 (#1404): see `fixed upstream
+ * defect - merge relocating tombstones no longer breaks a concurrent
+ * boundary style` below.
  *
- * - F1: `CrdtTree.edit`'s merge phase relocates the merge source's TOMBSTONED
- *   children into the live merge target (`allChildren` + `moveChild`, port of
- *   JS c5d5c851). A concurrent position anchored on such a tombstone then
- *   resolves into the live target, so the `realParent.isRemoved` redirect and
- *   the `Boundary.Range` branch in `findNodesAndSplitText` never fire and a
- *   concurrent cross-boundary style (or delete) lands on the wrong nodes.
+ * - F1 (STYLE/REMOVESTYLE case, FIXED): `CrdtTree.edit`'s merge phase still
+ *   relocates the merge source's TOMBSTONED children into the live merge
+ *   target exactly as before (`allChildren` + `moveChild`, port of JS
+ *   c5d5c851) — that root cause is untouched. What changed is how a style's
+ *   reached set is resolved: `styleTargets`/`declaredBoundaries`/
+ *   `DeclaredLineage` (yorkie-js-sdk b69169c0, #1404; yorkie#2038/#2070) walk
+ *   the CHANGE's own positions rather than resolving the anchor in the
+ *   receiving replica's current index space, so it no longer matters that a
+ *   concurrent merge relocated the tombstone the anchor named — both
+ *   replicas now resolve the same target and converge. A concurrent
+ *   cross-boundary DELETE across the same relocated tombstone is NOT covered
+ *   by this port (#1404(c)'s scope is style/removeStyle only) and may still
+ *   share the underlying relocation defect; not probed by this file.
  *   Upstream issue draft: harness-docs round-1 build report of spec 014.
  * - F3: `TreeEditOperation.executeRestore` emits a `TreeEditOpInfo` with
  *   `from == to == 0` and no nodes for a decoded remote restore, exactly like
@@ -82,14 +92,18 @@ class TreeUpstreamDefectPinTest {
         return d1 to d2
     }
 
-    // KNOWN UPSTREAM DEFECT (F1) — do not fix Android-only. Reviewer's probe:
-    // d1 merges the two paragraphs while d2 styles across their boundary.
-    // The style's `to` anchor is the text "cd", which the merge tombstones
-    // AND relocates into the surviving <p>, so on d1 the style collapses
-    // inside that <p> and never reaches its tokens, while on d2 the style ran
-    // before the merge arrived. The replicas do NOT converge.
+    // F1 FIXED — yorkie-js-sdk b69169c0 (#1404; yorkie#2038/#2070). The
+    // receiving replica no longer resolves a style's reached set in its own
+    // index space: `styleTargets`/`declaredBoundaries`/`DeclaredLineage`
+    // walk the CHANGE's own positions instead, so a concurrent merge that
+    // tombstones and relocates the style's `to` anchor (the text "cd", moved
+    // into the surviving <p>) no longer silently redirects it. d1 (ran the
+    // merge) and d2 (ran the style) now resolve the same target and
+    // converge. Flipped per this file's own documented process ("update the
+    // expectation together with the port and delete the defect note" --
+    // same flip F2's RECREATE route already got, port 248551a1 above).
     @Test
-    fun `known upstream defect - merge relocating tombstones breaks a concurrent boundary style`() =
+    fun `fixed upstream defect - merge relocating tombstones no longer breaks a boundary style`() =
         runTest {
             val (d1, d2) = pair {
                 element("r") {
@@ -105,13 +119,13 @@ class TreeUpstreamDefectPinTest {
             }.await()
             crossSync(d1, d2)
 
-            // Pinned CURRENT outcome (yorkie-js-sdk v0.7.14 parity): divergence.
-            assertEquals("<r><p></p></r>", d1.xml())
+            // Converged CURRENT outcome (yorkie-js-sdk b69169c0 parity).
+            assertEquals("<r><p bold=\"x\"></p></r>", d1.xml())
             assertEquals("<r><p bold=\"x\"></p></r>", d2.xml())
-            assertNotEquals(
+            assertEquals(
                 d1.xml(),
                 d2.xml(),
-                "pinned divergence — flip this when the upstream fix is ported",
+                "converges now -- b69169c0 (#1404) fixed F1",
             )
         }
 

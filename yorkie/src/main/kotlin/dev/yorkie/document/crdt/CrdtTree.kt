@@ -70,6 +70,49 @@ private class FromAnchorRecovery(
 )
 
 /**
+ * The per-token skip checks [CrdtTree.styleSkipPredicate] builds, shared by
+ * [CrdtTree.style] and [CrdtTree.removeStyle].
+ *
+ * [skipReached] answers "did the change reach this node at all": the
+ * End-token unknown-split-sibling exclusion (§9.1), the §9.6 range-start
+ * guard and the §9.4 merged-anchor interloper filter for the range-end
+ * position. It is about the change, so it holds for every node a style
+ * writes to, however that node was found.
+ *
+ * [skipToken] adds the one restriction that belongs to the index traversal
+ * alone — the §9.4 from-side recovery re-anchors the traversal start over
+ * nodes the change never covered, so a recovered traversal may touch only
+ * the interlopers the recovery positively identified. Nodes derived from
+ * the change's own positions are not in that widened span and answer to
+ * [skipReached] only.
+ *
+ * [declaredTo]/[declaredFrom] are resolved once per change and handed back
+ * to [CrdtTree.styleTargets], whose split-family closure needs them too.
+ * Port JS SDK `tree.ts` `styleSkipPredicate`'s return shape (b69169c0,
+ * #1404).
+ */
+private class StyleSkipPredicateResult(
+    val skipToken: (CrdtTreeNode, TokenType) -> Boolean,
+    val skipReached: (CrdtTreeNode, TokenType) -> Boolean,
+    val declaredTo: DeclaredLineage?,
+    val declaredFrom: DeclaredLineage?,
+)
+
+/**
+ * The index/path range a style change on a node reports to editors; null
+ * when the node has no parent (a target resolved through a split family or
+ * merge lineage walk can be live by [CrdtTreeNode.isRemoved] yet detached
+ * from the tree). Port JS SDK `tree.ts` `styleChangeRange`'s return shape
+ * (b69169c0, #1404).
+ */
+private class StyleChangeRange(
+    val from: Int,
+    val to: Int,
+    val fromPath: List<Int>,
+    val toPath: List<Int>,
+)
+
+/**
  * [Boundary] selects how [CrdtTree.findNodesAndSplitText] resolves a
  * position inside a parent tombstoned by a merge. [Insert] places it at the
  * insertion boundary in the merge target (before the first moved child, so
@@ -234,6 +277,11 @@ internal data class CrdtTree(
 
     /**
      * Applies the given [attributes] of the given [range].
+     *
+     * Resolves the reached set once through [styleTargets] — the SAME
+     * resolution [removeStyle] asks for — rather than an inline traversal of
+     * its own; see [styleTargets]'s KDoc for why the two share one
+     * resolution. Port JS SDK `tree.ts` `style` (b69169c0, #1404).
      */
     fun style(
         range: TreePosRange,
@@ -241,85 +289,27 @@ internal data class CrdtTree(
         executedAt: TimeTicket,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
-        var diff = DataSize(
-            data = 0,
-            meta = 0,
-        )
-
-        // Boundary.Range (port 5c158690): a style range must never cross a
-        // concurrent merge anchor, so both endpoints resolve right after the
-        // merge-source tombstone rather than the insertion boundary.
-        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
-        val (fromParent, fromLeftRaw) = from
-        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
-        val (toParent, toLeftRaw) = to
-
-        diff = addDataSizes(diff, diffTo, diffFrom)
-
-        // Advance past split siblings the editor did not know about so range
-        // boundaries land after every unseen split product. Skip when leftRaw
-        // equals the parent (leftmost-child sentinel).
-        val fromLeft = if (fromLeftRaw === fromParent) {
-            fromLeftRaw
-        } else {
-            advancePastUnknownSplitSiblings(
-                fromLeftRaw,
-                versionVector,
-                skipActorID = executedAt.actorID,
-            )
-        }
-        val toLeft = if (toLeftRaw === toParent) {
-            toLeftRaw
-        } else {
-            advancePastUnknownSplitSiblings(
-                toLeftRaw,
-                versionVector,
-                skipActorID = executedAt.actorID,
-            )
-        }
-
-        // §9.4 from-side recovery (port ea693307, yorkie-js-sdk#1329): when a
-        // concurrent merge unknown to this styler collapsed the resolved
-        // range, re-anchor the traversal start and restrict it to positively
-        // identified interlopers. The to-anchors are unchanged either way.
-        val recovery = reversedFromAnchorRecovery(
-            range.first,
-            fromParent,
-            fromLeft,
-            toParent,
-            toLeft,
-            versionVector,
-        )
+        val (targets, diff) = styleTargets(range, executedAt, versionVector)
 
         val changes = mutableListOf<TreeChange>()
-
         // Widened to GCPair<*>: drained pending pairs below are
         // GCPair<CrdtTreeNode>, a different type parameter than the
         // GCPair<RhtNode> attribute pairs added by this loop.
         val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         val newAttrKeys = mutableListOf<String>()
-        var capturedPrev = false
         // DocSize: accAttrWrite folds each RhtWrite's
         // install/supersede/revive into live or gc depending on whether the
         // node it landed on is still live (see GC.kt). `diff` (the two
-        // boundary splits above) is always live-bound and is folded in once,
-        // below, after the traversal.
+        // boundary splits styleTargets already folded in) is always
+        // live-bound and is folded in once, below, after the loop.
         var size = DocSize(live = DataSize(0, 0), gc = DataSize(0, 0))
-        val shouldSkipToken =
-            styleSkipPredicate(range.second, versionVector, recovery?.isInterloper)
-        traverseInPosRange(
-            fromParent = recovery?.fromParent ?: fromParent,
-            fromLeft = recovery?.fromLeft ?: fromLeft,
-            toParent = toParent,
-            toLeft = toLeft,
-        ) { (node, tokenType), _ ->
-            if (node.canStyle(versionVector) && attributes != null) {
-                if (shouldSkipToken(node, tokenType)) {
-                    return@traverseInPosRange
-                }
 
-                if (!capturedPrev) {
+        if (attributes != null) {
+            targets.forEachIndexed { index, node ->
+                // Capture previous attribute values from the first styled
+                // node for the reverse operation (undo).
+                if (index == 0) {
                     val attrs = node.getAttrs()
                     for ((key, _) in attributes) {
                         if (attrs.has(key)) {
@@ -328,97 +318,51 @@ internal data class CrdtTree(
                             newAttrKeys.add(key)
                         }
                     }
-                    capturedPrev = true
                 }
 
-                val parentOfNode = requireNotNull(node.parent)
-                val previousNode = node.prevSibling ?: parentOfNode
-
-                val updatedAttrPairs = node.setAttributes(attributes, executedAt)
-                val affectedAttrs = updatedAttrPairs.fold(
-                    emptyMap<String, String>(),
-                ) { acc, write ->
-                    val installed = write.installed
-                    acc + installed?.let {
-                        mapOf(it.key to attributes[it.key].orEmpty())
-                    }.orEmpty()
+                val writes = node.setAttributes(attributes, executedAt)
+                val affectedAttrs = mutableMapOf<String, String>()
+                writes.forEach { write ->
+                    write.installed?.let { installed ->
+                        affectedAttrs[installed.key] = attributes[installed.key].orEmpty()
+                    }
+                    // A node visited twice (Start then End) issues the SAME
+                    // write ticket twice; the second always loses LWW
+                    // against itself (installed/revived/superseded all
+                    // empty on an RhtWrite read), so folding it in a second
+                    // time is a no-op — the reached set itself already
+                    // reports a fully covered node once (see styleTargets),
+                    // so there is no longer a tokenType asymmetry to guard
+                    // here either way. Mirrors JS SDK `tree.ts:1762-1764`
+                    // (190204f8).
+                    size = accAttrWrite(write, node, !node.isRemoved, gcPairs, size)
                 }
+
                 // A tombstoned node (now admitted by canStyle) is not
                 // part of the rendered document; toIndex on one yields a
                 // zero-width range meaningless to an editor. Mirrors JS SDK
                 // `tree.ts:1744` (e0609c7a #1368) — the text half makes the
                 // same exclusion.
                 if (affectedAttrs.isNotEmpty() && !node.isRemoved) {
-                    TreeChange(
-                        type = TreeChangeType.Style,
-                        from = toIndex(parentOfNode, previousNode),
-                        to = toIndex(node, node),
-                        fromPath = toPath(parentOfNode, previousNode),
-                        toPath = toPath(node, node),
-                        actorID = executedAt.actorID,
-                        attributes = affectedAttrs,
-                    ).let(changes::add)
-                }
-
-                // A node visited twice (Start then End) issues the SAME
-                // write ticket twice; the second always loses LWW against
-                // itself (installed/revived/superseded all empty on an
-                // RhtWrite read), so folding it in a second time is a
-                // no-op. A range that OPENS inside an element reaches that
-                // element as an End token with no Start visit, so gating
-                // this on `tokenType != TokenType.End` dropped the only
-                // booking for that node. Book every write unconditionally,
-                // matching JS SDK `tree.ts:1762-1764` (190204f8, closing
-                // "the TokenType.End asymmetry").
-                updatedAttrPairs.forEach { write ->
-                    size = accAttrWrite(write, node, !node.isRemoved, gcPairs, size)
-                }
-
-                // Propagate style to unknown split siblings so that a style
-                // operation whose range was determined before the split also
-                // covers the right part of the split. Mirrors JS SDK PR #1224.
-                if (tokenType == TokenType.Start && versionVector != null) {
-                    var current = node
-                    val walker = InsNextWalker()
-                    walker.visit(current)
-                    while (true) {
-                        val nextID = current.insNextID ?: break
-                        val next = findFloorNode(nextID) ?: break
-                        if (next.isText) break
-                        // Stop on a chain that loops back on itself; see InsNextWalker.
-                        if (!walker.visit(next)) break
-                        if (isSplitSiblingKnown(next, versionVector)) break
-
-                        val siblingPairs = next.setAttributes(attributes, executedAt)
-                        val siblingAffectedAttrs =
-                            siblingPairs.fold(emptyMap<String, String>()) { acc, write ->
-                                val installed = write.installed
-                                acc + installed?.let { mapOf(it.key to it.value) }.orEmpty()
-                            }
-                        if (siblingAffectedAttrs.isNotEmpty()) {
-                            val parentOfNext = requireNotNull(next.parent)
-                            val previousNext = next.prevSibling ?: parentOfNext
-                            TreeChange(
-                                type = TreeChangeType.Style,
-                                from = toIndex(parentOfNext, previousNext),
-                                to = toIndex(next, next),
-                                fromPath = toPath(parentOfNext, previousNext),
-                                toPath = toPath(next, next),
-                                actorID = executedAt.actorID,
-                                attributes = siblingAffectedAttrs,
-                            ).let(changes::add)
-                        }
-                        siblingPairs.forEach { write ->
-                            size = accAttrWrite(write, next, !next.isRemoved, gcPairs, size)
-                        }
-                        current = next
+                    styleChangeRange(node)?.let { changeRange ->
+                        TreeChange(
+                            type = TreeChangeType.Style,
+                            from = changeRange.from,
+                            to = changeRange.to,
+                            fromPath = changeRange.fromPath,
+                            toPath = changeRange.toPath,
+                            actorID = executedAt.actorID,
+                            attributes = affectedAttrs,
+                        ).let(changes::add)
                     }
                 }
             }
         }
-        // This style operation's boundary splits (findNodesAndSplitText) can
-        // land inside an already-tombstoned node and buffer a born-dead
-        // piece; drain it so it is not left unregistered for GC.
+
+        // This style operation's boundary splits (styleTargets ->
+        // findNodesAndSplitText) can land inside an already-tombstoned node
+        // and buffer a born-dead piece; drain it so it is not left
+        // unregistered for GC.
         gcPairs.addAll(drainPendingGcPairs())
         return TreeOperationResult(
             changes,
@@ -427,6 +371,256 @@ internal data class CrdtTree(
             prevAttributes = prevAttributes,
             attributesToRemove = newAttrKeys,
         )
+    }
+
+    /**
+     * Resolves the nodes a [style]/[removeStyle] [range] applies to, without
+     * repeats, along with the size the boundary text splits added to live.
+     * Traversed nodes come in document order; boundary elements recovered
+     * from the change's positions follow them, as in Go.
+     *
+     * The two operations are one range resolution asked to write two
+     * different things, so the resolution lives here once. A node is
+     * reported at most once even though a fully covered element is visited
+     * on both its Start and End tokens; the second write is already a
+     * no-op, since RHT rejects a ticket that is not after the one it holds.
+     *
+     * NOTE(cross-implementation): the set this returns is a replicated
+     * contract — every SDK and the server have to reach the same nodes for
+     * the same change. It mirrors yorkie's `styleTargets`; the rules are
+     * the "Port specification" in yorkie's
+     * `docs/design/concurrent-merge-split.md` (yorkie#2038/#2070). Port JS
+     * SDK `tree.ts` `styleTargets` (b69169c0, #1404).
+     */
+    private fun styleTargets(
+        range: TreePosRange,
+        editedAt: TimeTicket,
+        versionVector: VersionVector?,
+    ): Pair<List<CrdtTreeNode>, DataSize> {
+        var diff = DataSize(
+            data = 0,
+            meta = 0,
+        )
+        val (from, to) = range
+
+        // Boundary.Range (port 5c158690): a style range must never cross a
+        // concurrent merge anchor, so both endpoints resolve right after the
+        // merge-source tombstone rather than the insertion boundary.
+        val (resolvedFrom, diffFrom) = findNodesAndSplitText(from, editedAt, Boundary.Range)
+        val (resolvedFromParent, fromLeftRaw) = resolvedFrom
+        val (resolvedTo, diffTo) = findNodesAndSplitText(to, editedAt, Boundary.Range)
+        val (toParent, toLeftRaw) = resolvedTo
+
+        diff = addDataSizes(diff, diffTo, diffFrom)
+
+        // skipActorID for the same reason as edit's Phase 2: a
+        // same-boundary empty run has to resolve here the way the split
+        // loop resolves it.
+        //
+        // This advance on BOTH anchors is also what RTCOLLABPLATFORM-787
+        // (re-porting JS SDK c8928853, #1375) needed from removeStyle(),
+        // which used to drop it (see the unit-1D build report's history:
+        // reverses iOS 2e6979a0b1's reversal of Android's own v0.7.6
+        // divergence, 0b3eb7f5) — removeStyle() sharing this one resolution
+        // with style() carries it for free, no removeStyle-specific call
+        // site left to comment it on.
+        val styleActorID = editedAt.actorID
+        var fromParent = resolvedFromParent
+        var fromLeft = if (fromLeftRaw === fromParent) {
+            fromLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(fromLeftRaw, versionVector, skipActorID = styleActorID)
+        }
+        val toLeft = if (toLeftRaw === toParent) {
+            toLeftRaw
+        } else {
+            advancePastUnknownSplitSiblings(toLeftRaw, versionVector, skipActorID = styleActorID)
+        }
+
+        val isVersionVectorEmpty = versionVector == null || versionVector.size() == 0
+
+        // §9.4 from-side recovery (port ea693307, yorkie-js-sdk#1329): when a
+        // concurrent merge unknown to this styler collapsed the resolved
+        // range, re-anchor the traversal start and restrict it to positively
+        // identified interlopers. The to-anchors are unchanged either way.
+        val recovery = reversedFromAnchorRecovery(
+            from,
+            to,
+            fromParent,
+            fromLeft,
+            toParent,
+            toLeft,
+            versionVector,
+        )
+        if (recovery != null) {
+            fromParent = recovery.fromParent
+            fromLeft = recovery.fromLeft
+        }
+        val skip = styleSkipPredicate(from, to, fromParent, versionVector, recovery?.isInterloper)
+
+        val targets = mutableListOf<CrdtTreeNode>()
+        val seen = Collections.newSetFromMap(IdentityHashMap<CrdtTreeNode, Boolean>())
+        val add: (CrdtTreeNode) -> Unit = { node ->
+            if (seen.add(node)) {
+                targets.add(node)
+            }
+        }
+
+        traverseInPosRange(fromParent, fromLeft, toParent, toLeft) { token, _ ->
+            val node = token.node
+            val tokenType = token.tokenType
+            if (node in seen || skip.skipToken(node, tokenType)) {
+                return@traverseInPosRange
+            }
+
+            if (node.canStyle(versionVector)) {
+                add(node)
+                // Carry the style onto split products the change could not
+                // have known, so a range resolved before the split still
+                // covers the piece the split cut off. Which token reached
+                // the node does not decide this: a node the range covered
+                // whole arrives on its Start token, or on its End token
+                // alone when the range began inside it.
+                unknownSplitSiblings(node, versionVector, ::findFloorNode).forEach(add)
+                return@traverseInPosRange
+            }
+
+            // The change did not know this node was created, so it cannot
+            // have named it -- unless a concurrent split produced it from
+            // one the change did name. An End token the range genuinely ran
+            // past says the change styled that element while it was still
+            // one piece, so the whole split family carries the style,
+            // including the half the change knew and the traversal no
+            // longer reaches.
+            if (tokenType == TokenType.End &&
+                !isVersionVectorEmpty &&
+                skip.declaredTo != null &&
+                !skip.declaredTo.covers(node)
+            ) {
+                val family = splitFamilyOf(node, versionVector, ::findFloorNode)
+                val familyHead = family.firstOrNull()
+                // The family is reached only through the node the change
+                // knew, which is the one the End-token guard judges. When
+                // that guard excludes it, re-adding the family would style
+                // the very node it skipped.
+                //
+                // The change must also have begun at or inside that node. A
+                // split of more than one level carries the right half into
+                // a new parent, past a range that began right after the
+                // known node, and its End token then enters the range with
+                // nothing to do with the change. A range that began BEFORE
+                // the known node covered it whole, however the traversal
+                // lost it, and keeps the closure. This is rule 2(c) of the
+                // Port specification in yorkie's concurrent-merge-split
+                // design doc (§9.2 Fix 27, yorkie#2070).
+                if (familyHead != null &&
+                    !skip.skipToken(familyHead, TokenType.End) &&
+                    skip.declaredFrom != null &&
+                    (
+                        skip.declaredFrom.coversEitherWay(familyHead) ||
+                            beginsAtOrBefore(familyHead, from)
+                        )
+                ) {
+                    family.forEach(add)
+                }
+            }
+        }
+
+        // Add back the boundary elements the change itself reached. Without
+        // a concurrent merge the traversal has already found every one of
+        // them; with one, they are the nodes the resolved range can no
+        // longer see.
+        if (boundaryRangeCovers(from, to, fromParent, fromLeft, toParent, toLeft)) {
+            boundaryElements(from, to, ::findFloorNode).forEach { token ->
+                // The §9.4 interloper filters and the End-token split guard
+                // are about which nodes the change reached, not about how
+                // the traversal found them, so a boundary element answers
+                // to them too.
+                val reached = !skip.skipReached(token.node, token.tokenType)
+                if (reached && token.node.canStyle(versionVector)) {
+                    add(token.node)
+                }
+            }
+        }
+
+        return targets to diff
+    }
+
+    /**
+     * Returns the index and path range a style change on [node] reports to
+     * editors, or null when [node] is not in the document.
+     *
+     * [styleTargets]'s targets come from walks over ids — split families,
+     * merge lineage — so one can be a node that is live by
+     * [CrdtTreeNode.isRemoved] but detached from the tree, with no parent.
+     * [CrdtTreeNode.prevSibling] dereferences the parent and would throw on
+     * it; a node with no parent has no place in the rendered document to
+     * report either, so the caller reports nothing. Port JS SDK `tree.ts`
+     * `styleChangeRange` (b69169c0, #1404).
+     */
+    private fun styleChangeRange(node: CrdtTreeNode): StyleChangeRange? {
+        val parent = node.parent ?: return null
+        val previous = node.prevSibling ?: parent
+        return StyleChangeRange(
+            from = toIndex(parent, previous),
+            to = toIndex(node, node),
+            fromPath = toPath(parent, previous),
+            toPath = toPath(node, node),
+        )
+    }
+
+    /**
+     * Reports whether the change's declared range-start sits at or before
+     * [node]'s Start token in document order, both measured with removed
+     * nodes included so a concurrent removal between the two moves neither.
+     * A position that does not resolve answers no, as Go's
+     * `beginsAtOrInside` does. Port JS SDK `tree.ts` `beginsAtOrBefore`
+     * (b69169c0, #1404).
+     */
+    private fun beginsAtOrBefore(node: CrdtTreeNode, from: CrdtTreePos): Boolean {
+        val parentOfNode = node.parent ?: return false
+        return try {
+            val (parent, left) = from.toTreeNodePair(this)
+            // A concurrent merge can move the left sibling out of the
+            // declared parent; that shape is refused explicitly rather than
+            // resolved to a meaningless offset 0.
+            if (left !== parent && left.parent !== parent) {
+                return false
+            }
+            val offset = parentOfNode.findOffset(node, true)
+            val nodeIdx = indexTree.indexOf(TreePos(parentOfNode, offset), true)
+            val declaredIdx = toIndex(parent, left, true)
+            declaredIdx >= 0 && declaredIdx <= nodeIdx
+        } catch (e: RuntimeException) {
+            // Mirrors JS SDK's bare catch: toTreeNodePair/indexOf throw
+            // IllegalArgumentException on an id this replica cannot
+            // resolve, which a styleTargets caller must never propagate.
+            false
+        }
+    }
+
+    /**
+     * Reports whether the change declared a [from]/[to] range that covers
+     * at least one element, so that reconstructing its boundary elements
+     * ([boundaryElements]) is repair rather than invention. A range whose
+     * two positions are equal covers nothing on any replica. A range that
+     * resolves backwards covers nothing here either; only a removal
+     * collapses a range, so an inversion with a live declared ancestry on
+     * both ends is the caller's own and gets nothing. Port JS SDK `tree.ts`
+     * `boundaryRangeCovers` (b69169c0, #1404).
+     */
+    private fun boundaryRangeCovers(
+        from: CrdtTreePos,
+        to: CrdtTreePos,
+        fromParent: CrdtTreeNode,
+        fromLeft: CrdtTreeNode,
+        toParent: CrdtTreeNode,
+        toLeft: CrdtTreeNode,
+    ): Boolean {
+        if (from == to) return false
+        if (toIndex(fromParent, fromLeft) <= toIndex(toParent, toLeft)) return true
+        return declaredAncestryRemoved(from, ::findFloorNode) ||
+            declaredAncestryRemoved(to, ::findFloorNode)
     }
 
     private fun toPath(parentNode: CrdtTreeNode, leftSiblingNode: CrdtTreeNode): List<Int> {
@@ -779,36 +973,53 @@ internal data class CrdtTree(
         // 03-1. Propagate deletes to children moved by prior merges. When a
         // merge-source node is fully deleted (not itself a merge boundary),
         // its former children in the merge target should also be deleted.
-        // Skip when mergedInto points to the merge destination (concurrent
-        // merge). Compare against the resolved dest, not fromParent: the
-        // forwarding pointers above point at the flattened target (§6.3), so
-        // a chained merge (dest !== fromParent) must recognize a
-        // concurrent-merge boundary by dest.
+        // Compare against the resolved dest, not fromParent: the forwarding
+        // pointers above point at the flattened target (§6.3), so a chained
+        // merge (dest !== fromParent) must recognize a concurrent-merge
+        // boundary by dest.
+        //
+        // A source whose children already sit in this edit's own
+        // destination stands for a merge the edit itself asks for only when
+        // one of the edit's own positions declared that source as a
+        // boundary (declaredBoundaries, built lazily below): the range then
+        // stops at the source instead of covering it, and keeping its
+        // children is what makes both replicas agree (§6.2). A source the
+        // range merely spans is a plain delete of everything that was
+        // inside it, so its children are tombstoned wherever the concurrent
+        // merge left them. Port JS SDK tree.ts b69169c0 (#1404; yorkie#2042;
+        // fixes #1331).
+        var declared: Set<CrdtTreeNode>? = null
         nodesToBeRemoved.forEach { node ->
             val mergedInto = node.mergedInto
-            if (mergedInto != null &&
-                node !in toBeMergedNodes &&
-                mergedInto != dest.id
-            ) {
-                val mergeTarget = findFloorNode(mergedInto) ?: return@forEach
-                mergeTarget.allChildren
-                    .filter { it.mergedFrom == node.id }
-                    .forEach { child ->
-                        if (child.removedAt == null) {
-                            if (child.remove(executedAt)) {
-                                gcPairs.add(GCPair(this, child))
-                            }
-                            // Also tombstone descendants if the moved child is an element.
-                            traverseAll(child) { n, _ ->
-                                if (n !== child && n.removedAt == null) {
-                                    if (n.remove(executedAt)) {
-                                        gcPairs.add(GCPair(this, n))
-                                    }
+            if (mergedInto == null || node in toBeMergedNodes) {
+                return@forEach
+            }
+            if (mergedInto == dest.id) {
+                val boundaries = declared ?: declaredBoundaries(range.first, range.second).also {
+                    declared = it
+                }
+                if (node in boundaries) {
+                    return@forEach
+                }
+            }
+            val mergeTarget = findFloorNode(mergedInto) ?: return@forEach
+            mergeTarget.allChildren
+                .filter { it.mergedFrom == node.id }
+                .forEach { child ->
+                    if (child.removedAt == null) {
+                        if (child.remove(executedAt)) {
+                            gcPairs.add(GCPair(this, child))
+                        }
+                        // Also tombstone descendants if the moved child is an element.
+                        traverseAll(child) { n, _ ->
+                            if (n !== child && n.removedAt == null) {
+                                if (n.remove(executedAt)) {
+                                    gcPairs.add(GCPair(this, n))
                                 }
                             }
                         }
                     }
-            }
+                }
         }
 
         // 04. Split: split the element nodes for the given split level.
@@ -1158,87 +1369,21 @@ internal data class CrdtTree(
     // attrGcPair hoisted to a top-level shared fn in GC.kt so CrdtText and
     // CrdtTree book from ONE copy — see GC.kt.
 
+    /**
+     * Removes the given [attributeToRemove] of the given [range].
+     *
+     * Resolves the reached set once through [styleTargets] — the SAME
+     * resolution [style] asks for — rather than an inline traversal of its
+     * own; see [styleTargets]'s KDoc for why the two share one resolution.
+     * Port JS SDK `tree.ts` `removeStyle` (b69169c0, #1404).
+     */
     fun removeStyle(
         range: TreePosRange,
         attributeToRemove: List<String>,
         executedAt: TimeTicket,
         versionVector: VersionVector? = null,
     ): TreeOperationResult {
-        var diff = DataSize(
-            data = 0,
-            meta = 0,
-        )
-        // #1392: a removeStyle landing on a node that is itself a tombstone
-        // drops its attribute's value out of gc, not live — the container
-        // never counted that node into live in the first place. Starts at
-        // zero like `diff`; the boundary splits above are always live-bound.
-        var gcDiff = DataSize(
-            data = 0,
-            meta = 0,
-        )
-
-        // Boundary.Range (port 5c158690): see the matching comment in style().
-        val (from, diffFrom) = findNodesAndSplitText(range.first, executedAt, Boundary.Range)
-        val (fromParent, fromLeftRaw) = from
-        val (to, diffTo) = findNodesAndSplitText(range.second, executedAt, Boundary.Range)
-        val (toParent, toLeftRaw) = to
-
-        diff = addDataSizes(diff, diffTo, diffFrom)
-
-        // NOTE (reverses iOS 2e6979a0b1 / RTCOLLABPLATFORM-769, re-ported
-        // RTCOLLABPLATFORM-787): removeStyle() now advances past unknown
-        // split siblings on both range anchors, the same as style() and
-        // edit() do. The earlier port deliberately dropped this advance
-        // because, at the v0.7.18 tag it was ported against, JS tree.ts
-        // never called advancePastUnknownSplitSiblings from removeStyle()
-        // either — style()'s own advance was itself a divergence Android
-        // introduced at the v0.7.6 sync (0b3eb7f5), so dropping removeStyle's
-        // copy of it restored parity at the time. JS SDK c8928853 (#1375,
-        // mirrored by iOS 915dd77fe6) now runs the advance from
-        // removeStyle() too — order concurrent splits of one boundary by
-        // ticket depends on both styling and removal ranges agreeing on
-        // where split products that ARE visible to them, but not to each
-        // other, land. Without it, a remote removeStyle whose anchor
-        // precedes an element split the remover did not know about
-        // traverses a different node set than a peer that advances, so
-        // attributes converge on one replica and not the other. Local
-        // operations (versionVector == null) are unaffected either way,
-        // since advancePastUnknownSplitSiblings returns early for them.
-        val fromLeft = if (fromLeftRaw === fromParent) {
-            fromLeftRaw
-        } else {
-            advancePastUnknownSplitSiblings(
-                fromLeftRaw,
-                versionVector,
-                skipActorID = executedAt.actorID,
-            )
-        }
-        val toLeft = if (toLeftRaw === toParent) {
-            toLeftRaw
-        } else {
-            advancePastUnknownSplitSiblings(
-                toLeftRaw,
-                versionVector,
-                skipActorID = executedAt.actorID,
-            )
-        }
-
-        // §9.4 from-side recovery (port ea693307, yorkie-js-sdk#1329), on top
-        // of the raw anchors above: when a concurrent merge unknown to this
-        // remover collapsed the resolved range, re-anchor the traversal
-        // start and restrict it to positively identified interlopers. For
-        // removeStyle the recovery materializes the removal tombstone on
-        // both replicas — the Rht arbitrates a concurrent setStyle with an
-        // earlier ticket by LWW even for a key the recovered node never had,
-        // so the converged state is entry/entry rather than empty/empty.
-        val recovery = reversedFromAnchorRecovery(
-            range.first,
-            fromParent,
-            fromLeft,
-            toParent,
-            toLeft,
-            versionVector,
-        )
+        val (targets, diff) = styleTargets(range, executedAt, versionVector)
 
         val changes = mutableListOf<TreeChange>()
         // Widened to GCPair<*>: drained pending pairs below are
@@ -1246,34 +1391,36 @@ internal data class CrdtTree(
         // GCPair<RhtNode> attribute pairs added by this loop.
         val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
-        var capturedPrev = false
-        val shouldSkipToken =
-            styleSkipPredicate(range.second, versionVector, recovery?.isInterloper)
-        traverseInPosRange(
-            recovery?.fromParent ?: fromParent,
-            recovery?.fromLeft ?: fromLeft,
-            toParent,
-            toLeft,
-        ) { (node, tokenType), _ ->
-            if (node.canStyle(versionVector) && attributeToRemove.isNotEmpty()) {
-                if (shouldSkipToken(node, tokenType)) {
-                    return@traverseInPosRange
-                }
+        // `liveDiff` starts from styleTargets's own boundary-split
+        // accounting (the two boundary splits are always live-bound, see
+        // style()); #1392: a removeStyle landing on a node that is itself a
+        // tombstone drops its attribute's value out of gc, not live — the
+        // container never counted that node into live in the first place,
+        // so `gcDiff` starts at zero and is a separate ledger.
+        var liveDiff = diff
+        var gcDiff = DataSize(
+            data = 0,
+            meta = 0,
+        )
 
-                if (!capturedPrev) {
+        if (attributeToRemove.isNotEmpty()) {
+            targets.forEachIndexed { index, node ->
+                // Capture previous attribute values from the first styled
+                // node for the reverse operation (undo).
+                if (index == 0) {
                     val attrs = node.getAttrs()
                     for (key in attributeToRemove) {
                         if (attrs.has(key)) {
                             prevAttributes[key] = attrs[key]!!
                         }
                     }
-                    capturedPrev = true
                 }
 
-                // canStyle now admits a node removed CONCURRENTLY with this
-                // change, so nodeIsLive is the third question attrGcPair
-                // asks.
+                // canStyle (already applied by styleTargets) admits a node
+                // removed CONCURRENTLY with this change, so nodeIsLive is
+                // the third question attrGcPair asks.
                 val nodeIsLive = !node.isRemoved
+                var removedAny = false
                 attributeToRemove.forEach { key ->
                     var wasLive = node.getAttrs().has(key)
                     val (gcNodes, valueDropped) = node.removeAttribute(key, executedAt)
@@ -1281,85 +1428,43 @@ internal data class CrdtTree(
                     // bytes leave whichever side was holding them. See
                     // attrGcPair for the same live/gc split.
                     if (nodeIsLive) {
-                        diff = subDataSize(diff, valueDropped)
+                        liveDiff = subDataSize(liveDiff, valueDropped)
                     } else {
                         gcDiff = subDataSize(gcDiff, valueDropped)
                     }
+                    if (gcNodes.isNotEmpty()) removedAny = true
                     gcNodes.forEach { rhtNode ->
                         gcPairs.add(attrGcPair(node, rhtNode, wasLive, nodeIsLive))
                         wasLive = false
                     }
                 }
 
-                val parentOfNode = requireNotNull(node.parent)
-                val previousNode = node.prevSibling ?: parentOfNode
-
-                // See style(): a tombstoned node reports no change to
-                // editors. Mirrors JS SDK `tree.ts:1907` (e0609c7a #1368).
-                if (nodeIsLive) {
-                    TreeChange(
-                        type = TreeChangeType.RemoveStyle,
-                        from = toIndex(parentOfNode, previousNode),
-                        to = toIndex(node, node),
-                        fromPath = toPath(parentOfNode, previousNode),
-                        toPath = toPath(node, node),
-                        actorID = executedAt.actorID,
-                        attributesToRemove = attributeToRemove,
-                    ).let(changes::add)
-                }
-
-                // Propagate remove-style to unknown split siblings so a
-                // remove-style whose range was determined before the split
-                // also covers the right part. Mirrors JS SDK PR #1224.
-                if (tokenType == TokenType.Start && versionVector != null) {
-                    var current = node
-                    val walker = InsNextWalker()
-                    walker.visit(current)
-                    while (true) {
-                        val nextID = current.insNextID ?: break
-                        val next = findFloorNode(nextID) ?: break
-                        if (next.isText) break
-                        // Stop on a chain that loops back on itself; see InsNextWalker.
-                        if (!walker.visit(next)) break
-                        if (isSplitSiblingKnown(next, versionVector)) break
-
-                        var removedAny = false
-                        val nextIsLive = !next.isRemoved
-                        attributeToRemove.forEach { key ->
-                            var wasLive = next.getAttrs().has(key)
-                            val (gcNodes, valueDropped) = next.removeAttribute(key, executedAt)
-                            if (nextIsLive) {
-                                diff = subDataSize(diff, valueDropped)
-                            } else {
-                                gcDiff = subDataSize(gcDiff, valueDropped)
-                            }
-                            if (gcNodes.isNotEmpty()) removedAny = true
-                            gcNodes.forEach { rhtNode ->
-                                gcPairs.add(attrGcPair(next, rhtNode, wasLive, nextIsLive))
-                                wasLive = false
-                            }
-                        }
-                        if (removedAny) {
-                            val parentOfNext = requireNotNull(next.parent)
-                            val previousNext = next.prevSibling ?: parentOfNext
-                            TreeChange(
-                                type = TreeChangeType.RemoveStyle,
-                                from = toIndex(parentOfNext, previousNext),
-                                to = toIndex(next, next),
-                                fromPath = toPath(parentOfNext, previousNext),
-                                toPath = toPath(next, next),
-                                actorID = executedAt.actorID,
-                                attributesToRemove = attributeToRemove,
-                            ).let(changes::add)
-                        }
-                        current = next
+                // A tombstoned node reports no change to editors (see
+                // style()), and neither does a node that held none of the
+                // attributes — style() reports only what it actually wrote,
+                // so a removal that took nothing off is the same no-op and
+                // stays silent. Mirrors JS SDK `tree.ts` removeStyle
+                // (b69169c0, #1404).
+                if (nodeIsLive && removedAny) {
+                    styleChangeRange(node)?.let { changeRange ->
+                        TreeChange(
+                            type = TreeChangeType.RemoveStyle,
+                            from = changeRange.from,
+                            to = changeRange.to,
+                            fromPath = changeRange.fromPath,
+                            toPath = changeRange.toPath,
+                            actorID = executedAt.actorID,
+                            attributesToRemove = attributeToRemove,
+                        ).let(changes::add)
                     }
                 }
             }
         }
-        // This remove-style operation's boundary splits (findNodesAndSplitText)
-        // can land inside an already-tombstoned node and buffer a born-dead
-        // piece; drain it so it is not left unregistered for GC.
+
+        // This remove-style operation's boundary splits (styleTargets ->
+        // findNodesAndSplitText) can land inside an already-tombstoned node
+        // and buffer a born-dead piece; drain it so it is not left
+        // unregistered for GC.
         gcPairs.addAll(drainPendingGcPairs())
         return TreeOperationResult(
             changes,
@@ -1368,13 +1473,14 @@ internal data class CrdtTree(
             // attrGcPair-registered gcPairs above (CrdtRoot.registerGCPair
             // moves the TOMBSTONE's own, now key-only, size live -> gc when
             // it is registered) plus the two boundary splits (live-bound,
-            // folded into `diff` up front). The dropped VALUE bytes are a
-            // separate leg (#1392): a tombstone is never charged for its
-            // value, so registerGCPair's node-dataSize-based move does not
-            // reach them — `diff`/`gcDiff` carry that subtraction out of
-            // whichever side (live for a live node, gc for a node that is
-            // itself a tombstone) was still holding them.
-            DocSize(live = diff, gc = gcDiff),
+            // folded into `liveDiff` up front via styleTargets's `diff`).
+            // The dropped VALUE bytes are a separate leg (#1392): a
+            // tombstone is never charged for its value, so registerGCPair's
+            // node-dataSize-based move does not reach them —
+            // `liveDiff`/`gcDiff` carry that subtraction out of whichever
+            // side (live for a live node, gc for a node that is itself a
+            // tombstone) was still holding them.
+            DocSize(live = liveDiff, gc = gcDiff),
             prevAttributes = prevAttributes,
         )
     }
@@ -1659,6 +1765,54 @@ internal data class CrdtTree(
     }
 
     /**
+     * Returns the element whose id is exactly [id], or `null`. Unlike
+     * [findFloorNode] this refuses a floor-only match (a split product this
+     * replica does not hold) and a text node: a merge pointer names an
+     * element, so either would hand merge logic a node the pointer never
+     * named. Port JS SDK `tree.ts` `findMergeNode` (b69169c0, #1404;
+     * yorkie#2042).
+     */
+    private fun findMergeNode(id: CrdtTreeNodeID?): CrdtTreeNode? {
+        id ?: return null
+        val node = findFloorNode(id) ?: return null
+        return node.takeIf { it.id == id && !it.isText }
+    }
+
+    /**
+     * Returns the elements the edit's own [positions] named as boundaries:
+     * the element each position declared as its parent, and every ancestor
+     * of that element. A range stops at those rather than covering them —
+     * the edit asks to merge their remaining content away, not to delete it
+     * — so a concurrent merge that already moved their children where this
+     * edit would have put them did this edit's work rather than something it
+     * now has to undo.
+     *
+     * The declared parent is resolved with [findMergeNode], not a floor
+     * lookup: a floor lookup matches on `createdAt` alone, so a parent id
+     * naming a split product this replica does not hold would land on the
+     * offset-0 element and hand the skip to a node the position never named.
+     *
+     * The walk upward prefers [CrdtTreeNode.mergedFrom] over the physical
+     * parent: a prior merge moves a node under the merge target, so the
+     * parent no longer names the element that enclosed it when the position
+     * was declared. The set doubles as the seen set, guarding against a
+     * cycle in a peer-supplied `mergedFrom` chain (D6: identity set, not a
+     * hash set — see [resolveMergeTarget]). Port JS SDK `tree.ts`
+     * `declaredBoundaries` (b69169c0, #1404; yorkie#2042). Fixes #1331.
+     */
+    private fun declaredBoundaries(vararg positions: CrdtTreePos): Set<CrdtTreeNode> {
+        val boundaries = Collections.newSetFromMap(IdentityHashMap<CrdtTreeNode, Boolean>())
+        for (pos in positions) {
+            var current = findMergeNode(pos.parentID)
+            while (current != null && current !in boundaries) {
+                boundaries.add(current)
+                current = findMergeNode(current.mergedFrom) ?: current.parent
+            }
+        }
+        return boundaries
+    }
+
+    /**
      * Follows the [CrdtTreeNode.mergedInto] forwarding chain from [node]
      * while the current node is a merge-away tombstone, returning the final
      * live target. When a merge lands on a parent that a prior concurrent
@@ -1754,35 +1908,48 @@ internal data class CrdtTree(
 
     /**
      * Prepares the §9.4 from-side counterpart of [mergedAnchorInterloperGuard]
-     * for a style/removeStyle range whose START position was declared inside
-     * a parent that a merge unknown to the styling client removed. The
-     * resolved range then collapses (from-index past to-index) and the
-     * traversal misses nodes the styling client covered — the merge moved
-     * the anchor child behind the styler's own insert, inverting the range
-     * ([traverseInPosRange] returns early when `fromIndex > toIndex`). The
-     * recovery re-anchors the traversal start just after the last live
-     * sibling before the merge-source tombstone; the caller must style only
-     * nodes the returned [FromAnchorRecovery.isInterloper] positively
-     * identifies as interlopers. Stamped nodes in the span stay out of reach
-     * and fail open unstyled — see the §9.4 known limitations in yorkie's
+     * for a style/removeStyle range whose START position ([from]) was
+     * declared inside a parent that a merge unknown to the styling client
+     * removed. The resolved range then collapses (from-index past or onto
+     * to-index) and the traversal misses nodes the styling client covered —
+     * the merge moved the anchor child behind the styler's own insert,
+     * inverting or emptying the range ([traverseInPosRange] returns early
+     * when `fromIndex > toIndex`). The recovery re-anchors the traversal
+     * start just after the last live sibling before the merge-source
+     * tombstone; the caller must style only nodes the returned
+     * [FromAnchorRecovery.isInterloper] positively identifies as
+     * interlopers. Stamped nodes in the span stay out of reach and fail
+     * open unstyled — see the §9.4 known limitations in yorkie's
      * concurrent-merge-split design doc (not pinned; no upstream test
      * either). Returns null when [mergedAnchorInterloperGuard] does not
      * apply, or when the resolved range did not actually collapse (an
      * ordered range that moved with the merge already covers what the
-     * styling client covered — the recovery must not widen it). Port
-     * ea693307 (yorkie-js-sdk#1329, yorkie#1954 Fix 23).
+     * styling client covered, or an empty [to] range the client itself
+     * asked for — the recovery must not widen either). Port ea693307
+     * (yorkie-js-sdk#1329, yorkie#1954 Fix 23), widened by b69169c0 (#1404)
+     * to also treat a range the merge resolved EMPTY as collapsed.
      */
     private fun reversedFromAnchorRecovery(
-        pos: CrdtTreePos,
+        from: CrdtTreePos,
+        to: CrdtTreePos,
         fromParent: CrdtTreeNode,
         fromLeft: CrdtTreeNode,
         toParent: CrdtTreeNode,
         toLeft: CrdtTreeNode,
         versionVector: VersionVector?,
     ): FromAnchorRecovery? {
-        val guard = mergedAnchorInterloperGuard(pos, versionVector) ?: return null
-        // Only a collapsed range needs recovery.
-        if (toIndex(fromParent, fromLeft) <= toIndex(toParent, toLeft)) return null
+        val guard = mergedAnchorInterloperGuard(from, versionVector) ?: return null
+        // Only a range that actually collapsed needs recovery: when both
+        // anchors moved with the merge, the resolved range stays ordered
+        // and still covers what the styling client covered. A range that
+        // resolved empty counts as collapsed too -- the merge can leave the
+        // start anchor exactly on the end one, and covering nothing loses
+        // the client's range just as completely as covering it backwards.
+        // Unless the client's own range was empty, in which case covering
+        // nothing is right.
+        val fromIdx = toIndex(fromParent, fromLeft)
+        val toIdx = toIndex(toParent, toLeft)
+        if (fromIdx < toIdx || (fromIdx == toIdx && from == to)) return null
 
         var anchorLeft: CrdtTreeNode = guard.target
         for (child in guard.target.allChildren) {
@@ -1797,36 +1964,85 @@ internal data class CrdtTree(
     }
 
     /**
-     * Bundles the existing End-token unknown-split-sibling skip with
-     * [mergedAnchorInterloperGuard] into a single predicate [style] and
-     * [removeStyle] both consult, so a token is skipped either because a
-     * concurrent split extended the range unbeknownst to the editor, or
-     * because it is a merge interloper the range's declared end never
-     * intended to cover. When [recoveredInterloper] is given (the traversal
-     * start was recovered by [reversedFromAnchorRecovery]), a token is ALSO
-     * skipped unless it is a node the recovery positively identifies as an
-     * interloper — the recovered traversal may only touch nodes the
-     * collapsed range lost. Port 1c033ff5, widened by ea693307
-     * (yorkie-js-sdk#1329).
+     * Builds the per-token skip checks shared by [style] and [removeStyle],
+     * as two predicates over the same state (see [StyleSkipPredicateResult]
+     * for what each answers), plus the two [DeclaredLineage]s [styleTargets]
+     * also needs for its split-family closure. `beganInside` is the set of
+     * elements THIS replica's resolved range begins inside — the resolved
+     * [fromParent] and its ancestors, the only elements a token traversal
+     * reaches through their End token alone. Port 1c033ff5, widened by
+     * ea693307 (yorkie-js-sdk#1329) and by b69169c0 (#1404; §9.1's
+     * [DeclaredLineage.covers] widening and the new §9.6 range-start guard).
      */
     private fun styleSkipPredicate(
-        pos: CrdtTreePos,
+        from: CrdtTreePos,
+        to: CrdtTreePos,
+        fromParent: CrdtTreeNode,
         versionVector: VersionVector?,
         recoveredInterloper: ((CrdtTreeNode) -> Boolean)? = null,
-    ): (CrdtTreeNode, TokenType) -> Boolean {
-        val anchorGuard = mergedAnchorInterloperGuard(pos, versionVector)
-        return { node, tokenType ->
+    ): StyleSkipPredicateResult {
+        val anchorGuard = mergedAnchorInterloperGuard(to, versionVector)
+        // Resolved once and handed back to styleTargets: the lineage walks
+        // are over peer-supplied pointers and depend only on the change's
+        // positions.
+        val declaredTo = declaredLineage(to, ::findFloorNode)
+        val declaredFrom = declaredLineage(from, ::findFloorNode)
+
+        val beganInside = Collections.newSetFromMap(IdentityHashMap<CrdtTreeNode, Boolean>())
+        var current: CrdtTreeNode? = fromParent
+        while (current != null) {
+            beganInside.add(current)
+            current = current.parent
+        }
+
+        val skipReached: (CrdtTreeNode, TokenType) -> Boolean = { node, tokenType ->
             if (tokenType == TokenType.End &&
                 versionVector != null &&
+                versionVector.size() != 0 &&
+                (declaredTo == null || declaredTo.covers(node)) &&
                 hasUnknownSplitSibling(node, versionVector)
             ) {
+                // §9.1: skip styling via the End token when the node has an
+                // unknown split sibling AND the change's range ended inside
+                // the node. Only then is the End token in the range solely
+                // because a concurrent split extended the range into the
+                // sibling. When the range ran past the node's end the End
+                // token was in it before any split existed.
                 true
-            } else if (recoveredInterloper != null && !recoveredInterloper(node)) {
+            } else if (tokenType == TokenType.End &&
+                versionVector != null &&
+                versionVector.size() != 0 &&
+                node in beganInside &&
+                declaredFrom != null &&
+                !declaredFrom.coversEitherWay(node)
+            ) {
+                // §9.6, the mirror of §9.1 on the range-start side. This
+                // replica's range begins inside the node, so only its End
+                // token is in the range; the change reached it that way
+                // only if the change's own range-start position was
+                // declared inside it. A merge that removes a paragraph's
+                // opening tag moves its children, and the start anchor with
+                // them, into an element the change never entered.
                 true
             } else {
+                // §9.4: the node is in the range only because an unknown
+                // merge pulled the range-end anchor past it.
                 anchorGuard != null && anchorGuard.isInterloper(node)
             }
         }
+
+        val skipToken: (CrdtTreeNode, TokenType) -> Boolean = { node, tokenType ->
+            if (skipReached(node, tokenType)) {
+                true
+            } else {
+                // §9.4 from-side: a recovered traversal may only touch
+                // nodes the collapsed range lost, the positively identified
+                // interlopers.
+                recoveredInterloper != null && !recoveredInterloper(node)
+            }
+        }
+
+        return StyleSkipPredicateResult(skipToken, skipReached, declaredTo, declaredFrom)
     }
 
     /**
@@ -1939,15 +2155,6 @@ internal data class CrdtTree(
         actorID: String,
         versionVector: VersionVector,
     ): Boolean = emptyRunReachesActor(node, actorID, versionVector)
-
-    /**
-     * Returns true when the creation of the split sibling [node] is known to
-     * the given [versionVector]. Mirrors JS SDK `ticketKnown`. Used to stop
-     * propagating a style/remove-style along the [CrdtTreeNode.insNextID] chain
-     * once a sibling the editor already knew about is reached.
-     */
-    private fun isSplitSiblingKnown(node: CrdtTreeNode, versionVector: VersionVector): Boolean =
-        ticketKnown(versionVector, node.createdAt)
 
     private fun hasUnknownSplitSibling(node: CrdtTreeNode, versionVector: VersionVector): Boolean {
         val insNextID = node.insNextID ?: return false

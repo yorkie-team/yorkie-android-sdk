@@ -92,6 +92,61 @@ class OperationConverterSplitTicketTest {
         assertTrue(decoded.splitTickets.isEmpty())
     }
 
+    // Unit 1A (#1404, b69169c0): a replica reads back the EXACT tickets the
+    // sending change issued, driven end to end through a real document edit
+    // (JsonTree.edit -> Document.createChangePack), not a hand-built op --
+    // OperationConverter.kt:158/:309 already carry splitTickets, this pins
+    // the real-document shape too (verify only, "RED not constructible").
+    @Test
+    fun `a replica reads back the tickets the sending change issued`() = runTest {
+        val doc = Document("doc")
+        doc.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("r") { element("p") { text { "ab" } } },
+            )
+        }.await()
+        doc.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").edit(2, 2, 1, text { "q" })
+        }.await()
+
+        val pack = doc.createChangePack()
+        val sentOp = pack.changes.flatMap { it.operations }
+            .filterIsInstance<TreeEditOperation>()
+            .single()
+        assertTrue(sentOp.splitTickets.isNotEmpty(), "the edit split an element")
+
+        val decoded = listOf(sentOp.toPBOperation()).toOperations().single() as TreeEditOperation
+
+        assertEquals(sentOp.splitTickets, decoded.splitTickets)
+    }
+
+    // Unit 1A (#1404, b69169c0): a ticket whose delimiter sits BELOW
+    // executedAt's -- a shape issueTimeTicket's fallback (which only ever
+    // counts delimiters UP from executedAt) could never produce -- still
+    // reads back exactly as sent. Proves the decode path trusts the wire
+    // value rather than silently re-deriving it.
+    @Test
+    fun `reads back a ticket outside the issuable shape as sent`() {
+        val (tree, _) = buildTreeRoot()
+        val executedAt = TimeTicket(5L, 10u, "000000000000000000000009")
+        val (fromPos, toPos) = tree.indexRangeToPosRange(0 to 0)
+        val outOfShapeTicket = TimeTicket(5L, 0u, "000000000000000000000009")
+        val op = TreeEditOperation(
+            parentCreatedAt = treeTicket,
+            fromPos = fromPos,
+            toPos = toPos,
+            contents = null,
+            splitLevel = 1,
+            executedAt = executedAt,
+            splitTickets = listOf(outOfShapeTicket),
+        )
+
+        val decoded = listOf(op.toPBOperation()).toOperations().single() as TreeEditOperation
+
+        assertEquals(listOf(outOfShapeTicket), decoded.splitTickets)
+    }
+
     // AC9: a TreeEdit payload built without field 11 (a change written
     // before the field existed) replays via the executedAt+content-count
     // reconstruction — byte-identical to pre-port behavior.

@@ -602,36 +602,28 @@ class StyleTombstoneConvergenceTest {
     }
 
     /**
-     * Pins the ONLY way a tree style reaches an already-removed node: the
-     * split-sibling propagation loop ([CrdtTree.style]'s `insNextID` walk),
-     * not the main `canStyle` traversal. `CrdtTree.style`/`removeStyle` both
-     * call [IndexTree.tokensBetween] with its default `includeRemoved =
-     * false` ([CrdtTree.traverseInPosRange]), so the main loop's callback
-     * (`CrdtTree.kt:307-308`, where [CrdtTreeNode.canStyle] and its
-     * `!node.isRemoved` change-gate sibling at `:342` are evaluated) is
-     * NEVER invoked with a removed node -- `node.isRemoved` is always false
-     * there. That makes a mutant which has `canStyle` re-read `removedAt`,
-     * and a mutant which drops the `!node.isRemoved` sibling gate at `:342`,
-     * EQUIVALENT MUTANTS for tree nodes: no reachable call ever exercises
-     * either branch's removed-node case, so no test -- adversarial or
-     * otherwise -- can distinguish them from the fix. (Confirmed
-     * empirically, not just by reading: reverting either hunk leaves every
-     * test in this file, plus this one, green.) This KDoc states the
-     * equivalence directly, since `tokensBetween(..., includeRemoved =
-     * false)` never visits a removed node outside the split-sibling loop
-     * below.
-     *
-     * The split-sibling loop itself (`CrdtTree.kt:371-402`) is a genuinely
-     * different, UNGATED path: it calls `next.setAttributes(...)` and emits
-     * `next`'s own [OperationInfo.TreeStyleOpInfo] with no live/removed
-     * check on `next` at all, so a style decided before a concurrent split
-     * lands on -- and reports a change for -- a removed split sibling
-     * unconditionally. That is pinned below (the tombstone carries the
-     * attribute) as real, current behaviour; it is a separate, disclosed,
-     * not-fixed-here gap from the `:342` gate's removed-node case.
+     * Pins the reached split sibling's report gate after `styleTargets`
+     * unified the reached-set resolution (JS SDK `tree.ts`, b69169c0,
+     * #1404). Before that port, `CrdtTree.style`'s inline `insNextID`
+     * split-sibling propagation loop (then `CrdtTree.kt:371-402`) emitted
+     * its own [OperationInfo.TreeStyleOpInfo] for a reached sibling with NO
+     * live/removed check at all, while the main `canStyle` traversal loop
+     * gated every OTHER report on `!node.isRemoved` -- an asymmetry this
+     * test used to pin as a disclosed, not-fixed-here gap (2 reports: the
+     * live left half, PLUS the removed right half the split-sibling loop
+     * reached). `styleTargets` resolves the whole reached set -- the main
+     * traversal's nodes AND the [unknownSplitSiblings] it carries the style
+     * onto -- once, and [CrdtTree.style] then walks that ONE list through a
+     * SINGLE `!node.isRemoved` change-report gate (`CrdtTree.kt`, `style`),
+     * closing the asymmetry: a split sibling the change reached now reports
+     * a change only while it is still live, the same rule as any other
+     * reached node (spec 035, AC3). The attribute write itself
+     * ([CrdtTreeNode.setAttributes]) is unconditional for every target
+     * regardless of liveness -- same as before -- so the tombstone still
+     * carries the attribute; only the CHANGE EVENT for it is now gated.
      */
     @Test
-    fun `remote tree style on a removed split sibling lands on the tombstone`() = runTest {
+    fun `remote tree style on a removed split sibling writes but reports no change`() = runTest {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
@@ -667,10 +659,12 @@ class StyleTombstoneConvergenceTest {
             .flatMap { it.changeInfo.operations }
             .filterIsInstance<OperationInfo.TreeStyleOpInfo>()
         assertEquals(
-            2,
+            1,
             styleInfos.size,
-            "the live left half's main-loop report, plus the split-sibling loop's own " +
-                "report for the tombstone",
+            "only the live left half's report -- the removed right half the split-sibling " +
+                "propagation reaches is gated out by the shared !node.isRemoved check " +
+                "styleTargets' unification now applies to every reached node alike " +
+                "(b69169c0, #1404; was 2 before this port)",
         )
 
         // The split leaves the doc with two "p" elements: the live left
@@ -681,20 +675,19 @@ class StyleTombstoneConvergenceTest {
         val rightHalf = paragraphs[1]
         assertTrue(rightHalf.isRemoved, "sanity: the split's right half is a tombstone")
 
-        // Exactly one reported TreeStyleOpInfo must be the split-sibling
-        // loop's OWN entry for `rightHalf` -- toPath [1] is rightHalf's
-        // position directly under the tree root -- carrying the "b"
-        // attribute this style op wrote, not just any non-empty report.
+        // No reported TreeStyleOpInfo is the removed right half's own
+        // entry -- toPath [1] is rightHalf's position directly under
+        // the tree root.
         val tombstoneStyleInfo = styleInfos.singleOrNull { it.toPath == listOf(1) }
         assertEquals(
-            mapOf("b" to "L".repeat(16)),
-            tombstoneStyleInfo?.attributes,
-            "the split-sibling propagation loop must report its own change for the tombstone",
+            null,
+            tombstoneStyleInfo,
+            "a reached node that is removed reports no change, the split sibling included",
         )
 
         assertTrue(
             rightHalf.getAttrs().has("b"),
-            "the split-sibling propagation loop must still reach the tombstone",
+            "the attribute write still reaches the tombstone even though no change is reported",
         )
     }
 }

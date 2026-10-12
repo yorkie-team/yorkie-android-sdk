@@ -53,6 +53,31 @@ internal fun CrdtTreeNode.dropSplitLinks() {
 }
 
 /**
+ * Clears the merge lineage ([CrdtTreeNode.mergedFrom]/[CrdtTreeNode.mergedAt]/
+ * [CrdtTreeNode.mergedInto]) on this node and every one of its descendants
+ * (tombstones included).
+ *
+ * Unlike [dropSplitLinks] this is NOT safe to call on an arbitrary tree: a
+ * tree that really was merged carries the lineage as state, and dropping it
+ * would rewrite the document. It is for a *tree edit's* content, which the
+ * editing client always creates fresh for that one operation, so none of its
+ * nodes can be a merge product. A peer is free to stamp them anyway, and
+ * [CrdtTree.declaredBoundaries] then follows a stamped [CrdtTreeNode.mergedFrom]
+ * off the freshly inserted node into an element the position never named.
+ * Clearing them costs nothing on conforming traffic -- no producer sets them
+ * on edit content, here or in yorkie -- so no replica sees a different tree
+ * for a change a client could legitimately have written. Port JS SDK
+ * `tree.ts` `CRDTTreeNode.dropMergeStamps` (b69169c0, #1404; spec 035 unit 1E).
+ */
+internal fun CrdtTreeNode.dropMergeStamps() {
+    traverseAllPreorder(this) { node, _ ->
+        node.mergedFrom = null
+        node.mergedAt = null
+        node.mergedInto = null
+    }
+}
+
+/**
  * Strips the split-sibling links from every tree reachable from [elem].
  *
  * A Set/Add/ArraySet payload carries a whole element rather than a position

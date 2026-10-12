@@ -1,22 +1,28 @@
 package dev.yorkie.api
 
 import android.util.Base64
+import dev.yorkie.api.v1.JSONElementKt.tree
 import dev.yorkie.api.v1.nodeAttr
 import dev.yorkie.api.v1.textNode
 import dev.yorkie.api.v1.textNodeID
+import dev.yorkie.api.v1.treeNode
 import dev.yorkie.document.Document
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.issueTime
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -182,6 +188,39 @@ class SnapshotConverterTest {
         assertEquals(nodeCountBefore, decodedText.rgaTreeSplit.count())
         assertEquals("hello", decodedText.toString())
         assertEquals(docSizeBefore, CrdtRoot(root).docSize)
+    }
+
+    // Spec 035 unit 1E (JS SDK b69169c0, #1404; D9): `toCrdtTreeRootNode` is
+    // SHARED by operation-content decode (`SplitLinkDecodeTest` pins that
+    // half) and this snapshot decode path (`PBTree.toCrdtTree`, reached here
+    // through a hand-built `JSONElement.Tree` rather than through a real
+    // Document/snapshot round trip, which has no way to produce a depth
+    // hole on its own). A stored snapshot with a node whose depth names no
+    // parent used to resolve through `?: continue`, silently trimming the
+    // orphan instead of failing the decode (Migration: the server never
+    // writes one, only a crafted/corrupt payload does).
+    @Test
+    fun `should reject a snapshot tree node with an unwritten parent depth`() {
+        val actor = "000000000000000000000001"
+        val root = treeNode {
+            id = CrdtTreeNodeID(TimeTicket(1, 0u, actor), 0).toPBTreeNodeID()
+            type = "r"
+            depth = 0
+        }
+        val orphan = treeNode {
+            id = CrdtTreeNodeID(TimeTicket(2, 0u, actor), 0).toPBTreeNodeID()
+            type = "p"
+            depth = 2 // Depth 1 was never written -- a hole.
+        }
+        val pbTree = tree {
+            nodes.addAll(listOf(orphan, root))
+            createdAt = TimeTicket(1, 0u, actor).toPBTimeTicket()
+        }
+
+        val exception = assertFailsWith<YorkieException> { pbTree.toCrdtTree() }
+
+        assertEquals(ErrInvalidArgument, exception.code)
+        assertEquals("invalid tree node depth: 2", exception.errorMessage)
     }
 
     @Test

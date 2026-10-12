@@ -582,6 +582,32 @@ public class Document(
                         repeat(ticketCount) { context.issueTimeTicket() }
                     }
 
+                    // A split reverse -- the undo of a merge-delete, or the
+                    // redo of a split -- mints one element per split level,
+                    // and each needs a ticket of its own: issueTimeTicket's
+                    // fallback (used when splitTickets is empty) reconstructs
+                    // them by counting delimiters up from executedAt, which
+                    // runs straight over the ticket the NEXT operation in
+                    // this same undo/redo entry is issued above -- landing
+                    // two LIVE elements under one id, on every replica and
+                    // the server, since the change carries both operations.
+                    // Recording them here -- after the removedNodeSnapshots
+                    // reservation above, so issue order matches JS -- is what
+                    // stops any other replica reconstructing them either.
+                    // Independent of (never both at once with, see
+                    // toReverseOperation) the removedNodeSnapshots branch
+                    // above: every copy-reinsert/restore-mode reverse this op
+                    // could be already carries splitLevel == 0.
+                    //
+                    // One per level is an upper bound, not an exact count:
+                    // CrdtTree.edit's walk can stop early at the root, and
+                    // issueTimeTicket only ever consumes as many as it needs
+                    // -- a ticket nobody consumes just advances the
+                    // delimiter. Port JS SDK document.ts (b69169c0, #1404).
+                    if (op is TreeEditOperation && op.splitLevel > 0) {
+                        op.splitTickets = List(op.splitLevel) { context.issueTimeTicket() }
+                    }
+
                     context.push(op)
                 }
 

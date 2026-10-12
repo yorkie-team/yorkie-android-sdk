@@ -131,6 +131,10 @@ public class JsonTree internal constructor(
     /**
      * Sets the [attributes] to the elements in the path range
      * between [fromPath] and [toPath].
+     *
+     * @throws IllegalArgumentException if [fromPath] is ordered after
+     * [toPath] (D11; JS SDK throws `YorkieError` for the same backwards
+     * range instead).
      */
     public fun styleByPath(
         fromPath: List<Int>,
@@ -142,6 +146,14 @@ public class JsonTree internal constructor(
         }
         require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
             "path should not be empty"
+        }
+        // Same contract as the index form (D11): a range given backwards is
+        // a caller error, not an empty range. Mirrors JS SDK
+        // `document/json/tree.ts` `styleByPath` (b69169c0, #1404) -- `require`
+        // (IllegalArgumentException), not YorkieException, to match every
+        // neighboring check in this file.
+        require(comparePath(fromPath, toPath) <= 0) {
+            "from should be less than or equal to to"
         }
 
         val fromPos = target.pathToPos(fromPath)
@@ -207,6 +219,10 @@ public class JsonTree internal constructor(
     /**
      * Removes the attributes in [attributesToRemove] from the elements
      * in the path range between [fromPath] and [toPath].
+     *
+     * @throws IllegalArgumentException if [fromPath] is ordered after
+     * [toPath] (D11; JS SDK throws `YorkieError` for the same backwards
+     * range instead).
      */
     public fun removeStyleByPath(
         fromPath: List<Int>,
@@ -218,6 +234,12 @@ public class JsonTree internal constructor(
         }
         require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
             "path should not be empty"
+        }
+        // Same contract as the index form (D11): a range given backwards is
+        // a caller error, not an empty range. Mirrors JS SDK
+        // `document/json/tree.ts` `removeStyleByPath` (b69169c0, #1404).
+        require(comparePath(fromPath, toPath) <= 0) {
+            "from should be less than or equal to to"
         }
 
         val fromPos = target.pathToPos(fromPath)
@@ -586,4 +608,16 @@ public class JsonTree internal constructor(
             }
         }
     }
+}
+
+/**
+ * Compares two paths of equal length in document order: negative when [a] is
+ * before [b], positive when after, zero when equal. Mirrors JS SDK
+ * `document/json/tree.ts` `comparePath` (b69169c0, #1404).
+ */
+private fun comparePath(a: List<Int>, b: List<Int>): Int {
+    for (i in a.indices) {
+        if (a[i] != b[i]) return a[i] - b[i]
+    }
+    return 0
 }

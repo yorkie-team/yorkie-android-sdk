@@ -43,13 +43,23 @@ public open class YorkieException(
 
     /**
      * Reproduces the data-class text `YorkieException(code=…, errorMessage=…)` for a
-     * plain [YorkieException] (byte-identical to the pre-D1 data-class output), and
-     * the subclass's own simple name — e.g. `ChangeApplyError(code=…, errorMessage=…)`
-     * — for a subclass, via [Any.javaClass]/[Class.getSimpleName] rather than a
-     * hard-coded literal (api-compat-checker finding, spec 034).
+     * plain [YorkieException] — a hard-coded literal, NOT `javaClass.simpleName`, so
+     * the base class's own name stays byte-identical to the pre-D1 data-class output
+     * even under R8 minification in a consumer app with no keep rule for it (harness
+     * QA + Sonnet cross-judge LOW-2, spec 034 round-1 review: `javaClass.simpleName`
+     * alone is not R8-stable). A subclass — e.g.
+     * `ChangeApplyError(code=…, errorMessage=…)` — still uses
+     * [Any.javaClass]/[Class.getSimpleName], so its OWN name can be obfuscated by R8 in
+     * a consumer app without a keep rule for that subclass; a consumer-rules follow-up
+     * (e.g. a `-keep` entry, or extending the literal approach to subclasses) is
+     * intentionally not added here, out of this fix's scope.
      */
     final override fun toString(): String {
-        return "${javaClass.simpleName}(code=$code, errorMessage=$errorMessage)"
+        return if (this::class == YorkieException::class) {
+            "YorkieException(code=$code, errorMessage=$errorMessage)"
+        } else {
+            "${javaClass.simpleName}(code=$code, errorMessage=$errorMessage)"
+        }
     }
 
     /**

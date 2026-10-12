@@ -205,6 +205,10 @@ class ChangeApplyErrorTest {
     }
 
     // --- JS 7 / L2: reports the stuck checkpoint, metadata only (never the cause message) ---
+    // LOW-3 (harness QA + cross-judge, spec 034 round-1 review): the log line also
+    // names the ChangeApplyError's own changeID/opIndex/operation -- payload-safe by
+    // the same contract as `operation` itself -- without ever logging the cause's
+    // message.
 
     @Test
     fun `reports the stuck checkpoint once, without the cause message`() = runTest {
@@ -221,7 +225,7 @@ class ChangeApplyErrorTest {
         Logger.init(recordingLogger)
 
         val target = Document("d")
-        assertFailsWith<ChangeApplyError> {
+        val thrown = assertFailsWith<ChangeApplyError> {
             target.applyChangePack(packOf(target, change, listOf(spiedOp)))
         }
 
@@ -232,6 +236,18 @@ class ChangeApplyErrorTest {
         val logged = recordingLogger.errorMessages.single()
         assertTrue(logged.contains("redeliver"))
         assertTrue(logged.contains("IllegalStateException"))
+        assertTrue(
+            logged.contains("changeID=${thrown.changeID}"),
+            "the stuck-checkpoint log must name the stuck change's id",
+        )
+        assertTrue(
+            logged.contains("opIndex=${thrown.opIndex}"),
+            "the stuck-checkpoint log must name the stuck operation's index",
+        )
+        assertTrue(
+            logged.contains("operation=${thrown.operation}"),
+            "the stuck-checkpoint log must name the stuck operation's type + ticket",
+        )
         assertFalse(
             logged.contains(sentinel),
             "the stuck-checkpoint log must never splice in the cause's own message",
@@ -310,4 +326,37 @@ class ChangeApplyErrorTest {
     // blocks as the CancellationException guard directly above (also pinned by
     // inspection and precedent only -- see that comment for why no test is shipped for
     // either).
+
+    // LOW-1 (harness QA + Sonnet cross-judge, spec 034 round-1 review): confirms
+    // directly what the L1 comment above already predicted by inspection -- an
+    // operation's own `execute` throwing a java.lang.Error for a Remote source IS
+    // wrapped into a ChangeApplyError by Change.execute's per-op catch (Change.kt),
+    // with the Error reachable as `cause`, exactly like any other Throwable the
+    // operation throws (JS-faithful: JS wraps everything unconditionally too). This is
+    // deliberately NOT excluded -- Document.applyChanges/applyChangesInternal's own
+    // Error/CancellationException guards only ever see an Error from Document's OWN
+    // bookkeeping around the two change.execute calls, never one from inside them; see
+    // the narrowed KDoc on Change.execute and Document.applyChanges.
+    //
+    // RED-GREEN, done by hand for this hunk: temporarily added `if (source ==
+    // OpSource.Remote && cause is Error) throw cause` ahead of the ChangeApplyError
+    // throw in Change.kt's per-op catch -> this test went RED (`OutOfMemoryError`
+    // surfaced directly, failing `assertFailsWith<ChangeApplyError>`) -> reverted
+    // (`git diff` empty) -> GREEN again. The fix in this round is KDoc-only; Change.kt's
+    // wrapping itself is intentionally unchanged (parity-preserving).
+    @Test
+    fun `a Remote op throwing an Error is wrapped into ChangeApplyError with the Error as cause`() =
+        runTest {
+            val (change, op) = oneOpChange()
+            val spiedOp = spyk(op)
+            every { spiedOp.execute(any(), any(), any()) } throws OutOfMemoryError("boom")
+
+            val target = Document("d")
+            val thrown = assertFailsWith<ChangeApplyError> {
+                target.applyChangePack(packOf(target, change, listOf(spiedOp)))
+            }
+
+            assertTrue(thrown.cause is OutOfMemoryError)
+            assertEquals("boom", thrown.cause?.message)
+        }
 }

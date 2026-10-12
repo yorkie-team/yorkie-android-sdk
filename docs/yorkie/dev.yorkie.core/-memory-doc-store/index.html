@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.19            </div>
+0.7.20            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -65,7 +65,7 @@
   <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.core</a><span class="delimiter">/</span><span class="current">MemoryDocStore</span></div>
   <div class="cover ">
     <h1 class="cover"><span>Memory</span><wbr></wbr><span>Doc</span><wbr></wbr><span><span>Store</span></span></h1>
-    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">MemoryDocStore</a> : <a href="../-doc-store/index.html">DocStore</a></div><p class="paragraph">Default in-memory <a href="../-doc-store/index.html">DocStore</a>, backed by a <a href="https://developer.android.com/reference/kotlin/java/util/concurrent/ConcurrentHashMap.html">ConcurrentHashMap</a>. Ported from yorkie-js-sdk <code class="lang-kotlin">MemoryDocStore</code> (<code class="lang-kotlin">doc-store.ts</code>); matches iOS's memory-only default.</p><p class="paragraph"><a href="load.html">load</a> and <a href="save.html">save</a> both take a defensive copy of the byte array at the store boundary. JS relies on <code class="lang-kotlin">Uint8Array.slice()</code> for this; Kotlin's <code class="lang-kotlin">ByteArray</code> is a mutable, aliasable reference type (iOS skipped the equivalent copy only because Swift's <code class="lang-kotlin">Data</code> is a value type), so without the copy a caller mutating an array after <code class="lang-kotlin">save</code> — or mutating a <code class="lang-kotlin">load</code> result — would corrupt the stored envelope in place.</p></div></div>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">MemoryDocStore</a> : <a href="../-doc-store/index.html">DocStore</a></div><p class="paragraph">Default in-memory <a href="../-doc-store/index.html">DocStore</a>, backed by a <a href="https://developer.android.com/reference/kotlin/java/util/concurrent/ConcurrentHashMap.html">ConcurrentHashMap</a>. Ported from yorkie-js-sdk <code class="lang-kotlin">MemoryDocStore</code> (<code class="lang-kotlin">doc-store.ts</code>); matches iOS's memory-only default.</p><p class="paragraph">Every <a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a> is copied on the way in and on the way out, so neither a caller mutating what it wrote nor one mutating what it read can corrupt the stored entry. JS relies on <code class="lang-kotlin">Uint8Array.slice()</code> for this; Kotlin's <code class="lang-kotlin">ByteArray</code> is a mutable, aliasable reference type (iOS skipped the equivalent copy only because Swift's <code class="lang-kotlin">Data</code> is a value type), so without the copy a caller mutating an array after a write — or mutating a <code class="lang-kotlin">load</code> result — would corrupt the stored envelope in place.</p><p class="paragraph">The mutating no-op-on-absent operations (<a href="append-change.html">appendChange</a>, <a href="save-meta.html">saveMeta</a>) use <a href="https://developer.android.com/reference/kotlin/java/util/concurrent/ConcurrentHashMap.html#computeifpresent">ConcurrentHashMap.computeIfPresent</a>, which recomputes a key's value atomically under the map's own per-key locking — this is what keeps two coroutines calling <a href="append-change.html">appendChange</a> concurrently from losing an entry, without an explicit external lock.</p></div></div>
   </div>
   <div class="tabbedcontent">
     <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
@@ -91,7 +91,22 @@
       </div>
       <div data-togglable="FUNCTION">
         <h2 class="">Functions</h2>
-        <div class="table"><a data-name="-638346036%2FFunctions%2F-1590045667" anchor-label="load" id="-638346036%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+        <div class="table"><a data-name="-487695817%2FFunctions%2F-1590045667" anchor-label="appendChange" id="-487695817%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="append-change.html"><span>append</span><wbr></wbr><span><span>Change</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-487695817%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="append-change.html"><span class="token function">appendChange</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">change<span class="token operator">: </span><a href="../-stored-change/index.html">StoredChange</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Appends one local change. This is the hot path — frequent and small — so an implementation must not rewrite the whole entry to satisfy it.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-638346036%2FFunctions%2F-1590045667" anchor-label="load" id="-638346036%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
@@ -101,7 +116,7 @@
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="load.html"><span class="token function">load</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Loads the bytes previously <a href="save.html">save</a>d under <a href="load.html">docKey</a>, or null if nothing is stored.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="load.html"><span class="token function">load</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-stored-doc/index.html">StoredDoc</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Returns the persisted state for <a href="load.html">docKey</a>, or null when nothing has been stored for it. <a href="../-stored-doc/changes.html">StoredDoc.changes</a> is ordered by ascending <a href="../-stored-change/client-seq.html">StoredChange.clientSeq</a>.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -116,22 +131,37 @@
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="remove.html"><span class="token function">remove</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Removes any bytes stored under <a href="remove.html">docKey</a>. A no-op when nothing is stored.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="remove.html"><span class="token function">remove</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Deletes everything persisted for <a href="remove.html">docKey</a>. A no-op when nothing is stored.</p></div></div></div>
                 </div>
               </div>
             </div>
           </div>
-<a data-name="1256980184%2FFunctions%2F-1590045667" anchor-label="save" id="1256980184%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+<a data-name="-1947423469%2FFunctions%2F-1590045667" anchor-label="saveMeta" id="-1947423469%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
           <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
             <div class="main-subrow keyValue ">
               <div class=""><span class="inline-flex">
-                  <div><a href="save.html"><span><span>save</span></span></a></div>
-<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1256980184%2FFunctions%2F-1590045667"></span>
+                  <div><a href="save-meta.html"><span>save</span><wbr></wbr><span><span>Meta</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1947423469%2FFunctions%2F-1590045667"></span>
                     <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="save.html"><span class="token function">save</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">bytes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Persists <a href="save.html">bytes</a> under <a href="save.html">docKey</a>, overwriting any previous value.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="save-meta.html"><span class="token function">saveMeta</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">bytes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Records the post-sync header. It leaves the snapshot alone — an online client syncs constantly, and re-snapshotting per sync would reintroduce the cost this interface exists to avoid — and it leaves the <strong>log</strong> alone too.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-803573644%2FFunctions%2F-1590045667" anchor-label="saveSnapshot" id="-803573644%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="save-snapshot.html"><span>save</span><wbr></wbr><span><span>Snapshot</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-803573644%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="save-snapshot.html"><span class="token function">saveSnapshot</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">bytes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Replaces the snapshot and atomically drops every appended change <strong>and any stored meta</strong>. This is compaction: the new snapshot already contains those changes, so keeping them would replay them twice, and it embeds a newer header than meta holds — a snapshot envelope embeds its own checkpoint and changeID, newer than whatever meta held; applying the old header over the new snapshot would regress <code class="lang-kotlin">serverSeq</code> and — worse — <code class="lang-kotlin">lamport</code>, whose regression makes the next edit mint tickets that collide with identities already in the restored root.</p></div></div></div>
                 </div>
               </div>
             </div>

@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.19            </div>
+0.7.20            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -117,7 +117,7 @@
                   </span></span></div>
               <div>
                 <div class="title">
-                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-doc-store/index.html">DocStore</a></div><div class="brief "><p class="paragraph">A byte-oriented, async storage seam for a <a href="../dev.yorkie.document/-document/index.html">dev.yorkie.document.Document</a>'s persisted envelope (see <a href="../dev.yorkie.document/-document/to-bytes.html">dev.yorkie.document.Document.toBytes</a>/<a href="../dev.yorkie.document/-document/-companion/from-bytes.html">dev.yorkie.document.Document.Companion.fromBytes</a>). Ported from yorkie-js-sdk <code class="lang-kotlin">doc-store.ts</code> (<code class="lang-kotlin">2291bf67</code>/#1338); byte-oriented and suspending so a durable backend (file, Room, DataStore) fits behind it. The SDK ships no persistent implementation of its own — <a href="-memory-doc-store/index.html">MemoryDocStore</a> is process-local and dies with the process; a durable store is an app concern. Keyed by an opaque store key the <a href="-client/index.html">Client</a> derives from the API key, client key, and document key (see <code class="lang-kotlin">Client.storeKey</code>) — this interface itself is unaware of that scheme.</p></div></div></div>
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-doc-store/index.html">DocStore</a></div><div class="brief "><p class="paragraph">A byte-oriented, async storage seam for a <a href="../dev.yorkie.document/-document/index.html">dev.yorkie.document.Document</a>'s persisted state. Ported from yorkie-js-sdk <code class="lang-kotlin">doc-store.ts</code> (<code class="lang-kotlin">aaa5cb15</code>/#1354), replacing the single-blob shape from <code class="lang-kotlin">2291bf67</code>/#1338.</p></div></div></div>
                 </div>
               </div>
             </div>
@@ -238,6 +238,36 @@
               <div>
                 <div class="title">
                   <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">interface </span><a href="-session-lock-handle/index.html">SessionLockHandle</a></div><div class="brief "><p class="paragraph">A handle to a held <a href="-session-lock/index.html">SessionLock</a>, returned by a successful <a href="-session-lock/acquire.html">SessionLock.acquire</a>. Ported from yorkie-js-sdk <code class="lang-kotlin">session-lock.ts</code> (<code class="lang-kotlin">2291bf67</code>/#1338).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1598323928%2FClasslikes%2F-1590045667" anchor-label="StoredChange" id="1598323928%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-stored-change/index.html"><span>Stored</span><wbr></wbr><span><span>Change</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1598323928%2FClasslikes%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-stored-change/index.html">StoredChange</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>clientSeq<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-u-int/index.html">UInt</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>bytes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">One persisted local change, tagged with the <a href="-stored-change/client-seq.html">clientSeq</a> it carries. Ported from yorkie-js-sdk <code class="lang-kotlin">doc-store.ts</code> (<code class="lang-kotlin">aaa5cb15</code>/#1354). The sequence is what lets a store drop changes a sync has already acknowledged, and what lets a restore detect a hole rather than replaying a discontinuous run.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="974594818%2FClasslikes%2F-1590045667" anchor-label="StoredDoc" id="974594818%2FClasslikes%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-stored-doc/index.html"><span>Stored</span><wbr></wbr><span><span>Doc</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="974594818%2FClasslikes%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">class </span><a href="-stored-doc/index.html">StoredDoc</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>snapshot<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>meta<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>changes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="-stored-change/index.html">StoredChange</a><span class="token operator">&gt;</span><span class="token operator"> = </span>emptyList()</span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Everything a backend holds for one document: a base snapshot, the changes appended since it, and a small mutable header. Ported from yorkie-js-sdk <code class="lang-kotlin">doc-store.ts</code> (<code class="lang-kotlin">aaa5cb15</code>/#1354).</p></div></div></div>
                 </div>
               </div>
             </div>

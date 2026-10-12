@@ -2,7 +2,7 @@
 <html class="no-js">
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
-    <title>save</title>
+    <title>saveSnapshot</title>
     <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
     <script>var pathToRoot = "../../../";</script>
     <script>document.documentElement.classList.replace("no-js","js");</script>
@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.19            </div>
+0.7.20            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -61,12 +61,12 @@
                 <div class="sidebar--inner" id="sideMenu"></div>
             </div>
             <div id="main">
-<div class="main-content" data-page-type="member" id="content" pageIds="yorkie::dev.yorkie.core/MemoryDocStore/save/#kotlin.String#kotlin.ByteArray/PointingToDeclaration//-1590045667">
-  <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.core</a><span class="delimiter">/</span><a href="index.html">MemoryDocStore</a><span class="delimiter">/</span><span class="current">save</span></div>
+<div class="main-content" data-page-type="member" id="content" pageIds="yorkie::dev.yorkie.core/MemoryDocStore/saveSnapshot/#kotlin.String#kotlin.ByteArray/PointingToDeclaration//-1590045667">
+  <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.core</a><span class="delimiter">/</span><a href="index.html">MemoryDocStore</a><span class="delimiter">/</span><span class="current">saveSnapshot</span></div>
   <div class="cover ">
-    <h1 class="cover"><span><span>save</span></span></h1>
+    <h1 class="cover"><span>save</span><wbr></wbr><span><span>Snapshot</span></span></h1>
   </div>
-  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="save.html"><span class="token function">save</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">bytes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a></span></span><span class="token punctuation">)</span></div><p class="paragraph">Persists <a href="save.html">bytes</a> under <a href="save.html">docKey</a>, overwriting any previous value.</p></div></div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">suspend override </span><span class="token keyword">fun </span><a href="save-snapshot.html"><span class="token function">saveSnapshot</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">docKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">bytes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a></span></span><span class="token punctuation">)</span></div><p class="paragraph">Replaces the snapshot and atomically drops every appended change <strong>and any stored meta</strong>. This is compaction: the new snapshot already contains those changes, so keeping them would replay them twice, and it embeds a newer header than meta holds — a snapshot envelope embeds its own checkpoint and changeID, newer than whatever meta held; applying the old header over the new snapshot would regress <code class="lang-kotlin">serverSeq</code> and — worse — <code class="lang-kotlin">lamport</code>, whose regression makes the next edit mint tickets that collide with identities already in the restored root.</p></div></div>
 </div>
       <div class="footer">
         <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span

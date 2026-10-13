@@ -19,10 +19,13 @@ import org.junit.runner.RunWith
  * Instrumented headline for #1426 (JS `b173c093`): redoing a split that re-creates
  * an element a merge took away must re-point the style operation that followed it at the new element, over the
  * REAL sync loop (a real Yorkie server, compose pin `yorkieteam/yorkie:0.7.24`)
- * and AFTER the SERVER's own replica has collected the merged-away element --
- * not just the in-process `crossSync` wire round trip the JVM
- * `dev.yorkie.document.TreeRedoSplitStyleTest`'s "peer applies redo of a mid
- * split with the right piece bold after GC" case already covers.
+ * and AFTER EACH CLIENT's own [dev.yorkie.document.Document.garbageCollect] has
+ * collected the merged-away element (real tombstones a real wire round trip
+ * produced, not a hand-built version vector) -- not just the in-process
+ * `crossSync` wire round trip the JVM `dev.yorkie.document.TreeRedoSplitStyleTest`'s
+ * "peer applies redo of a mid split with the right piece bold after GC" case
+ * already covers. The GC itself is client-side ([dev.yorkie.core.Client] has no
+ * server-triggered compaction API); only the sync traffic around it is real.
  *
  * Oracle: no `IllegalArgumentException: cannot find node of CrdtTreePos`
  * (the upstream symptom this commit fixes) on either client, both documents'
@@ -74,7 +77,7 @@ class TreeRedoSplitServerRootTest {
     private fun JsonTree.asXml() = toXml()
 
     @Test
-    fun test_redo_of_a_split_and_a_style_applies_on_the_peer_after_server_gc_and_the_server_root() {
+    fun test_redo_of_a_split_and_a_style_applies_on_the_peer_after_client_gc_and_the_server_root() {
         withTwoClientsAndDocuments(syncMode = Manual) { c1, c2, d1, d2, documentKey ->
             suspend fun sync() {
                 c1.syncAsync(d1).await().getOrThrow()
@@ -132,6 +135,16 @@ class TreeRedoSplitServerRootTest {
             val actors = listOf(c1.requireActorId(), c2.requireActorId())
             d1.garbageCollect(maxVectorOf(actors))
             d2.garbageCollect(maxVectorOf(actors))
+            // The premise this "after GC" run relies on (the merge-away is really
+            // gone, not simulated): unlike the in-process JVM twin, a real sync's
+            // OWN pull already runs Document.applyChangePack's unconditional
+            // trailing garbageCollect(pack.versionVector), so the explicit calls
+            // above measure 0 purged here -- the server round trip already
+            // collected it during the preceding sync() calls. Checking garbageLength
+            // instead of a purge count is invariant to exactly when that happened:
+            // either way, nothing should be left outstanding before the redo.
+            assertEquals(0, d1.garbageLength, "d1 must have nothing left to purge here")
+            assertEquals(0, d2.garbageLength, "d2 must have nothing left to purge here")
 
             // The redo must re-point the style operation at the NEW split
             // elements -- this is the exact case that threw

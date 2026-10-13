@@ -10,6 +10,7 @@ import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.gson
 import dev.yorkie.util.postApi
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import okhttp3.OkHttpClient
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -268,12 +269,25 @@ class TreeReachedSetServerRootTest {
 
             val d1Xml = d1.getRoot().getAs<JsonTree>("t").asXml()
             val d2Xml = d2.getRoot().getAs<JsonTree>("t").asXml()
-            // RECORDED, not asserted equal -- println surfaces the
-            // actual outcome in the instrumented run's logcat output, which
-            // the commit body quotes verbatim.
-            println(
-                "open §9.5 pair -- d1=$d1Xml d2=$d2Xml " +
-                    "converged=${d1Xml == d2Xml}",
+            // PINNED, not left to a println: this is the open §9.5 shape the
+            // class KDoc documents above (the two renders disagree on
+            // whether the now-empty first `<p>` carries `bold`) -- a live
+            // run reads exactly these two strings, not merely "not equal".
+            assertEquals(
+                "<r><p bold=\"x\"></p><p><p bold=\"x\"><p bold=\"x\">abcd</p>" +
+                    "<p bold=\"x\">efgh</p></p><p>ijkl</p></p></r>",
+                d1Xml,
+            )
+            assertEquals(
+                "<r><p></p><p><p bold=\"x\"><p bold=\"x\">abcd</p>" +
+                    "<p bold=\"x\">efgh</p></p><p>ijkl</p></p></r>",
+                d2Xml,
+            )
+            assertFalse(
+                d1Xml == d2Xml,
+                "known open §9.5 divergence: the two replicas must NOT converge on the " +
+                    "first <p>'s bold attribute here -- if this starts passing, the shape " +
+                    "has changed and the class KDoc above needs updating together with it",
             )
 
             val d1Rebuild = CrdtRoot(d1.getRootObject().deepCopy())

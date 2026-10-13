@@ -3,6 +3,7 @@ package dev.yorkie.core
 import dev.yorkie.helper.RecordingLogger
 import dev.yorkie.util.Logger
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import org.junit.After
 import org.junit.Before
@@ -73,8 +74,19 @@ class ClientOptionsKeyWarningTest {
     fun `keeps the generated key when only a store is configured`() {
         val options = Client.Options(docStore = MemoryDocStore())
 
-        assertTrue(options.key.isNotEmpty())
+        // Freshly minted per instance (Options.key's own default-value expression,
+        // generateClientKey) -- not a shared constant -- so a second Options() must
+        // never collide with the first.
+        assertNotEquals(options.key, Client.Options(docStore = MemoryDocStore()).key)
+
         Client(host = "0.0.0.0", options = options)
+
+        // This IS the one-explicit-key-missing shape the constructor's warning
+        // fires for (docStore set, key auto-generated) -- the warning message
+        // itself names the key Client actually read, so it must be this SAME
+        // generated key, unchanged, not regenerated or dropped by construction.
+        assertEquals(1, recordingLogger.errorMessages.size)
+        assertTrue(recordingLogger.errorMessages.single().contains(options.key))
     }
 
     @Test

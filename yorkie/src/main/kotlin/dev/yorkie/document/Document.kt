@@ -985,7 +985,7 @@ public class Document(
      * these are payload-safe by the same contract as [ChangeApplyError.operation]
      * itself (type + ticket only, never the cause's message) -- so a redelivered pack
      * is diagnosable down to which change/operation is stuck, not just the failure's
-     * class name (a review finding on the change apply error). The
+     * class name. The
      * no-cause-message guarantee is unchanged. A [CancellationException] skips the log
      * line and propagates unchanged: it is the caller's scope tearing down, not the
      * document getting stuck. Ports JS SDK `document.ts` `applyChangePack`
@@ -1006,10 +1006,9 @@ public class Document(
         } catch (err: CancellationException) {
             throw err
         } catch (err: Throwable) {
-            // Review finding (diagnosability): when `err` is
-            // a ChangeApplyError, its own changeID/opIndex/operation are payload-safe
-            // (never the cause's message) and name which change/operation is stuck, so
-            // they are logged alongside the root failure's class name.
+            // When `err` is a ChangeApplyError, its own changeID/opIndex/operation are
+            // payload-safe (never the cause's message) and name which change/operation
+            // is stuck, so they are logged alongside the root failure's class name.
             val changeApplyDetails = (err as? ChangeApplyError)?.let {
                 "; changeID=${it.changeID}, opIndex=${it.opIndex}, operation=${it.operation}"
             }.orEmpty()
@@ -1125,8 +1124,7 @@ public class Document(
      * [java.lang.Error] (e.g. `OutOfMemoryError`) thrown by that SAME Document-owned
      * bookkeeping (not by an operation's own `execute`).
      *
-     * **Precise scope of the Error/CancellationException guards (a review finding on
-     * the change apply error):** these two guards only ever see
+     * **Precise scope of the Error/CancellationException guards:** these two guards only ever see
      * an `Error`/`CancellationException` that originates in this function's or
      * [applyChangesInternal]'s OWN code around the two `change.execute` calls --
      * `ensureClone`, presence/event emission, [reconcileHistoryEdits]. An
@@ -1250,8 +1248,7 @@ public class Document(
                 // execute inside change.execute -- that is already a ChangeApplyError
                 // by the time it reaches this catch (Change.execute wraps it first), so
                 // it fails the `e !is ChangeApplyError` check below and is rethrown
-                // unchanged regardless (a review finding on the change apply error; see
-                // Change.execute's KDoc).
+                // unchanged regardless (see Change.execute's KDoc).
                 if (source == OpSource.Remote && e !is ChangeApplyError && e !is Error) {
                     throw ChangeApplyError(changeID = change.id.toTestString(), cause = e)
                 }
@@ -2201,7 +2198,9 @@ public class Document(
         )
     }
 
-    public data class Options(
+    public data class Options
+    @JvmOverloads
+    constructor(
         /**
          * Disables garbage collection if true.
          */
@@ -2216,9 +2215,9 @@ public class Document(
          * `history.redo()`. Each [updateAsync] that changes the document is
          * one entry; the oldest is dropped once a stack is full. Must be a
          * positive integer, otherwise construction throws
-         * [YorkieException] with [ErrInvalidArgument]. Defaults to
-         * [MaxUndoRedoStackDepth] (50). A reverse entry keeps a copy of the
-         * content it would restore, so a larger depth holds more memory.
+         * [YorkieException] with [ErrInvalidArgument]. Defaults to 50. A
+         * reverse entry keeps a copy of the content it would restore, so a
+         * larger depth holds more memory.
          */
         public val maxUndoDepth: Int = MaxUndoRedoStackDepth,
     ) {

@@ -10,6 +10,7 @@ import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DocSize
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -41,13 +42,18 @@ import org.junit.Test
  * leaving them open would exhaust OS threads long before a scan's pinned
  * count is reached.
  *
- * Timeouts: each `@Test(timeout = ...)` is sized off TWO measurements, not
- * one -- the scan run in isolation (seconds) and the SAME scan run inside
- * the full `yorkie:testDebugUnitTest` suite, which is 5-10x slower per scan
- * (JaCoCo instrumentation plus CPU contention from Gradle's other parallel
+ * Timeouts: each test's bound is sized off TWO measurements, not one -- the
+ * scan run in isolation (seconds) and the SAME scan run inside the full
+ * `yorkie:testDebugUnitTest` suite, which is 5-10x slower per scan (JaCoCo
+ * instrumentation plus CPU contention from Gradle's other parallel
  * test-worker forks, not this file's own cost -- the pair/styled counts are
  * identical either way). Every budget below is sized off the full-suite
- * figure, not the isolated one.
+ * figure, not the isolated one. The bound is passed to `runTest(timeout =
+ * ...)`, not a JUnit `@Test(timeout = ...)`: `runTest` (kotlinx-coroutines-
+ * test 1.8.1) enforces its OWN 60s default internal watchdog regardless of
+ * any outer JUnit annotation, so a `@Test(timeout = 90_000)`/`150_000` here
+ * would never be the one that fires -- `runTest`'s 60s default always beats
+ * it first. `runTest(timeout = ...)` replaces that default outright.
  */
 class TreeStyleReachedSetScanTest {
 
@@ -281,14 +287,14 @@ class TreeStyleReachedSetScanTest {
     // Measured: ~0.4-0.5s run alone, ~3.5s run inside the full `yorkie:
     // testDebugUnitTest` suite (JaCoCo + sibling test-worker CPU contention
     // -- see class KDoc); 30s is a >8x margin over the full-suite figure.
-    @Test(timeout = 30_000)
-    fun `converges split x style`() = runTest {
+    @Test
+    fun `converges split x style`() = runTest(timeout = 30.seconds) {
         val scan = scanDivergences(styleScanBase, flatSplits, styleRange, countOf("bold=\"x\""))
         assertEquals(ScanResult(1001, 0, 0, 0, 1862, 759), scan)
     }
 
-    @Test(timeout = 30_000)
-    fun `converges split x remove-style`() = runTest {
+    @Test
+    fun `converges split x remove-style`() = runTest(timeout = 30.seconds) {
         val scan =
             scanDivergences(styleScanBoldBase, flatSplits, removeStyleRange, countOf("<p>"))
         assertEquals(ScanResult(1001, 0, 0, 0, 1862, 759), scan)
@@ -301,8 +307,8 @@ class TreeStyleReachedSetScanTest {
     // only on a tombstone shows up in the size ledger, not the XML.
     // Measured: ~2.5-3.2s run alone, up to ~26s run inside the full suite
     // (contention, see class KDoc); 90s is a >3.4x margin over that figure.
-    @Test(timeout = 90_000)
-    fun `converges merge x style on the rendered document`() = runTest {
+    @Test
+    fun `converges merge x style on the rendered document`() = runTest(timeout = 90.seconds) {
         val scan = scanDivergences(styleScanBase, flatMerges, styleRange, countOf("bold=\"x\""))
         assertEquals(ScanResult(7098, 0, scan.tombstoneOnly, 0, 6302, 4254), scan)
         assertTrue(
@@ -312,8 +318,10 @@ class TreeStyleReachedSetScanTest {
     }
 
     // Measured: up to ~24s run inside the full suite; 90s margin as above.
-    @Test(timeout = 90_000)
-    fun `converges merge x remove-style on the rendered document`() = runTest {
+    @Test
+    fun `converges merge x remove-style on the rendered document`() = runTest(
+        timeout = 90.seconds,
+    ) {
         val scan =
             scanDivergences(styleScanBoldBase, flatMerges, removeStyleRange, countOf("<p>"))
         assertEquals(ScanResult(7098, 0, scan.tombstoneOnly, 0, 6302, 4254), scan)
@@ -332,8 +340,8 @@ class TreeStyleReachedSetScanTest {
     // (JaCoCo + sibling test-worker CPU contention, see class KDoc) -- the
     // heaviest scan, closest to its budget; 150s is a >3.7x margin over the
     // full-suite figure, generous for a slower/busier CI than this run.
-    @Test(timeout = 150_000)
-    fun `bounds nested split x style`() = runTest {
+    @Test
+    fun `bounds nested split x style`() = runTest(timeout = 150.seconds) {
         val scan = scanDivergences(
             nestedScanBase,
             nestedSplits,
@@ -345,8 +353,8 @@ class TreeStyleReachedSetScanTest {
     }
 
     // Measured: up to ~39.5s run inside the full suite; 150s margin as above.
-    @Test(timeout = 150_000)
-    fun `bounds nested split x remove-style`() = runTest {
+    @Test
+    fun `bounds nested split x remove-style`() = runTest(timeout = 150.seconds) {
         val scan = scanDivergences(
             nestedScanBoldBase,
             nestedSplits,

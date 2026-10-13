@@ -12,7 +12,7 @@ import dev.yorkie.helper.oneWayDeliver
 import dev.yorkie.util.DataSize
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.assertNotEquals
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -100,7 +100,7 @@ class CrdtRootInternalGcPairTest {
             "a tombstone inside the registered element has to be collectable",
         )
         val gc = root.docSize.gc
-        assertTrue(gc.data + gc.meta != 0, "its bytes belong to gc")
+        assertNotEquals(0, gc.data + gc.meta, "its bytes belong to gc")
 
         assertEquals(1, root.garbageCollect(maxVectorOf(listOf(actor1))))
         assertEquals(DataSize(data = 0, meta = 0), root.docSize.gc)

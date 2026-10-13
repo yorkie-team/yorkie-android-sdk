@@ -6,6 +6,7 @@ import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -62,11 +63,28 @@ class TreeRedoSplitStyleTest {
 
     private suspend fun Document.tree(): JsonTree = getRoot().getAs("t")
 
-    /** Purges the tombstones both replicas have seen. */
-    private fun collectBoth(d1: Document, d2: Document) {
+    /**
+     * Purges the tombstones both replicas have seen. [assertPurged] (default true) checks
+     * the premise every "right before the redo this purge is supposed to matter for" call
+     * site relies on: the undo actually left something to purge (the merge-away the next
+     * redo is about to run through), not a no-op pass that would make the "after GC"
+     * shapes indistinguishable from their `collect = false` twins. False at a call site
+     * where nothing is guaranteed left to purge (e.g. a second pass right after the first
+     * redo already collected it) -- an unconditional assertion there would be checking the
+     * wrong premise, not strengthening this test.
+     */
+    private fun collectBoth(
+        d1: Document,
+        d2: Document,
+        assertPurged: Boolean = true,
+    ) {
         val vector = maxVectorOf(listOf(actor1, actor2))
-        d1.garbageCollect(vector)
-        d2.garbageCollect(vector)
+        val d1Purged = d1.garbageCollect(vector)
+        val d2Purged = d2.garbageCollect(vector)
+        if (assertPurged) {
+            assertTrue(d1Purged > 0, "d1 must have something to purge here")
+            assertTrue(d2Purged > 0, "d2 must have something to purge here")
+        }
     }
 
     /**
@@ -245,7 +263,10 @@ class TreeRedoSplitStyleTest {
         crossSync(d1, d2, overWire = true)
         assertEquals(split, d1.tree().toXml(), "redo split, locally")
         assertEquals(split, d2.tree().toXml(), "redo split, on the peer")
-        if (collect) collectBoth(d1, d2)
+        // Not "before the redo" this purge matters for (the style redo right below names
+        // no tombstone) -- the first collectBoth above already purged what the split redo
+        // just re-created, so this pass is a no-op by design, not a premise to check.
+        if (collect) collectBoth(d1, d2, assertPurged = false)
 
         d1.history.redoAsync().await()
         assertEquals(styled, d1.tree().toXml(), "redo style, locally")

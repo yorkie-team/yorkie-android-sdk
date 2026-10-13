@@ -262,7 +262,7 @@ class GcSuccessorBarrierTest {
         assertEquals("""["w","v","a"]""", arrJson(dB))
         val fromB = pushRecording(dB, ACTOR_2, rows)
 
-        // A pulls m2, then pushes its own backlog.
+        // A pulls m2, then pushes its own queued local changes.
         pull(dA, fromB)
         val fromA = pushRecording(dA, ACTOR_1, rows)
 
@@ -271,7 +271,7 @@ class GcSuccessorBarrierTest {
             dA.garbageCollect(minVV(*rows.values.toTypedArray()))
         }
 
-        // B, which has not pulled A's backlog yet, inserts "x" after "w".
+        // B, which has not pulled A's pushed changes yet, inserts "x" after "w".
         dB.updateAsync { r, _ ->
             val arr = r.getAs<JsonArray>("arr")
             arr.put("x", arr[0].id)

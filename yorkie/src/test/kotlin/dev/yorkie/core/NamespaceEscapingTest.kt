@@ -7,6 +7,8 @@ import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -21,8 +23,8 @@ import org.junit.Test
  * both; see [Client]'s `storeKey` KDoc). Two identity triples whose BARE `apiKey/clientKey/docKey`
  * join would collide must land on distinct store entries and distinct lock names; a literal `%`
  * in a part must not forge the `/` escape; a triple with no `/`/`%` anywhere keeps the exact
- * pre-#1402 bare-joined key, so an entry persisted before this change is still found (see the
- * migration note in the commit that introduced it).
+ * pre-#1402 bare-joined key, so an entry persisted before this change is still found with no
+ * migration needed for it.
  *
  * JS's `3b9c668c` adds no dedicated unit test for `namespaceOf`/`escapeNamespacePart` themselves
  * (only `client_options_test.ts`'s warning cases, ported separately in
@@ -134,14 +136,14 @@ class NamespaceEscapingTest {
 
         assertTrue(json1.contains("\"k\":1"), "triple 1 did not restore its own entry: $json1")
         assertTrue(json2.contains("\"k\":2"), "triple 2 did not restore its own entry: $json2")
-        assertTrue(!json1.contains("\"k\":3"), "triple 1 read the stale bare-joined entry")
-        assertTrue(!json2.contains("\"k\":3"), "triple 2 read the stale bare-joined entry")
+        assertFalse(json1.contains("\"k\":3"), "triple 1 read the stale bare-joined entry")
+        assertFalse(json2.contains("\"k\":3"), "triple 2 read the stale bare-joined entry")
 
         assertTrue(lock1.acquired.isNotEmpty())
         assertTrue(lock2.acquired.isNotEmpty())
         assertNotEquals(lock1.acquired.single(), lock2.acquired.single())
-        assertTrue(lock1.acquired.single() == "yorkie-session:a%2Fb/c/doc")
-        assertTrue(lock2.acquired.single() == "yorkie-session:a/b%2Fc/doc")
+        assertEquals("yorkie-session:a%2Fb/c/doc", lock1.acquired.single())
+        assertEquals("yorkie-session:a/b%2Fc/doc", lock2.acquired.single())
     }
 
     @Test
@@ -185,6 +187,6 @@ class NamespaceEscapingTest {
         val json = attachAndGetRoot("a", "b", store, lock, docKey)
 
         assertTrue(json.contains("\"k\":9"), "separator-free triple lost its pre-existing entry")
-        assertTrue(lock.acquired.single() == "yorkie-session:a/b/doc")
+        assertEquals("yorkie-session:a/b/doc", lock.acquired.single())
     }
 }

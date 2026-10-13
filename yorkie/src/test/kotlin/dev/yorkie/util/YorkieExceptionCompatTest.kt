@@ -51,7 +51,7 @@ class YorkieExceptionCompatTest {
         assertEquals("YorkieException(code=ErrInvalidArgument, errorMessage=nope)", a.toString())
     }
 
-    // Review finding (R8 stability): a plain
+    // R8 stability: a plain
     // YorkieException's toString() takes a dedicated `this::class ==
     // YorkieException::class` branch that returns a hard-coded literal, not
     // `javaClass.simpleName`, so the base class's own name in the text survives R8

@@ -225,7 +225,10 @@ public class JsonArray internal constructor(
         val (deadNode, movedDiff) = target.moveAfter(prevPosCreatedAt, createdAt, executedAt)
         // The `movedAt` stamp is part of the moved element's size; see
         // CrdtRoot.accMovedElement for why it cannot simply go to live.
-        context.accMovedElement(target[createdAt]!!, movedDiff)
+        // Unfiltered lookup (JS `target.getByID`, 8fb5a71c): [createdAt] may
+        // already be removed (e.g. moving an already-deleted element's id),
+        // and the filtered `target[createdAt]` answers null for it.
+        context.accMovedElement(target.getByID(createdAt)!!, movedDiff)
         if (deadNode != null) {
             // gcOnlySize: never counted in live, mirrors JS array.ts (see moveInternal).
             context.registerGCPair(
@@ -338,7 +341,8 @@ public class JsonArray internal constructor(
         val (deadNode, movedDiff) = target.moveAfter(prevPosCreatedAt, targetElem.createdAt, ticket)
         // The `movedAt` stamp is part of the moved element's size; see
         // CrdtRoot.accMovedElement for why it cannot simply go to live.
-        context.accMovedElement(target[targetElem.createdAt]!!, movedDiff)
+        // Unfiltered lookup -- see moveInternal's matching comment.
+        context.accMovedElement(target.getByID(targetElem.createdAt)!!, movedDiff)
         if (deadNode != null) {
             // gcOnlySize: never counted in live (see moveInternal).
             context.registerGCPair(

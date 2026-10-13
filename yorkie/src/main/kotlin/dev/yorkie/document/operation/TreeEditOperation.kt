@@ -536,7 +536,7 @@ internal data class TreeEditOperation(
         restored.recreated.forEach { node -> diff = addDataSizes(diff, node.dataSize) }
         root.acc(diff)
 
-        // Document.executeUndoRedo drops a change whose executedOperations is
+        // Document.executeUndoRedoInternal drops a change whose executedOperations is
         // empty, so a restore that changed anything must still be `executed`
         // or it never propagates to peers. When every target is already in
         // the requested state (a peer deleted/revived it first —

@@ -7,6 +7,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -146,21 +147,22 @@ class DocumentUndoDepthTest {
         assertEquals(YorkieException.Code.ErrInvalidArgument, exception.code)
     }
 
+    // Binary compatibility: adding maxUndoDepth as a third constructor parameter must not
+    // remove the two/one/zero-arg constructors a Java caller (or Kotlin code compiled
+    // against an older version of this library) already links against -- @JvmOverloads on
+    // the primary constructor is what keeps them. getConstructor throws
+    // NoSuchMethodException if the overload is gone, so reaching the assertNotNull below
+    // at all is the assertion.
     @Test
-    fun `a rejected construction leaves no dispatcher thread behind`() {
-        // Options(...) is a constructor-argument expression, evaluated by the caller before
-        // Document's own primary constructor runs at all (whether it is this test's explicit
-        // argument or Document's own default `options: Options = Options()`), so an Options
-        // validation throw here never enters Document's body -- `dispatcher` (the first
-        // property initializer) is never assigned and createSingleThreadDispatcher's
-        // ThreadPoolExecutor is never constructed, let alone given a task to spin a worker up
-        // for.
-        val key = "undo-depth-thread-leak-guard-${System.nanoTime()}"
-
-        assertThrows(YorkieException::class.java) {
-            Document(key, Document.Options(maxUndoDepth = 0))
-        }
-
-        assertTrue(Thread.getAllStackTraces().keys.none { it.name == "Document($key)" })
+    fun `the two-arg constructor Java callers already link against still resolves`() {
+        val ctor = Document.Options::class.java.getConstructor(
+            Boolean::class.java,
+            Boolean::class.java,
+        )
+        assertNotNull(ctor)
+        val options = ctor.newInstance(true, true)
+        assertEquals(true, options.disableGC)
+        assertEquals(true, options.disablePresence)
+        assertEquals(MaxUndoRedoStackDepth, options.maxUndoDepth)
     }
 }

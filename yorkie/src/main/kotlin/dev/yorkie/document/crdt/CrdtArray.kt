@@ -95,6 +95,19 @@ internal data class CrdtArray(
     }
 
     /**
+     * Returns the element of the given [createdAt] whether it is removed or
+     * not. Ports JS SDK `crdt/array.ts` `getByID` (`8fb5a71c`, #1392): unlike
+     * the filtered [get], a move's post-move re-lookup of the element it just
+     * moved must find it even when it was removed concurrently (e.g. a
+     * `moveFront`/`moveAfter` naming an already-deleted element's id) --
+     * [get] would answer `null` there and the caller's non-null assertion
+     * would crash.
+     */
+    fun getByID(createdAt: TimeTicket): CrdtElement? {
+        return elements.get(createdAt)
+    }
+
+    /**
      * Returns the element of the given [index].
      */
     operator fun get(index: Int): CrdtElement? {

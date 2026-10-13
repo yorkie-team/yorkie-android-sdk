@@ -304,7 +304,7 @@ class CrdtTreeMergeLineageTest {
     }
 
     /**
-     * Review finding (blocker): the merge in [CrdtTree.edit]
+     * The merge in [CrdtTree.edit]
      * stamps a moved child's [CrdtTreeNode.mergedAt] with the merge's own
      * ticket, once, on first move (`CrdtTree.kt:991-997`). A LATER,
      * unrelated op can still bump the merge source's OWN

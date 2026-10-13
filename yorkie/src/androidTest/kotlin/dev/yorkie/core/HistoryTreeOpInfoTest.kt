@@ -13,6 +13,8 @@ import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.gson
+import dev.yorkie.util.DataSize
+import dev.yorkie.util.DocSize
 import dev.yorkie.util.postApi
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -415,17 +417,28 @@ class HistoryTreeOpInfoTest {
             )
 
             // Re-probe of the known tombstoned-parent restore issue (see the
-            // comment above this test): RECORD the running vs. from-scratch-rebuild docSize.live
-            // instead of asserting them equal -- the revived "ab" text stays
-            // hidden under the tombstoned "<p>" on both replicas, which is
-            // what the XML/JSON/server-root oracles below actually check.
+            // comment above this test), PINNED to the live run's own figures
+            // rather than merely recorded: the revived "ab" text (4 data
+            // bytes, 24 meta bytes for its own + the undo's removedAt
+            // ticket) is counted live by the running docSize even though it
+            // stays structurally hidden under the tombstoned "<p>", so a
+            // from-scratch rebuild -- which only walks live-reachable nodes
+            // -- disagrees with it by exactly that much on both replicas.
+            // This is the same shared upstream limitation `TreeUpstreamDefectPinTest`
+            // pins as `restore under a tombstoned parent diverges`, re-probed
+            // here over the real sync loop. The XML/JSON/server-root oracles
+            // below -- what actually matters for correctness -- are
+            // unaffected and all agree.
             val d1Rebuild = CrdtRoot(d1.getRootObject().deepCopy())
             val d2Rebuild = CrdtRoot(d2.getRootObject().deepCopy())
-            println(
-                "tombstoned-parent restore re-probe -- d1.docSize=${d1.getDocSize()} " +
-                    "d1Rebuild.docSize=${d1Rebuild.docSize} d2.docSize=${d2.getDocSize()} " +
-                    "d2Rebuild.docSize=${d2Rebuild.docSize}",
-            )
+            val runningDocSize =
+                DocSize(live = DataSize(data = 8, meta = 168), gc = DataSize(data = 0, meta = 0))
+            val rebuildDocSize =
+                DocSize(live = DataSize(data = 4, meta = 144), gc = DataSize(data = 0, meta = 0))
+            assertEquals(runningDocSize, d1.getDocSize())
+            assertEquals(runningDocSize, d2.getDocSize())
+            assertEquals(rebuildDocSize, d1Rebuild.docSize)
+            assertEquals(rebuildDocSize, d2Rebuild.docSize)
 
             val serverJson = serverRoot(documentKey)
             assertJsonContentEquals(serverJson, d1.toJson())

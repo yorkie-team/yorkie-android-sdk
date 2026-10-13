@@ -1,6 +1,7 @@
 package dev.yorkie.document
 
 import dev.yorkie.document.change.Change
+import dev.yorkie.document.change.ChangeExecutionResult
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
@@ -24,6 +25,7 @@ import io.mockk.unmockkAll
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -37,7 +39,7 @@ import org.junit.Test
  * plus the Android-only two-layer-wrap cases ([Change.execute] names an
  * operation; [Document.applyChangesInternal]'s per-change catch names a change-level
  * failure JS has no equivalent of, since JS has no clone/root two-pass split) and the
- * api-compat review findings recorded (not test-enforced; see the comments
+ * binary-compatibility hardening recorded (not test-enforced; see the comments
  * before each, below) on top of the original port: a `CancellationException` reaching
  * any of [Document.applyChanges]'s outer catch, [Document.applyChangesInternal]'s
  * per-change catch or [Document.applyChangePack]'s stuck-checkpoint catch must
@@ -184,6 +186,66 @@ class ChangeApplyErrorTest {
         }
     }
 
+    // Document-level counterpart of the case directly above: a Local-sourced replay
+    // through Document.applyChanges (not Change.execute called directly) must also
+    // rethrow the raw error -- never ChangeApplyError -- AND reset the clone, the same
+    // way every other throw out of applyChangesInternal does.
+    // restoreAppendedChanges (the attach/restore-from-store path) is the one production
+    // caller of applyChanges(..., OpSource.Local).
+    @Test
+    fun `restoreAppendedChanges rethrows a Local-sourced error raw and resets the clone`() =
+        runTest {
+            val (change, op) = oneOpChange()
+            val spiedOp = spyk(op)
+            every { spiedOp.execute(any(), any(), any()) } throws IllegalStateException("boom")
+
+            val target = Document("d")
+            // One successful edit first, so the clone this throw must reset is
+            // observably non-null beforehand, not merely never-yet-created.
+            target.updateAsync { root, _ -> root["seed"] = 1 }.await()
+            assertNotNull(target.clone)
+
+            val thrown = assertFailsWith<IllegalStateException> {
+                target.restoreAppendedChanges(listOf(change.copy(operations = listOf(spiedOp))))
+            }
+            assertEquals("boom", thrown.message)
+            assertNull(target.clone)
+        }
+
+    // The OTHER Document-level wrap site: a Remote change whose OWN operation executes
+    // cleanly, but whose surrounding bookkeeping -- here, reconcileHistoryEdits, run
+    // right after change.execute succeeds, entirely outside Change.execute's per-op
+    // catch -- throws. Unlike an operation's own throw (named with opIndex/operation,
+    // see "names the document, the change and the operation" above), this is "the
+    // change alone" shape JS 6 unit-tests on a hand-built ChangeApplyError: opIndex and
+    // operation stay null (no single operation is at fault), while docKey/changeID/cause
+    // are populated and the clone is reset, exactly as a real apply would produce it.
+    // reconcileHistoryEdits is private; spyk's private-call support is the seam (no
+    // production hook added).
+    @Test
+    fun `a Remote change whose own bookkeeping throws is wrapped as change-level`() = runTest {
+        val (change, op) = oneOpChange()
+        val target = spyk(Document("d"), recordPrivateCalls = true)
+        // Distinct from the change's own (default/unset) actor so reconcileHistoryEdits'
+        // "only reconcile against a DIFFERENT actor's changes" gate lets this change
+        // reach it.
+        target.setActor("000000000000000000000002")
+        every {
+            target["reconcileHistoryEdits"](any<ChangeExecutionResult>())
+        } throws IllegalStateException("boom")
+
+        val thrown = assertFailsWith<ChangeApplyError> {
+            target.applyChangePack(packOf(target, change, listOf(op)))
+        }
+        assertEquals("d", thrown.docKey)
+        assertEquals(change.id.toTestString(), thrown.changeID)
+        assertTrue(thrown.cause is IllegalStateException)
+        assertEquals("boom", thrown.cause?.message)
+        assertNull(thrown.opIndex)
+        assertNull(thrown.operation)
+        assertNull(target.clone)
+    }
+
     // --- JS 6: names the change alone when no single operation failed ---
 
     @Test
@@ -205,10 +267,9 @@ class ChangeApplyErrorTest {
     }
 
     // --- JS 7: reports the stuck checkpoint, metadata only (never the cause message) ---
-    // Review finding (diagnosability): the log line also
-    // names the ChangeApplyError's own changeID/opIndex/operation -- payload-safe by
-    // the same contract as `operation` itself -- without ever logging the cause's
-    // message.
+    // The log line also names the ChangeApplyError's own changeID/opIndex/operation --
+    // payload-safe by the same contract as `operation` itself -- without ever logging
+    // the cause's message.
 
     @Test
     fun `reports the stuck checkpoint once, without the cause message`() = runTest {
@@ -275,7 +336,7 @@ class ChangeApplyErrorTest {
         )
     }
 
-    // Cancellation guard (api-compat review finding): a CancellationException
+    // Cancellation guard: a CancellationException
     // reaching any of Document.applyChanges's outer catch, applyChangesInternal's
     // per-change catch, or applyChangePack's stuck-checkpoint catch must propagate
     // unchanged -- never named as a ChangeApplyError, never logged as a false "stuck"
@@ -304,7 +365,7 @@ class ChangeApplyErrorTest {
     // `triggerAppend` -- both already-reviewed, already-trusted call sites for exactly
     // this "never let cancellation be mistaken for a domain failure" contract.
 
-    // Error guard (api-compat review finding): rethrow a `java.lang.Error`
+    // Error guard: rethrow a `java.lang.Error`
     // (e.g. `OutOfMemoryError`/`StackOverflowError`) unwrapped from the same two
     // `Document` catches the cancellation test above exercises.
     //
@@ -312,7 +373,7 @@ class ChangeApplyErrorTest {
     // written in its place): every path this suite can drive an operation failure
     // through funnels first through `Change.execute`'s own op-level catch (`Change.kt`,
     // out of this fix's scope -- it has no suspension points, so it carries no
-    // CancellationException risk, and the review finding named only
+    // CancellationException risk, and this hardening targets only
     // the three Document catches), which wraps ANY Throwable -- including an Error --
     // into a ChangeApplyError before either of Document's own `err is Error`/`e !is
     // Error` guards is ever reached. The only way those two Document-level guards could
@@ -327,8 +388,8 @@ class ChangeApplyErrorTest {
     // inspection and precedent only -- see that comment for why no test is shipped for
     // either).
 
-    // Review finding (error exclusion): confirms
-    // directly what the Error-guard comment above already predicted by inspection -- an
+    // Confirms directly what the Error-guard comment above already predicted by
+    // inspection -- an
     // operation's own `execute` throwing a java.lang.Error for a Remote source IS
     // wrapped into a ChangeApplyError by Change.execute's per-op catch (Change.kt),
     // with the Error reachable as `cause`, exactly like any other Throwable the

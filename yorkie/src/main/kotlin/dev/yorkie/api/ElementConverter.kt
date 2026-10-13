@@ -299,9 +299,8 @@ internal fun PBTree.toCrdtTree(): CrdtTree {
  * does. This reader is SHARED by [toCrdtTreeNodesWhenEdit] (operation
  * content) and [PBTree.toCrdtTree] (snapshot decode) -- a stored snapshot
  * with a depth hole is rejected too now, not silently trimmed; the server
- * never writes one, only a crafted/corrupt payload does (see the commit
- * message's Migration note). Port JS SDK `converter.ts` `fromTreeNodes`
- * (b69169c0, #1404).
+ * never writes one, only a crafted/corrupt payload does. Port JS SDK
+ * `converter.ts` `fromTreeNodes` (b69169c0, #1404).
  */
 internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
     if (isEmpty()) {

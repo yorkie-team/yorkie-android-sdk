@@ -813,8 +813,14 @@ public class Client(
      * [persistQueues]`[key]?.join()` awaits that catch-up append's own store write (JS `decide`
      * deferral): [append] chains its write via [enqueueWrite] and returns before the write
      * lands, so without this join a write that is about to fail (and poison the key) can still be
-     * in flight when the re-sample below runs — a hung store write delays this sync's tail no
-     * longer than the store's own timeout bounds it to; Kotlin awaits this under the document
+     * in flight when the re-sample below runs — bounded to 5s, the same bound [drainPersist]
+     * gives a drain, NOT by the store's own timeout: [DocStore] carries no such contract, and an
+     * app-supplied store that simply never completes a write would otherwise wedge every later
+     * sync/detach of this document under [resource]'s mutex forever. A join that does not land in
+     * time poisons the key instead of re-sampling an outcome it cannot know — the write may still
+     * be in flight, so the state is treated as unknown rather than caught up, routing the NEXT
+     * write through this function's own `state.poisoned` branch above (or [append]'s matching
+     * guard) to repair with a fresh base. Kotlin awaits this under the document
      * mutex rather than JS's promise `.then`. Third, a change the server acked that the log never
      * received (the triggered append's dispatcher hop resumed after [Document.applyChangePack]
      * had already dropped it from the pending queue, so no later append can ever see it) shows as
@@ -834,7 +840,19 @@ public class Client(
             return
         }
         append(attachment)
-        persistQueues[key]?.join()
+        // `withTimeoutOrNull`'s own null means "timed out" -- but
+        // `persistQueues[key]?.join()` ALSO evaluates to null whenever there is
+        // no job to join (the common case: nothing left in flight), which is
+        // not a timeout at all. `true` is a non-null marker the join itself
+        // never produces, so it disambiguates the two.
+        val caughtUpInTime = withTimeoutOrNull(5_000) {
+            persistQueues[key]?.join()
+            true
+        } != null
+        if (!caughtUpInTime) {
+            persistStates[key]?.poisoned = true
+            return
+        }
         val caughtUp = persistStates[key] ?: return
         val ackedPastLog = document.checkPoint.clientSeq > caughtUp.lastAppendedClientSeq
         if (caughtUp.poisoned || ackedPastLog) {

@@ -184,7 +184,7 @@ class TreeEditContentSanitizeTest {
         val attrPairs = result.gcPairs.filterNot { it.parent === tree }
         assertEquals(1, attrPairs.size, "no GC pair for the attribute tombstone")
         val pair = attrPairs.single()
-        assertTrue(pair.child == content.getAttrs().getNodeMapByKey()["removed"])
+        assertEquals<Any?>(content.getAttrs().getNodeMapByKey()["removed"], pair.child)
         // Removed entries are skipped by dataSize, so these bytes never
         // entered live: the pair has to carry its own size to gc rather than
         // move it out of live, which would drive live down by bytes it never

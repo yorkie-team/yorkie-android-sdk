@@ -2333,7 +2333,11 @@ internal data class CrdtTree(
     override fun purgeBarrierAt(node: GCChild): TimeTicket? {
         val treeNode = node as? CrdtTreeNode ?: return null
         val siblings = treeNode.parent?.allChildren ?: return null
-        val offset = siblings.indexOf(treeNode)
+        // Identity, not structural equality: CrdtTreeNode is a data class, so
+        // `indexOf` would alias two structurally-equal-but-distinct siblings
+        // (e.g. two empty tombstoned text nodes) and could return the WRONG
+        // one's position.
+        val offset = siblings.indexOfFirst { it === treeNode }
         if (offset < 0) return null
         return siblings.getOrNull(offset + 1)?.id?.createdAt
     }
@@ -2376,7 +2380,10 @@ internal data class CrdtTree(
     private fun captureRestoreSpan(node: CrdtTreeNode): TreeRestoreSpan {
         val parent = node.parent
         val siblings = parent?.allChildren
-        val index = siblings?.indexOf(node) ?: -1
+        // Identity, not structural equality -- see purgeBarrierAt's matching
+        // comment: CrdtTreeNode is a data class, so two structurally-equal
+        // siblings must not alias here either.
+        val index = siblings?.indexOfFirst { it === node } ?: -1
         val leftSiblingID = siblings?.takeIf { index > 0 }?.get(index - 1)?.let(::leftAnchorID)
         val rightSiblingID = siblings
             ?.takeIf { index in 0 until siblings.size - 1 }

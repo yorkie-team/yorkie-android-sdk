@@ -86,11 +86,26 @@ import org.junit.Test
  *   see `fixed upstream defect - copied attribute tombstones are now swept`
  *   below (was `... are never swept`).
  *
- * A separate, Android-only known defect (not one of F1-F4 above, and not a
- * shared upstream shape) is pinned at the bottom of this file: yorkie-js-sdk
- * `b173c093` (#1426) ports two re-pointing mechanisms together, and only one
- * (the split-ticket one) made it into this SDK; see `known upstream defect -
- * a style undone alongside a copy-reinsert is dropped`.
+ * yorkie-js-sdk `b173c093` (#1426) ports two re-pointing mechanisms together:
+ * the split-ticket one (`onSplitTicketConsumed`) and a second one for a
+ * reverse that copy-reinsert deleted content (`reissueContentIDs`). An
+ * earlier round of this file pinned a THIRD test here as a "known defect" for
+ * the second mechanism, reasoning by analogy from the split-ticket shape:
+ * style a node, delete it in the same update, undo, expect the style to
+ * survive like a JS replica's. Re-investigated while porting that mechanism
+ * (`TreeUndoContentIdentityTest`, this round): that specific scenario's
+ * delete is merge/split-free, so `CrdtTree.edit`'s `spansComplete` guard
+ * takes the IDENTITY-PRESERVING restore path on BOTH platforms (same guard,
+ * ported identically; see `TreeEditOperationReverseTest`'s `reverse of pure
+ * delete is a pure insert`) -- never the copy-reinsert one `reissueContentIDs`
+ * exists for. Losing the style there is not a defect: undoing the WHOLE
+ * transaction reverts atomically to the pre-transaction state, which had no
+ * style (it was added and the node deleted in the SAME update). See `control
+ * - undoing a style and a delete from the same update reverts atomically`
+ * below, and `TreeUndoContentIdentityTest` for the mechanism itself,
+ * demonstrated against a hand-seeded copy-reinsert entry (the branch is
+ * unreachable via any public-API sequence found this round -- see that
+ * file's class KDoc).
  */
 class TreeUpstreamDefectPinTest {
 
@@ -326,64 +341,57 @@ class TreeUpstreamDefectPinTest {
             assertEquals(d1.xml(), d2.xml())
         }
 
-    // KNOWN DEFECT, STILL OPEN (yorkie-js-sdk b173c093, #1426, the
-    // `reissueContentIDs` half): b173c093 ports TWO re-pointing mechanisms
-    // together -- the split-ticket one (`op.onSplitTicketConsumed`, already
-    // ported here: see TreeRedoSplitStyleTest/TreeRedoSplitServerRootTest)
-    // and a second one for a reverse that COPY-REINSERTS deleted content
-    // (`reissueContentIDs`, returning `[old, new]` id pairs so a later
-    // operation in the same undo/redo entry that still names the deleted
-    // content gets re-pointed at the copy's new id before it runs). Android's
-    // copy-reinsert reverse (`TreeEditOperation.removedNodeSnapshots`,
-    // `buildFreshNodes`) mints its fresh ids from id-less `TreeNode`
-    // snapshots with no equivalent hook, so nothing re-points a later
-    // same-entry operation at them.
-    //
-    // Demonstrated here (not merely suspected): style a node, then in the
-    // SAME update delete it -- the undo's reverse entry runs the
-    // copy-reinsert FIRST (undoing the delete) and the style-reverse SECOND
-    // (undoing the style), exactly the order `repointRest` exists to cover.
-    // The style silently fails to re-land (`TreeStyleOperation.execute`
-    // tolerates an unresolvable target rather than throwing -- it reports
-    // `executed = false` and moves on), not a thrown "cannot find node":
-    // this shape never escalates to the crash because nothing downstream of
-    // the undo depends on the dropped style. GC-then-redo was tried too and
-    // does not escalate it to a throw either in this shape (the redo's own
-    // delete just removes the node again). A JS replica, which DOES
-    // re-point, keeps the style. Porting `reissueContentIDs` properly needs
-    // a new local-only field threading the ORIGINAL top-level ids next to
-    // `removedNodeSnapshots` (the snapshots themselves carry none -- by
-    // design, see `toTreeNode`) plus a callback hook mirroring
-    // `onSplitTicketConsumed`, wired through the same `pending`/`repointRest`
-    // machinery `executeUndoRedoInternal` already runs for the split-ticket
-    // half -- a change of the same size as that already-ported mechanism,
-    // not a small patch, so it is pinned here rather than rushed in.
+    // CONTROL (re-investigated this round, yorkie-js-sdk b173c093, #1426):
+    // previously pinned here as "known upstream defect - a style undone
+    // alongside a copy-reinsert is dropped", reasoning by analogy from the
+    // split-ticket shape that this scenario needed `reissueContentIDs`'s
+    // re-pointing and so should keep the style, as a JS replica allegedly
+    // does. Re-checked while actually porting that mechanism
+    // (`TreeUndoContentIdentityTest`): this delete is merge/split-free, so
+    // `CrdtTree.edit`'s `spansComplete` guard takes the IDENTITY-PRESERVING
+    // restore path here -- confirmed by instrumenting both `execute()`
+    // methods during this round -- never the copy-reinsert one
+    // `reissueContentIDs`/`getReissuedContentIDs` exists for (same guard on
+    // both platforms; see `TreeEditOperationReverseTest`'s `reverse of pure
+    // delete is a pure insert`). The revived node's restore span is captured
+    // from LIVE state, so it comes back bold; the style-reverse then runs
+    // (by original id, found exactly -- nothing stale here) and removes it.
+    // Net effect: the WHOLE transaction (style, then delete, one update)
+    // reverts atomically to the state before either op ran, which had no
+    // style. That is correct, not a defect -- the style was never part of
+    // any state a peer could have observed. The real `reissueContentIDs`
+    // hazard (a later op stranded on a stale id after an ACTUAL
+    // copy-reinsert) is pinned and fixed in `TreeUndoContentIdentityTest`,
+    // against a hand-seeded entry: no public-API sequence was found this
+    // round that naturally reaches `TreeEditOperation.removedNodeSnapshots`
+    // (see that file's class KDoc for the reachability gap this pins).
     @Test
-    fun `known upstream defect - a style undone alongside a copy-reinsert is dropped`() = runTest {
-        val document = Document("test-doc")
-        document.setActor(actor1)
-        document.updateAsync { root, _ ->
-            root.setNewTree("t", element("doc") { element("p") { text { "hello" } } })
-        }.await()
-        document.clearHistory()
+    fun `control - undoing a style and a delete from the same update reverts atomically`() =
+        runTest {
+            val document = Document("test-doc")
+            document.setActor(actor1)
+            document.updateAsync { root, _ ->
+                root.setNewTree("t", element("doc") { element("p") { text { "hello" } } })
+            }.await()
+            document.clearHistory()
 
-        document.updateAsync { root, _ ->
-            val t = root.getAs<JsonTree>("t")
-            t.styleByPath(listOf(0), mapOf("bold" to "true"))
-            t.editByPath(listOf(0), listOf(1))
-        }.await()
-        assertEquals("<doc></doc>", document.xml())
+            document.updateAsync { root, _ ->
+                val t = root.getAs<JsonTree>("t")
+                t.styleByPath(listOf(0), mapOf("bold" to "true"))
+                t.editByPath(listOf(0), listOf(1))
+            }.await()
+            assertEquals("<doc></doc>", document.xml())
 
-        document.history.undoAsync().await()
+            document.history.undoAsync().await()
 
-        // KNOWN DEFECT: should be `<doc><p bold="true">hello</p></doc>` (what a
-        // JS replica produces); the node comes back but the style is lost.
-        assertEquals("<doc><p>hello</p></doc>", document.xml())
+            // Correct: reverts to the pre-transaction state (no style existed
+            // before this update ran), not `<doc><p bold="true">hello</p></doc>`.
+            assertEquals("<doc><p>hello</p></doc>", document.xml())
 
-        document.garbageCollect(maxVectorOf(listOf(actor1)))
-        document.history.redoAsync().await()
-        // No throw either, in this shape -- the redo's delete just removes the
-        // recreated node again.
-        assertEquals("<doc></doc>", document.xml())
-    }
+            document.garbageCollect(maxVectorOf(listOf(actor1)))
+            document.history.redoAsync().await()
+            // The redo re-applies the original transaction's net effect: the
+            // node is deleted again.
+            assertEquals("<doc></doc>", document.xml())
+        }
 }

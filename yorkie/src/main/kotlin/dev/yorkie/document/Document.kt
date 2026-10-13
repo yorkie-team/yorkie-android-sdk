@@ -547,17 +547,18 @@ public class Document(
         // that records a pair fires on the clone pass first, and the two
         // passes need not mint the same number of elements). Collected while
         // the change is built below and applied to the history stacks only
-        // once both passes have run. Unlike JS, nothing here carries a -1
-        // (reissued-content) ticketIndex: Android's copy-reinsert reverse
-        // keeps id-less snapshots and mints fresh ids in buildFreshNodes at
-        // execute time, so there is no [old, new] pair to collect for it
-        // Port yorkie-js-sdk `b173c093` (#1426).
+        // once both passes have run. A copy-reinsert reverse's pairs carry
+        // ticketIndex -1: unlike a split, buildFreshNodes never mints a
+        // partial result, so those pairs are unconditional -- see the drain
+        // below and TreeEditOperation.getReissuedContentIDs. Port
+        // yorkie-js-sdk `b173c093` (#1426).
         val pending = mutableListOf<PendingTreeRepoint>()
-        // The splitting operations whose re-pointing hook is still
-        // registered, so it can be taken off once the change has been
-        // applied to both the clone and the root -- the hook closes over
-        // this entry, which must not outlive it.
+        // The splitting/content-reissuing operations whose re-pointing hook
+        // is still registered, so it can be taken off once the change has
+        // been applied to both the clone and the root -- the hook closes
+        // over this entry, which must not outlive it.
         val splitOps = mutableListOf<TreeEditOperation>()
+        val reissueOps = mutableListOf<TreeEditOperation>()
 
         /**
          * Re-points every [TreeEditOperation]/[TreeStyleOperation] later in
@@ -711,6 +712,37 @@ public class Document(
                         splitOps += op
                     }
 
+                    // A copy-reinsert reverse -- the undo of a plain content
+                    // delete -- mints fresh ids for the content it restores
+                    // (buildFreshNodes), one per removed node; the undo/redo
+                    // entry can still carry a LATER operation recorded
+                    // against one of the removed originals (a style applied
+                    // to a node the same update then deleted). Register the
+                    // hook so its pairs re-point the rest of this entry
+                    // before they run -- same timing contract as the split
+                    // hook above, and for the same reason: the ids are only
+                    // known from inside this op's own execute(). Port
+                    // yorkie-js-sdk `b173c093` (#1426).
+                    if (op is TreeEditOperation && op.removedNodeSnapshots != null) {
+                        op.onContentIDsReissued { pairs ->
+                            for ((prev, curr) in pairs) {
+                                // Same duplicate guard as the split hook:
+                                // buildFreshNodes mints the SAME ids on both
+                                // the clone and the root pass (a pure
+                                // function of removedNodeSnapshots and
+                                // executedAt, both fixed before either pass
+                                // runs), so the second call would otherwise
+                                // double-push.
+                                if (pending.any { it.op === op && it.prev == prev }) {
+                                    continue
+                                }
+                                repointRest(index, prev, curr)
+                                pending += PendingTreeRepoint(op, prev, curr, ticketIndex = -1)
+                            }
+                        }
+                        reissueOps += op
+                    }
+
                     context.push(op)
                 }
 
@@ -758,6 +790,7 @@ public class Document(
             // and the closures do not keep this popped entry alive. Port
             // yorkie-js-sdk `b173c093` (#1426).
             splitOps.forEach { it.onSplitTicketConsumed(null) }
+            reissueOps.forEach { it.onContentIDsReissued(null) }
         }
         val opInfos = undoRedoResult.opInfos
         val reverseOps = undoRedoResult.reverseOps
@@ -780,11 +813,14 @@ public class Document(
         // (checked against getConsumedSplitTicketCount, which describes the
         // ROOT pass since it is reset per execute() and this reads it after
         // the root pass above). `op` is compared by reference (===), never
-        // by the data class's structural equals. Port yorkie-js-sdk
-        // `b173c093` (#1426).
+        // by the data class's structural equals. A content-reissue pair
+        // (`ticketIndex == -1`) skips that check entirely and applies
+        // whenever its op executed: buildFreshNodes mints unconditionally,
+        // with no early-exit for the clone/root passes to disagree over.
+        // Port yorkie-js-sdk `b173c093` (#1426).
         for ((op, prev, curr, ticketIndex) in pending) {
             if (undoRedoResult.executedOperations.none { it === op }) continue
-            if (ticketIndex >= op.getConsumedSplitTicketCount()) continue
+            if (ticketIndex >= 0 && ticketIndex >= op.getConsumedSplitTicketCount()) continue
             internalHistory.reconcileTreeNodeID(op.parentCreatedAt, prev, curr)
         }
 
@@ -2396,13 +2432,16 @@ internal sealed interface RestoreResult {
 }
 
 /**
- * One tree node id a split re-created during [Document.executeUndoRedoInternal],
- * and what it replaces: [op] is the splitting [TreeEditOperation] (compared by
- * reference elsewhere, never by its data-class `equals`), [prev] is the
- * element the split's reverse names, [curr] is the freshly minted replacement,
- * and [ticketIndex] is which of [op]'s recorded split tickets [curr] is -- so
- * the drain after both execution passes can tell whether the ROOT pass really
- * consumed that ticket ([TreeEditOperation.getConsumedSplitTicketCount]).
+ * One tree node id a split OR a copy-reinsert reverse re-created during
+ * [Document.executeUndoRedoInternal], and what it replaces: [op] is the
+ * [TreeEditOperation] (compared by reference elsewhere, never by its
+ * data-class `equals`), [prev] is the element the reverse names, [curr] is
+ * the freshly minted replacement, and [ticketIndex] is which of [op]'s
+ * recorded split tickets [curr] is -- so the drain after both execution
+ * passes can tell whether the ROOT pass really consumed that ticket
+ * ([TreeEditOperation.getConsumedSplitTicketCount]) -- or `-1` for a
+ * copy-reinsert's reissued content id, which is minted unconditionally (no
+ * early-exit for the two passes to disagree over) and so skips that check.
  * Port yorkie-js-sdk `b173c093` (#1426).
  */
 private data class PendingTreeRepoint(

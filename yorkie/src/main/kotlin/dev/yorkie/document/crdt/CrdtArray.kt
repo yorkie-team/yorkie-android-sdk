@@ -128,6 +128,15 @@ internal data class CrdtArray(
     }
 
     /**
+     * Implements [CrdtContainer.purgeBarrierAt] by delegating to
+     * [RgaTreeList.purgeBarrierAt]: purging an element unlinks the position
+     * node holding it, so the array's order decides when that is safe.
+     */
+    override fun purgeBarrierAt(element: CrdtElement): TimeTicket? {
+        return elements.purgeBarrierAt(element)
+    }
+
+    /**
      * Removes the element of given [index] and [executedAt].
      */
     fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {

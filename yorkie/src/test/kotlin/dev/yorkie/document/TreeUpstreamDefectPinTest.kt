@@ -28,7 +28,9 @@ import org.junit.Test
  * tombstoned parent is now born tombstoned` below. F1's style/removeStyle
  * case was flipped the same way by b69169c0 (#1404): see `fixed upstream
  * defect - merge relocating tombstones no longer breaks a concurrent
- * boundary style` below.
+ * boundary style` below. F4 was flipped the same way by dbff8892 (#1405):
+ * see `fixed upstream defect - copied attribute tombstones are now swept`
+ * below.
  *
  * - F1 (STYLE/REMOVESTYLE case, FIXED): `CrdtTree.edit`'s merge phase still
  *   relocates the merge source's TOMBSTONED children into the live merge
@@ -66,13 +68,15 @@ import org.junit.Test
  *   replicas resolve the same relayed op identically, so this stays
  *   convergent; see `recreate under a tombstoned parent is now born
  *   tombstoned` below (was `... is counted live`).
- * - F4: `recreateFromSpan` deep-copies the span's attribute snapshot with its
- *   tombstoned `RhtNode`s and registers no GC pair for them (JS does the
- *   same), so the copies are unreachable by any sweep until a snapshot
- *   reload. UNRELATED to, and not fixed by, the split-path fix above (port
- *   #1363, which covers only `CrdtTreeNode.split`'s own copied tombstones,
- *   not `recreateFromSpan`'s) — still pinned by `copied attribute tombstones
- *   are never swept`.
+ * - F4 (FIXED): `recreateFromSpan` deep-copies the span's attribute snapshot
+ *   with its tombstoned `RhtNode`s. Port yorkie-js-sdk `dbff8892` (#1405) now
+ *   books each one through `getGCPairs`/`attach()` into `CrdtRoot`'s
+ *   registered pairs, so the copies are reachable by the next sweep instead
+ *   of sitting unreachable until a snapshot reload. UNRELATED to, and not
+ *   fixed by, the split-path fix above (port #1363, which covers only
+ *   `CrdtTreeNode.split`'s own copied tombstones, not `recreateFromSpan`'s);
+ *   see `fixed upstream defect - copied attribute tombstones are now swept`
+ *   below (was `... are never swept`).
  */
 class TreeUpstreamDefectPinTest {
 
@@ -246,13 +250,15 @@ class TreeUpstreamDefectPinTest {
         assertEquals(d1.xml(), d2.xml())
     }
 
-    // KNOWN UPSTREAM DEFECT (F4) — JS `recreateFromSpan` deep-copies the span's
-    // attribute snapshot, tombstoned RhtNodes included (removeStyle leaves its
-    // tombstone inside the Rht; an overwrite's tombstone is a detached copy and
-    // never enters it), and registers no GC pair for them: the copy stays
-    // unreachable by any sweep until a snapshot reload.
+    // F4, NOW FIXED (port yorkie-js-sdk dbff8892, #1405): `recreateFromSpan`
+    // still deep-copies the span's attribute snapshot, tombstoned RhtNodes
+    // included (removeStyle leaves its tombstone inside the Rht; an
+    // overwrite's tombstone is a detached copy and never enters it), but
+    // `attach()` now books each one through `CrdtRoot.registerGCPair` --
+    // reachable by the next sweep instead of an unregistered leak. Figures
+    // below are read off the executed GREEN run, not guessed.
     @Test
-    fun `known upstream defect - copied attribute tombstones are never swept`() = runTest {
+    fun `fixed upstream defect - copied attribute tombstones are now swept`() = runTest {
         val document = Document("test-doc")
         document.setActor(actor1)
         val vector = maxVectorOf(listOf(actor1))
@@ -273,15 +279,19 @@ class TreeUpstreamDefectPinTest {
         assertEquals("<doc><p>x</p></doc>", document.xml())
         val recreated = (document.getRootObject()["t"] as CrdtTree).indexTree.root.allChildren
             .single { !it.isRemoved && it.type == "p" }
-        // Pinned CURRENT outcome (JS parity): the tombstone rides along unregistered.
+        // The tombstone still rides along inside the recreated node's Rht --
+        // recreateFromSpan's deep copy is unchanged; what moved is whether
+        // CrdtRoot has it registered.
         assertEquals(1, recreated.gcPairs.size)
         assertEquals(
-            0,
+            1,
             document.garbageLength,
-            "pinned leak — flip when the upstream fix is ported",
+            "FIXED: the copied tombstone is registered, not an unreachable leak",
         )
-        assertEquals(0, document.garbageCollect(vector))
-        assertEquals(1, recreated.gcPairs.size)
+        assertEquals(1, document.garbageCollect(vector))
+        // The sweep purges the RhtNode out of the Rht itself, not merely out
+        // of CrdtRoot's bookkeeping.
+        assertEquals(0, recreated.gcPairs.size)
     }
 
     // Control for the F3 pin: without the remote delete/restore the same

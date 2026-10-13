@@ -690,4 +690,76 @@ class StyleTombstoneConvergenceTest {
             "the attribute write still reaches the tombstone even though no change is reported",
         )
     }
+
+    /**
+     * Port of Go `TestRecreateCarriesAttributeTombstones` (yorkie-js-sdk
+     * `dbff8892`, #1405). Restoring a PURGED tree node recreates it from the
+     * span, whose attributes are a deep copy of the original RHT -- tombstones
+     * included, because a recreated node has to resolve a concurrent style
+     * the way a replica that never lost it would. Each copied tombstone is a
+     * fresh piece of garbage no removal path produced, and `dataSize`
+     * excludes it, so without a registration it sits in the RHT forever:
+     * uncounted and unpurgeable. RED at `ea06769d` (P6): `recreateFromSpan`'s
+     * `attach()` never booked `node.gcPairs` before this port.
+     */
+    @Test
+    fun `books the attribute tombstones a recreated tree node carries`() = runTest {
+        val d = Document("test-doc")
+        d.setActor(actor1)
+        d.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "ab" } }
+                },
+            )
+        }.await()
+        // Style then undo it -> the reverse is a removeStyle, which
+        // tombstones the attribute on <p>.
+        d.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(0, 4, mapOf("bbbb" to "vvvv"))
+        }.await()
+        d.history.undoAsync().await()
+
+        // Remove the <p>, purge it, then undo the removal so it is RECREATED.
+        d.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 4) }.await()
+        d.garbageCollect(maxVectorOf(listOf(actor1)))
+        d.history.undoAsync().await()
+        assertEquals("<doc><p>ab</p></doc>", d.getRoot().getAs<JsonTree>("t").toXml())
+
+        // Matches the rebuild, AND is collectable, not just counted --
+        // assertLedgerExact runs garbageCollect and checks nothing is left.
+        assertLedgerExact(d, "after the recreate", listOf(actor1))
+    }
+
+    /**
+     * The text half of the same hole, already at parity (P6): `RgaTreeSplit.
+     * restore` recreates a purged piece through `TextValue.substring`, which
+     * deep-copies the RHT with its tombstones just as a tree split does, so
+     * the copies already get the same booking `recreateFromSpan`'s `attach()`
+     * needed adding above. RED not constructible: this case is already green
+     * at `ea06769d` -- pin only, no production change for this half.
+     */
+    @Test
+    fun `pins that a recreated text piece already books its attribute tombstones`() = runTest {
+        val d = Document("test-doc")
+        d.setActor(actor1)
+        d.updateAsync { root, _ -> root.setNewText("t").edit(0, 0, "abcd") }.await()
+        // Style then undo it -> the reverse is a removeStyle, which
+        // tombstones the attribute on the piece.
+        d.updateAsync { root, _ ->
+            root.getAs<JsonText>("t").style(0, 4, mapOf("bbbb" to "vvvv"))
+        }.await()
+        d.history.undoAsync().await()
+
+        // Remove the text, purge it, then undo the removal so it is RECREATED.
+        d.updateAsync { root, _ -> root.getAs<JsonText>("t").edit(0, 4, "") }.await()
+        d.garbageCollect(maxVectorOf(listOf(actor1)))
+        d.history.undoAsync().await()
+
+        assertEquals("""[{"val":"abcd"}]""", crdtText(d).toJson())
+        assertEquals(listOf("\"abcd\" [bbbb=vvvv*]"), nodeAttrs(d))
+
+        assertLedgerExact(d, "after the recreate", listOf(actor1))
+    }
 }

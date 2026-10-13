@@ -176,6 +176,58 @@ suspend fun exchange(
 }
 
 /**
+ * Hands [d]'s pending local changes to the server and acks them at [d] (the
+ * sender's half of a one-way delivery — see [pull]/[oneWayDeliver]). Unlike
+ * [crossSync]/[exchange], which self-ack BOTH sides in the same call, a push
+ * with no corresponding [pull] on the other side keeps a change genuinely in
+ * flight: that is what a [GcSuccessorBarrierTest]-style case needs to put a
+ * replica's move/insert behind an un-pulled remove. Mirrors the JS unit test
+ * helper `push` (`gc_rga_barrier_test.ts`, yorkie-js-sdk `dbff8892`, #1405).
+ */
+suspend fun push(d: Document): List<Change> {
+    val pack = d.createChangePack()
+    d.applyChangePack(
+        ChangePack(
+            d.getKey(),
+            CheckPoint(0, pack.checkPoint.clientSeq),
+            emptyList(),
+            null,
+            false,
+            VersionVector(),
+        ),
+    )
+    return pack.changes
+}
+
+/**
+ * Applies [changes] to [d] as a pull from the server would — the receiver's
+ * half of a one-way delivery. See [push]/[oneWayDeliver].
+ */
+suspend fun pull(d: Document, changes: List<Change>) {
+    d.applyChangePack(
+        ChangePack(
+            d.getKey(),
+            CheckPoint.InitialCheckPoint,
+            changes,
+            null,
+            false,
+            VersionVector(),
+        ),
+    )
+}
+
+/**
+ * Hands [from]'s pending local changes to [to] and acks them at [from]: a
+ * [push] followed by [to]'s [pull]. [to] is left with a pending pull of its
+ * own in flight toward [from] — unlike [crossSync], this is NOT a round
+ * trip. Mirrors the JS unit test helper `oneWayDeliver`
+ * (`gc_rga_barrier_test.ts`, yorkie-js-sdk `dbff8892`, #1405).
+ */
+suspend fun oneWayDeliver(from: Document, to: Document) {
+    pull(to, push(from))
+}
+
+/**
  * S5: same delivery shape as [crossSync], but routes each pack's `changes`
  * through a protobuf round-trip (`toPBChangePack()` -> `toChangePack()`)
  * before delivery, so identity-preserving restore payloads (`restoreSpans`)

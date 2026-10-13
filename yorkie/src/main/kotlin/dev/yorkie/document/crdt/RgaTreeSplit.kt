@@ -928,6 +928,18 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     /**
      * Physically deletes the given node from this [RgaTreeSplit].
      */
+    /**
+     * Implements [GCParent.purgeBarrierAt]. [findNodeWithSplit] skips
+     * forward while the next node was created after the incoming edit, so a
+     * tombstone whose `createdAt` precedes the edit stops that walk.
+     * Unlinking it hands the next node the stopping decision, which is only
+     * the same decision once that node is causally stable.
+     */
+    @Suppress("UNCHECKED_CAST")
+    override fun purgeBarrierAt(node: GCChild): TimeTicket? {
+        return (node as? RgaTreeSplitNode<T>)?.next?.createdAt
+    }
+
     override fun delete(node: RgaTreeSplitNode<T>) {
         treeByIndex.delete(node)
         treeByID.remove(node.id)

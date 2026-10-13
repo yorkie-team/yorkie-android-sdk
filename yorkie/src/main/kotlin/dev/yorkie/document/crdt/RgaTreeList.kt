@@ -376,6 +376,41 @@ internal class RgaTreeList : Iterable<RgaTreeList.Node>, GCParent<RgaTreeList.No
     }
 
     /**
+     * Implements [GCParent.purgeBarrierAt] for a dead position node GC
+     * registers directly (the `GCParent<Node>` dispatch path, e.g. a move's
+     * abandoned slot). `null` for anything but a [Node] of this list.
+     */
+    override fun purgeBarrierAt(node: GCChild): TimeTicket? {
+        return (node as? Node)?.let(::successorBarrierAt)
+    }
+
+    /**
+     * The element-side form [CrdtArray.purgeBarrierAt] delegates to: the
+     * ticket that must be covered before [element] may be purged is the one
+     * [findNextBeforeExecutedAt] would read in its place once [element]'s
+     * position node is unlinked. Resolves [element] to its position node
+     * with the same identity guard as [purge] — an entry now holding a
+     * different element is not this element's position, and [purge]
+     * declines anyway.
+     */
+    fun purgeBarrierAt(element: CrdtElement): TimeTicket? {
+        val entry = elementMapByCreatedAt[element.createdAt] ?: return null
+        if (entry.element !== element) return null
+        return successorBarrierAt(entry.positionNode)
+    }
+
+    /**
+     * Returns the positioning ticket of the node that would take over as
+     * [findNextBeforeExecutedAt]'s stopping point once [node] is unlinked.
+     * `null` at the tail: with nothing behind it, unlinking cannot send an
+     * insert past anything. Ported from JS `successorBarrierAt`
+     * (`rga_tree_list.ts`, yorkie-js-sdk `dbff8892`, #1405).
+     */
+    private fun successorBarrierAt(node: Node): TimeTicket? {
+        return node.next?.positionedAt
+    }
+
+    /**
      * Removes the node at the given [index].
      */
     fun removeByIndex(index: Int, executedAt: TimeTicket): CrdtElement? {

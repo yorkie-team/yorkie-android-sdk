@@ -180,11 +180,17 @@ internal data class CrdtTree(
         get() = buildList {
             // traverseAll (not traverse) is required to register tombstones —
             // including pieces split off a tombstoned node — after snapshot
-            // load; the visible-only traversal skipped tombstones entirely.
-            // These pairs carry gcOnlySize because the freshly built root's
-            // getDataSize only counted visible nodes into docSize.live.
+            // load, when registered via a Set/Add/ArraySet payload, or on an
+            // undo re-set; the visible-only traversal skipped tombstones
+            // entirely. These pairs carry gcOnlySize because the registered
+            // tree's getDataSize only counted visible nodes into docSize.live.
             indexTree.traverseAll { node, _ ->
-                if (node.removedAt != null) {
+                // The walk includes the root, and purging is detachment from
+                // a parent, which the root does not have. The root is never
+                // legitimately removed, but a crafted Set/Add payload can
+                // mark it so; leave it unbooked, as Go does. Port
+                // yorkie-js-sdk dbff8892, #1405.
+                if (node.removedAt != null && node.parent != null) {
                     add(GCPair(this@CrdtTree, node, gcOnlySize = node.dataSize))
                 }
                 addAll(node.gcPairs)
@@ -2184,6 +2190,29 @@ internal data class CrdtTree(
     }
 
     /**
+     * Implements [GCParent.purgeBarrierAt]. [findNodesAndSplitText] walks
+     * the parent's children, removed ones included, advancing while the
+     * next sibling was created after the incoming edit; a tombstoned
+     * sibling with an older ticket ends that walk. Purging detaches [node]
+     * from its parent, so the next sibling inherits the decision and must be
+     * causally stable first.
+     *
+     * Reads [CrdtTreeNode.parent]'s children IN PLACE via
+     * [IndexTreeNode.allChildren] — unlike JS's `allChildren`, which copies
+     * on every call (one stable tombstone per collection pass), this
+     * project's [IndexTreeNodeList] already hands back the live backing
+     * list, so no extra copy is introduced here (same pattern as
+     * [captureRestoreSpan]).
+     */
+    override fun purgeBarrierAt(node: GCChild): TimeTicket? {
+        val treeNode = node as? CrdtTreeNode ?: return null
+        val siblings = treeNode.parent?.allChildren ?: return null
+        val offset = siblings.indexOf(treeNode)
+        if (offset < 0) return null
+        return siblings.getOrNull(offset + 1)?.id?.createdAt
+    }
+
+    /**
      * Physically deletes the given [node] from [IndexTree].
      */
     override fun delete(node: CrdtTreeNode) {
@@ -2554,21 +2583,36 @@ internal data class CrdtTree(
 
         val siblings = parent.allChildren
 
+        // The span's attributes are a deep copy of the node's RHT, tombstones
+        // included (span.attrs?.deepCopy() above) -- they have to be, or a
+        // recreated node would resolve a concurrent style differently from a
+        // replica that never lost it. Each copied tombstone is a fresh piece
+        // of garbage no removal path produced: without a registration it sits
+        // in the RHT forever, uncounted (dataSize excludes it) and
+        // unpurgeable. node.gcPairs marks each one gcOnlySize, which is what
+        // sends it to gc alone, same as a split's copied attribute tombstones
+        // (#1363). Booked by attach() below for both a live AND a removed
+        // parent, as Go's recreateFromSpan does. A text span has no RHT of
+        // its own. Port yorkie-js-sdk dbff8892, #1405.
+        val recreatedAttrPairs = if (span.isText) emptyList() else node.gcPairs
+
         // Port yorkie-js-sdk 248551a1 (#1364, tree.ts:2893-2905): a single
         // attach point for every anchor rung below. registerNode runs first
         // regardless of outcome (nodeMapByID must resolve the id either
-        // way); THEN, if the parent is tombstoned (not purged — a purged
-        // parent already returned null above), the node is removed with the
-        // parent's OWN removedAt (not this restore's ticket: a replica that
-        // recreated the node live then had the removal sweep it must agree
-        // with one that never saw it live) and its size (read AFTER remove,
-        // which adds the removedAt meta ticket) is registered as a pending
-        // gcOnlySize pair — never counted live, so the next purge of the
-        // parent does not orphan it. Returning null keeps the node out of
-        // TreeRestoreResult.recreated (restore()'s `?.let(recreated::add)`),
-        // matching JS returning `undefined`.
+        // way); THEN the copied attribute tombstones above are buffered
+        // unconditionally (#1405); THEN, if the parent is tombstoned (not
+        // purged — a purged parent already returned null above), the node is
+        // removed with the parent's OWN removedAt (not this restore's ticket:
+        // a replica that recreated the node live then had the removal sweep
+        // it must agree with one that never saw it live) and its size (read
+        // AFTER remove, which adds the removedAt meta ticket) is registered
+        // as a pending gcOnlySize pair — never counted live, so the next
+        // purge of the parent does not orphan it. Returning null keeps the
+        // node out of TreeRestoreResult.recreated (restore()'s
+        // `?.let(recreated::add)`), matching JS returning `undefined`.
         fun attach(): CrdtTreeNode? {
             registerNode(node)
+            recreatedAttrPairs.forEach(::pushPendingGcPair)
             if (parent.isRemoved) {
                 node.remove(requireNotNull(parent.removedAt))
                 registerPendingGcPair(node, node.dataSize)
@@ -2864,9 +2908,12 @@ internal data class CrdtTreeNode(
 ) : IndexTreeNode<CrdtTreeNode>(), GCChild, GCParent<RhtNode> {
 
     val gcPairs: List<GCPair<*>>
-        // Only reached when a root is built from a snapshot. Removed
-        // attribute nodes are skipped by dataSize, so they were never
-        // counted into docSize.live — hence gcOnlySize.
+        // Removed attribute nodes are skipped by dataSize, so they were
+        // never counted into docSize.live — hence gcOnlySize. Reached both
+        // by CrdtTree.gcPairs's tree-wide scan (snapshot load, a Set/Add/
+        // ArraySet payload, an undo re-set) and by recreateFromSpan, which
+        // copies this node's attribute tombstones onto a rebuilt node (port
+        // yorkie-js-sdk dbff8892, #1405).
         get() = _attributes
             .filter { node -> node.removedAt != null }
             .map { node -> GCPair(this, node, gcOnlySize = node.dataSize) }

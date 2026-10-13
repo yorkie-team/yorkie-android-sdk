@@ -287,11 +287,15 @@ internal data class CrdtTree(
             // cascade to fire on that element's own live children the moment
             // a later, innocent edit removes it.
             if (source.removedAt == null) return@traverseAll
-            // Derived from the source's tombstone ticket unconditionally
-            // (unlike JS's back-compat guard for pre-mergedAt snapshots,
-            // which does not apply here: mergedFrom/mergedAt landed together
-            // in spec 035 Commit 1).
-            node.mergedAt = source.removedAt
+            // Back-compat: older snapshots lack mergedAt on moved children.
+            // A mergedAt already on the wire is the merge-time causal
+            // boundary and must not be replaced by the source's removedAt,
+            // which a later LWW tombstone can still bump (round-1
+            // cross-judge BLOCKER-1, spec 035; JS SDK tree.ts
+            // rebuildMergeState, d3ffe946, #1406).
+            if (node.mergedAt == null) {
+                node.mergedAt = source.removedAt
+            }
             if (source.mergedInto == null) {
                 source.mergedInto = target.id
             }

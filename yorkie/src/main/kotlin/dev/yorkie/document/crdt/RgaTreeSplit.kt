@@ -926,9 +926,6 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     }
 
     /**
-     * Physically deletes the given node from this [RgaTreeSplit].
-     */
-    /**
      * Implements [GCParent.purgeBarrierAt]. [findNodeWithSplit] skips
      * forward while the next node was created after the incoming edit, so a
      * tombstone whose `createdAt` precedes the edit stops that walk.
@@ -940,6 +937,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         return (node as? RgaTreeSplitNode<T>)?.next?.createdAt
     }
 
+    /**
+     * Physically deletes the given node from this [RgaTreeSplit].
+     */
     override fun delete(node: RgaTreeSplitNode<T>) {
         treeByIndex.delete(node)
         treeByID.remove(node.id)

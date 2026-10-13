@@ -1,5 +1,7 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.api.toCrdtElement
+import dev.yorkie.api.toPBTree
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.time.TimeTicket
@@ -299,6 +301,75 @@ class CrdtTreeMergeLineageTest {
         assertSame(f.p1, inserted.parent)
         assertTrue(f.text.allChildren.isEmpty())
         assertEquals("<r><p>cd</p><p></p></r>", f.tree.toXml())
+    }
+
+    /**
+     * Round-1 cross-judge BLOCKER-1 (spec 035): the merge in [CrdtTree.edit]
+     * stamps a moved child's [CrdtTreeNode.mergedAt] with the merge's own
+     * ticket, once, on first move (`CrdtTree.kt:991-997`). A LATER,
+     * unrelated op can still bump the merge source's OWN
+     * [CrdtTreeNode.removedAt] through ordinary LWW ([CrdtTreeNode.remove]) --
+     * e.g. a concurrent whole-subtree delete that also covers the
+     * already-merged boundary element. [CrdtTree.rebuildMergeState] must not
+     * let that later bump overwrite the wire-carried merge ticket on
+     * snapshot reload, or a snapshot-loaded replica disagrees with the live
+     * one on when the child was moved. Mirrors JS SDK `tree.ts`
+     * `rebuildMergeState`'s back-compat guard (`d3ffe946`, #1406): "only
+     * derive `mergedAt` when the node does not already carry one."
+     */
+    @Test
+    fun `rebuildMergeState should not let a later source tombstone overwrite a wire mergedAt`() {
+        val issue = ticketer()
+        val f = buildFixture(issue)
+
+        // An ordinary merge of p2 into p1 stamps text.mergedAt with the
+        // merge's own ticket (CrdtTree.kt:996), equal to p2.removedAt here.
+        f.tree.edit(f.tree.findPos(1) to f.tree.findPos(3), null, 0, issue(), issue)
+        assertEquals("<r><p>cd</p><p></p></r>", f.tree.toXml())
+        val mergeTicket = requireNotNull(f.text.mergedAt)
+        assertEquals(f.p2.removedAt, mergeTicket)
+
+        // A later, unrelated op bumps the already-removed p2's OWN
+        // removedAt via ordinary LWW -- legitimate on its own, but must not
+        // retroactively change when the merge moved `text`.
+        val laterTicket = issue()
+        f.p2.remove(laterTicket)
+        assertTrue(laterTicket > mergeTicket)
+        assertEquals(laterTicket, f.p2.removedAt)
+
+        // In-place rebuild path: re-reading the SAME node graph must keep
+        // the original merge ticket, not re-derive it from the now-bumped
+        // source.removedAt.
+        CrdtTree(f.tree.root, issue())
+        assertEquals(mergeTicket, f.text.mergedAt)
+
+        // Wire path: the encoder writes a non-null mergedAt, so a fresh
+        // replica decoding the same bytes must resolve the same ticket, not
+        // the source's later tombstone.
+        val decoded = f.tree.toPBTree().toCrdtElement() as CrdtTree
+        val decodedText = requireNotNull(decoded.findFloorNode(f.text.id))
+        assertEquals(mergeTicket, decodedText.mergedAt)
+    }
+
+    /**
+     * Positive control for the guard above: a pre-#313 snapshot never wrote
+     * `mergedAt` at all, so a decoded node carries `mergedFrom` with
+     * `mergedAt` still null. [CrdtTree.rebuildMergeState] must still derive
+     * it from the source's `removedAt` in that case -- the `if (node.mergedAt
+     * == null)` guard only blocks a wire value ALREADY present, not a
+     * missing one.
+     */
+    @Test
+    fun `rebuildMergeState should still derive mergedAt for a legacy snapshot with no mergedAt`() {
+        val issue = ticketer()
+        val f = buildFixture(issue)
+        f.p2.remove(issue())
+        f.text.mergedFrom = f.p2.id
+        assertNull(f.text.mergedAt)
+
+        CrdtTree(f.tree.root, issue())
+
+        assertEquals(f.p2.removedAt, f.text.mergedAt)
     }
 
     /**

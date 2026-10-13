@@ -206,7 +206,7 @@ $dokka.location:dev.yorkie.document.crdt/Rht/isEmpty/#/PointingToDeclaration/yo
 $dokka.location:dev.yorkie.document.crdt/Rht/iterator/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/iterator.html
 $dokka.location:dev.yorkie.document.crdt/Rht/nodeKeyValueMap/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/node-key-value-map.html
 $dokka.location:dev.yorkie.document.crdt/Rht/remove/#kotlin.String#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/remove.html
-$dokka.location:dev.yorkie.document.crdt/Rht/set/#kotlin.String#kotlin.String#dev.yorkie.document.time.TimeTicket#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/set.html
+$dokka.location:dev.yorkie.document.crdt/Rht/set/#kotlin.String#kotlin.String#dev.yorkie.document.time.TimeTicket/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/set.html
 $dokka.location:dev.yorkie.document.crdt/Rht/setInternal/#kotlin.String#kotlin.String#dev.yorkie.document.time.TimeTicket#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/set-internal.html
 $dokka.location:dev.yorkie.document.crdt/Rht/size/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/size.html
 $dokka.location:dev.yorkie.document.crdt/Rht/toJson/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht/to-json.html
@@ -219,10 +219,11 @@ $dokka.location:dev.yorkie.document.crdt/RhtNode/isRemoved/#/PointingToDeclarati
 $dokka.location:dev.yorkie.document.crdt/RhtNode/key/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/key.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/removedAt/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/removed-at.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/value.html
-$dokka.location:dev.yorkie.document.crdt/RhtSetResult///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/index.html
-$dokka.location:dev.yorkie.document.crdt/RhtSetResult/RhtSetResult/#dev.yorkie.document.crdt.RhtNode?#dev.yorkie.document.crdt.RhtNode?/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/-rht-set-result.html
-$dokka.location:dev.yorkie.document.crdt/RhtSetResult/new/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/new.html
-$dokka.location:dev.yorkie.document.crdt/RhtSetResult/prev/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-set-result/prev.html
+$dokka.location:dev.yorkie.document.crdt/RhtWrite///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/index.html
+$dokka.location:dev.yorkie.document.crdt/RhtWrite/RhtWrite/#dev.yorkie.document.crdt.RhtNode?#dev.yorkie.document.crdt.RhtNode?#dev.yorkie.document.crdt.RhtNode?/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/-rht-write.html
+$dokka.location:dev.yorkie.document.crdt/RhtWrite/installed/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/installed.html
+$dokka.location:dev.yorkie.document.crdt/RhtWrite/revived/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/revived.html
+$dokka.location:dev.yorkie.document.crdt/RhtWrite/superseded/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/superseded.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/index.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/TextWithAttributes/#kotlin.Pair[kotlin.String,kotlin.collections.Map[kotlin.String,kotlin.String]]/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/-text-with-attributes.html
 $dokka.location:dev.yorkie.document.crdt/TextWithAttributes/attributes/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-text-with-attributes/attributes.html
@@ -930,6 +931,7 @@ $dokka.location:dev.yorkie.util/IndexTreeNode/isSplitSiblingSkipForBoundaryMigra
 $dokka.location:dev.yorkie.util/IndexTreeNode/isText/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-text.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isUnknownToEditor/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])#dev.yorkie.document.time.VersionVector/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-unknown-to-editor.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/moveChild/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/move-child.html
+$dokka.location:dev.yorkie.util/IndexTreeNode/moveChildBefore/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/move-child-before.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/nextSibling/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/next-sibling.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/onRemovedListener/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/on-removed-listener.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/paddedSize/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/padded-size.html

@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.20            </div>
+0.7.21            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -530,6 +530,21 @@
               <div>
                 <div class="title">
                   <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="move-child.html"><span class="token function">moveChild</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">child<span class="token operator">: </span><a href="index.html">T</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Detaches <a href="move-child.html">child</a> from its current parent, if any, and appends it to this node, preserving both size dimensions on both parents. Used by merge to relocate tombstoned children as RGA anchors without corrupting index positions.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1353901812%2FFunctions%2F-1590045667" anchor-label="moveChildBefore" id="-1353901812%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="move-child-before.html"><span>move</span><wbr></wbr><span>Child</span><wbr></wbr><span><span>Before</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1353901812%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="move-child-before.html"><span class="token function">moveChildBefore</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">child<span class="token operator">: </span><a href="index.html">T</a><span class="token punctuation">, </span></span><span class="parameter ">reference<span class="token operator">: </span><a href="index.html">T</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Detaches <a href="move-child-before.html">child</a> from its current parent, if any, and inserts it immediately before <a href="move-child-before.html">reference</a> in this node's children, preserving both size dimensions on both parents -- the same tombstone-aware detach <a href="move-child.html">moveChild</a> does, but inserting before a specific sibling instead of appending. Used by CrdtTreeNode.split's §7.4 empty sibling re-parenting so a tombstoned split re-parent makes no live- size change (port <code class="lang-kotlin">e41069df</code>'s <code class="lang-kotlin">moveChildBefore</code>, yorkie-js-sdk#1360, <code class="lang-kotlin">tree.ts:730</code>).</p></div></div></div>
                 </div>
               </div>
             </div>

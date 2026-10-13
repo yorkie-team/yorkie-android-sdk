@@ -1,11 +1,13 @@
 package dev.yorkie.document.history
 
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.operation.AddOperation
 import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.MoveOperation
 import dev.yorkie.document.operation.RemoveOperation
 import dev.yorkie.document.operation.TreeEditOperation
+import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.TimeTicket
 
 /**
@@ -187,6 +189,49 @@ internal class History(private val maxDepth: Int = MaxUndoRedoStackDepth) {
                 val op = historyOp.operation
                 if (op is TreeEditOperation && op.parentCreatedAt == parentCreatedAt) {
                     op.reconcileOperation(remoteFrom, remoteTo, remoteContentSize)
+                }
+            }
+        }
+    }
+
+    /**
+     * Scans both undo and redo stacks for any [TreeEditOperation] or
+     * [TreeStyleOperation] targeting the tree element identified by
+     * [parentCreatedAt] and calls its `reconcileNodeID`, re-pointing it from
+     * [prev] to [curr]. Used when a split re-creates an element a merge
+     * removed under a new id -- the tree counterpart of [reconcileCreatedAt].
+     *
+     * Scoped to the tree [parentCreatedAt] names, like [reconcileTreeEdit]/
+     * [reconcileTextEdit]: a node id is unique only within its own tree, and
+     * the pairs reach here from a peer's change as well as this replica's
+     * own, so an unscoped sweep would let one tree's split re-point entries
+     * recorded against a different tree. Port yorkie-js-sdk `b173c093`
+     * (#1426).
+     */
+    fun reconcileTreeNodeID(
+        parentCreatedAt: TimeTicket,
+        prev: CrdtTreeNodeID,
+        curr: CrdtTreeNodeID,
+    ) {
+        reconcileTreeNodeIDStack(undoStack, parentCreatedAt, prev, curr)
+        reconcileTreeNodeIDStack(redoStack, parentCreatedAt, prev, curr)
+    }
+
+    private fun reconcileTreeNodeIDStack(
+        stack: ArrayDeque<List<HistoryOperation>>,
+        parentCreatedAt: TimeTicket,
+        prev: CrdtTreeNodeID,
+        curr: CrdtTreeNodeID,
+    ) {
+        for (ops in stack) {
+            for (historyOp in ops) {
+                if (historyOp !is HistoryOperation.Op) continue
+                val op = historyOp.operation
+                if (op.parentCreatedAt != parentCreatedAt) continue
+                when (op) {
+                    is TreeEditOperation -> op.reconcileNodeID(prev, curr)
+                    is TreeStyleOperation -> op.reconcileNodeID(prev, curr)
+                    else -> Unit
                 }
             }
         }

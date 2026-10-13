@@ -25,6 +25,7 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.countNodes
 import dev.yorkie.document.crdt.dropSplitLinksInElement
@@ -41,6 +42,7 @@ import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.OperationInfo
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.TreeEditOperation
+import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
@@ -447,6 +449,21 @@ public class Document(
                         internalHistory.reconcileCreatedAt(op.createdAt, op.value.createdAt)
                     }
                 }
+                // A plain local split can re-create an element a merge took
+                // away too (a peer merged two blocks and this user splits
+                // them apart again), and the stacks may still name the
+                // merged-away element. Re-point them the same way
+                // reconcileHistoryEdits does for a peer's split and
+                // executeUndoRedoInternal does for an undo/redo one, before
+                // this change's own reverse ops are pushed below. Port
+                // yorkie-js-sdk `b173c093` (#1426).
+                for (op in change.operations) {
+                    if (op is TreeEditOperation) {
+                        op.getSplitRecreatedIDs().forEach { (prevID, currID) ->
+                            internalHistory.reconcileTreeNodeID(op.parentCreatedAt, prevID, currID)
+                        }
+                    }
+                }
                 val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
                 if (reverseHistoryOps.isNotEmpty()) {
                     internalHistory.pushUndo(reverseHistoryOps)
@@ -523,6 +540,44 @@ public class Document(
             prevId = changeID,
             root = clone.root,
         )
+
+        // Tree node ids this entry re-mints, and what they replace, together
+        // with which of the split's own tickets `curr` is -- so the drain
+        // below can tell whether the ROOT execution got that far (the hook
+        // that records a pair fires on the clone pass first, and the two
+        // passes need not mint the same number of elements). Collected while
+        // the change is built below and applied to the history stacks only
+        // once both passes have run. Unlike JS, nothing here carries a -1
+        // (reissued-content) ticketIndex: Android's copy-reinsert reverse
+        // keeps id-less snapshots and mints fresh ids in buildFreshNodes at
+        // execute time, so there is no [old, new] pair to collect for it
+        // (D9). Port yorkie-js-sdk `b173c093` (#1426).
+        val pending = mutableListOf<PendingTreeRepoint>()
+        // The splitting operations whose re-pointing hook is still
+        // registered, so it can be taken off once the change has been
+        // applied to both the clone and the root -- the hook closes over
+        // this entry, which must not outlive it.
+        val splitOps = mutableListOf<TreeEditOperation>()
+
+        /**
+         * Re-points every [TreeEditOperation]/[TreeStyleOperation] later in
+         * this same entry (by loop index -- never by [TreeEditOperation]
+         * equality, which is structural: D8) from [prev] to [curr].
+         */
+        fun repointRest(
+            fromIndex: Int,
+            prev: CrdtTreeNodeID,
+            curr: CrdtTreeNodeID,
+        ) {
+            for (later in ops.subList(fromIndex + 1, ops.size)) {
+                if (later !is HistoryOperation.Op) continue
+                when (val laterOp = later.operation) {
+                    is TreeEditOperation -> laterOp.reconcileNodeID(prev, curr)
+                    is TreeStyleOperation -> laterOp.reconcileNodeID(prev, curr)
+                    else -> Unit
+                }
+            }
+        }
 
         for ((index, historyOp) in ops.withIndex()) {
             when (historyOp) {
@@ -606,6 +661,54 @@ public class Document(
                     // delimiter. Port JS SDK document.ts (b69169c0, #1404).
                     if (op is TreeEditOperation && op.splitLevel > 0) {
                         op.splitTickets = List(op.splitLevel) { context.issueTimeTicket() }
+
+                        // The split re-creates elements a merge removed,
+                        // under the new tickets. Operations recorded against
+                        // the old elements -- the rest of this entry (the
+                        // style that followed a split, say) and any other
+                        // entry in the stacks -- still name them. Once
+                        // garbage collection has purged the old elements, a
+                        // replica applying such an operation cannot find
+                        // them and rejects the whole change. Re-point them,
+                        // so the change is encoded with the ids every
+                        // replica will have.
+                        //
+                        // Driven from the split itself, as it takes each
+                        // ticket: only then is it known that the element
+                        // exists -- the split stops as soon as it runs out
+                        // of ancestors, so a level it never reached mints
+                        // nothing, and re-pointing that level up front, on
+                        // the strength of splitLevel alone, would leave an
+                        // operation naming a ticket no node ever received.
+                        // The rest of THIS entry cannot wait for the split
+                        // to return either: those operations run in the same
+                        // change, right after it, so the hook fires
+                        // mid-execution, while they are still pending. The
+                        // history stacks could wait, but are collected here
+                        // and applied below (after both passes) for a
+                        // different reason -- the new reverse ops are built
+                        // from the executed state and must not be pushed
+                        // before the stacks are re-pointed. Port
+                        // yorkie-js-sdk `b173c093` (#1426).
+                        op.onSplitTicketConsumed { ticketIndex ->
+                            // Read through the operation rather than off a
+                            // captured snapshot: an earlier re-point in this
+                            // same entry may already have replaced
+                            // replacedIDs wholesale (reconcileNodeID).
+                            val prev = op.getReplacedIDs().getOrNull(ticketIndex)
+                                ?: return@onSplitTicketConsumed
+                            val curr = CrdtTreeNodeID(op.splitTickets[ticketIndex], 0)
+                            // Called once per execution, and the change is
+                            // executed twice (clone, then root). repointRest
+                            // no longer finds prev the second time, but the
+                            // pending entry would be a duplicate.
+                            if (pending.any { it.op === op && it.prev == prev }) {
+                                return@onSplitTicketConsumed
+                            }
+                            repointRest(index, prev, curr)
+                            pending += PendingTreeRepoint(op, prev, curr, ticketIndex)
+                        }
+                        splitOps += op
                     }
 
                     context.push(op)
@@ -622,32 +725,88 @@ public class Document(
         }
 
         val change = context.toChange()
-        // Execute on clone (validation). Never touches the root, so a throw
-        // here needs no lamport burn -- it propagates to executeUndoRedo's
-        // outer catch, which resets the clone the same as every other path.
-        change.execute(clone.root, clone.presences, OpSource.UndoRedo)
-        // Execute on root (real application). Mirrors updateAsync's own
-        // root-pass catch above: a throw partway through still consumed
-        // this context's lamport-advanced tickets for whatever prefix
-        // landed, so burn the lamport and this actor's version-vector entry
-        // here too, clientSeq unchanged (this undo/redo change is never
-        // appended to localChanges on this path -- that happens only below,
-        // on success). Port JS SDK `document.ts` `executeUndoRedo`'s root
-        // pass (`e29d17e0`, #1397; iOS `915dd77fe6`).
         val undoRedoResult = try {
-            change.execute(
-                root,
-                _presences.value,
-                OpSource.UndoRedo,
-            )
-        } catch (err: Throwable) {
-            if (!context.isPresenceOnlyChange()) {
-                changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+            // Execute on clone (validation). Never touches the root, so a
+            // throw here needs no lamport burn -- it propagates to
+            // executeUndoRedo's outer catch, which resets the clone the same
+            // as every other path. Moved inside this try (rather than run
+            // separately above it) so the `finally` below detaches every
+            // split-ticket handler whichever of the two passes throws, or
+            // neither does -- a handler must never outlive this entry. Port
+            // yorkie-js-sdk `b173c093` (#1426).
+            change.execute(clone.root, clone.presences, OpSource.UndoRedo)
+            // Execute on root (real application). Mirrors updateAsync's own
+            // root-pass catch above: a throw partway through still consumed
+            // this context's lamport-advanced tickets for whatever prefix
+            // landed, so burn the lamport and this actor's version-vector
+            // entry here too, clientSeq unchanged (this undo/redo change is
+            // never appended to localChanges on this path -- that happens
+            // only below, on success). Port JS SDK `document.ts`
+            // `executeUndoRedo`'s root pass (`e29d17e0`, #1397; iOS
+            // `915dd77fe6`).
+            try {
+                change.execute(root, _presences.value, OpSource.UndoRedo)
+            } catch (err: Throwable) {
+                if (!context.isPresenceOnlyChange()) {
+                    changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+                }
+                throw err
             }
-            throw err
+        } finally {
+            // Detach the handlers whether or not either pass succeeded, so a
+            // later execution of these operations cannot re-point anything
+            // and the closures do not keep this popped entry alive. Port
+            // yorkie-js-sdk `b173c093` (#1426).
+            splitOps.forEach { it.onSplitTicketConsumed(null) }
         }
         val opInfos = undoRedoResult.opInfos
         val reverseOps = undoRedoResult.reverseOps
+
+        // Now that the operations have run, re-point the history stacks at
+        // the ids this entry actually minted. Deferred to here because the
+        // new reverse ops built below are already built from the executed
+        // state and so already carry the new ids -- they must not be pushed
+        // before this runs.
+        //
+        // Two things can still make a collected pair moot, and both are only
+        // knowable now. `change.execute` skips an operation whose target
+        // element was removed during undo/redo, so it minted nothing at all
+        // (excluded by the executedOperations check). And a pair is
+        // collected as the split takes its ticket on WHICHEVER execution
+        // runs first -- the clone -- while the stacks have to follow the
+        // root: the clone and the root are separate trees, so a split that
+        // crossed a level in the clone can stop short of it in the root,
+        // leaving a pair naming a ticket no node in the root ever received
+        // (checked against getConsumedSplitTicketCount, which describes the
+        // ROOT pass since it is reset per execute() and this reads it after
+        // the root pass above). `op` is compared by reference (===), never
+        // by the data class's structural equals (D8). Port yorkie-js-sdk
+        // `b173c093` (#1426).
+        for ((op, prev, curr, ticketIndex) in pending) {
+            if (undoRedoResult.executedOperations.none { it === op }) continue
+            if (ticketIndex >= op.getConsumedSplitTicketCount()) continue
+            internalHistory.reconcileTreeNodeID(op.parentCreatedAt, prev, curr)
+        }
+
+        // And then what the TREE says the split re-created, the same signal
+        // the local `update()` and remote `reconcileHistoryEdits` paths
+        // re-point from. The pairs above come from the reverse op, which
+        // names the merge IT reverses; the split as executed can reverse one
+        // this entry never knew about -- a peer merged two blocks while the
+        // undo sat on the stack, and the redo of an unrelated split
+        // separates them again. Neither signal subsumes the other: the tree
+        // derives a pair only where the merge left mergedFrom stamps behind
+        // (CrdtTree.mergeSourceOf), which a split's own boundary-deletion
+        // undo does not. Both are applied, in that order; a pair the other
+        // already handled sweeps nothing and costs nothing. Port
+        // yorkie-js-sdk `b173c093` (#1426).
+        undoRedoResult.executedOperations.forEach { executedOp ->
+            if (executedOp is TreeEditOperation) {
+                executedOp.getSplitRecreatedIDs().forEach { (prev, curr) ->
+                    internalHistory.reconcileTreeNodeID(executedOp.parentCreatedAt, prev, curr)
+                }
+            }
+        }
 
         val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
         if (reverseHistoryOps.isNotEmpty()) {
@@ -1137,6 +1296,25 @@ public class Document(
                 }
 
                 is TreeEditOperation -> {
+                    // A split re-creates the elements a merge took away,
+                    // under brand-new ids -- see CrdtTree.mergeSourceOf. That
+                    // happens whichever replica sent the split: the local
+                    // `update`/`executeUndoRedoInternal` paths re-point this
+                    // replica's own stacks when the split is its own, and
+                    // this one re-points for a peer's split AND a local
+                    // skipHistory write (this function serves both). Left
+                    // un-re-pointed, an entry naming the element a peer
+                    // replaced addresses a node garbage collection will
+                    // purge, and the change it eventually pushes is rejected
+                    // on every replica. Done before the index reconciliation
+                    // below, for the same reason the undo/redo path defers
+                    // its own re-point to after execution: the pairs are
+                    // only known once the split has run. Port yorkie-js-sdk
+                    // `b173c093` (#1426).
+                    executedOp.getSplitRecreatedIDs().forEach { (prev, curr) ->
+                        internalHistory.reconcileTreeNodeID(executedOp.parentCreatedAt, prev, curr)
+                    }
+
                     if (executedOp.isRestoreOp) {
                         // Identity-preserving restore/retombstone can revive
                         // or re-remove several nodes in one operation, each
@@ -2217,6 +2395,23 @@ internal sealed interface RestoreResult {
     object Restored : RestoreResult
     class ActorMismatch(val pending: List<Change>) : RestoreResult
 }
+
+/**
+ * One tree node id a split re-created during [Document.executeUndoRedoInternal],
+ * and what it replaces: [op] is the splitting [TreeEditOperation] (compared by
+ * reference elsewhere, never by its data-class `equals` -- D8), [prev] is the
+ * element the split's reverse names, [curr] is the freshly minted replacement,
+ * and [ticketIndex] is which of [op]'s recorded split tickets [curr] is -- so
+ * the drain after both execution passes can tell whether the ROOT pass really
+ * consumed that ticket ([TreeEditOperation.getConsumedSplitTicketCount]).
+ * Port yorkie-js-sdk `b173c093` (#1426).
+ */
+private data class PendingTreeRepoint(
+    val op: TreeEditOperation,
+    val prev: CrdtTreeNodeID,
+    val curr: CrdtTreeNodeID,
+    val ticketIndex: Int,
+)
 
 /**
  * Projects this [Change] into a [Document.Event.DroppedChange] for an

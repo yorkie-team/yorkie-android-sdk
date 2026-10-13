@@ -13,12 +13,44 @@ import dev.yorkie.document.crdt.TreeElementNode
 import dev.yorkie.document.crdt.TreeNode
 import dev.yorkie.document.crdt.TreeRestoreSpan
 import dev.yorkie.document.crdt.TreeTextNode
+import dev.yorkie.document.crdt.replaceNodeID
+import dev.yorkie.document.crdt.replaceTreeNodeId
 import dev.yorkie.document.crdt.toTreeNode
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.addDataSizes
+
+/**
+ * Returns the ids of the elements a merge removed, innermost first -- the
+ * order a split re-creating them issues tickets in, since it splits from
+ * the innermost level out.
+ *
+ * [mergedNodes] is the merge-boundary set [dev.yorkie.document.crdt.CrdtTree.edit]
+ * reports, NOT every node the edit tombstoned: the split reversing the
+ * merge re-creates exactly one element per boundary it crossed, so
+ * anything else in the removed set -- a whole element deleted inside the
+ * range, a cascade-deleted descendant, a node already tombstoned -- would
+ * shift the positional pairing with the split's tickets and bind an
+ * unrelated element to one of them. Port yorkie-js-sdk `b173c093` (#1426).
+ */
+private fun mergedAwayIDs(mergedNodes: List<CrdtTreeNode>): List<CrdtTreeNodeID> {
+    fun depth(node: CrdtTreeNode): Int {
+        var depth = 0
+        var current = node.parent
+        while (current != null) {
+            depth++
+            current = current.parent
+        }
+        return depth
+    }
+
+    return mergedNodes
+        .filterNot { it.isText }
+        .sortedByDescending(::depth)
+        .map { it.id }
+}
 
 /**
  * [TreeEditOperation] is an operation representing Tree editing.
@@ -76,11 +108,13 @@ internal data class TreeEditOperation(
      * content it inserted (to re-remove). Both are addressed by original
      * identity rather than copy-reinserted, so a revived node keeps its
      * original ID across chained undo/redo. [restoreMode] selects direction:
-     * null means this is an ordinary edit.
+     * null means this is an ordinary edit. `var` (not `val`) so
+     * [reconcileNodeID] can re-point a span's ids in place when a split
+     * re-creates the element it addresses under a new id.
      */
-    val restoreSpans: List<TreeRestoreSpan>? = null,
+    var restoreSpans: List<TreeRestoreSpan>? = null,
     val restoreMode: RestoreMode? = null,
-    val retombstoneSpans: List<TreeRestoreSpan>? = null,
+    var retombstoneSpans: List<TreeRestoreSpan>? = null,
 ) : Operation() {
     override val effectedCreatedAt = parentCreatedAt
 
@@ -140,6 +174,93 @@ internal data class TreeEditOperation(
         executedRanges.takeUnless { it.isNullOrEmpty() }
             ?: listOf(Triple(undoFromOffset, undoToOffset, getContentSize()))
 
+    /**
+     * Set on a split that re-creates elements a merge removed -- the redo of
+     * a split, or the undo of a merge ([toReverseOperation]'s two
+     * split-reverse branches). Names those elements, innermost first, in the
+     * order the split mints their replacements ([mergedAwayIDs]). The
+     * replacements get new ids (see [splitTickets]), so whoever runs this
+     * split re-points every recorded operation at them ([reconcileNodeID]).
+     * Declared in the class BODY, not the constructor, so `copy()`/`equals`/
+     * `hashCode` ignore it (D8) -- [executeRestore]'s `copy(restoreMode =
+     * ...)` must not carry a redo reverse's [replacedIDs] onto its own
+     * restore reverse. Local to the replica that recorded it; never
+     * encoded. Port yorkie-js-sdk `b173c093` (#1426).
+     */
+    private var replacedIDs: List<CrdtTreeNodeID> = emptyList()
+
+    /**
+     * Returns the ids of the elements this split re-creates, innermost
+     * first. Empty unless it is the redo of a split or the undo of a merge.
+     */
+    internal fun getReplacedIDs(): List<CrdtTreeNodeID> = replacedIDs
+
+    /**
+     * How many of [splitTickets] the current execution has handed to the
+     * tree -- fewer than [splitLevel] when the split loop ran out of
+     * ancestors, and zero before it starts. Doubles as the index reported
+     * to [splitTicketConsumedHandler]. Reset at the top of [execute],
+     * alongside [insertedContentSize]/[splitSize]/[executedRanges], so a
+     * re-run that returns early reports zero rather than a stale count left
+     * over from a previous execution -- the clone and the root pass of one
+     * undo/redo are separate trees and can consume a different number of
+     * tickets, so after a change has been applied this describes the ROOT
+     * pass, not the clone pass that ran first. Port yorkie-js-sdk `b173c093`
+     * (#1426).
+     */
+    private var consumedSplitTickets: Int = 0
+
+    /**
+     * Returns how many of the recorded split tickets the LAST execution
+     * handed to the tree -- how many elements that execution really
+     * minted. The clone pass and the root pass can disagree (a remote
+     * change applied between them can leave the split with a different
+     * number of ancestors to cross); anything that must reflect what the
+     * ROOT tree actually minted has to check this after the fact.
+     */
+    internal fun getConsumedSplitTicketCount(): Int = consumedSplitTickets
+
+    /**
+     * What the LAST execution's split re-created, as `[removed element, its
+     * replacement]` pairs ([dev.yorkie.document.crdt.CrdtTree.edit]'s own
+     * return). Unlike [replacedIDs] this is derived from the tree the split
+     * ran on, not from the reverse op THIS replica recorded, so it is
+     * available for a PEER's split too -- the operation on the wire says
+     * which tickets the split minted, never what they replace. Reset
+     * alongside [consumedSplitTickets].
+     */
+    private var splitRecreatedIDs: List<Pair<CrdtTreeNodeID, CrdtTreeNodeID>> = emptyList()
+
+    /**
+     * Returns the `[removed element, its replacement]` pairs the LAST
+     * execution's split produced. See [splitRecreatedIDs].
+     */
+    internal fun getSplitRecreatedIDs(): List<Pair<CrdtTreeNodeID, CrdtTreeNodeID>> =
+        splitRecreatedIDs
+
+    /**
+     * Notified as each recorded split ticket is handed to the tree, with its
+     * index in [splitTickets] -- once per element the split really mints,
+     * never for a level it stopped short of. An undo/redo executes this
+     * operation twice (clone, then root), so the handler is called twice for
+     * the same index and must be idempotent. Set to null once both
+     * executions are done: the handler closes over the undo/redo entry,
+     * which this operation must not keep alive, and must never re-point
+     * again from a later execution. Set via [onSplitTicketConsumed]. Port
+     * yorkie-js-sdk `b173c093` (#1426).
+     */
+    private var splitTicketConsumedHandler: ((Int) -> Unit)? = null
+
+    /**
+     * Registers [handler], called with the index of each recorded split
+     * ticket as the split takes it. Pass null to clear it once both the
+     * clone and the root pass of an undo/redo are done. See
+     * [splitTicketConsumedHandler].
+     */
+    internal fun onSplitTicketConsumed(handler: ((Int) -> Unit)?) {
+        splitTicketConsumedHandler = handler
+    }
+
     /** Returns true when this operation was generated by the local undo/redo stack. */
     val isUndoOp: Boolean
         get() = undoFromOffset != NotAnUndoOp
@@ -177,9 +298,17 @@ internal data class TreeEditOperation(
         // early-returning re-run would leave getContentSize() reporting a
         // STALE size left over from a PREVIOUS, unrelated execution instead
         // of 0. Mirrors JS, which sets both fresh on every execute().
+        // consumedSplitTickets/splitRecreatedIDs join the same reset for the
+        // same reason (#1426): JS resets consumedSplitTickets where it builds
+        // issueTimeTicket, deeper in this same execute() path -- resetting it
+        // here instead also clears it on an early return, which neither JS
+        // nor Android needs for correctness (issueTimeTicket never runs on
+        // that path either) but keeps every per-execution field in one place.
         insertedContentSize = 0
         splitSize = 0
         executedRanges = null
+        consumedSplitTickets = 0
+        splitRecreatedIDs = emptyList()
 
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
@@ -272,6 +401,7 @@ internal data class TreeEditOperation(
 
         insertedContentSize = result.insertedContentSize
         splitSize = result.splitSize
+        splitRecreatedIDs = result.splitRecreatedIDs
 
         val opInfos =
             result.changes.map {
@@ -321,6 +451,7 @@ internal data class TreeEditOperation(
                             result.mergeLevel,
                             result.removedSpans,
                             result.insertedSpans,
+                            result.mergedNodes,
                         )
                     } else {
                         null
@@ -504,12 +635,17 @@ internal data class TreeEditOperation(
      * Special case: if [redoSplitLevel] > 0, this op is a boundary-deletion
      * that undid a split. Its redo must regenerate a proper split at the
      * merge point rather than re-inserting raw tombstoned boundary nodes.
+     * The split it regenerates may itself re-create elements a merge removed
+     * ([mergedNodes]), so the returned op's [replacedIDs] is set from them
+     * ([mergedAwayIDs]) before it is returned.
      *
      * Special case: if [mergeLevel] > 0, this op is a cross-boundary merge that
      * deleted element boundaries and moved their children into the target,
      * leaving empty shells in [removedNodes]. Re-inserting those shells would
      * nest the elements; instead the reverse is a split of [mergeLevel] levels
-     * that re-creates the boundaries. Mirrors JS SDK PR #1237.
+     * that re-creates the boundaries. Mirrors JS SDK PR #1237. As above, the
+     * returned op's [replacedIDs] is set from [mergedNodes] (port yorkie-js-sdk
+     * `b173c093`, #1426).
      *
      * Special case: if [removedSpans] or [insertedSpans] is non-empty, this
      * edit was merge/split-free ([CrdtTree.edit]'s `spansComplete` guard) and
@@ -530,6 +666,7 @@ internal data class TreeEditOperation(
         mergeLevel: Int = 0,
         removedSpans: List<TreeRestoreSpan> = emptyList(),
         insertedSpans: List<TreeRestoreSpan> = emptyList(),
+        mergedNodes: List<CrdtTreeNode> = emptyList(),
     ): TreeEditOperation? {
         if (redoSplitLevel == 0 && (removedSpans.isNotEmpty() || insertedSpans.isNotEmpty())) {
             return TreeEditOperation(
@@ -558,7 +695,7 @@ internal data class TreeEditOperation(
                 executedAt = executedAt,
                 undoFromOffset = fromIndex,
                 undoToOffset = fromIndex,
-            )
+            ).also { it.replacedIDs = mergedAwayIDs(mergedNodes) }
         }
 
         if (mergeLevel > 0) {
@@ -572,7 +709,7 @@ internal data class TreeEditOperation(
                 executedAt = executedAt,
                 undoFromOffset = fromIndex,
                 undoToOffset = fromIndex,
-            )
+            ).also { it.replacedIDs = mergedAwayIDs(mergedNodes) }
         }
 
         // Document-index span occupied by what was actually inserted. Read
@@ -735,13 +872,64 @@ internal data class TreeEditOperation(
         undoToOffset = newUndoTo
     }
 
+    /**
+     * Points this operation at [curr] wherever it named [prev]: its range,
+     * and the restore spans an identity-preserving undo carries. See
+     * [TreeStyleOperation.reconcileNodeID].
+     *
+     * Used when a split re-creates an element a merge removed under a new
+     * id -- an undo/redo's own re-split, or a peer's -- so an operation
+     * already recorded against the removed element follows it to the
+     * replacement. [replacedIDs] itself follows too: a chained split can
+     * re-create an element THIS op's own reverse already names. Port
+     * yorkie-js-sdk `b173c093` (#1426).
+     */
+    internal fun reconcileNodeID(prev: CrdtTreeNodeID, curr: CrdtTreeNodeID) {
+        fromPos = fromPos.replaceNodeID(prev, curr)
+        toPos = toPos.replaceNodeID(prev, curr)
+
+        // span.id too, not just the anchors: it is the identity `restore`
+        // and `retombstone` look the node up by, and the one they RECREATE
+        // the node under when garbage collection has purged it. Left naming
+        // the element the split has just re-minted under a new ticket, an
+        // identity restore would revive nothing and recreate a duplicate
+        // under the stale id.
+        fun reconcileSpans(spans: List<TreeRestoreSpan>?): List<TreeRestoreSpan>? =
+            spans?.map { span ->
+                span.copy(
+                    id = replaceTreeNodeId(span.id, prev, curr),
+                    parentID = span.parentID?.let { replaceTreeNodeId(it, prev, curr) },
+                    leftSiblingID = span.leftSiblingID?.let { replaceTreeNodeId(it, prev, curr) },
+                    rightSiblingID = span.rightSiblingID?.let { replaceTreeNodeId(it, prev, curr) },
+                )
+            }
+        restoreSpans = reconcileSpans(restoreSpans)
+        retombstoneSpans = reconcileSpans(retombstoneSpans)
+        replacedIDs = replacedIDs.map { replaceTreeNodeId(it, prev, curr) }
+    }
+
+    /**
+     * [consumedSplitTickets] (reset at the top of [execute], not here --
+     * see its own KDoc) replaces what used to be a local `issued` counter:
+     * a split stops as soon as it runs out of ancestors, so how many
+     * elements it really mints is only knowable from inside the split, and
+     * re-pointing anything at a ticket the split never consumed would leave
+     * it naming a node that was never created. [splitTicketConsumedHandler]
+     * is notified as each ticket leaves -- not after the split returns --
+     * because the caller re-points the rest of the change at the element
+     * that ticket identifies, and that has to be in place before those
+     * operations run; [CrdtTreeNode.split] always inserts the node it
+     * clones under the ticket it took, so a consumed ticket names an
+     * element that exists. Port yorkie-js-sdk `b173c093` (#1426).
+     */
     private fun issueTimeTicket(executedAt: TimeTicket): () -> TimeTicket {
         var delimiter = executedAt.delimiter
         contents?.let { delimiter += it.size.toUInt() }
-        var issued = 0
         return {
-            if (issued < splitTickets.size) {
-                splitTickets[issued++]
+            if (consumedSplitTickets < splitTickets.size) {
+                val index = consumedSplitTickets++
+                splitTicketConsumedHandler?.invoke(index)
+                splitTickets[index]
             } else {
                 TimeTicket(executedAt.lamport, ++delimiter, executedAt.actorID)
             }

@@ -2,7 +2,9 @@ package dev.yorkie.document.operation
 
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.CrdtTreePos
+import dev.yorkie.document.crdt.replaceNodeID
 import dev.yorkie.document.operation.OperationInfo.TreeStyleOpInfo
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
@@ -13,8 +15,8 @@ import dev.yorkie.util.Logger.Companion.logError
  */
 internal data class TreeStyleOperation(
     override var parentCreatedAt: TimeTicket,
-    val fromPos: CrdtTreePos,
-    val toPos: CrdtTreePos,
+    var fromPos: CrdtTreePos,
+    var toPos: CrdtTreePos,
     override var executedAt: TimeTicket,
     val attributes: Map<String, String>? = null,
     val attributesToRemove: List<String>? = null,
@@ -105,6 +107,17 @@ internal data class TreeStyleOperation(
         }
 
         return ExecutionResult(opInfos = opInfos, reverseOps = reverseOps)
+    }
+
+    /**
+     * Points this operation at [curr] wherever it named [prev]. An undo or
+     * redo that re-splits an element mints the element under a new id; an
+     * operation recorded against the old one would otherwise address a node
+     * that may no longer exist. Port yorkie-js-sdk `b173c093` (#1426).
+     */
+    internal fun reconcileNodeID(prev: CrdtTreeNodeID, curr: CrdtTreeNodeID) {
+        fromPos = fromPos.replaceNodeID(prev, curr)
+        toPos = toPos.replaceNodeID(prev, curr)
     }
 
     private fun buildReverseOps(

@@ -1106,6 +1106,12 @@ internal data class CrdtTree(
         // undo/redo reverse can be sized from the measured boundary instead
         // of guessing 2 * splitLevel.
         val sizeBeforeSplit = size
+        // The `[removed element, its replacement]` pairs this split produces
+        // -- see `mergeSourceOf` in TreeUndoSupport.kt. Reported so a replica
+        // applying the split, its own or a peer's, can re-point whatever it
+        // recorded against the removed one. Port yorkie-js-sdk `b173c093`
+        // (#1426).
+        val splitRecreatedIDs = mutableListOf<Pair<CrdtTreeNodeID, CrdtTreeNodeID>>()
         if (splitLevel > 0 && issueTimeTicket != null) {
             var parent = fromParent
             var left = fromLeft
@@ -1162,13 +1168,18 @@ internal data class CrdtTree(
                         executedAt,
                         versionVector,
                     )
-                    val (_, splitDiff) = target.split(
+                    val (splitNode, splitDiff) = target.split(
                         this,
                         offset,
                         issueTimeTicket,
                         versionVector,
                     )
                     diff = addDataSizes(diff, splitDiff)
+                    if (splitNode != null) {
+                        mergeSourceOf(splitNode, target, ::findFloorNode)?.let { recreated ->
+                            splitRecreatedIDs.add(recreated to splitNode.id)
+                        }
+                    }
                     actualSplitLevel++
                     left = parent
                     parent = parent.parent ?: return@run
@@ -1346,6 +1357,8 @@ internal data class CrdtTree(
             insertedSpans = if (spansComplete) insertedSpans.reversed() else emptyList(),
             insertedContentSize = insertedContentSize,
             splitSize = splitSize,
+            mergedNodes = toBeMergedNodes,
+            splitRecreatedIDs = splitRecreatedIDs,
         )
     }
 

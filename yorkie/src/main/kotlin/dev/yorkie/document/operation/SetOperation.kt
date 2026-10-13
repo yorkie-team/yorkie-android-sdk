@@ -73,7 +73,7 @@ internal data class SetOperation(
         } else {
             parentObject ?: logError(TAG, "fail to find $parentCreatedAt")
             logError(TAG, "fail to execute, only object can execute set")
-            ExecutionResult(opInfos = emptyList())
+            ExecutionResult(opInfos = emptyList(), executed = false)
         }
     }
 

@@ -114,7 +114,7 @@ public class JsonText internal constructor(
 
         val executedAt = context.issueTimeTicket()
         runCatching {
-            val (_, gcPairs, diff) = target.style(range, attributes, executedAt)
+            val (_, gcPairs, docSize) = target.style(range, attributes, executedAt)
             context.push(
                 StyleOperation(
                     parentCreatedAt = target.createdAt,
@@ -125,7 +125,8 @@ public class JsonText internal constructor(
                 ),
             )
 
-            this.context.acc(diff)
+            this.context.acc(docSize.live)
+            this.context.accGC(docSize.gc)
 
             gcPairs.forEach(context::registerGCPair)
         }.getOrElse {
@@ -150,9 +151,12 @@ public class JsonText internal constructor(
      * would have drained it threw before reaching its own drain call. The
      * buffer is instance-level and survives the throw, so this is safe to
      * call from any catch handler around [target]'s edit/style calls.
+     * Drains both the node-level buffer and the copied-attribute-tombstone
+     * buffer — a single split can buffer into both before the second
+     * findNodeWithSplit throws.
      */
     private fun recoverPendingGcPairs() {
-        target.rgaTreeSplit.drainPendingGcPairs().forEach(context::registerGCPair)
+        target.rgaTreeSplit.drainAllPendingGcPairs().forEach(context::registerGCPair)
     }
 
     private fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange? {

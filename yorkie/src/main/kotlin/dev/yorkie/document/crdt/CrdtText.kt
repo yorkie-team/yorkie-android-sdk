@@ -2,9 +2,9 @@ package dev.yorkie.document.crdt
 
 import android.annotation.SuppressLint
 import dev.yorkie.document.time.TimeTicket
-import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
+import dev.yorkie.util.DocSize
 import dev.yorkie.util.SplayTreeSet
 import dev.yorkie.util.addDataSizes
 import java.util.TreeMap
@@ -22,22 +22,24 @@ internal data class CrdtText(
     override val gcPairs: List<GCPair<*>>
         get() = buildList {
             // Only reached when a root is built from a snapshot, where
-            // docSize.live counted visible nodes only. Tombstoned nodes (and
-            // the attribute tombstones inside them) were never part of live,
-            // so their pairs carry gcOnlySize. Attribute tombstones of
-            // visible nodes ARE counted in live (getDataSize does not skip
-            // them), so their pairs use the normal live -> gc accounting.
+            // docSize.live counted visible nodes only. Tombstoned nodes were
+            // never part of live, so their pairs carry gcOnlySize.
+            //
+            // node.value.gcPairs (TextValue.getDataSize skips removed
+            // attributes) never covers a node's OWN removed attributes
+            // regardless of whether the node itself is live or tombstoned,
+            // so it is registered for EVERY node, not only live ones (the
+            // old single-outer-pair-for-removed-nodes shortcut relied on
+            // getDataSize summing ALL attributes, including removed ones,
+            // which is no longer true). No double-count: the outer pair
+            // below covers content + still-live
+            // attribute bytes only; node.value.gcPairs covers exactly the
+            // removed attributes, a disjoint set.
             rgaTreeSplit.forEach { node ->
                 if (node.removedAt != null) {
-                    // node.dataSize (TextValue.getDataSize) already sums the
-                    // node's own content bytes PLUS every attribute
-                    // tombstone's bytes, so re-adding each attribute pair
-                    // below would double-count them into docSize.gc (E4).
-                    // Its bytes are fully covered by this single outer pair.
                     add(GCPair(rgaTreeSplit, node, gcOnlySize = node.dataSize))
-                } else {
-                    node.value.gcPairs.forEach { pair -> add(pair) }
                 }
+                node.value.gcPairs.forEach { pair -> add(pair) }
             }
         }
 
@@ -92,7 +94,11 @@ internal data class CrdtText(
         return TextEditResult(
             changes,
             caretPos to caretPos,
-            gcPairs,
+            // A boundary split inside rgaTreeSplit.edit() may have copied
+            // already-removed attributes onto the new piece; those pairs are
+            // buffered separately because they are GCPair<RhtNode>, not
+            // GCPair<RgaTreeSplitNode<TextValue>>.
+            gcPairs + rgaTreeSplit.drainPendingAttributeGcPairs(),
             dataSize,
             removedValues,
             removedSpans,
@@ -122,7 +128,9 @@ internal data class CrdtText(
             result.recreated,
             toTextChanges(result.changes),
             result.liveDiff,
-            result.pendingGcPairs + attributeGcPairs,
+            // isolateRange's un-tombstone branch can also split a piece, so
+            // drain its copied attribute tombstones too.
+            result.pendingGcPairs + attributeGcPairs + rgaTreeSplit.drainPendingAttributeGcPairs(),
         )
     }
 
@@ -135,7 +143,13 @@ internal data class CrdtText(
         executedAt: TimeTicket,
     ): TextRetombstoneResult {
         val result = rgaTreeSplit.retombstone(spans, executedAt)
-        return TextRetombstoneResult(result.gcPairs, toTextChanges(result.changes), result.dataSize)
+        return TextRetombstoneResult(
+            // isolateRange splits the live piece being re-tombstoned, so
+            // drain its copied attribute tombstones too.
+            result.gcPairs + rgaTreeSplit.drainPendingAttributeGcPairs(),
+            toTextChanges(result.changes),
+            result.dataSize,
+        )
     }
 
     /**
@@ -186,16 +200,7 @@ internal data class CrdtText(
 
         // 2. Style nodes between from and to.
         val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
-        val toBeStyleds = nodes.mapNotNull { node ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = versionVector?.let {
-                versionVector.get(actorID) ?: 0L
-            } ?: MAX_LAMPORT
-
-            node.takeIf {
-                it.canStyle(executedAt, clientLamportAtChange)
-            }
-        }
+        val toBeStyleds = nodes.filter { it.canStyle(versionVector) }
 
         // Widened to GCPair<*>: drained pending pairs below are
         // GCPair<RgaTreeSplitNode<TextValue>>, a different type parameter
@@ -204,47 +209,72 @@ internal data class CrdtText(
         val prevAttributes = mutableMapOf<String, String>()
         val newAttributeKeys = mutableListOf<String>()
         var capturedPrev = false
-        val changes = toBeStyleds
-            .filterNot { it.isRemoved }
-            .map { node ->
+        // The reverse operation restores what the VISIBLE text held, so the
+        // prior values come from the first LIVE node in the range. canStyle
+        // now admits tombstones, and the first node in the range can be one
+        // — capturing from it made an undo write an attribute onto text
+        // that never carried it, out of a run the user had already
+        // deleted. The fallback to the first node keeps an all-tombstone
+        // range undoable. Mirrors JS SDK `text.ts:461-467` (e0609c7a #1368).
+        val captureFrom = toBeStyleds.firstOrNull { !it.isRemoved } ?: toBeStyleds.firstOrNull()
+        // DocSize: accAttrWrite folds each RhtWrite's
+        // install/supersede/revive into live or gc depending on whether the
+        // node it landed on is still live (see GC.kt). `diff` (the two
+        // boundary splits above) is always live-bound and is folded in once,
+        // below, after the loop.
+        var size = DocSize(live = DataSize(0, 0), gc = DataSize(0, 0))
+        val changes = mutableListOf<TextChange>()
+        toBeStyleds.forEach { node ->
+            // canStyle can admit a node removed CONCURRENTLY with this
+            // style; such a node is not part of the rendered text, so it
+            // reports no change but its bytes still move through the
+            // ledger — into gc, not live.
+            val nodeIsLive = !node.isRemoved
+            if (!capturedPrev && node === captureFrom) {
+                val attrs = node.value.getAttrs()
+                for ((key, _) in attributes) {
+                    if (attrs.has(key)) {
+                        prevAttributes[key] = attrs[key]!!
+                    } else {
+                        newAttributeKeys.add(key)
+                    }
+                }
+                capturedPrev = true
+            }
+            attributes.forEach { (key, value) ->
+                val write = node.value.setAttribute(key, value, executedAt)
+                size = accAttrWrite(write, node.value, nodeIsLive, gcPairs, size)
+            }
+            if (nodeIsLive) {
                 val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
-                if (!capturedPrev) {
-                    val attrs = node.value.getAttrs()
-                    for ((key, _) in attributes) {
-                        if (attrs.has(key)) {
-                            prevAttributes[key] = attrs[key]!!
-                        } else {
-                            newAttributeKeys.add(key)
-                        }
-                    }
-                    capturedPrev = true
-                }
-                attributes.forEach {
-                    val prev = node.value.setAttribute(it.key, it.value, executedAt).prev
-                    prev?.let {
-                        gcPairs.add(GCPair(node.value, prev))
-                    }
-
-                    val curr = node.value.getAttrs().getNodeMapByKey()[it.key]
-                    if (curr != null) {
-                        diff = addDataSizes(diff, curr.dataSize)
-                    }
-                }
-                TextChange(
-                    TextChangeType.Style,
-                    executedAt.actorID,
-                    fromIndex,
-                    toIndex,
-                    null,
-                    attributes,
+                changes.add(
+                    TextChange(
+                        TextChangeType.Style,
+                        executedAt.actorID,
+                        fromIndex,
+                        toIndex,
+                        null,
+                        attributes,
+                    ),
                 )
             }
+        }
         // A style operation's boundary splits (step 1) can land inside an
-        // already-tombstoned node and buffer a born-dead piece; drain it so
-        // it is not left unregistered for GC.
-        gcPairs.addAll(rgaTreeSplit.drainPendingGcPairs())
+        // already-tombstoned node and buffer a born-dead piece, and/or copy a
+        // removed attribute's tombstone onto the new piece; drain both
+        // buffers via the shared helper so this success path and the F11
+        // catch-recovery path (StyleOperation) cannot drift apart. Mirrors
+        // JS SDK `text.ts:509` (e0609c7a #1368), which drains the one shared
+        // pendingGCPairs.
+        gcPairs.addAll(rgaTreeSplit.drainAllPendingGcPairs())
 
-        return TextStyleResult(changes, gcPairs, diff, prevAttributes, newAttributeKeys)
+        return TextStyleResult(
+            changes,
+            gcPairs,
+            DocSize(live = addDataSizes(diff, size.live), gc = size.gc),
+            prevAttributes,
+            newAttributeKeys,
+        )
     }
 
     /**
@@ -266,14 +296,7 @@ internal data class CrdtText(
         diff = addDataSizes(diff, diffTo, diffFrom)
 
         val nodes = rgaTreeSplit.findBetween(fromRight, toRight)
-        val toBeStyleds = nodes.mapNotNull { node ->
-            val actorID = node.createdAt.actorID
-            val clientLamportAtChange = versionVector?.let {
-                versionVector.get(actorID) ?: 0L
-            } ?: MAX_LAMPORT
-
-            node.takeIf { it.canStyle(executedAt, clientLamportAtChange) }
-        }
+        val toBeStyleds = nodes.filter { it.canStyle(versionVector) }
 
         // Widened to GCPair<*>: drained pending pairs below are
         // GCPair<RgaTreeSplitNode<TextValue>>, a different type parameter
@@ -281,41 +304,72 @@ internal data class CrdtText(
         val gcPairs = mutableListOf<GCPair<*>>()
         val prevAttributes = mutableMapOf<String, String>()
         var capturedPrev = false
-        val changes = toBeStyleds
-            .filterNot { it.isRemoved }
-            .map { node ->
-                val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
-                if (!capturedPrev) {
-                    val attrs = node.value.getAttrs()
-                    for (key in attributesToRemove) {
-                        if (attrs.has(key)) {
-                            prevAttributes[key] = attrs[key]!!
-                        }
-                    }
-                    capturedPrev = true
-                }
+        // See style(): the reverse operation restores what the VISIBLE text
+        // held, so the prior values come from the first LIVE node in the
+        // range, falling back to the first node for an all-tombstone range.
+        // Mirrors JS SDK `text.ts:551-557` (e0609c7a #1368).
+        val captureFrom = toBeStyleds.firstOrNull { !it.isRemoved } ?: toBeStyleds.firstOrNull()
+        val changes = mutableListOf<TextChange>()
+        toBeStyleds.forEach { node ->
+            // canStyle can admit a node removed CONCURRENTLY with this
+            // change; such a node is not part of the rendered text, so it
+            // reports no change but the tombstone this mints is still
+            // registered for GC below.
+            val nodeIsLive = !node.isRemoved
+            if (!capturedPrev && node === captureFrom) {
+                val attrs = node.value.getAttrs()
                 for (key in attributesToRemove) {
-                    val removedNodes = node.value.getAttrs().remove(key, executedAt)
-                    for (rhtNode in removedNodes) {
-                        gcPairs.add(GCPair(node.value, rhtNode))
-                        diff = addDataSizes(diff, rhtNode.dataSize)
+                    if (attrs.has(key)) {
+                        prevAttributes[key] = attrs[key]!!
                     }
                 }
-                TextChange(
-                    TextChangeType.Style,
-                    executedAt.actorID,
-                    fromIndex,
-                    toIndex,
-                    null,
-                    emptyMap(),
+                capturedPrev = true
+            }
+            for (key in attributesToRemove) {
+                // The node holding the attribute may itself be a tombstone
+                // (canStyle admits one) — attrGcPair's third question.
+                var wasLive = node.value.getAttrs().has(key)
+                node.value.getAttrs().remove(key, executedAt).forEach { rhtNode ->
+                    gcPairs.add(attrGcPair(node.value, rhtNode, wasLive, nodeIsLive))
+                    // Only the node replacing the live value takes a size
+                    // out of live; a second one in the same call is the
+                    // tombstone it superseded, already gc.
+                    wasLive = false
+                }
+            }
+            if (nodeIsLive) {
+                val (fromIndex, toIndex) = rgaTreeSplit.findIndexesFromRange(node.createPosRange())
+                changes.add(
+                    TextChange(
+                        TextChangeType.Style,
+                        executedAt.actorID,
+                        fromIndex,
+                        toIndex,
+                        null,
+                        emptyMap(),
+                    ),
                 )
             }
+        }
         // A remove-style operation's boundary splits (step 1) can land inside
-        // an already-tombstoned node and buffer a born-dead piece; drain it
-        // so it is not left unregistered for GC.
-        gcPairs.addAll(rgaTreeSplit.drainPendingGcPairs())
+        // an already-tombstoned node and buffer a born-dead piece, and/or
+        // copy a removed attribute's tombstone onto the new piece; drain both
+        // buffers via the shared helper so this success path and the F11
+        // catch-recovery path (StyleOperation) cannot drift apart. Mirrors
+        // JS SDK `text.ts:617` (e0609c7a #1368), which drains the one shared
+        // pendingGCPairs.
+        gcPairs.addAll(rgaTreeSplit.drainAllPendingGcPairs())
 
-        return TextStyleResult(changes, gcPairs, diff, prevAttributes)
+        // removeStyle's attribute accounting moves entirely through the
+        // attrGcPair-registered gcPairs above (CrdtRoot.registerGCPair moves
+        // the bytes live -> gc when they are registered); diff here is only
+        // the two boundary splits, always live-bound.
+        return TextStyleResult(
+            changes,
+            gcPairs,
+            DocSize(live = diff, gc = DataSize(0, 0)),
+            prevAttributes,
+        )
     }
 
     /**

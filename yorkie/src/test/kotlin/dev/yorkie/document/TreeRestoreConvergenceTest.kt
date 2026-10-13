@@ -1,6 +1,7 @@
 package dev.yorkie.document
 
 import dev.yorkie.document.crdt.CrdtTree
+import dev.yorkie.document.crdt.CrdtTreeNode
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeElement
 import dev.yorkie.document.crdt.CrdtTreeNode.Companion.CrdtTreeText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
@@ -584,7 +585,7 @@ class TreeRestoreConvergenceTest {
         // the isolated target itself; the [3,5) left remainder keeps the
         // original delete's GC pair. This is why executeRestore registers the
         // pending pairs BEFORE unregistering the untombstoned targets.
-        assertEquals(listOf("5678"), result.pendingGcPairs.map { it.child.value })
+        assertEquals(listOf("5678"), result.pendingGcPairs.map { (it.child as CrdtTreeNode).value })
         assertSame(result.untombstoned.single(), result.pendingGcPairs.single().child)
         assertEquals(DataSize(0, 0), result.diff, "a removed split contributes zero diff")
         assertEquals("<root>01256789</root>", tree.toXml(), "[3,5) must stay invisible")
@@ -602,7 +603,7 @@ class TreeRestoreConvergenceTest {
         assertEquals(listOf("3456"), result.untombstoned.map { it.value })
         assertEquals(
             listOf("78"),
-            result.pendingGcPairs.map { it.child.value },
+            result.pendingGcPairs.map { (it.child as CrdtTreeNode).value },
             "the [7,9) remainder must be buffered for GC",
         )
         assertEquals(DataSize(0, 0), result.diff, "a removed split contributes zero diff")
@@ -629,7 +630,7 @@ class TreeRestoreConvergenceTest {
         // target, narrowed to "56" by the second split), then [7,9).
         assertEquals(
             listOf("56", "78"),
-            result.pendingGcPairs.map { it.child.value },
+            result.pendingGcPairs.map { (it.child as CrdtTreeNode).value },
             "the split-born target and the [7,9) remainder must be buffered for GC",
         )
         assertEquals(DataSize(0, 0), result.diff, "removed splits contribute zero diff")

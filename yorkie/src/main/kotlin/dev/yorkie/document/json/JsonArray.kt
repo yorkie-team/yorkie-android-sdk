@@ -224,7 +224,10 @@ public class JsonArray internal constructor(
         // root purges on GC, which re-diverges a later set's anchor resolution.
         val deadNode = target.moveAfter(prevPosCreatedAt, createdAt, executedAt)
         if (deadNode != null) {
-            context.registerGCPair(GCPair(target.getRGATreeList(), deadNode))
+            // gcOnlySize: never counted in live, mirrors JS array.ts (see moveInternal).
+            context.registerGCPair(
+                GCPair(target.getRGATreeList(), deadNode, gcOnlySize = deadNode.dataSize),
+            )
         }
     }
 
@@ -331,7 +334,10 @@ public class JsonArray internal constructor(
         // Register the displaced dead position node on the clone (see moveInternal).
         val deadNode = target.moveAfter(prevPosCreatedAt, targetElem.createdAt, ticket)
         if (deadNode != null) {
-            context.registerGCPair(GCPair(target.getRGATreeList(), deadNode))
+            // gcOnlySize: never counted in live (see moveInternal).
+            context.registerGCPair(
+                GCPair(target.getRGATreeList(), deadNode, gcOnlySize = deadNode.dataSize),
+            )
         }
     }
 

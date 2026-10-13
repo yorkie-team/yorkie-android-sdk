@@ -29,11 +29,11 @@ internal data class TreeStyleOperation(
         val tree = root.findByCreatedAt(parentCreatedAt)
         if (tree == null) {
             logError(TAG, "fail to find $parentCreatedAt")
-            return ExecutionResult(opInfos = emptyList())
+            return ExecutionResult(opInfos = emptyList(), executed = false)
         }
         if (tree !is CrdtTree) {
             logError(TAG, "fail to execute, only Tree can execute edit")
-            return ExecutionResult(opInfos = emptyList())
+            return ExecutionResult(opInfos = emptyList(), executed = false)
         }
 
         val reversePrevAttributes = mutableMapOf<String, String>()
@@ -48,7 +48,8 @@ internal data class TreeStyleOperation(
                     versionVector,
                 )
 
-                root.acc(result.dataSize)
+                root.acc(result.docSize.live)
+                root.accGC(result.docSize.gc)
                 result.gcPairs.forEach(root::registerGCPair)
 
                 reversePrevAttributes.putAll(result.prevAttributes)
@@ -73,6 +74,11 @@ internal data class TreeStyleOperation(
                     executedAt,
                     versionVector,
                 )
+                // removeStyle's own boundary splits can grow live (a new
+                // split piece is a normal live-bucket cost), and that diff
+                // was being dropped.
+                root.acc(result.docSize.live)
+                root.accGC(result.docSize.gc)
                 result.gcPairs.forEach(root::registerGCPair)
 
                 reversePrevAttributes.putAll(result.prevAttributes)

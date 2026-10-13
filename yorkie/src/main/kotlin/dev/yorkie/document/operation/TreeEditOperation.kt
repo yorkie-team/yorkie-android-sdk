@@ -1,5 +1,6 @@
 package dev.yorkie.document.operation
 
+import androidx.annotation.VisibleForTesting
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtTree
 import dev.yorkie.document.crdt.CrdtTreeNode
@@ -340,8 +341,9 @@ internal data class TreeEditOperation(
         // silently relocate the re-inserted content (to the document end, in the
         // worst case) and replicate that misplacement to every peer as a concrete
         // fromPos/toPos. Out-of-range offsets must fail loudly, as in JS
-        // (tree.findPos() throws) — pinned by TreeEditOperationReverseTest's
-        // `undo op whose offsets exceed the live size does not relocate content`.
+        // (the underlying index lookup throws) — pinned by
+        // TreeEditOperationReverseTest's `undo op whose offsets exceed the
+        // live size does not relocate content`.
         val (actualFrom, actualTo) =
             if (isUndoOp) {
                 tree.indexRangeToPosRange(undoFromOffset to undoToOffset)
@@ -685,7 +687,11 @@ internal data class TreeEditOperation(
         }
 
         if (redoSplitLevel > 0) {
-            val splitFromPos = tree.findPos(fromIndex)
+            // fromIndex is resolved on the post-edit tree this reverse runs
+            // on, not supplied by a caller, and can land inside a surrogate
+            // pair with no fault of its own; refusing it would only drop
+            // the undo. Port yorkie-js-sdk `6932da6a` (#1447).
+            val splitFromPos = tree.findPosUnchecked(fromIndex)
             return TreeEditOperation(
                 parentCreatedAt = parentCreatedAt,
                 fromPos = splitFromPos,
@@ -699,7 +705,10 @@ internal data class TreeEditOperation(
         }
 
         if (mergeLevel > 0) {
-            val splitFromPos = tree.findPos(fromIndex)
+            // Same reasoning as the redo-split branch above: fromIndex is
+            // this reverse's own, document-computed index, not a caller's.
+            // Port yorkie-js-sdk `6932da6a` (#1447).
+            val splitFromPos = tree.findPosUnchecked(fromIndex)
             return TreeEditOperation(
                 parentCreatedAt = parentCreatedAt,
                 fromPos = splitFromPos,
@@ -786,8 +795,12 @@ internal data class TreeEditOperation(
 
         if (reverseToIdx > tree.size) return null
 
-        val reverseFromPos = tree.findPos(reverseFromIdx)
-        val reverseToPos = tree.findPos(reverseToIdx)
+        // Both indexes are this split reverse's own measurement of the
+        // boundary it grew, not a caller's; a remote split applies this
+        // same path, so it must never throw for a mid-pair boundary. Port
+        // yorkie-js-sdk `6932da6a` (#1447).
+        val reverseFromPos = tree.findPosUnchecked(reverseFromIdx)
+        val reverseToPos = tree.findPosUnchecked(reverseToIdx)
 
         return TreeEditOperation(
             parentCreatedAt = parentCreatedAt,
@@ -801,6 +814,51 @@ internal data class TreeEditOperation(
             redoSplitLevel = actualSplitLevel,
         )
     }
+
+    /**
+     * Test-only accessor for [toReverseOperation]: the `redoSplitLevel`/
+     * `mergeLevel` branches resolve [fromIndex] -- the document's own
+     * measurement of where an edit landed -- through [CrdtTree.findPosUnchecked]
+     * rather than a caller-supplied index, so pinning that they never throw
+     * for a mid-pair [fromIndex] needs calling this method directly with a
+     * hand-picked index no real edit would leave mid-pair afterwards (an
+     * edit AT that index would itself split the pair). Mirrors JS
+     * `surrogate_index_test.ts`'s `builds reverse operations at indexes
+     * inside a pair` (`6932da6a`, #1447), which reaches the same private
+     * method the same way.
+     */
+    @VisibleForTesting
+    internal fun toReverseOperationForTest(
+        tree: CrdtTree,
+        actualFrom: CrdtTreePos,
+        fromIndex: Int,
+        insertedContentSize: Int = 0,
+        mergeLevel: Int = 0,
+    ): TreeEditOperation? = toReverseOperation(
+        tree = tree,
+        actualFrom = actualFrom,
+        fromIndex = fromIndex,
+        removedNodes = emptyList(),
+        insertedContentSize = insertedContentSize,
+        mergeLevel = mergeLevel,
+    )
+
+    /**
+     * Test-only accessor for [toSplitReverseOperation]: see
+     * [toReverseOperationForTest] for why a direct call is needed.
+     */
+    @VisibleForTesting
+    internal fun toSplitReverseOperationForTest(
+        tree: CrdtTree,
+        preEditFromIdx: Int,
+        actualSplitLevel: Int,
+        boundarySize: Int,
+    ): TreeEditOperation? = toSplitReverseOperation(
+        tree,
+        preEditFromIdx,
+        actualSplitLevel,
+        boundarySize,
+    )
 
     /**
      * Adjusts [undoFromOffset] and [undoToOffset] to account for a concurrent remote edit

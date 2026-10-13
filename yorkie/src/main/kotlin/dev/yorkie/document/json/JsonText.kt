@@ -39,6 +39,10 @@ public class JsonText internal constructor(
 
     /**
      * Edits this [JsonText] with the given [content] and [attributes].
+     *
+     * @throws dev.yorkie.util.YorkieException with [dev.yorkie.util.YorkieException.Code.ErrInvalidArgument]
+     * when [fromIndex]/[toIndex] splits a UTF-16 surrogate pair, or [content] holds a lone
+     * surrogate half — either fails the whole [dev.yorkie.document.Document.updateAsync] call.
      */
     public fun edit(
         fromIndex: Int,
@@ -51,7 +55,7 @@ public class JsonText internal constructor(
             return null
         }
 
-        val range = createRange(fromIndex, toIndex) ?: return null
+        val range = createRange(fromIndex, toIndex, content) ?: return null
 
         logDebug(TAG, "EDIT: f:$fromIndex->${range.first}, t:$toIndex->${range.second} c:$content")
 
@@ -94,6 +98,10 @@ public class JsonText internal constructor(
 
     /**
      * Styles this [JsonText] with the given [attributes].
+     *
+     * @throws dev.yorkie.util.YorkieException with [dev.yorkie.util.YorkieException.Code.ErrInvalidArgument]
+     * when [fromIndex]/[toIndex] splits a UTF-16 surrogate pair — fails the whole
+     * [dev.yorkie.document.Document.updateAsync] call.
      */
     public fun style(
         fromIndex: Int,
@@ -159,7 +167,37 @@ public class JsonText internal constructor(
         target.rgaTreeSplit.drainAllPendingGcPairs().forEach(context::registerGCPair)
     }
 
-    private fun createRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange? {
+    /**
+     * Checked range lookup for a LOCAL [edit]/[style]: rejects a
+     * UTF-16-surrogate-pair-splitting index (and, for [edit], lone-surrogate
+     * [content]) by letting [dev.yorkie.util.YorkieException] propagate —
+     * the `else -> throw it` branch below only ever catches the two range
+     * errors [unvalidatedRange] already handled, never that exception.
+     */
+    private fun createRange(
+        fromIndex: Int,
+        toIndex: Int,
+        content: String? = null,
+    ): RgaTreeSplitPosRange? {
+        return runCatching {
+            target.createRange(fromIndex, toIndex, content)
+        }.getOrElse {
+            when (it) {
+                is NoSuchElementException, is IndexOutOfBoundsException -> {
+                    logError(TAG, "can't create range")
+                    null
+                }
+
+                else -> throw it
+            }
+        }
+    }
+
+    /**
+     * Unchecked range lookup for a selection conversion: a mid-pair index
+     * must resolve without throwing, unlike [createRange].
+     */
+    private fun unvalidatedRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange? {
         return runCatching {
             target.indexRangeToPosRange(fromIndex, toIndex)
         }.getOrElse {
@@ -175,10 +213,12 @@ public class JsonText internal constructor(
     }
 
     /**
-     * Returns [TextPosStructRange] of the given index range.
+     * Returns [TextPosStructRange] of the given index range. Used for
+     * presence/selection conversions: never rejects an index inside a
+     * UTF-16 surrogate pair, unlike [edit]/[style].
      */
     public fun indexRangeToPosRange(range: Pair<Int, Int>): TextPosStructRange? {
-        val posRange = createRange(range.first, range.second) ?: return null
+        val posRange = unvalidatedRange(range.first, range.second) ?: return null
         return posRange.first.toStruct() to posRange.second.toStruct()
     }
 
@@ -193,6 +233,12 @@ public class JsonText internal constructor(
 
     /**
      * Deletes the text in the given range.
+     *
+     * @throws dev.yorkie.util.YorkieException with
+     *   [dev.yorkie.util.YorkieException.Code.ErrInvalidArgument] when
+     *   [fromIndex]/[toIndex] splits a UTF-16 surrogate pair -- fails the
+     *   whole [dev.yorkie.document.Document.updateAsync] call (this
+     *   delegates to [edit]).
      */
     public fun delete(fromIndex: Int, toIndex: Int): Pair<Int, Int>? {
         return edit(fromIndex, toIndex, "")

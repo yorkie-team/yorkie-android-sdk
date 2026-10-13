@@ -1,6 +1,8 @@
 package dev.yorkie.document.crdt
 
 import android.annotation.SuppressLint
+import dev.yorkie.document.json.ensureNoLoneSurrogate
+import dev.yorkie.document.json.ensureUtf16Boundary
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
@@ -394,6 +396,11 @@ internal data class CrdtText(
 
     /**
      * Returns a pair of [RgaTreeSplitPos] of the given integer offsets.
+     * Unchecked: an index inside a UTF-16 surrogate pair resolves to
+     * whichever position [RgaTreeSplit.indexToPos] gives it. Remote
+     * operations, undo/redo and selection conversions all read a position
+     * through this function and must never throw; [createRange] is the
+     * checked counterpart local edits/styles go through instead.
      */
     fun indexRangeToPosRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange {
         val fromPos = rgaTreeSplit.indexToPos(fromIndex)
@@ -402,6 +409,94 @@ internal data class CrdtText(
         } else {
             RgaTreeSplitPosRange(fromPos, rgaTreeSplit.indexToPos(toIndex))
         }
+    }
+
+    /**
+     * Returns the position range of the given index range for a LOCAL edit
+     * or style. Unlike [indexRangeToPosRange], it throws
+     * [dev.yorkie.util.YorkieException] when an index splits a UTF-16
+     * surrogate pair.
+     *
+     * [content] is given for an edit and omitted for a style. It is also
+     * checked for a lone surrogate: storing one already diverges across SDKs
+     * (Go turns it into U+FFFD, this SDK keeps the raw code unit), and the
+     * lone half then pairs with whatever code unit it is stored next to,
+     * turning the index at that seam into one [validateUtf16Boundary] would
+     * refuse for as long as the text lives. A peer running an SDK without
+     * this check can still send such content over the wire — this is a
+     * local-edit contract, not a trust boundary.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447) `CRDTText.createRange`.
+     */
+    fun createRange(
+        fromIndex: Int,
+        toIndex: Int,
+        content: String? = null,
+    ): RgaTreeSplitPosRange {
+        if (!content.isNullOrEmpty()) {
+            ensureNoLoneSurrogate(content)
+        }
+        val range = indexRangeToPosRange(fromIndex, toIndex)
+        validateUtf16Boundary(range.first)
+        if (fromIndex != toIndex) {
+            validateUtf16Boundary(range.second)
+        }
+        return range
+    }
+
+    /**
+     * Throws when [pos] splits a surrogate pair. At either end of the node
+     * it resolves to, this reads the nearest neighbouring node that still
+     * contributes content: a local split can leave one half of a pair in
+     * this node and the other half in the node it was split from, and
+     * [RgaTreeSplit.indexToPos] always resolves a seam to the node on its
+     * LEFT, so `offset == content.length` is the side an ordinary index
+     * normally reaches.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447)
+     * `CRDTText.validateUTF16Boundary`.
+     */
+    private fun validateUtf16Boundary(pos: RgaTreeSplitPos) {
+        val node = rgaTreeSplit.findNode(pos.id)
+        val offset = pos.relativeOffSet
+        val content = indexedContent(node)
+
+        var before = content.getOrNull(offset - 1)
+        var after = content.getOrNull(offset)
+        if (offset == 0) {
+            before = neighborContent(node) { it.prev }.lastOrNull()
+        }
+        if (offset == content.length) {
+            after = neighborContent(node) { it.next }.firstOrNull()
+        }
+        ensureUtf16Boundary(before, after)
+    }
+
+    /**
+     * Returns the text [node] contributes to the index: empty for the head
+     * sentinel (which carries no real [TextValue] — its [RgaTreeSplitNode.value]
+     * is an unrelated placeholder object no [T] actually owns) and for a
+     * tombstone, whose text the index no longer counts.
+     */
+    private fun indexedContent(node: RgaTreeSplitNode<TextValue>): String {
+        return if (node.isRemoved || node === rgaTreeSplit.head) "" else node.value.content
+    }
+
+    /**
+     * Returns the content of the nearest node on the [step] side that still
+     * contributes text, or an empty string when there is none.
+     */
+    private fun neighborContent(
+        node: RgaTreeSplitNode<TextValue>,
+        step: (RgaTreeSplitNode<TextValue>) -> RgaTreeSplitNode<TextValue>?,
+    ): String {
+        var current = step(node)
+        while (current != null) {
+            val content = indexedContent(current)
+            if (content.isNotEmpty()) return content
+            current = step(current)
+        }
+        return ""
     }
 
     /**

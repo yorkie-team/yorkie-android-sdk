@@ -366,7 +366,7 @@ class EditorViewModel(
 
     fun editContent(changes: TextFieldBuffer.ChangeList, newContent: CharSequence) {
         viewModelScope.launch {
-            document.updateAsync { root, _ ->
+            val result = document.updateAsync { root, _ ->
                 changes.forEachChange { range, originalRange ->
                     val content = if (range.start == range.end) {
                         ""
@@ -400,7 +400,16 @@ class EditorViewModel(
                     )
                 }
             }.await()
-            syncTextStyle()
+            if (result.isSuccess) {
+                syncTextStyle()
+            } else {
+                // A rejected edit (e.g. an index inside a UTF-16 surrogate
+                // pair, #1447) leaves the document unchanged, but the
+                // TextField already shows it -- resync the displayed text
+                // from the document (port the JS SDK's editor-binding
+                // resync, 6932da6a).
+                syncTextSnapShot()
+            }
         }
     }
 
@@ -449,7 +458,7 @@ class EditorViewModel(
         val textSelection = textFieldState.selection
         if (textSelection.start < textSelection.end) {
             viewModelScope.launch {
-                document.updateAsync { root, _ ->
+                val result = document.updateAsync { root, _ ->
                     root.getAs<JsonText>(CONTENT).style(
                         fromIndex = textSelection.start,
                         toIndex = textSelection.end,
@@ -458,7 +467,14 @@ class EditorViewModel(
                         ),
                     )
                 }.await()
-                syncTextStyle()
+                if (result.isSuccess) {
+                    syncTextStyle()
+                } else {
+                    // Same resync as editContent(): a rejected style call
+                    // (a selection that splits a UTF-16 surrogate pair,
+                    // #1447) leaves the document unchanged.
+                    syncTextSnapShot()
+                }
             }
         }
     }

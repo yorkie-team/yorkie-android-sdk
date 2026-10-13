@@ -129,12 +129,20 @@ class Rht : Collection<RhtNode> {
 
     /**
      * Converts the given [Rht] to XML String.
+     *
+     * Both the key and the value are peer-chosen (a remote [set] can write
+     * either one raw), so each is escaped before interpolation: unescaped, a
+     * `"` closes the attribute and a `<` opens an element, letting a peer
+     * forge markup into every reader's rendered tree (port JS
+     * `document/crdt/tree.ts` `escapeXMLAttr`, `6932da6a`, #1447) -- the XML
+     * half of the forging [toJson] already closes for the JSON encoding via
+     * [escapeString].
      */
     fun toXml(): String {
         return nodeMapByKey.filterValues { !it.isRemoved }.entries
             .sortedBy { it.key }
             .joinToString(" ") { (key, node) ->
-                "$key=\"${node.value}\""
+                "${escapeXmlAttr(key)}=\"${escapeXmlAttr(node.value)}\""
             }
     }
 
@@ -359,6 +367,28 @@ private fun unescapeJsonString(interior: String): String? {
             }
             else -> return null
         }
+    }
+    return result.toString()
+}
+
+private val xmlAttrEscapes = mapOf(
+    '&' to "&amp;",
+    '<' to "&lt;",
+    '>' to "&gt;",
+    '"' to "&quot;",
+    '\'' to "&apos;",
+)
+
+/**
+ * Escapes a name or a value for interpolation into a double-quoted XML
+ * attribute (port JS `escapeXMLAttr`, `6932da6a`, #1447). A single left-to-
+ * right pass over [value]'s original characters, so an entity this function
+ * inserts (e.g. `&amp;` for a literal `&`) is never itself re-escaped.
+ */
+private fun escapeXmlAttr(value: String): String {
+    val result = StringBuilder(value.length)
+    for (c in value) {
+        result.append(xmlAttrEscapes[c] ?: c.toString())
     }
     return result.toString()
 }

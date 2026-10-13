@@ -6,6 +6,7 @@ import dev.yorkie.document.CrdtTreeNodeIDStruct
 import dev.yorkie.document.CrdtTreePosStruct
 import dev.yorkie.document.JsonSerializable
 import dev.yorkie.document.json.TreePosStructRange
+import dev.yorkie.document.json.ensureUtf16Boundary
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.TIME_TICKET_SIZE
@@ -2899,11 +2900,65 @@ internal data class CrdtTree(
     internal fun leftAnchorIDForTest(sibling: CrdtTreeNode): CrdtTreeNodeID = leftAnchorID(sibling)
 
     /**
-     * Finds the position of the given [index] in the tree.
+     * Finds the position of the given [index] in the tree. Throws
+     * [YorkieException] with [ErrInvalidArgument] when [index] resolves
+     * inside a UTF-16 surrogate pair -- a local index at that seam would
+     * split a non-BMP character, and Go/JS store the resulting lone halves
+     * differently. [findPosUnchecked] is the old, unconditional behaviour
+     * for an index the document computed itself rather than one a caller
+     * supplied.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447) `CRDTTree.findPos`.
      */
     fun findPos(index: Int, preferText: Boolean = true): CrdtTreePos {
         val treePos = indexTree.findTreePos(index, preferText)
+        if (treePos.node.isText) {
+            validateUtf16Boundary(treePos)
+        }
         return treePos.toCrdtTreePos()
+    }
+
+    /**
+     * [findPos] without the surrogate-pair check. For an index the document
+     * computed itself -- an undo range reconciled against a remote edit, a
+     * reverse builder resolved on the post-edit tree, a selection
+     * conversion -- which can land inside a pair through no fault of the
+     * caller: refusing it would only drop the undo or crash a remote
+     * apply, so it resolves exactly as [findPos] did before the check
+     * existed.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447) `CRDTTree.findPosUnchecked`.
+     */
+    fun findPosUnchecked(index: Int, preferText: Boolean = true): CrdtTreePos {
+        val treePos = indexTree.findTreePos(index, preferText)
+        return treePos.toCrdtTreePos()
+    }
+
+    /**
+     * Throws when [treePos] (already known to resolve to a text node)
+     * splits a surrogate pair. At either end of the node this reads the
+     * neighbouring SIBLING: converting a position back to an index splits a
+     * tree's text node with no operation, so a pair can sit in two sibling
+     * nodes on this replica while it is one node on every other replica,
+     * and an index at that seam is still inside it.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447)
+     * `CRDTTree.validateUTF16Boundary`.
+     */
+    private fun validateUtf16Boundary(treePos: TreePos<CrdtTreeNode>) {
+        val node = treePos.node
+        val offset = treePos.offset
+        val value = node.value
+
+        var before = value.getOrNull(offset - 1)
+        var after = value.getOrNull(offset)
+        if (offset == 0) {
+            before = node.prevSibling?.takeIf { it.isText }?.value?.lastOrNull()
+        }
+        if (offset == value.length) {
+            after = node.nextSibling?.takeIf { it.isText }?.value?.firstOrNull()
+        }
+        ensureUtf16Boundary(before, after)
     }
 
     /**
@@ -2950,11 +3005,15 @@ internal data class CrdtTree(
     }
 
     /**
-     * Converts the given path of the node to the range of the position.
+     * Converts the given path of the node to the range of the position. The
+     * end of the range is derived here as `fromIndex + 1`, not supplied by
+     * the caller -- the caller named a node by path, so resolving that
+     * derived index through [findPosUnchecked] keeps a pair happening to
+     * start right after it from refusing a request that is valid as given.
      */
     fun pathToPosRange(path: List<Int>): TreePosRange {
         val fromIndex = pathToIndex(path)
-        return findPos(fromIndex) to findPos(fromIndex + 1)
+        return findPos(fromIndex) to findPosUnchecked(fromIndex + 1)
     }
 
     /**
@@ -2993,28 +3052,32 @@ internal data class CrdtTree(
     }
 
     /**
-     * Returns the position range from the given [range].
+     * Returns the position range from the given [range]. Converts a
+     * selection, not an edit range, so it reads through [findPosUnchecked]
+     * and never throws for a mid-pair index.
      */
     fun indexRangeToPosRange(range: Pair<Int, Int>): TreePosRange {
         val (fromIndex, toIndex) = range
-        val fromPos = findPos(fromIndex)
+        val fromPos = findPosUnchecked(fromIndex)
         return if (fromIndex == toIndex) {
             fromPos to fromPos
         } else {
-            fromPos to findPos(toIndex)
+            fromPos to findPosUnchecked(toIndex)
         }
     }
 
     /**
-     * Converts the [range] into [TreePosStructRange].
+     * Converts the [range] into [TreePosStructRange]. Like
+     * [indexRangeToPosRange], this is for a selection and reads through
+     * [findPosUnchecked].
      */
     fun indexRangeToPosStructRange(range: Pair<Int, Int>): TreePosStructRange {
         val (fromIndex, toIndex) = range
-        val fromPos = findPos(fromIndex)
+        val fromPos = findPosUnchecked(fromIndex)
         return if (fromIndex == toIndex) {
             fromPos.toStruct() to fromPos.toStruct()
         } else {
-            fromPos.toStruct() to findPos(toIndex).toStruct()
+            fromPos.toStruct() to findPosUnchecked(toIndex).toStruct()
         }
     }
 

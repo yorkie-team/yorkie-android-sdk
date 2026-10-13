@@ -1123,11 +1123,17 @@ public class Client(
                             attachment.updateHeartbeatTime()
                         }
 
+                        // Captured from the mode the REQUEST was sent in -- not the
+                        // attachment's CURRENT mode, read again below after the RPC
+                        // returns. The mode can change while the request is in
+                        // flight (changeSyncMode), and it is the mode the request
+                        // was sent in that decided whether anything was pulled.
+                        val requestPushOnly = syncMode == SyncMode.RealtimePushOnly
                         val request = pushPullChangesRequest {
                             clientId = requireClientId()
                             changePack = resource.createChangePack().toPBChangePack()
                             documentId = attachment.resourceId
-                            pushOnly = syncMode == SyncMode.RealtimePushOnly
+                            pushOnly = requestPushOnly
                             disableGc = attachment.disableGC
                         }
                         val response = service.pushPullChanges(
@@ -1146,14 +1152,25 @@ public class Client(
                         // the root here. The tail below (heartbeat, Synced, the removal check)
                         // always runs now -- unlike the old `return@runCatching`, which also
                         // skipped the ack for a dropped CHANGES pack.
+                        //
+                        // The reply's CONTENT does not enter the decision either (JS SDK
+                        // `client.ts` `b34118b4`, yorkie-js-sdk#1393): a push-only reply with
+                        // neither changes nor a snapshot still carries the minimum version
+                        // vector, and applying it would run `garbageCollect` with that vector --
+                        // purging tombstones that this document's own unpulled remote changes are
+                        // anchored on. Those changes are delivered on the first full pull after
+                        // the pause resumes and are applied before THAT pull's vector collects
+                        // anything; collecting here instead leaves the document unable to apply
+                        // them ("cannot find node of CrdtTreePos"), stuck on a pack the server
+                        // redelivers forever. So while a request was sent PushOnly, or the
+                        // attachment is CURRENTLY PushOnly/SyncOff, nothing of the reply but the
+                        // push ack is taken, regardless of what the reply carries.
                         val currentSyncMode = attachments[documentKey]?.syncMode
                         val hasRemoteState =
                             responsePack.hasChanges || responsePack.hasSnapshot
-                        val dropsRemoteState = hasRemoteState &&
-                            (
-                                currentSyncMode == SyncMode.RealtimePushOnly ||
-                                    currentSyncMode == SyncMode.RealtimeSyncOff
-                                )
+                        val dropsRemoteState = requestPushOnly ||
+                            currentSyncMode == SyncMode.RealtimePushOnly ||
+                            currentSyncMode == SyncMode.RealtimeSyncOff
                         if (dropsRemoteState) {
                             resource.acknowledgePushedChanges(responsePack)
                         } else {
@@ -3067,6 +3084,17 @@ public class Client(
      */
     public enum class SyncMode(val needRealTimeSync: Boolean) {
         Realtime(true),
+
+        /**
+         * `RealtimePushOnly` indicates that only local changes are automatically pushed.
+         *
+         * The reply to a push-only request is taken as a push ack only: its client-seq
+         * acknowledgement and pack metadata, never remote state and never its version
+         * vector. Garbage-collecting with that vector would purge tombstones that the
+         * remote changes this document has not pulled yet may anchor on, leaving them
+         * unapplicable once it resumes pulling (JS SDK `client.ts` `b34118b4`,
+         * yorkie-js-sdk#1393).
+         */
         RealtimePushOnly(true),
         RealtimeSyncOff(false),
 

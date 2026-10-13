@@ -11,6 +11,7 @@ import com.google.rpc.ErrorInfo
 import dev.yorkie.api.snapshotToBytes
 import dev.yorkie.api.toPBChange
 import dev.yorkie.api.toPBTimeTicket
+import dev.yorkie.api.toPBVersionVector
 import dev.yorkie.api.v1.ActivateClientRequest
 import dev.yorkie.api.v1.ActivateClientResponse
 import dev.yorkie.api.v1.AttachChannelRequest
@@ -181,6 +182,20 @@ class MockYorkieService(
      * (`k2`) with no advanced checkpoint — that default is unchanged for every other key.
      */
     val ackOnlyPushPullKeys = mutableSetOf<String>()
+
+    /**
+     * Overrides [ackOnlyPushPullKeys]'s response `version_vector` for this document key --
+     * models the server's reply to a push-only/sync-off request still carrying the
+     * document's minimum synced version vector even though the reply itself carries no
+     * changes and no snapshot (JS SDK `client.ts` `b34118b4`, yorkie-js-sdk#1393): applying
+     * it would run `garbageCollect` with that vector regardless of what the reply contains.
+     * Defaults to [VersionVector.INITIAL_VERSION_VECTOR] (an empty vector collects nothing)
+     * when a key has no override. Self-clearing (removed on the ONE
+     * [pushPullChanges] call that reads it) -- a test driving the real sync loop across
+     * more than one tick (e.g. a mode change mid-flight) needs exactly one crafted reply,
+     * not every tick re-arming it.
+     */
+    val ackOnlyVersionVectorOverride = mutableMapOf<String, VersionVector>()
 
     /**
      * Document keys whose [pushPullChanges] response is a PULL that is also an ack: the
@@ -440,10 +455,13 @@ class MockYorkieService(
             hook()
         }
         if (request.changePack.documentKey in ackOnlyPushPullKeys) {
+            val versionVector = ackOnlyVersionVectorOverride.remove(request.changePack.documentKey)
+                ?: VersionVector.INITIAL_VERSION_VECTOR
             return ResponseMessage.Success(
                 pushPullChangesResponse {
                     changePack = changePack {
                         checkpoint = request.changePack.checkpoint
+                        this.versionVector = versionVector.toPBVersionVector()
                     }
                 },
                 emptyMap(),

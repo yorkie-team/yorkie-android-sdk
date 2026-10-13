@@ -683,7 +683,17 @@ public class Document(
         onLocalChange?.invoke()
         changeID = context.getNextId()
 
-        if (opInfos.isNotEmpty()) {
+        // Gate the publish on the same executedOperations the early return
+        // above already checked, not on opInfos: an identity-preserving
+        // restore/retombstone that revived or re-removed a node under a
+        // removed ancestor executes (changed the CRDT, is queued and sent)
+        // but visibleRangeOf cannot measure a position for it, so its
+        // TreeEditOpInfo list is empty (CrdtTree.kt's restore/retombstone,
+        // TreeEditOperation.executeRestore). The old opInfos-based gate
+        // suppressed this event entirely, even though the change still
+        // reached the peer -- an editor watching only Document.events would
+        // never learn the undo ran. Port yorkie-js-sdk `790422ce` (#1421).
+        if (undoRedoResult.executedOperations.isNotEmpty()) {
             eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
         }
 
@@ -1034,7 +1044,15 @@ public class Document(
                     reconcileHistoryEdits(remoteResult)
                 }
 
-                if (opInfos.isNotEmpty()) {
+                // Gate on executedOperations, not opInfos: a peer's
+                // identity-preserving restore/retombstone that revived or
+                // re-removed a node under a removed ancestor still executed
+                // (reconcileHistoryEdits above already ran for it), but its
+                // TreeEditOpInfo list is empty when visibleRangeOf cannot
+                // measure a position -- the apply must still publish once,
+                // not be silently dropped. Port yorkie-js-sdk `790422ce`
+                // (#1421).
+                if (remoteResult.executedOperations.isNotEmpty()) {
                     val info = change.toChangeInfo(opInfos)
                     eventStream.emit(
                         if (source == OpSource.Local) {
@@ -1119,28 +1137,53 @@ public class Document(
                 }
 
                 is TreeEditOperation -> {
-                    // For tree edits there may be multiple TreeEditOpInfos per operation
-                    // (split/merge decomposes into multiple ranges). Reconcile using the
-                    // first deletion range's from/to and the inserted node count.
-                    opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
-                        .firstOrNull()
-                        ?.let { opInfo ->
-                            // getContentSize() (insertedContentSize + splitSize)
-                            // replaces the prior node-COUNT measurement
-                            // (opInfo.nodes?.size): a split-only edit has no
-                            // `value`, so the node count was always 0 and never
-                            // shifted stacked tree-undo offsets, even though the
-                            // split visibly grows the index. A multi-character
-                            // text insert also now shifts by its padded size
-                            // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
-                            // backlog 009 second half).
+                    if (executedOp.isRestoreOp) {
+                        // Identity-preserving restore/retombstone can revive
+                        // or re-remove several nodes in one operation, each
+                        // at its OWN position; replay every measured range in
+                        // the order executeRestore published it so pending
+                        // tree-undo offsets shift once per node instead of
+                        // once for the whole operation at a delta that only
+                        // ever reflected the first node (port yorkie-js-sdk
+                        // `790422ce`, #1421; fixes backlog 009 — the single
+                        // always-[0,0] placeholder this used to read from
+                        // shifted nothing for a remote restore).
+                        executedOp.getExecutedRanges().forEach { (from, to, insertedSize) ->
                             internalHistory.reconcileTreeEdit(
                                 executedOp.parentCreatedAt,
-                                opInfo.from,
-                                opInfo.to,
-                                executedOp.getContentSize(),
+                                from,
+                                to,
+                                insertedSize,
                             )
                         }
+                    } else {
+                        // For tree edits there may be multiple TreeEditOpInfos per operation
+                        // (split/merge decomposes into multiple ranges). Reconcile using the
+                        // first deletion range's from/to and the inserted node count.
+                        opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
+                            .firstOrNull()
+                            ?.let { opInfo ->
+                                // getContentSize() (insertedContentSize + splitSize)
+                                // replaces the prior node-COUNT measurement
+                                // (opInfo.nodes?.size): a split-only edit has no
+                                // `value`, so the node count was always 0 and never
+                                // shifted stacked tree-undo offsets, even though the
+                                // split visibly grows the index. A multi-character
+                                // text insert also now shifts by its padded size
+                                // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
+                                // backlog 009 second half). Restore/retombstone ops
+                                // use their own per-node executedRanges loop above
+                                // instead (D7; Android has no
+                                // TreeEditOperation.normalizePos, so widening this
+                                // branch to cover them too is out of scope).
+                                internalHistory.reconcileTreeEdit(
+                                    executedOp.parentCreatedAt,
+                                    opInfo.from,
+                                    opInfo.to,
+                                    executedOp.getContentSize(),
+                                )
+                            }
+                    }
                 }
 
                 else -> Unit

@@ -156,16 +156,36 @@ internal data class TreeRestoreSpan(
  * (their GC pairs must be unregistered), [recreated] nodes are brand-new
  * (their size must be added to live), [pendingGcPairs] are pending GC pairs
  * for born-removed remainders split off a removed straddler (must be
- * registered BEFORE unregistering [untombstoned]'s GC pairs), and [diff] is
+ * registered BEFORE unregistering [untombstoned]'s GC pairs), [diff] is
  * the metadata overhead of splitting live straddlers (must be `acc`ed to
- * live). Kotlin shape of the JS 4-tuple `[untombstoned, recreated, pairs,
- * diff]`.
+ * live), and [edits] is one insertion per node that became visible, in the
+ * order it did — each measured right after its node comes back, so applying
+ * them one after another reproduces the result. Kotlin shape of the JS
+ * 5-tuple `[untombstoned, recreated, pairs, diff, edits]` (`edits` added by
+ * `790422ce`, #1421).
  */
 internal data class TreeRestoreResult(
     val untombstoned: List<CrdtTreeNode>,
     val recreated: List<CrdtTreeNode>,
     val pendingGcPairs: List<GCPair<*>>,
     val diff: DataSize,
+    val edits: List<TreeVisibleEdit> = emptyList(),
+)
+
+/**
+ * [CrdtTree.retombstone]'s result: [pairs] are the GC pairs for the newly
+ * tombstoned nodes, [diff] is the metadata overhead of splitting live
+ * straddlers, and [edits] is one deletion per visible node it removed, in
+ * the order it did — each measured right before the removal, so applying
+ * them one after another reproduces the result. Kotlin shape of the JS
+ * 3-tuple `[pairs, diff, edits]` (`edits` added by `790422ce`, #1421); the
+ * first two components keep their original names so `val (pairs, diff) =
+ * tree.retombstone(...)` call sites still compile unchanged.
+ */
+internal data class TreeRetombstoneResult(
+    val pairs: List<GCPair<CrdtTreeNode>>,
+    val diff: DataSize,
+    val edits: List<TreeVisibleEdit> = emptyList(),
 )
 
 @SuppressLint("VisibleForTests")
@@ -2428,7 +2448,11 @@ internal data class CrdtTree(
      *   off a removed straddler (caller registers them BEFORE unregistering
      *   the untombstoned nodes);
      * - `diff`: the metadata overhead of splitting live straddlers (caller
-     *   `acc`s it to live).
+     *   `acc`s it to live);
+     * - `edits`: one insertion per node that became visible, in the order it
+     *   did. Each is measured right after its node comes back, so applying
+     *   them one after another reproduces the result. Port yorkie-js-sdk
+     *   `790422ce` (#1421).
      *
      * A text piece may straddle a span boundary (a concurrent op, or a
      * post-GC recreate, can leave pieces whose boundaries do not line up
@@ -2472,10 +2496,14 @@ internal data class CrdtTree(
      * tombstoned identically (same relayed op, same outcome), so this remains
      * convergent.
      */
-    fun restore(spans: List<TreeRestoreSpan>): TreeRestoreResult {
+    fun restore(spans: List<TreeRestoreSpan>, editedAt: TimeTicket): TreeRestoreResult {
         val untombstoned = mutableListOf<CrdtTreeNode>()
         val recreated = mutableListOf<CrdtTreeNode>()
         var diff = DataSize(data = 0, meta = 0)
+        val edits = mutableListOf<TreeVisibleEdit>()
+        fun revived(node: CrdtTreeNode) {
+            makeInsertionChange(node, editedAt)?.let(edits::add)
+        }
 
         val pairs: List<GCPair<*>>
         try {
@@ -2487,10 +2515,14 @@ internal data class CrdtTree(
                             dissolveMerge(node)
                             node.unremove()
                             untombstoned.add(node)
+                            revived(node)
                         }
                         continue
                     }
-                    recreateFromSpan(span, span.id.offset, span.length)?.let(recreated::add)
+                    recreateFromSpan(span, span.id.offset, span.length)?.let {
+                        recreated.add(it)
+                        revived(it)
+                    }
                     continue
                 }
 
@@ -2514,12 +2546,16 @@ internal data class CrdtTree(
                         if (target.isRemoved) {
                             target.unremove()
                             untombstoned.add(target)
+                            revived(target)
                         }
                         cursor = overlapEnd
                         if (overlapEnd >= pieceEnd) pieceIndex++
                     } else {
                         val gapEnd = minOf(pieceStart, end)
-                        recreateFromSpan(span, cursor, gapEnd - cursor)?.let(recreated::add)
+                        recreateFromSpan(span, cursor, gapEnd - cursor)?.let {
+                            recreated.add(it)
+                            revived(it)
+                        }
                         cursor = gapEnd
                     }
                 }
@@ -2534,7 +2570,7 @@ internal data class CrdtTree(
             // remainders in the buffer for the next operation's drain.
             pairs = drainPendingGcPairs()
         }
-        return TreeRestoreResult(untombstoned, recreated, pairs, diff)
+        return TreeRestoreResult(untombstoned, recreated, pairs, diff, edits)
     }
 
     /**
@@ -2590,14 +2626,14 @@ internal data class CrdtTree(
      * [isolateTextRange] so only the in-span range is re-removed (symmetric
      * with [restore]'s isolate, so undo/redo stay mirror images and
      * segmentation stays convergent). Returns the GC pairs for the newly
-     * tombstoned nodes and the live-split metadata overhead.
+     * tombstoned nodes, the live-split metadata overhead, and one deletion
+     * per visible node it removed, each measured right before the removal so
+     * they apply one after another. Port yorkie-js-sdk `790422ce` (#1421).
      */
-    fun retombstone(
-        spans: List<TreeRestoreSpan>,
-        executedAt: TimeTicket,
-    ): Pair<List<GCPair<CrdtTreeNode>>, DataSize> {
+    fun retombstone(spans: List<TreeRestoreSpan>, executedAt: TimeTicket): TreeRetombstoneResult {
         val pairs = mutableListOf<GCPair<CrdtTreeNode>>()
         var diff = DataSize(data = 0, meta = 0)
+        val edits = mutableListOf<TreeVisibleEdit>()
         for (span in spans) {
             val start = span.id.offset
             // Upstream-inherited quirk (JS Math.max(span.length, 1)): a
@@ -2620,12 +2656,30 @@ internal data class CrdtTree(
                     target = isolated
                     diff = addDataSizes(diff, splitDiff)
                 }
+                // Measure while `target` is still visible -- removing it
+                // first would make visibleRangeOf see it as already gone.
+                val range = visibleRangeOf(target)
                 if (target.remove(executedAt)) {
                     pairs.add(GCPair(this, target))
+                    if (range != null) {
+                        edits.add(
+                            TreeVisibleEdit(
+                                change = TreeChange(
+                                    actorID = executedAt.actorID,
+                                    type = TreeChangeType.Content,
+                                    from = range.from,
+                                    to = range.to,
+                                    fromPath = range.fromPath,
+                                    toPath = range.toPath,
+                                ),
+                                insertedSize = 0,
+                            ),
+                        )
+                    }
                 }
             }
         }
-        return pairs to diff
+        return TreeRetombstoneResult(pairs, diff, edits)
     }
 
     /**

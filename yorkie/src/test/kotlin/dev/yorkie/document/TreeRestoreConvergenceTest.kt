@@ -559,7 +559,7 @@ class TreeRestoreConvergenceTest {
     fun `isolateTextRange is a no-op when the piece already matches the span exactly`() = runTest {
         val (tree, span) = buildDeletedRun("0123456789", 3, 9)
 
-        val result = tree.restore(listOf(span))
+        val result = tree.restore(listOf(span), issueTime())
 
         assertEquals(listOf("345678"), result.untombstoned.map { it.value })
         assertTrue(result.recreated.isEmpty())
@@ -578,7 +578,7 @@ class TreeRestoreConvergenceTest {
         val (tree, span) = buildDeletedRun("0123456789", 3, 9)
         val narrow = span.narrowedTo(5, 4) // [5,9) of the same tombstoned run
 
-        val result = tree.restore(listOf(narrow))
+        val result = tree.restore(listOf(narrow), issueTime())
 
         assertEquals(listOf("5678"), result.untombstoned.map { it.value })
         // CrdtTreeNode.split buffers the RIGHT piece of a removed split -- here
@@ -598,7 +598,7 @@ class TreeRestoreConvergenceTest {
         val (tree, span) = buildDeletedRun("0123456789", 3, 9)
         val narrow = span.narrowedTo(3, 4) // [3,7) of the same tombstoned run
 
-        val result = tree.restore(listOf(narrow))
+        val result = tree.restore(listOf(narrow), issueTime())
 
         assertEquals(listOf("3456"), result.untombstoned.map { it.value })
         assertEquals(
@@ -622,7 +622,7 @@ class TreeRestoreConvergenceTest {
         val (tree, span) = buildDeletedRun("0123456789", 3, 9)
         val narrow = span.narrowedTo(5, 2) // [5,7) strictly inside [3,9)
 
-        val result = tree.restore(listOf(narrow))
+        val result = tree.restore(listOf(narrow), issueTime())
 
         assertEquals(listOf("56"), result.untombstoned.map { it.value })
         assertTrue(result.recreated.isEmpty())
@@ -690,7 +690,7 @@ class TreeRestoreConvergenceTest {
             value = "3456",
         )
 
-        val result = tree.restore(listOf(span))
+        val result = tree.restore(listOf(span), issueTime())
 
         assertTrue(result.untombstoned.isEmpty(), "a live target is skipped, not revived")
         assertTrue(result.recreated.isEmpty())
@@ -722,7 +722,8 @@ class TreeRestoreConvergenceTest {
         // gap where recreateFromSpan trips on the missing value.
         val poisoned = span.copy(id = span.id.copy(offset = 5), length = 10, value = null)
 
-        val thrown = assertFailsWith<YorkieException> { tree.restore(listOf(poisoned)) }
+        val thrown =
+            assertFailsWith<YorkieException> { tree.restore(listOf(poisoned), issueTime()) }
 
         assertEquals(YorkieException.Code.ErrInvalidArgument, thrown.code)
         assertTrue(tree.drainPendingGcPairs().isEmpty(), "the throw path must drain the buffer")

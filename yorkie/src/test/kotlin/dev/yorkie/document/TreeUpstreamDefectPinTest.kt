@@ -30,7 +30,9 @@ import org.junit.Test
  * defect - merge relocating tombstones no longer breaks a concurrent
  * boundary style` below. F4 was flipped the same way by dbff8892 (#1405):
  * see `fixed upstream defect - copied attribute tombstones are now swept`
- * below.
+ * below. F3 was flipped the same way by `790422ce` (#1421): see `fixed
+ * upstream defect - a remote identity restore now re-indexes pending tree
+ * undos` below.
  *
  * - F1 (STYLE/REMOVESTYLE case, FIXED): `CrdtTree.edit`'s merge phase still
  *   relocates the merge source's TOMBSTONED children into the live merge
@@ -46,12 +48,19 @@ import org.junit.Test
  *   by this port (#1404(c)'s scope is style/removeStyle only) and may still
  *   share the underlying relocation defect; not probed by this file.
  *   Upstream issue draft: harness-docs round-1 build report of spec 014.
- * - F3: `TreeEditOperation.executeRestore` emits a `TreeEditOpInfo` with
- *   `from == to == 0` and no nodes for a decoded remote restore, exactly like
- *   JS (`normalizePos() -> [0,0]`, `getContentSize() -> 0`), so
- *   `Document.reconcileHistoryEdits` shifts pending tree undos by 0 although
- *   the restore changed the index space; a later undo of a pure split then
- *   deletes live text. Backlog candidate 009 (`tree-restore-history-reconcile-delta`).
+ * - F3 (FIXED): `TreeEditOperation.executeRestore` used to emit a single
+ *   `TreeEditOpInfo` with `from == to == 0` and no nodes for a decoded remote
+ *   restore, exactly like JS's pre-fix shape (`normalizePos() -> [0,0]`,
+ *   `getContentSize() -> 0`), so `Document.reconcileHistoryEdits` shifted
+ *   pending tree undos by 0 although the restore changed the index space; a
+ *   later undo of a pure split then deleted live text. Port yorkie-js-sdk
+ *   `790422ce` (#1421) now reports one populated `TreeEditOpInfo` per node
+ *   the restore actually measured and records the per-node ranges as
+ *   `executedRanges`, which `Document.reconcileHistoryEdits` replays one at a
+ *   time, so the peer's restore now re-indexes the pending split-undo by the
+ *   restored width; see `fixed upstream defect - a remote identity restore
+ *   now re-indexes pending tree undos` below (was `known defect - ...`).
+ *   Backlog 009 (`tree-restore-history-reconcile-delta`), Resolved.
  * - F2 (UNREMOVE route, STILL OPEN): `CrdtTree.restore` un-tombstones a
  *   target with no removed-ancestor guard, exactly like JS `tree.ts`
  *   `restore`. The node is invisible yet counted live, and a replica that
@@ -133,12 +142,15 @@ class TreeUpstreamDefectPinTest {
             )
         }
 
-    // KNOWN DEFECT (F3, JS parity; backlog 009) — a peer's identity restore
-    // reports an index delta of 0, so d1's pending split-undo keeps offsets
-    // that are stale by the restored width. Undoing the split then deletes
-    // live text ("34") instead of merging the paragraphs back.
+    // F3, NOW FIXED (port yorkie-js-sdk `790422ce`, #1421; backlog 009,
+    // Resolved) — a peer's identity restore used to report an index delta of
+    // 0, so d1's pending split-undo kept offsets that were stale by the
+    // restored width and later destroyed live text ("34"). executeRestore
+    // now measures and publishes the restore's real range (and
+    // Document.reconcileHistoryEdits replays it), so d1's split-undo shifts
+    // correctly and the paragraphs merge back whole.
     @Test
-    fun `known defect - a remote identity restore does not re-index pending tree undos`() =
+    fun `fixed upstream defect - a remote identity restore now re-indexes pending tree undos`() =
         runTest {
             val (d1, d2) = pair { element("doc") { element("p") { text { "0123456789" } } } }
 
@@ -152,20 +164,22 @@ class TreeUpstreamDefectPinTest {
             crossSync(d1, d2)
             assertEquals("<doc><p>234</p><p>56789</p></doc>", d1.xml())
 
-            // d2 undoes: an identity restore revives "01" on both replicas, but
-            // its opInfo carries delta 0, so d1's pending undo is NOT shifted +2.
+            // d2 undoes: an identity restore revives "01" on both replicas, and
+            // its executedRanges now carry the real [from, to, insertedSize],
+            // so d1's pending undo IS shifted +2.
             d2.history.undoAsync().await()
             crossSync(d1, d2)
             assertEquals("<doc><p>01234</p><p>56789</p></doc>", d1.xml())
             assertEquals(d1.xml(), d2.xml())
 
-            // d1 undoes its split. Correct: <doc><p>0123456789</p></doc>.
+            // d1 undoes its split.
             d1.history.undoAsync().await()
             crossSync(d1, d2)
 
-            // Pinned CURRENT outcome (JS parity): the boundary deletion lands two
-            // characters early and destroys "34" on BOTH replicas.
-            assertEquals("<doc><p>012</p><p>56789</p></doc>", d1.xml())
+            // FIXED outcome (yorkie-js-sdk 790422ce parity, executed BOTH
+            // sides, see spec 036 Context): the paragraphs merge back whole
+            // instead of the boundary deletion landing two characters early.
+            assertEquals("<doc><p>0123456789</p></doc>", d1.xml())
             assertEquals(d1.xml(), d2.xml())
         }
 

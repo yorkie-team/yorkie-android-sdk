@@ -69,6 +69,7 @@ class TreeRestoreDissolveMergeTest {
         // merge-undo (or a decoded RestoreMode.Restore op) would.
         val (untombstoned, _, _, _) = tree.restore(
             listOf(TreeRestoreSpan(id = p2.id, nodeType = p2.type, isText = false, length = 0)),
+            issue(),
         )
         assertEquals(listOf(p2), untombstoned)
         // p2 revives as the empty shell it was left as -- the merge moved

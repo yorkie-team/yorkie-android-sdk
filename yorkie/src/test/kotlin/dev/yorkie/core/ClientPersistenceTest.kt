@@ -13,9 +13,14 @@ import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.json.JsonText
+import dev.yorkie.document.json.JsonTree
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
+import dev.yorkie.helper.oneWayDeliver
 import dev.yorkie.presence.Channel
 import dev.yorkie.util.ChangeApplyError
 import dev.yorkie.util.YorkieException
@@ -44,6 +49,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
@@ -2368,6 +2374,139 @@ class ClientPersistenceTest {
 
         assertFalse(client.persistQueues.containsKey(storeKeyFor("detach-prune-doc")))
 
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    // --- persistence pins for an executed change with an empty opInfo ----
+    // (790422ce, #1421): Document.onLocalChange fires from the pending-queue
+    // signal alone (localChanges += change; onLocalChange?.invoke()), never
+    // from whether the change produced a visible OperationInfo -- so every
+    // one of these three still appends a log entry, exactly like any other
+    // local change. RED not constructible: onLocalChange already queues
+    // every change this way (spec 036 probe P9 executed this ahead of the
+    // build round); these are regression pins, not new production hunks.
+
+    @Test
+    fun `T35 a silent presence clear still appends a log entry`() = runTest {
+        val store = MemoryDocStore()
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val docKey = "presence-clear-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        document.updateAsync { _, presence -> presence.put(mapOf("cursor" to "1")) }.await()
+        val baseline = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+
+        val events = mutableListOf<Document.Event>()
+        val job = launch(UnconfinedTestDispatcher()) { document.events.collect(events::add) }
+        document.updateAsync { _, presence -> presence.clear() }.await()
+        withContext(Dispatchers.Default) { delay(200) }
+        job.cancel()
+
+        val afterClear = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size > baseline.changes.size }
+        }
+        assertEquals(
+            baseline.changes.size + 1,
+            afterClear.changes.size,
+            "the silent clear still appends its own log entry",
+        )
+        assertTrue(
+            events.isEmpty(),
+            "a presence clear with no watching peer never becomes ready to publish " +
+                "(Document.presenceEventReadyToBePublished never matches the actor's own " +
+                "now-absent entry), so no public Document.Event fires for it either",
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `T36 a zero-length text style still appends a log entry`() = runTest {
+        val store = MemoryDocStore()
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val docKey = "zero-length-style-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        document.updateAsync { root, _ -> root.setNewText("txt").edit(0, 0, "hello") }.await()
+        val baseline = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+
+        document.updateAsync { root, _ ->
+            val styled = root.getAs<JsonText>("txt").style(0, 0, mapOf("bold" to "true"))
+            assertTrue(styled, "a zero-length range is not an invalid one -- the style still runs")
+        }.await()
+
+        val afterStyle = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size > baseline.changes.size }
+        }
+        assertEquals(
+            baseline.changes.size + 1,
+            afterStyle.changes.size,
+            "the log still appends this change even though its StyleOpInfo list is empty",
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `T37 a tree undo under a peer's removed ancestor still appends a log entry`() = runTest {
+        val store = MemoryDocStore()
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val docKey = "tree-undo-removed-ancestor-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        document.updateAsync { root, _ ->
+            root.setNewTree("t", element("root") { element("p") { text { "ab" } } })
+        }.await()
+        val peer = Document("peer-$docKey")
+        oneWayDeliver(document, peer)
+        assertEquals(
+            "<root><p>ab</p></root>",
+            peer.getRoot().getAs<JsonTree>("t").toXml(),
+            "the peer starts from the same tree",
+        )
+
+        // The local undo entry this test exercises: delete just the text,
+        // not its "<p>" parent.
+        document.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(1, 3) }.await()
+        val baseline = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size >= 2 }
+        }
+        assertEquals(2, baseline.changes.size)
+
+        // The peer concurrently removes the whole paragraph -- the ancestor
+        // of the text node document is about to undo -- and delivers it as
+        // a remote change.
+        peer.updateAsync { root, _ -> root.getAs<JsonTree>("t").editByPath(listOf(0), listOf(1)) }
+            .await()
+        oneWayDeliver(peer, document)
+
+        document.history.undoAsync().await()
+
+        val afterUndo = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size > baseline.changes.size }
+        }
+        assertEquals(
+            baseline.changes.size + 1,
+            afterUndo.changes.size,
+            "the log still appends this undo even though its published opinfo is empty",
+        )
+
+        client.detachDocument(document).await()
         client.deactivateAsync().await()
         client.close()
     }

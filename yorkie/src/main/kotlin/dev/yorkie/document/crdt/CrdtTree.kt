@@ -266,8 +266,32 @@ internal data class CrdtTree(
     private fun rebuildMergeState() {
         indexTree.traverseAll { node, _ ->
             val mergedFromID = node.mergedFrom ?: return@traverseAll
-            val source = findFloorNode(mergedFromID) ?: return@traverseAll
             val target = node.parent ?: return@traverseAll
+            // findMergeNode, not findFloorNode: mergedFrom is client-supplied
+            // on an element payload (Set/Add/ArraySet), so the source it
+            // names has to be the node it names exactly, and an element.
+            // Port JS SDK tree.ts rebuildMergeState (d3ffe946, #1406;
+            // yorkie#2033).
+            val source = findMergeNode(mergedFromID) ?: return@traverseAll
+            // A merge moves children under an element parent, so a child
+            // sitting under a text node cannot be one a merge moved -- not
+            // constructible through the public API (CrdtTreeNode.insertAt/
+            // prepend on a text node throws), ported anyway for parity with a
+            // crafted/corrupt snapshot this reader does not itself validate.
+            if (target.isText) return@traverseAll
+            // A merge only ever names a source the merge itself removed: the
+            // boundary element is tombstoned before its children are moved,
+            // so a live element is never a merge source. Without this, a
+            // crafted mergedFrom plants a forwarding pointer on a live,
+            // unrelated element, arming the §1.1 redirect and the §6.2
+            // cascade to fire on that element's own live children the moment
+            // a later, innocent edit removes it.
+            if (source.removedAt == null) return@traverseAll
+            // Derived from the source's tombstone ticket unconditionally
+            // (unlike JS's back-compat guard for pre-mergedAt snapshots,
+            // which does not apply here: mergedFrom/mergedAt landed together
+            // in spec 035 Commit 1).
+            node.mergedAt = source.removedAt
             if (source.mergedInto == null) {
                 source.mergedInto = target.id
             }
@@ -909,6 +933,14 @@ internal data class CrdtTree(
         // can now also carry a split's copied attribute-tombstone pairs
         // (GCPair<RhtNode>, pushed by CrdtTreeNode.split via pushPendingGcPair).
         val gcPairs = mutableListOf<GCPair<*>>()
+        // Attribute tombstones ridden in on the inserted content
+        // (CrdtTreeNode.gcPairs, captured in the insert phase below). Held
+        // aside and appended to gcPairs only after spansComplete is decided
+        // (below): that flag reads gcPairs.size as "did anything beyond the
+        // plain deletes produce garbage", and these say nothing about
+        // whether the captured spans describe the deletion. Port JS SDK
+        // tree.ts (d3ffe946, #1406; yorkie#2033; spec 035 unit 3C).
+        val contentAttrPairs = mutableListOf<GCPair<*>>()
         // Identity-preserving undo: capture one span per node THIS edit
         // transitions visible -> tombstoned. node.remove() returning true is
         // exactly that transition, so pre-tombstoned nodes and LWW
@@ -973,7 +1005,18 @@ internal data class CrdtTree(
             // runtime and snapshot agree: a source with no moved child of
             // its own (an intermediate that only relayed another source's
             // children) is left unset on both paths.
-            node.mergedFrom?.let(::findFloorNode)?.let { src -> src.mergedInto = dest.id }
+            //
+            // findMergeNode, not findFloorNode: mergedFrom is client-supplied
+            // on an element payload and persists on the node inside the live
+            // document, so the source it names has to be the node it names
+            // exactly, and an element. The source must also already be a
+            // tombstone -- the same requirement rebuildMergeState enforces --
+            // so a loaded snapshot does not disagree with the replica that
+            // applied this op. Port JS SDK tree.ts (d3ffe946, #1406;
+            // yorkie#2033).
+            node.mergedFrom?.let(::findMergeNode)?.takeIf { it.removedAt != null }?.let { src ->
+                src.mergedInto = dest.id
+            }
         }
 
         // 03-1. Propagate deletes to children moved by prior merges. When a
@@ -1008,7 +1051,12 @@ internal data class CrdtTree(
                     return@forEach
                 }
             }
-            val mergeTarget = findFloorNode(mergedInto) ?: return@forEach
+            // findMergeNode, not findFloorNode: this loop tombstones the
+            // destination's children, so the destination has to be the node
+            // mergedInto names exactly, and an element -- a floor lookup
+            // landing on a neighbour would reach live nodes no merge ever
+            // moved. Port JS SDK tree.ts (d3ffe946, #1406; yorkie#2033).
+            val mergeTarget = findMergeNode(mergedInto) ?: return@forEach
             mergeTarget.allChildren
                 .filter { it.mergedFrom == node.id }
                 .forEach { child ->
@@ -1178,6 +1226,24 @@ internal data class CrdtTree(
                         diff = addDataSizes(diff, node.dataSize)
                     }
                     registerNode(node)
+                    // Content can arrive carrying attribute tombstones: the
+                    // undo copy-reinsert path legitimately produces them (a
+                    // deep copy of nodes a real removeStyle tombstoned, so
+                    // the reinserted node keeps rejecting the stale styles
+                    // the original rejects), and a crafted payload can
+                    // invent them since clearTombstones only clears the
+                    // node's own removedAt, not its attribute table. Either
+                    // way they are garbage this insert created in this tree
+                    // -- no removal path ran for them here, so without this
+                    // nothing would ever collect them. dataSize skips
+                    // removed attributes, so these bytes never entered live
+                    // and gcOnlySize (inside CrdtTreeNode.gcPairs) sends
+                    // them straight to docSize.gc, which purge gives back --
+                    // the same routing a split, a snapshot load and a
+                    // Set/Add element payload already use. Port JS SDK
+                    // tree.ts (d3ffe946, #1406; yorkie#2033; spec 035 unit
+                    // 3C).
+                    contentAttrPairs.addAll(node.gcPairs)
                     // Capture this inserted node's identity span for
                     // identity-preserving insert undo/redo.
                     insertedSpans.add(captureRestoreSpan(node))
@@ -1232,6 +1298,9 @@ internal data class CrdtTree(
         // narrows an unrelated optimization's applicability, not a behaviour
         // regression.
         val spansComplete = toBeMergedNodes.isEmpty() && gcPairs.size == deletePairCount
+        // Appended only now that spansComplete is decided -- see
+        // contentAttrPairs' own declaration above.
+        gcPairs.addAll(contentAttrPairs)
 
         // Count merged boundaries before their children were moved (above), so
         // the undo can regenerate them via split instead of re-inserting the
@@ -1616,7 +1685,14 @@ internal data class CrdtTree(
                     second = diff,
                 )
             }
-            val mergeTarget = findFloorNode(mergedIntoID)
+            // findMergeNode, not findFloorNode: a text node is never a merge
+            // destination, and neither is a node the pointer merely floors
+            // onto. mergedInto is derived from a client-supplied mergedFrom,
+            // so handing a crafted one back as the insertion parent would
+            // fail every later edit that resolves through this tombstone, on
+            // every replica. Port JS SDK tree.ts (d3ffe946, #1406;
+            // yorkie#2033).
+            val mergeTarget = findMergeNode(mergedIntoID)
             if (mergeTarget != null && !mergeTarget.isRemoved) {
                 val allCh = mergeTarget.allChildren
                 val firstChild = allCh.firstOrNull { child ->
@@ -1838,13 +1914,28 @@ internal data class CrdtTree(
         while (true) {
             if (!target.isRemoved) break
             val mergedInto = target.mergedInto ?: break
-            val next = findFloorNode(mergedInto) ?: break
+            // findMergeNode, not findFloorNode: mergedInto is derived from a
+            // mergedFrom an element payload may carry, so a crafted one can
+            // name a text node or a floor-only neighbor, and this result
+            // flows straight into moveChild. Port JS SDK tree.ts (d3ffe946,
+            // #1406; yorkie#2033).
+            val next = findMergeNode(mergedInto) ?: break
             if (next in seen) break
             seen.add(next)
             target = next
         }
         return target
     }
+
+    /**
+     * Test-only accessor for [resolveMergeTarget]: a forged `mergedInto`
+     * naming a text node is only reachable from a hand-built fixture (a
+     * local merge never stamps one), so the test needs direct access to the
+     * private method under test. Mirrors [leftAnchorIDForTest].
+     */
+    @VisibleForTesting
+    internal fun resolveMergeTargetForTest(node: CrdtTreeNode): CrdtTreeNode =
+        resolveMergeTarget(node)
 
     /**
      * Builds the interloper judgment for a style/removeStyle range whose
@@ -2281,6 +2372,43 @@ internal data class CrdtTree(
     }
 
     /**
+     * Erases the merge lineage [src] — about to be revived by [restore] —
+     * leaves behind: the forwarding pointer on the source and the
+     * [CrdtTreeNode.mergedFrom]/[CrdtTreeNode.mergedAt] stamps on the
+     * children that merge moved into the destination.
+     *
+     * [CrdtTreeNode.mergedInto] is derivable only for a source that is
+     * already a tombstone — [rebuildMergeState] and the merge in [edit] both
+     * require it — so a revived source that kept either half of the lineage
+     * makes the replica running the undo disagree with one loading a
+     * snapshot: keeping [CrdtTreeNode.mergedInto] gives the undoing replica a
+     * pointer the snapshot no longer rebuilds, and keeping the children's
+     * [CrdtTreeNode.mergedFrom] lets the snapshot rebuild one the moment a
+     * redo ([retombstone]) tombstones the source again. Clearing both leaves
+     * nothing either path can derive, in either direction.
+     *
+     * The destination is resolved through [findMergeNode] for the same
+     * reason the §6.2 cascade does: [CrdtTreeNode.mergedInto] is derived from
+     * a [CrdtTreeNode.mergedFrom] an element payload may carry, so only an
+     * exact element match names a node the pointer really meant. The
+     * source's own pointer is dropped regardless of whether that lookup
+     * succeeds — it is the half that is never persisted. Port JS SDK
+     * `tree.ts` `CRDTTree.dissolveMerge` (d3ffe946, #1406; yorkie#2033).
+     */
+    private fun dissolveMerge(src: CrdtTreeNode) {
+        val mergedInto = src.mergedInto ?: return
+        val dest = findMergeNode(mergedInto)
+        src.mergedInto = null
+        dest ?: return
+        dest.allChildren.forEach { child ->
+            if (child.mergedFrom == src.id) {
+                child.mergedFrom = null
+                child.mergedAt = null
+            }
+        }
+    }
+
+    /**
      * Re-establishes the nodes described by [spans] under their ORIGINAL
      * identities (identity-preserving Tree undo): live -> skip (idempotent),
      * tombstoned -> [CrdtTreeNode.unremove] in place, purged ->
@@ -2352,6 +2480,7 @@ internal data class CrdtTree(
                     val node = findFloorNode(span.id)
                     if (node != null && node.id == span.id) {
                         if (node.isRemoved) {
+                            dissolveMerge(node)
                             node.unremove()
                             untombstoned.add(node)
                         }
@@ -3210,10 +3339,20 @@ internal data class CrdtTreeNode(
      * so the parent's cached active-children list is refreshed explicitly
      * here via the CURRENT [parent] reference (never a stale one: a prior
      * [moveChild] already updated [parent] before this can run).
+     *
+     * [mergedInto] goes with the tombstone: both writers of it (the merge in
+     * [CrdtTree.edit] and [CrdtTree.rebuildMergeState]) only ever set it on a
+     * source that is already removed, so a live node holding one is a
+     * pointer a snapshot-loading replica would not rebuild. [CrdtTree.restore]
+     * drops the matching [mergedFrom] stamps on the children the merge
+     * moved via [CrdtTree.dissolveMerge], so nothing is left for a later
+     * re-remove to derive it from either. Port JS SDK `tree.ts`
+     * `CRDTTreeNode.unremove` (d3ffe946, #1406; yorkie#2033).
      */
     fun unremove() {
         if (removedAt == null) return
         removedAt = null
+        mergedInto = null
         updateAncestorSize(paddedSize())
         parent?.childNodes?.onUnremoved(this)
     }

@@ -164,13 +164,16 @@ class CrdtTreeSplitLinkGuardTest {
     }
 
     /**
-     * `dropSplitLinks` and the new (spec 035 unit 1E) `dropMergeStamps` are
-     * deliberately separate functions (D10): the edit-content decode path
-     * calls both, but the Set/Add/ArraySet element path
+     * `dropSplitLinks` and the merge-lineage clearing folded into
+     * `dropEngineOnlyLinks` (replacing the Commit-1 `dropMergeStamps`, spec
+     * 035 unit 3C) are deliberately separate (D10): the edit-content decode
+     * path calls `dropEngineOnlyLinks` (split links + merge lineage) then
+     * `clearTombstones`, but the Set/Add/ArraySet element path
      * (`dropSplitLinksInElement`) calls only `dropSplitLinks`, because a
      * reverse-of-Remove copy legitimately carries real merge lineage that
      * must survive. This pins the separation directly: a node carrying both
-     * kinds of link loses only the split-sibling ones.
+     * kinds of link loses only the split-sibling ones when `dropSplitLinks`
+     * runs alone.
      */
     @Test
     fun `dropSplitLinks clears the split links but keeps merge stamps`() {

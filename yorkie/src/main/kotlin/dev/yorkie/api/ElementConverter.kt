@@ -48,8 +48,8 @@ import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.RhtNode
 import dev.yorkie.document.crdt.TextValue
-import dev.yorkie.document.crdt.dropMergeStamps
-import dev.yorkie.document.crdt.dropSplitLinks
+import dev.yorkie.document.crdt.clearTombstones
+import dev.yorkie.document.crdt.dropEngineOnlyLinks
 import dev.yorkie.document.crdt.dropSplitLinksInElement
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
@@ -508,12 +508,21 @@ internal fun List<CrdtTreeNode>.toPBTreeNodesWhenEdit(): List<PBTreeNodes> {
  * instead, as every other malformed field here does.
  *
  * Operation content is fully client-controlled and always freshly created by
- * the editing client, so it can never be a split product nor a merge
- * product: strip both the split-sibling links ([dropSplitLinks]) and the
- * merge lineage ([dropMergeStamps]) the wire format carries anyway. No
- * producer sets either on edit content, so conforming traffic decodes to the
- * same tree as before. Port JS SDK `converter.ts` `fromTreeNodesWhenEdit`
- * (b69169c0, #1404; spec 035 unit 1E).
+ * the editing client, so it can never be a split product, carry a merge
+ * lineage, or arrive already tombstoned -- [dev.yorkie.document.crdt.CrdtTree.edit]
+ * stamps the lineage on the content it inserts from the merge parent it
+ * resolves locally, and tombstones it itself when the parent it lands in is
+ * removed. Strip the engine-only links ([dropEngineOnlyLinks]) and the
+ * tombstones ([clearTombstones]) the wire format carries anyway: the tree
+ * follows the links as trusted structural pointers once `edit` registers
+ * these nodes, and a node born tombstoned under a live parent would be
+ * counted as live content that no GC pair would ever collect. The ATTRIBUTE
+ * tombstones this reader decodes verbatim are left alone -- the undo
+ * copy-reinsert path produces genuine ones -- and `edit` books them into gc
+ * instead (`contentAttrPairs`, [dev.yorkie.document.crdt.CrdtTree.edit]).
+ * REPLACES the Commit-1 `dropSplitLinks()` + `dropMergeStamps()` pair (spec
+ * 035 D10). Port JS SDK `converter.ts` `fromTreeNodesWhenEdit` (d3ffe946,
+ * #1406; yorkie#2033; spec 035 unit 3C).
  */
 internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
     if (isEmpty()) {
@@ -526,8 +535,8 @@ internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
                 "tree edit content has an entry with no node",
             )
         root.apply {
-            dropSplitLinks()
-            dropMergeStamps()
+            dropEngineOnlyLinks()
+            clearTombstones()
         }
     }
 }

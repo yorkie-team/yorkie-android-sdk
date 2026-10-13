@@ -97,7 +97,7 @@ class SplitLinkDecodeTest {
         assertFalse(hasAnySplitLink(decodedTree.root))
     }
 
-    // RED-then-GREEN target: `toCrdtTreeNodesWhenEdit`'s `dropSplitLinks()`
+    // RED-then-GREEN target: `toCrdtTreeNodesWhenEdit`'s `dropEngineOnlyLinks()`
     // call. Reverting it back to the bare `toCrdtTreeRootNode()` mapping
     // leaves the decoded content holding whatever links the wire bytes
     // carried.
@@ -164,9 +164,9 @@ class SplitLinkDecodeTest {
         assertEquals("invalid tree node depth: 2", exception.errorMessage)
     }
 
-    // RED-then-GREEN target: `toCrdtTreeNodesWhenEdit`'s new `dropMergeStamps()`
+    // RED-then-GREEN target: `toCrdtTreeNodesWhenEdit`'s new `clearTombstones()`
     // call (spec 035 D10, unit 1E). Reverting it back to a bare
-    // `dropSplitLinks()` call leaves a forged merge stamp on the decoded
+    // `dropEngineOnlyLinks()` call leaves a forged merge stamp on the decoded
     // node -- the exact shape a peer could use to steer `declaredBoundaries`
     // off a freshly inserted node.
     @Test

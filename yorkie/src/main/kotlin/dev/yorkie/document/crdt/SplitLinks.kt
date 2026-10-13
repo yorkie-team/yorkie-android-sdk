@@ -1,5 +1,6 @@
 package dev.yorkie.document.crdt
 
+import dev.yorkie.util.traverseAll
 import dev.yorkie.util.traverseAllPreorder
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -53,28 +54,74 @@ internal fun CrdtTreeNode.dropSplitLinks() {
 }
 
 /**
- * Clears the merge lineage ([CrdtTreeNode.mergedFrom]/[CrdtTreeNode.mergedAt]/
- * [CrdtTreeNode.mergedInto]) on this node and every one of its descendants
- * (tombstones included).
+ * Clears the engine-only links on this node and every one of its descendants
+ * (tombstones included): the split-sibling chain
+ * ([CrdtTreeNode.insPrevID]/[CrdtTreeNode.insNextID]) and the merge lineage
+ * ([CrdtTreeNode.mergedFrom]/[CrdtTreeNode.mergedAt]/[CrdtTreeNode.mergedInto]).
  *
- * Unlike [dropSplitLinks] this is NOT safe to call on an arbitrary tree: a
- * tree that really was merged carries the lineage as state, and dropping it
- * would rewrite the document. It is for a *tree edit's* content, which the
- * editing client always creates fresh for that one operation, so none of its
- * nodes can be a merge product. A peer is free to stamp them anyway, and
- * [CrdtTree.declaredBoundaries] then follows a stamped [CrdtTreeNode.mergedFrom]
- * off the freshly inserted node into an element the position never named.
- * Clearing them costs nothing on conforming traffic -- no producer sets them
- * on edit content, here or in yorkie -- so no replica sees a different tree
- * for a change a client could legitimately have written. Port JS SDK
- * `tree.ts` `CRDTTreeNode.dropMergeStamps` (b69169c0, #1404; spec 035 unit 1E).
+ * The operation-content counterpart of [dropSplitLinks]: it REPLACES the
+ * Commit-1 `dropSplitLinks()` + `dropMergeStamps()` pair at the edit-content
+ * decode call site (spec 035 D10). `mergedFrom`/`mergedAt` name the parent a
+ * node was moved out of and only a merge may stamp them ([CrdtTree.edit]
+ * restamps them on the content it inserts, from the merge parent it resolves
+ * locally), so content arriving on a tree edit -- always freshly created by
+ * the editing client, never a copy of live state -- can never legitimately
+ * carry them, while [CrdtTree.declaredBoundaries] and the §6.2 delete
+ * cascade read them as trusted structural pointers. `mergedInto` goes with
+ * them: the decoder derives it from `mergedFrom`, so leaving it would keep a
+ * source pointing at a destination no field records any more.
+ *
+ * Unlike this function, [dropSplitLinks] alone IS safe to call on an
+ * arbitrary tree, which is why the Set/Add/ArraySet element path
+ * ([dropSplitLinksInElement]) keeps calling it instead of this one: a
+ * reverse-of-Remove copy legitimately carries real merge lineage that must
+ * survive, and only operation content can never legitimately hold either
+ * kind of link. Port JS SDK `tree.ts` `CRDTTreeNode.dropEngineOnlyLinks`
+ * (d3ffe946, #1406; yorkie#2033; spec 035 unit 3C).
  */
-internal fun CrdtTreeNode.dropMergeStamps() {
+internal fun CrdtTreeNode.dropEngineOnlyLinks() {
     traverseAllPreorder(this) { node, _ ->
+        node.insPrevID = null
+        node.insNextID = null
         node.mergedFrom = null
         node.mergedAt = null
         node.mergedInto = null
     }
+}
+
+/**
+ * Clears the tombstone ([CrdtTreeNode.removedAt]) on this node and every one
+ * of its descendants, restoring the sizes a decoded tombstone suppressed.
+ *
+ * Like the engine-only links, `removedAt` is carried by the wire format on
+ * every tree node yet operation content can never legitimately hold it: a
+ * tree edit's content is freshly created by the editing client, so a node
+ * arriving tombstoned is a crafted one. Left in place, [CrdtTree.edit] would
+ * count it into the live data size and register no GC pair for it under a
+ * live parent, while [CrdtTreeNode.isRemoved] hides it from every later edit.
+ *
+ * Cleared via [CrdtTreeNode.unremove] so each node's padded size is given
+ * back to its ancestors. [traverseAll] is post-order, so a child is revived
+ * before its parent, and the parent's own size already includes the child
+ * by the time the parent hands it further up.
+ *
+ * A node's attribute table carries tombstones of its own, and those are
+ * deliberately NOT cleared here. Unlike `removedAt` on the node, a removed
+ * RHT entry on content can be genuine: the undo copy-reinsert path re-sends
+ * a deep copy of nodes a real `removeStyle` tombstoned, and it has to, or
+ * the reinserted node would stop rejecting the stale styles the original
+ * rejects. Stripping them on decode would also make this replica disagree
+ * with every other producer of the same bytes -- an older yorkie-android-sdk,
+ * the JS SDK, the Go SDK and the snapshot the server rebuilds from this very
+ * operation -- which is divergence, not hardening. A crafted one is instead
+ * made harmless the way every other decode path already makes it harmless:
+ * [CrdtTree.edit] books it into gc through [CrdtTreeNode.gcPairs], the same
+ * routing the snapshot and the Set/Add element payload take through
+ * [CrdtTree.gcPairs]. Port JS SDK `tree.ts` `CRDTTreeNode.clearTombstones`
+ * (d3ffe946, #1406; yorkie#2033; spec 035 unit 3C).
+ */
+internal fun CrdtTreeNode.clearTombstones() {
+    traverseAll(this) { node, _ -> node.unremove() }
 }
 
 /**

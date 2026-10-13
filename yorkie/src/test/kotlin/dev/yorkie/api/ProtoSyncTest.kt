@@ -27,14 +27,14 @@ import kotlin.test.assertTrue
 import org.junit.Test
 
 /**
- * Pins AC7/D4 (spec 035 unit 3A, JS SDK `d3ffe946` #1406): the dormant proto
+ * Pins (JS SDK `d3ffe946` #1406): the dormant proto
  * fields this commit's hunks add -- `ChangePack.capabilities`, `restore_mode`
  * on `Set`/`Add`/`ArraySet`, and `revived_at` on every `JSONElement` body --
  * decode to the SAME domain object a payload without them produces, and
  * re-encoding a decoded domain object never writes any of them back ("the
  * new fields are dormant; no converter reads or writes them yet" -- JS
- * commit body). A forward-compat pin, not a RED-then-GREEN port: "RED by
- * construction" (unit 3A) -- nothing decodes these fields before this unit
+ * commit body). A forward-compat pin, not a red-then-green port: red by
+ * construction -- nothing decodes these fields before this commit
  * adds them, so there is no pre-port behaviour to revert and re-trip; merely
  * compiling this file against the regenerated bindings is the proof the
  * fields exist with the Go-synced numbers and types.
@@ -158,7 +158,7 @@ class ProtoSyncTest {
         assertEquals(RestoreMode.RESTORE_MODE_UNSPECIFIED, reencoded.arraySet.restoreMode)
     }
 
-    // --- JSONElement.*.revived_at (one per body, per AC7's "every JSONElement body") ---
+    // --- JSONElement.*.revived_at (one per body, covering every JSONElement body) ---
 
     @Test
     fun `a JSONObject carrying revived_at decodes to the same CrdtObject as one without`() {

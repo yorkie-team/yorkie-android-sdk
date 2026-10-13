@@ -10,14 +10,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented pin for #1401 (`bed81143`, spec 034 Commit 1, AC7): an explicit [Client.syncAsync]
+ * Instrumented pin for #1401 (`bed81143`): an explicit [Client.syncAsync]
  * in [Client.SyncMode.RealtimePushOnly] must drop a pulled SNAPSHOT -- not just pulled changes --
  * while still acking the push (the headline this port exists for: the pre-#1401 guard only
  * tested `hasChanges`, so a snapshot-only pushPull response still replaced the root).
  *
- * Android has no JS-equivalent `Event.Snapshot` to assert against directly (recorded,
- * spec 034 Context scenario 1) -- the root content and `checkPoint.serverSeq` are the
- * observable proxy instead: the dropped snapshot's keys must never reach [c1]'s document, and
+ * Android has no JS-equivalent `Event.Snapshot` to assert against directly -- the root
+ * content and `checkPoint.serverSeq` are the observable proxy instead: the dropped snapshot's keys must never reach [c1]'s document, and
  * the server seq must stay put until realtime sync resumes and pulls it for real.
  */
 @RunWith(AndroidJUnit4::class)

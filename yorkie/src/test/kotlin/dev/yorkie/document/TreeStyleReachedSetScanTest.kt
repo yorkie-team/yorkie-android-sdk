@@ -20,11 +20,11 @@ import org.junit.Test
  * #2070) as JVM in-process cross-sync tests: every (structural edit, style
  * range) pair over a fixed base tree, replayed in both delivery orders,
  * closed on the rendered XML (and the size ledger where JS closes it too).
- * `TreeStyleReachedSetTest` (units 1C/1D) ports the NAMED/complex-suite
+ * `TreeStyleReachedSetTest` ports the NAMED/complex-suite
  * cases from the same JS file; that class's own KDoc defers the six scans
- * to this unit (1F) explicitly.
+ * to this class explicitly.
  *
- * Harness: the SAME seed-then-replay-both-orders mechanism
+ * Test harness: the SAME seed-then-replay-both-orders mechanism
  * `TreeStyleReachedSetTest` uses (there: `newDoc`/`deliver`/`seedInto`/
  * `replayBothOrders`), reproduced here with one change forced by volume --
  * JS's own `scanDivergences` builds the seed `ChangePack` ONCE per scan
@@ -296,7 +296,7 @@ class TreeStyleReachedSetScanTest {
 
     // Every merge against every style range, over the flat 12-wide base:
     // closed on the rendered document; attributes on TOMBSTONES are bounded
-    // as a ratchet, not pinned exactly (JS `isAtMost`) -- ab/ba still have
+    // as an upper bound, not pinned exactly (JS `isAtMost`) -- ab/ba still have
     // to agree, just not necessarily never disagree, since a style landing
     // only on a tombstone shows up in the size ledger, not the XML.
     // Measured: ~2.5-3.2s run alone, up to ~26s run inside the full suite
@@ -325,7 +325,7 @@ class TreeStyleReachedSetScanTest {
 
     // Every level-1 AND level-2 split against every style range, over the
     // nested 22-wide base: 241 pairs still diverge on the rendered document
-    // (the open yorkie#2070 §9.5 shapes) -- pinned exactly (D19/D12), not a
+    // (the open yorkie#2070 §9.5 shapes) -- pinned exactly, not a
     // cap, so any movement in either direction has to be read against
     // yorkie#2070's own counts before this number changes.
     // Measured: ~4.2-4.4s run alone, up to ~39.7s run inside the full suite

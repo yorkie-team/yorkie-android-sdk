@@ -10,7 +10,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_boundary_anchor_test.ts` (JS SDK `ec7558e9`, #1394) as JVM unit
- * tests (spec 033 AC4).
+ * tests.
  *
  * [CrdtTree.leftAnchorID] and [CrdtTree.emptyRunReachesActor] are both
  * private, so this file goes through the `*ForTest` accessors added next to
@@ -74,9 +74,8 @@ class CrdtTreeBoundaryAnchorTest {
         // already reads `allChildren`, unfiltered; iOS-confirmed
         // 915dd77fe6, "emptyRunReachesActor already read the unfiltered
         // children, so its regression-lock test is ported with no source
-        // change"). See the build report's RED-then-GREEN section for the
-        // Commit-1 `allChildren`-to-`children` revert that demonstrates this
-        // assertion actually depends on the guard.
+        // change"). Reverting the earlier `allChildren`-to-`children` change
+        // demonstrates this assertion actually depends on the guard.
         removedChild.remove(ticketOf(8, actorA))
         assertFalse(tree.emptyRunReachesActorForTest(sibling, actorA, VersionVector()))
     }

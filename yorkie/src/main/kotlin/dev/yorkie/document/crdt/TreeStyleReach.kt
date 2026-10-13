@@ -36,7 +36,7 @@ internal class DeclaredLineage(
 )
 
 /**
- * An identity-keyed, not structurally-keyed, mutable set of tree nodes (D6):
+ * An identity-keyed, not structurally-keyed, mutable set of tree nodes:
  * [CrdtTreeNode] is a data class whose generated `equals`/`hashCode`
  * recurses over `childNodes`/attributes, which would turn every membership
  * check below into a deep comparison on a hot path — the same reason
@@ -116,7 +116,7 @@ internal fun declaredLineageOf(
     // node being asked about -- cannot be precomputed, since it starts from
     // that node. Memoize it instead: the answer for a node is the answer
     // for every node whose chain runs through it, so one walk settles the
-    // whole prefix it passed. Identity-keyed (D6): same reason as above.
+    // whole prefix it passed. Identity-keyed: same reason as above.
     val reversed = IdentityHashMap<CrdtTreeNode, Boolean>()
     fun reaches(node: CrdtTreeNode): Boolean {
         reversed[node]?.let { return it }

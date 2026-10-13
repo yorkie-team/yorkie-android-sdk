@@ -140,7 +140,7 @@ public class JsonTree internal constructor(
      * between [fromPath] and [toPath].
      *
      * @throws IllegalArgumentException if [fromPath] is ordered after
-     * [toPath] (D11; JS SDK throws `YorkieError` for the same backwards
+     * [toPath] (JS SDK throws `YorkieError` for the same backwards
      * range instead).
      * @throws YorkieException with ErrInvalidArgument if [fromPath] or
      *   [toPath] resolves to an index inside a UTF-16 surrogate pair.
@@ -156,7 +156,7 @@ public class JsonTree internal constructor(
         require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
             "path should not be empty"
         }
-        // Same contract as the index form (D11): a range given backwards is
+        // Same contract as the index form: a range given backwards is
         // a caller error, not an empty range. Mirrors JS SDK
         // `document/json/tree.ts` `styleByPath` (b69169c0, #1404) -- `require`
         // (IllegalArgumentException), not YorkieException, to match every
@@ -236,7 +236,7 @@ public class JsonTree internal constructor(
      * in the path range between [fromPath] and [toPath].
      *
      * @throws IllegalArgumentException if [fromPath] is ordered after
-     * [toPath] (D11; JS SDK throws `YorkieError` for the same backwards
+     * [toPath] (JS SDK throws `YorkieError` for the same backwards
      * range instead).
      * @throws YorkieException with ErrInvalidArgument if [fromPath] or
      *   [toPath] resolves to an index inside a UTF-16 surrogate pair.
@@ -252,7 +252,7 @@ public class JsonTree internal constructor(
         require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
             "path should not be empty"
         }
-        // Same contract as the index form (D11): a range given backwards is
+        // Same contract as the index form: a range given backwards is
         // a caller error, not an empty range. Mirrors JS SDK
         // `document/json/tree.ts` `removeStyleByPath` (b69169c0, #1404).
         require(comparePath(fromPath, toPath) <= 0) {

@@ -18,15 +18,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented carry-in for spec 033's cross-judge N1 (Commit 7 of spec 034,
- * test-only): 033's own instrumented headline
+ * Instrumented pin (test-only): the earlier instrumented test
  * ([TreeSplitRemoveStyleServerRootTest]) covered split-vs-removeStyle only,
  * leaving the #1375 headline itself -- two replicas splitting ONE element at
  * the SAME boundary concurrently -- without a committed pin over a real
  * server. JS's own commit for `c8928853`/#1375 says the fix "ships with"
  * yorkie#2030 and that a client-only patch regresses on snapshot/history
  * arrival order, so a JVM-only in-process test
- * ([dev.yorkie.document.TreeSplitOrderTest], spec 033 commit 1) is not
+ * ([dev.yorkie.document.TreeSplitOrderTest]) is not
  * sufficient: this adds a THIRD, late-attaching client that never saw either
  * split live and only pulls the already-settled history from the server.
  *
@@ -50,8 +49,8 @@ import org.junit.runner.RunWith
  * [TreeSplitRemoveStyleServerRootTest.serverRoot]) equals all three;
  * `docSize` equals a from-scratch [CrdtRoot] rebuild on each client.
  *
- * RED not constructible within 034: the production fix
- * (`orderSameBoundarySplit`) landed in spec 033 (`c8928853`, JS #1375); this
+ * A red run is not constructible here: the production fix
+ * (`orderSameBoundarySplit`) landed earlier (`c8928853`, JS #1375); this
  * commit only adds the missing over-the-server pin, so there is no local
  * revert-and-rerun step here -- only the executed run below.
  */

@@ -95,7 +95,7 @@ class CrdtCounterTest {
     }
 
     // Port of yorkie-js-sdk primitive_test.ts / counter_test.ts (ac60f3d9,
-    // #1422; D8): a short counter payload reads as its zero-padded value
+    // #1422): a short counter payload reads as its zero-padded value
     // instead of throwing. Probe at b1fa0d39 confirmed BufferUnderflowException
     // on both counter types for a short payload.
     @Test

@@ -1745,8 +1745,8 @@ class ClientPersistenceTest {
         ).await()
         assertEquals(Document.Event.Reason.LogDiscontinuity, droppedDeferred.await().reason)
         // 8d965dd2 (#1395): MODIFIED from `restored.checkPoint.clientSeq + 1u`, the same
-        // way as U14 above -- the repair now carries the acked checkpoint forward via
-        // advanceClientSeqTo, so it is what the next mint must be measured against, not
+        // way as the `U14 ...` tests above -- the repair now carries the acked checkpoint
+        // forward via advanceClientSeqTo, so it is what the next mint must be measured against, not
         // `restored`'s own (deliberately stale, snapshot-level) checkpoint.
         restored.updateAsync { root, _ -> root["after"] = 1 }.await()
         assertEquals(
@@ -2383,9 +2383,9 @@ class ClientPersistenceTest {
     // signal alone (localChanges += change; onLocalChange?.invoke()), never
     // from whether the change produced a visible OperationInfo -- so every
     // one of these three still appends a log entry, exactly like any other
-    // local change. RED not constructible: onLocalChange already queues
-    // every change this way (spec 036 probe P9 executed this ahead of the
-    // build round); these are regression pins, not new production hunks.
+    // local change. A red run is not constructible: onLocalChange already queues
+    // every change this way (confirmed by a probe run ahead of this commit);
+    // these are regression pins, not new production hunks.
 
     @Test
     fun `T35 a silent presence clear still appends a log entry`() = runTest {
@@ -2554,15 +2554,16 @@ class ClientPersistenceTest {
     // `runTest`'s virtual clock) can race the test's own explicit `syncAsync` call.
     // RealtimeSyncOff's `needRealTimeSync()` is unconditionally false (`Attachment.kt`), so
     // it never auto-syncs and exercises the exact same `dropsRemoteState` branch with zero
-    // race (unit 1B's `ClientPushOnlySnapshotGuardSmokeTest` made the same determination;
-    // its one case is superseded by PO2 below and the file has been deleted).
-    // RED (all six, at `b1fa0d39`): revert the `Client.kt:1063-1076` guard rewrite back to
+    // race (an earlier throwaway smoke test, `ClientPushOnlySnapshotGuardSmokeTest`, made the same
+    // choice; its one case is superseded by the dropped-snapshot case below and the file has been
+    // deleted).
+    // Red (all six, at `b1fa0d39`): revert the `Client.kt:1063-1076` guard rewrite back to
     // `if (responsePack.hasChanges && (pushOnly||syncOff)) return@runCatching` else
-    // unconditional `applyChangePack` -- see this unit's own RED run quoted in the build
-    // report for the actual failures each case hits.
+    // unconditional `applyChangePack` -- the commit message quotes the actual
+    // failures each case hits.
 
     @Test
-    fun `PO1 writes the header for a dropped pack, and re-snapshots nothing`() = runTest {
+    fun `writes the header for a dropped pack, and re-snapshots nothing`() = runTest {
         val store = MemoryDocStore()
         val service = MockYorkieService()
         val client = newClient(service, docStore = store)
@@ -2604,7 +2605,7 @@ class ClientPersistenceTest {
     }
 
     @Test
-    fun `PO2 persists the ack when the dropped pack carried a snapshot`() = runTest {
+    fun `persists the ack when the dropped pack carried a snapshot`() = runTest {
         val store = MemoryDocStore()
         val service = MockYorkieService()
         val client = newClient(service, docStore = store)
@@ -2632,7 +2633,7 @@ class ClientPersistenceTest {
             stored.snapshot.contentEquals(base.snapshot),
             "a dropped snapshot must not be written to the store",
         )
-        // Not asserted empty -- see PO1's note: the incremental log may already carry
+        // Not asserted empty -- see the note in the header-write case above: the incremental log may already carry
         // "mine" independently of this sync's ack.
         val restored = reconstruct(docKey, stored)
         assertEquals(document.toJson(), restored.toJson())
@@ -2645,7 +2646,7 @@ class ClientPersistenceTest {
     }
 
     @Test
-    fun `PO3 repairs a poisoned log on a dropped-pack sync`() = runTest {
+    fun `repairs a poisoned log on a dropped-pack sync`() = runTest {
         val store = FlakyAppendStore(failCount = 1)
         val service = MockYorkieService()
         val client = newClient(service, docStore = store)
@@ -2657,7 +2658,7 @@ class ClientPersistenceTest {
 
         document.updateAsync { root, _ -> root["mine"] = 1 }.await()
         // Wait for the POISON FLAG (the IO failure callback), not the attempt counter --
-        // same race note as U6.
+        // same race note as the `U6 ...` test.
         awaitCondition {
             client.persistStates[storeKeyFor(docKey)]?.takeIf { it.poisoned }
         }
@@ -2689,39 +2690,38 @@ class ClientPersistenceTest {
     }
 
     @Test
-    fun `PO4 marks the sync Synced -- the heartbeat half of the JS case is N-A on Android`() =
-        runTest {
-            // Android's updateHeartbeatTime() is already scoped to Polling/Realtime
-            // attachments only (Client.kt's two syncInternal call sites), orthogonal to
-            // dropsRemoteState in BOTH the old and the new code -- RealtimePushOnly/SyncOff
-            // never call it regardless of this guard, so JS's "refreshes the heartbeat"
-            // half of this case does not apply on Android (recorded; see the commit body).
-            // The testable half -- the early `return@runCatching` used to also skip the
-            // Synced publish for a dropped CHANGES pack, so this IS the RED this guard fixes.
-            val service = MockYorkieService()
-            val client = newClient(service)
-            client.activateAsync().await()
-            val docKey = "po4-dropped-synced-doc"
-            val document = Document(docKey)
-            client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
-            document.updateAsync { root, _ -> root["mine"] = 1 }.await()
-            service.pullWithAckPushPullKeys += docKey
+    fun `marks the sync Synced -- the heartbeat half of the JS case is N-A on Android`() = runTest {
+        // Android's updateHeartbeatTime() is already scoped to Polling/Realtime
+        // attachments only (Client.kt's two syncInternal call sites), orthogonal to
+        // dropsRemoteState in BOTH the old and the new code -- RealtimePushOnly/SyncOff
+        // never call it regardless of this guard, so JS's "refreshes the heartbeat"
+        // half of this case does not apply on Android (recorded; see the commit body).
+        // The testable half -- the early `return@runCatching` used to also skip the
+        // Synced publish for a dropped CHANGES pack, so this IS the red this guard fixes.
+        val service = MockYorkieService()
+        val client = newClient(service)
+        client.activateAsync().await()
+        val docKey = "po4-dropped-synced-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.pullWithAckPushPullKeys += docKey
 
-            val syncedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                document.events.filterIsInstance<SyncStatusChanged>().first()
-            }
-            val syncResult = client.syncAsync(document).await()
-
-            assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
-            assertIs<SyncStatusChanged.Synced>(syncedDeferred.await())
-
-            client.detachDocument(document).await()
-            client.deactivateAsync().await()
-            client.close()
+        val syncedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<SyncStatusChanged>().first()
         }
+        val syncResult = client.syncAsync(document).await()
+
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertIs<SyncStatusChanged.Synced>(syncedDeferred.await())
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
 
     @Test
-    fun `PO5 acts on the removal flag of a dropped pack`() = runTest {
+    fun `acts on the removal flag of a dropped pack`() = runTest {
         val store = MemoryDocStore()
         val service = MockYorkieService()
         val client = newClient(service, docStore = store)
@@ -2749,7 +2749,7 @@ class ClientPersistenceTest {
     }
 
     @Test
-    fun `PO6 adopts the compaction epoch of a dropped pack`() = runTest {
+    fun `adopts the compaction epoch of a dropped pack`() = runTest {
         val store = MemoryDocStore()
         val service = MockYorkieService()
         val client = newClient(service, docStore = store)
@@ -2781,13 +2781,13 @@ class ClientPersistenceTest {
         client.close()
     }
 
-    // --- #1401 D9: the decide-deferral (Android-only) ----------------------------------
+    // --- #1401: the decide-deferral (Android-only) ----------------------------------
 
     /**
      * Delays [delayMs] before FAILING the next [appendChange] call once, like
      * [FlakyAppendStore] with `failCount = 1` except the failure lands asynchronously after a
-     * real delay instead of synchronously -- the exact shape D9's `persistQueues[key]?.join()`
-     * exists to close the window around (exec-plan Commit 1 unit 1C).
+     * real delay instead of synchronously -- the exact shape `persistQueues[key]?.join()`
+     * exists to close the window around.
      */
     private class DelayedFailingAppendStore(
         private val delayMs: Long,
@@ -2813,7 +2813,7 @@ class ClientPersistenceTest {
         override suspend fun remove(docKey: String) = inner.remove(docKey)
     }
 
-    // RED (revert ONLY the `persistQueues[key]?.join()` hunk, keep this test): without the
+    // Red (revert ONLY the `persistQueues[key]?.join()` hunk, keep this test): without the
     // join, `persistAfterSync`'s pure-ack branch re-samples `persistStates[key]` immediately
     // after the no-op catch-up `append()` call (the watermark was already bumped
     // synchronously by the ORIGINAL onLocalChange-triggered append, before its IO write —
@@ -2822,10 +2822,10 @@ class ClientPersistenceTest {
     // claiming the edit is acked while the chained append for it is still in flight and
     // about to fail. The awaitCondition below then times out (no snapshot ever embeds
     // "mine":1, since the actual write was a meta-only header over the hole) --
-    // `check(...) { "condition not met within ${timeoutMs}ms" }` fails the test. See the
-    // build report for the executed RED output.
+    // `check(...) { "condition not met within ${timeoutMs}ms" }` fails the test. The
+    // commit message quotes the executed red output.
     @Test
-    fun `D9 a failing in-flight append is not outraced by the ack-only poison sample`() = runTest {
+    fun `a failing in-flight append is not outraced by the ack-only poison sample`() = runTest {
         val store = DelayedFailingAppendStore(delayMs = 300)
         val service = MockYorkieService()
         val client = newClient(service, docStore = store)
@@ -2837,7 +2837,7 @@ class ClientPersistenceTest {
 
         document.updateAsync { root, _ -> root["k"] = 1 }.await()
         // The onLocalChange-triggered append for this edit is now chained on
-        // Dispatchers.IO, delaying before it throws -- exactly the window D9 closes.
+        // Dispatchers.IO, delaying before it throws -- exactly the window the join closes.
         service.ackOnlyPushPullKeys += docKey
         client.syncAsync(document).await()
 
@@ -2859,10 +2859,10 @@ class ClientPersistenceTest {
     }
 
     /**
-     * Spec 034 Commit 2 (JS `4251ab7e`, #1403) unit 2D: a remote change that fails to
+     * (JS `4251ab7e`, #1403): a remote change that fails to
      * apply during a sync must surface as [SyncStatusChanged.SyncFailed] whose
      * [SyncStatusChanged.SyncFailed.cause] is the [ChangeApplyError] [Document.applyChangePack]
-     * throws (AC2's "SyncFailed case"), not the raw error the operation threw.
+     * throws (the "SyncFailed case"), not the raw error the operation threw.
      * `mockkConstructor(SetOperation::class)` forces the throw: no CRDT operation in this
      * tree naturally throws on a malformed target (a missing parent just reports
      * `executed = false`, see [SetOperation.execute]'s own `else` branch), so there is no

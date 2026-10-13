@@ -59,9 +59,9 @@ private const val REMOTE_BOUND_MS = 1_000L
  * `RgaTreeSplit.posToIndex`/`indexToPos`/`findIndexesFromRange` already read
  * `treeByIndex`, and `refinePos` walks the physical `next` chain only on the
  * restore-anchor rung (e), unchanged by `cab55005`. This is therefore a
- * no-production-change, test-only commit: "RED not constructible" (P7) --
- * every case below is green at the baseline it pins. Measured on this
- * worktree (P7): typing 40,000 single-character edits took 1,310ms;
+ * no-production-change, test-only commit: a red run is not constructible --
+ * every case below is green at the baseline it pins. Measured on a
+ * scratch worktree: typing 40,000 single-character edits took 1,310ms;
  * applying 20,000 remote single-character edits took 103ms; a chain-walk vs
  * `treeByIndex.indexOf` comparison across a seeded 400-step
  * edit/undo/redo/GC sequence held for all 20,436 checks, 0 mismatches.

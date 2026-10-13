@@ -60,7 +60,6 @@ import org.junit.Test
  *   time, so the peer's restore now re-indexes the pending split-undo by the
  *   restored width; see `fixed upstream defect - a remote identity restore
  *   now re-indexes pending tree undos` below (was `known defect - ...`).
- *   Backlog 009 (`tree-restore-history-reconcile-delta`), Resolved.
  * - F2 (UNREMOVE route, STILL OPEN): `CrdtTree.restore` un-tombstones a
  *   target with no removed-ancestor guard, exactly like JS `tree.ts`
  *   `restore`. The node is invisible yet counted live, and a replica that
@@ -142,9 +141,8 @@ class TreeUpstreamDefectPinTest {
             )
         }
 
-    // F3, NOW FIXED (port yorkie-js-sdk `790422ce`, #1421; backlog 009,
-    // Resolved) — a peer's identity restore used to report an index delta of
-    // 0, so d1's pending split-undo kept offsets that were stale by the
+    // F3, NOW FIXED (port yorkie-js-sdk `790422ce`, #1421) — a peer's
+    // identity restore used to report an index delta of 0, so d1's pending split-undo kept offsets that were stale by the
     // restored width and later destroyed live text ("34"). executeRestore
     // now measures and publishes the restore's real range (and
     // Document.reconcileHistoryEdits replays it), so d1's split-undo shifts
@@ -177,7 +175,7 @@ class TreeUpstreamDefectPinTest {
             crossSync(d1, d2)
 
             // FIXED outcome (yorkie-js-sdk 790422ce parity, executed BOTH
-            // sides, see spec 036 Context): the paragraphs merge back whole
+            // sides): the paragraphs merge back whole
             // instead of the boundary deletion landing two characters early.
             assertEquals("<doc><p>0123456789</p></doc>", d1.xml())
             assertEquals(d1.xml(), d2.xml())
@@ -225,7 +223,7 @@ class TreeUpstreamDefectPinTest {
     // attach() now stamps the recreated node with <p>'s own removedAt instead
     // of placing it live: the node is NOT counted live, and registers a
     // pending gcOnlySize pair so a later purge of <p> does not orphan it.
-    // Figures below are read off the executed GREEN run, not guessed.
+    // Figures below are read off the executed green run, not guessed.
     @Test
     fun `recreate under a tombstoned parent is now born tombstoned`() = runTest {
         val (d1, d2) = pair { element("doc") { element("p") { text { "hello" } } } }
@@ -270,7 +268,7 @@ class TreeUpstreamDefectPinTest {
     // overwrite's tombstone is a detached copy and never enters it), but
     // `attach()` now books each one through `CrdtRoot.registerGCPair` --
     // reachable by the next sweep instead of an unregistered leak. Figures
-    // below are read off the executed GREEN run, not guessed.
+    // below are read off the executed green run, not guessed.
     @Test
     fun `fixed upstream defect - copied attribute tombstones are now swept`() = runTest {
         val document = Document("test-doc")

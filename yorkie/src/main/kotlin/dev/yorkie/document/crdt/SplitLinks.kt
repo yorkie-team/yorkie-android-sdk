@@ -60,8 +60,8 @@ internal fun CrdtTreeNode.dropSplitLinks() {
  * ([CrdtTreeNode.mergedFrom]/[CrdtTreeNode.mergedAt]/[CrdtTreeNode.mergedInto]).
  *
  * The operation-content counterpart of [dropSplitLinks]: it REPLACES the
- * Commit-1 `dropSplitLinks()` + `dropMergeStamps()` pair at the edit-content
- * decode call site (spec 035 D10). `mergedFrom`/`mergedAt` name the parent a
+ * earlier `dropSplitLinks()` + `dropMergeStamps()` pair at the edit-content
+ * decode call site. `mergedFrom`/`mergedAt` name the parent a
  * node was moved out of and only a merge may stamp them ([CrdtTree.edit]
  * restamps them on the content it inserts, from the merge parent it resolves
  * locally), so content arriving on a tree edit -- always freshly created by
@@ -77,7 +77,7 @@ internal fun CrdtTreeNode.dropSplitLinks() {
  * reverse-of-Remove copy legitimately carries real merge lineage that must
  * survive, and only operation content can never legitimately hold either
  * kind of link. Port JS SDK `tree.ts` `CRDTTreeNode.dropEngineOnlyLinks`
- * (d3ffe946, #1406; yorkie#2033; spec 035 unit 3C).
+ * (d3ffe946, #1406; yorkie#2033).
  */
 internal fun CrdtTreeNode.dropEngineOnlyLinks() {
     traverseAllPreorder(this) { node, _ ->
@@ -118,7 +118,7 @@ internal fun CrdtTreeNode.dropEngineOnlyLinks() {
  * [CrdtTree.edit] books it into gc through [CrdtTreeNode.gcPairs], the same
  * routing the snapshot and the Set/Add element payload take through
  * [CrdtTree.gcPairs]. Port JS SDK `tree.ts` `CRDTTreeNode.clearTombstones`
- * (d3ffe946, #1406; yorkie#2033; spec 035 unit 3C).
+ * (d3ffe946, #1406; yorkie#2033).
  */
 internal fun CrdtTreeNode.clearTombstones() {
     traverseAll(this) { node, _ -> node.unremove() }

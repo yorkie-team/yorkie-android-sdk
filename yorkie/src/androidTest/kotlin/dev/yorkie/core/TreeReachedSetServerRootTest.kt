@@ -15,7 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented headline for spec 035 Commit 1 (`b69169c0`, #1404(c), AC3/AC9):
+ * Instrumented headline for #1404(c) (`b69169c0`):
  * a style's/removeStyle's reached set must resolve from the CHANGE's own
  * positions, not the receiving replica's visible-index space, over a real
  * Yorkie server (compose pin `yorkieteam/yorkie:0.7.24`) -- not just the JVM
@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
  * and green; the expected XML below is cited from those runs, not
  * reguessed).
  *
- * Per D19, this class asserts only the CLOSED shapes -- the three cases
+ * This class asserts only the CLOSED shapes -- the three cases
  * below converge identically whichever client the server happens to apply
  * second -- and separately RUNS one pair from the still-open §9.5 nested
  * family (yorkie#2070, not confirmed present on every 0.7.24 server build)
@@ -214,7 +214,7 @@ class TreeReachedSetServerRootTest {
     }
 
     /**
-     * D19: ONE pair from the still-open §9.5 level-2 nested split x style
+     * ONE pair from the still-open §9.5 level-2 nested split x style
      * family (the 241-of-11592 divergent pairs
      * [dev.yorkie.document.TreeStyleReachedSetScanTest] exhaustively pins
      * in-process), run here over a real server and RECORDED, not asserted to
@@ -268,11 +268,11 @@ class TreeReachedSetServerRootTest {
 
             val d1Xml = d1.getRoot().getAs<JsonTree>("t").asXml()
             val d2Xml = d2.getRoot().getAs<JsonTree>("t").asXml()
-            // RECORDED, not asserted equal (D19) -- println surfaces the
+            // RECORDED, not asserted equal -- println surfaces the
             // actual outcome in the instrumented run's logcat output, which
             // the commit body quotes verbatim.
             println(
-                "spec 035 D19 open §9.5 pair -- d1=$d1Xml d2=$d2Xml " +
+                "open §9.5 pair -- d1=$d1Xml d2=$d2Xml " +
                     "converged=${d1Xml == d2Xml}",
             )
 

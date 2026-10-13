@@ -83,7 +83,7 @@ internal class Hll {
      * was well-formed. A rejected payload leaves the registers untouched.
      *
      * The payload arrives from a remote peer, so neither its length nor its
-     * contents are ours to trust (`ac60f3d9`, #1422; D8). A malformed one is
+     * contents are ours to trust (`ac60f3d9`, #1422). A malformed one is
      * rejected without throwing: throwing tore out of snapshot decode, which
      * has no handler, so one bad dedup counter stopped every other client
      * from opening the document. But it is not clamped and applied either --
@@ -126,7 +126,7 @@ internal class Hll {
         /**
          * The largest rho [add] can store: the bits left after the register
          * index, plus one. Anything above it did not come from a HyperLogLog
-         * (`ac60f3d9`, #1422; D8).
+         * (`ac60f3d9`, #1422).
          */
         private const val maxRegisterValue: Int = 64 - HllPrecision + 1
 

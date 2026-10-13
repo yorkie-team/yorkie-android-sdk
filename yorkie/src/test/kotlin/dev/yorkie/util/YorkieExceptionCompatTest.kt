@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 
 /**
  * Pins the public data-class surface [YorkieException] kept when it was converted from
- * a `data class` to a `public open class` (D1, spec 034, JS `4251ab7e` #1403) so
+ * a `data class` to a `public open class` (JS `4251ab7e` #1403) so
  * [ChangeApplyError] can extend it: `equals`/`hashCode`/`toString`/`copy`/`component1`/
  * `component2` behave exactly as the generated data-class members did for a plain
  * [YorkieException], and a [ChangeApplyError] is-a [YorkieException] but never `==` a
@@ -51,13 +51,13 @@ class YorkieExceptionCompatTest {
         assertEquals("YorkieException(code=ErrInvalidArgument, errorMessage=nope)", a.toString())
     }
 
-    // LOW-2 (harness QA + Sonnet cross-judge, spec 034 round-1 review): a plain
+    // Review finding (R8 stability): a plain
     // YorkieException's toString() takes a dedicated `this::class ==
     // YorkieException::class` branch that returns a hard-coded literal, not
     // `javaClass.simpleName`, so the base class's own name in the text survives R8
     // minification in a consumer app with no keep rule for it.
     //
-    // RED not constructible in this environment: a JVM unit test never runs R8, so
+    // A red run is not constructible in this environment: a JVM unit test never runs R8, so
     // `javaClass.simpleName` for `YorkieException` itself is always the real,
     // unminified "YorkieException" here -- the literal branch and the old
     // `javaClass.simpleName`-only code produce byte-identical output for every
@@ -66,7 +66,7 @@ class YorkieExceptionCompatTest {
     // guards against only exists once R8 renames the class in a release consumer
     // build, which this suite has no seam to simulate. Pinned by code inspection
     // (reverted this hunk in place, confirmed the test above still passes
-    // byte-for-byte -- i.e. genuinely RED-not-discriminating here, not hidden) plus
+    // byte-for-byte -- i.e. genuinely not discriminating here, not hidden) plus
     // this dedicated case asserting the base class takes the literal path.
     @Test
     fun `toString for a plain instance is the R8-stable literal`() {

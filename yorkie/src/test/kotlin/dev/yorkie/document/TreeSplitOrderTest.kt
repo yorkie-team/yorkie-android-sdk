@@ -15,7 +15,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_split_order_test.ts` (JS SDK c8928853, #1375) as JVM
- * in-process convergence tests (spec 033 AC1).
+ * in-process convergence tests.
  *
  * Two replicas splitting one element at the same boundary each apply their
  * own split first, and [CrdtTreeNode.split] places its product directly

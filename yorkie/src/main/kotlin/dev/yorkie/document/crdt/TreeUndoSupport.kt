@@ -153,7 +153,7 @@ internal fun CrdtTreePos.replaceNodeID(prev: CrdtTreeNodeID, curr: CrdtTreeNodeI
  * [CrdtTree] receiver: this function needs nothing from the tree beyond
  * that one lookup, so a hand-built node graph can exercise the narrow rule
  * directly, and the real [CrdtTree.findFloorNode] never has to leave the
- * ratcheted file for this new code to reach it (D10).
+ * size-guarded file for this new code to reach it.
  *
  * Derived from the tree rather than carried on the operation because a peer
  * has to reach the same conclusion from the change alone: the operation

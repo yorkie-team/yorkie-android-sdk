@@ -22,25 +22,21 @@ import org.junit.Test
  * cross-sync tests: a style's reached set used to depend on which of two
  * concurrent changes (a structural edit and a style) arrived first, because
  * it was resolved in the receiving replica's own visible-index space.
- * `CrdtTree.styleTargets`/`declaredBoundaries`/`DeclaredLineage` (unit 1C)
+ * `CrdtTree.styleTargets`/`declaredBoundaries`/`DeclaredLineage`
  * resolve it from the CHANGE's own positions instead, so both delivery
  * orders now converge.
  *
- * Scope decision (unit 1C/1D split, exec-plan): unit 1C ported the named
- * split∥style/merge∥style cases, the STYLE-flavored 10 of the JS source's 13
+ * Scope: this class ports the named split∥style/merge∥style cases, the STYLE-flavored 10 of the JS source's 13
  * "complex suite" cases, and the style half of the level-2-split-before-range
- * and split-and-merge-in-one-change pairs -- `removeStyle` did not call
- * `styleTargets` yet that unit (it kept its own inline traversal; only the
- * two helpers it shares with `style`, `styleSkipPredicate`/
- * `reversedFromAnchorRecovery`, were widened, mechanically, to compile).
- * Unit 1D rewrote `removeStyle` to share `styleTargets` (deleting its own
- * ~270-line duplicated traversal) and ports the rest here: the 3
+ * and split-and-merge-in-one-change pairs. `removeStyle` shares
+ * `styleTargets` with `style` (its own ~270-line duplicated traversal is
+ * deleted), and the rest is ported here too: the 3
  * removeStyle-flavored complex-suite cases ('remove-style-across-merged
  * -anchor', 'remove-style-after-moved-anchor',
  * 'remove-style-from-side-moved-anchor'), the two named merge∥removeStyle
  * /split∥removeStyle cases, the removeStyle halves of the level-2/split
- * -merge pairs, and the by-path backwards-range rejection (D11). The six
- * exhaustive scans are unit 1F's (`TreeStyleReachedSetScanTest`).
+ * -merge pairs, and the by-path backwards-range rejection. The six
+ * exhaustive scans live in `TreeStyleReachedSetScanTest`.
  */
 class TreeStyleReachedSetTest {
 
@@ -67,7 +63,7 @@ class TreeStyleReachedSetTest {
 
     /**
      * [styleScanBase] with every paragraph already bold, so a removeStyle
-     * has something to take off. Mirrors JS `styleScanBoldBase` (unit 1D).
+     * has something to take off. Mirrors JS `styleScanBoldBase`.
      */
     private val styleScanBoldBase = ElementNode(
         "r",
@@ -112,7 +108,7 @@ class TreeStyleReachedSetTest {
     /**
      * [nestedScanBase] with every paragraph (including both wrapper levels)
      * already bold, so a removeStyle has something to take off. Mirrors JS
-     * `nestedScanBase({b: 'x'})` (unit 1D).
+     * `nestedScanBase({b: 'x'})`.
      */
     private val nestedScanBoldBase = ElementNode(
         "r",
@@ -317,8 +313,7 @@ class TreeStyleReachedSetTest {
 
     /**
      * The merge cases of yorkie's test/complex suite, reproduced without a
-     * server -- the STYLE-flavored 10 of 13 (see class KDoc for the
-     * unit-1C/1D split). They pin what a style may NOT reach -- the
+     * server -- the STYLE-flavored 10 of 13 (see class KDoc). They pin what a style may NOT reach -- the
      * interloper a merge moved next to the range end, the descendants of one
      * -- and the reached-set resolution is what they consume. Mirrors
      * yorkie's `TestStyleReachedSetMatchesComplexSuite`.
@@ -566,8 +561,8 @@ class TreeStyleReachedSetTest {
         }
 
     /**
-     * The removeStyle-flavored 3 of the 13 complex-suite cases unit 1C left
-     * for this unit (see class KDoc). Mirrors yorkie's
+     * The removeStyle-flavored 3 of the 13 complex-suite cases (see class
+     * KDoc). Mirrors yorkie's
      * `TestStyleReachedSetMatchesComplexSuite` removeStyle half.
      */
     private val complexSuiteRemoveStyleCases = listOf(
@@ -655,7 +650,7 @@ class TreeStyleReachedSetTest {
 
     // A backwards range reaches nothing through the index form, which
     // rejects it up front; the path form does the same instead of resolving
-    // it into a range the boundary elements would have to judge. D11:
+    // it into a range the boundary elements would have to judge.
     // Android keeps `require` (IllegalArgumentException), not
     // YorkieException as JS throws. Mirrors JS `Tree style by path` /
     // `rejects a backwards range` (b69169c0, #1404).

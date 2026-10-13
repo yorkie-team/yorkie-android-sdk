@@ -12,8 +12,8 @@ import kotlin.test.assertTrue
 import org.junit.Test
 
 /**
- * Android-authored C9 twin for [CrdtTree]'s `dissolveMerge` (JS has no
- * equivalent test, D18): a genuine local merge's own undo never reaches
+ * Android-authored twin for [CrdtTree]'s `dissolveMerge` (JS has no
+ * equivalent test): a genuine local merge's own undo never reaches
  * [CrdtTree.restore] -- `TreeEditOperation`'s reverse-operation builder
  * always takes the split-reverse path when `mergeLevel > 0` ([CrdtTree.edit]'s
  * `spansComplete` guard forces `removedSpans` empty whenever a merge
@@ -24,8 +24,7 @@ import org.junit.Test
  * today. This test drives [CrdtTree.restore] directly -- the same way a
  * future identity-preserving merge-undo, or a decoded `RestoreMode.Restore`
  * operation, would -- to pin that it still dissolves the lineage correctly.
- * Spec 035 D18, Commit 3 unit 3B (port JS SDK `tree.ts` `dissolveMerge`
- * d3ffe946, #1406; yorkie#2033).
+ * Port of JS SDK `tree.ts` `dissolveMerge` (d3ffe946, #1406; yorkie#2033).
  */
 class TreeRestoreDissolveMergeTest {
 

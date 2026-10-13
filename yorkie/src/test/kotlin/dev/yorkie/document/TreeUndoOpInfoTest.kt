@@ -27,17 +27,17 @@ import org.junit.Test
 
 /**
  * Direct-[CrdtTree] unit cases for [CrdtTree.restore]/[CrdtTree.retombstone]'s
- * per-node `edits` (JS SDK `790422ce`, #1421, unit 1A): the order a revived or
+ * per-node `edits` (JS SDK `790422ce`, #1421): the order a revived or
  * re-removed subtree reports its changes in, and the degrade-to-nothing
- * contract for a node whose position cannot be measured; plus (unit 1B) the
+ * contract for a node whose position cannot be measured; plus the
  * per-operation [OperationInfo.TreeEditOpInfo]/`executedRanges` wiring that
  * consumes those `edits` -- JS `history_tree_opinfo_test`'s 5 edit shapes
- * (local AND remote, undo AND redo; probe P1), a peer's earlier edit shifting
- * the restored index (probe P4), and a whole revived subtree reporting its
- * parent before its child (probe P5); plus (unit 1C) the event-gate flip at
+ * (local AND remote, undo AND redo), a peer's earlier edit shifting
+ * the restored index, and a whole revived subtree reporting its
+ * parent before its child; plus the event-gate flip at
  * `Document.executeUndoRedoInternal`/`applyChangesInternal` that lets an
  * executed-but-empty-opInfos undo/remote restore still publish exactly once,
- * `operations = []`, instead of being silently dropped (probe P2).
+ * `operations = []`, instead of being silently dropped.
  */
 class TreeUndoOpInfoTest {
 
@@ -95,7 +95,7 @@ class TreeUndoOpInfoTest {
      * [setup], runs [edit] on `d1`, then checks that BOTH the local undo/redo
      * AND the remote peer's applied undo/redo publish a non-empty,
      * mirror-replayable [OperationInfo.TreeEditOpInfo] list -- never the old
-     * always-`[0, 0]`, node-less placeholder. RED at `35c90e39` (probe P1)
+     * always-`[0, 0]`, node-less placeholder. Red at `35c90e39`
      * for every one of these four checks.
      */
     private suspend fun assertShapeReportsRealOpInfo(
@@ -248,11 +248,11 @@ class TreeUndoOpInfoTest {
             )
         }
 
-    // Probe P4: a peer's earlier insert shifts the restored index -- the
+    // A peer's earlier insert shifts the restored index -- the
     // revived node's IDENTITY (left/right sibling) is unaffected, but the
     // DOCUMENT-INDEX position reported must reflect the peer's edit, not the
     // stale pre-edit offset (the whole point of measuring at restore time
-    // instead of carrying a stored, never-moving index; fixes backlog 009).
+    // instead of carrying a stored, never-moving index).
     @Test
     fun `a peer's earlier insert shifts the restored opInfo's reported position`() = runTest {
         val d1 = Document("d1")
@@ -316,9 +316,9 @@ class TreeUndoOpInfoTest {
         assertEquals(d1.xml(), d2.xml())
     }
 
-    // Probe P5: a whole revived subtree reports its parent BEFORE its child,
+    // A whole revived subtree reports its parent BEFORE its child,
     // the parent rendered with `children: []` (the child has not come back
-    // yet at that point in the list) -- mirrors unit 1A's direct-CrdtTree
+    // yet at that point in the list) -- mirrors the direct-CrdtTree
     // case, now observed through the published Document event.
     @Test
     fun `a restored subtree reports its parent before its child`() = runTest {
@@ -373,7 +373,7 @@ class TreeUndoOpInfoTest {
         assertEquals(
             emptyList(),
             parentNode.childNodes,
-            "the parent is rendered before its own child comes back, exactly like unit 1A",
+            "the parent is rendered before its own child comes back, exactly like the direct case",
         )
 
         assertEquals(listOf(1, 0), childOpInfo.fromPath)
@@ -381,7 +381,7 @@ class TreeUndoOpInfoTest {
         assertEquals("cd", childNode.value)
     }
 
-    // Probe P2: an undo whose node lands under a PEER's removed ancestor --
+    // An undo whose node lands under a PEER's removed ancestor --
     // never one this same actor's own undo stack already restored, which a
     // single local actor can never observe (its own entries pop in strict
     // LIFO order, so an ancestor its own later entry removed is always
@@ -394,7 +394,7 @@ class TreeUndoOpInfoTest {
     // once with an EMPTY operations list -- never suppressed, and the change
     // still reaches the peer. Port yorkie-js-sdk `790422ce` (#1421); the
     // event-gate flip that makes this observable (`executedOperations`, not
-    // opInfos) is this unit's own scope.
+    // opInfos) is covered by the Document.kt change.
     @Test
     fun `a tree undo under a removed ancestor publishes once with empty ops, local and remote`() =
         runTest {
@@ -597,8 +597,8 @@ class TreeUndoOpInfoTest {
         assertFalse(hello.isRemoved)
     }
 
-    // GATE 1 Medium finding (c) re-check: the `applyChangesInternal` event
-    // gate this unit (1C) flipped to `executedOperations` is GLOBAL, not
+    // Re-check of an api-compat review note: the `applyChangesInternal` event
+    // gate flipped to `executedOperations` is GLOBAL, not
     // Tree-restore-specific -- any executed op whose OpInfo list happens to
     // be empty now publishes on the remote path. A style targeting a node
     // the PEER concurrently removed is the other shape that hits this (JS:

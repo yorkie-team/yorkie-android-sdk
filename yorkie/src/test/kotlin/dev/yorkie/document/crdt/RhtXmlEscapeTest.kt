@@ -13,7 +13,7 @@ import org.junit.Test
  * XML. The two JS JSON-forging cases in the same upstream commit are
  * already covered on Android without code change -- attribute values are
  * always strings here and [Rht.toJson] already [escapeString]s both key and
- * value (D12) -- so only the XML half needs a new pin.
+ * value -- so only the XML half needs a new pin.
  */
 class RhtXmlEscapeTest {
 

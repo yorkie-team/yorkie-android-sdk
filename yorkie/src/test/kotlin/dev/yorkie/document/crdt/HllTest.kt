@@ -147,7 +147,7 @@ class HllTest {
     @Test
     fun `restore rejects mismatched payload length instead of throwing`() {
         // given - `restore` used to throw IllegalArgumentException on a wrong
-        // length; ac60f3d9 (#1422; D8) widened the fix so a malformed payload
+        // length; ac60f3d9 (#1422) widened the fix so a malformed payload
         // from a peer is refused rather than torn out of snapshot decode,
         // which has no handler.
         val hll = Hll()
@@ -162,9 +162,9 @@ class HllTest {
 
     @Test
     fun `restore accepts a register at the maximum value 51 but rejects 52`() {
-        // given - probe (ix): maxRegisterValue = 64 - HllPrecision + 1 = 51 at
+        // given - maxRegisterValue = 64 - HllPrecision + 1 = 51 at
         // precision 14; a register value no `add` could have written (52)
-        // does not describe a cardinality (ac60f3d9, #1422; D8).
+        // does not describe a cardinality (ac60f3d9, #1422).
         val accepted = ByteArray(Hll.HllRegisterCount).also { it[0] = 51 }
         val rejected = ByteArray(Hll.HllRegisterCount).also { it[0] = 52 }
         val acceptedHll = Hll()

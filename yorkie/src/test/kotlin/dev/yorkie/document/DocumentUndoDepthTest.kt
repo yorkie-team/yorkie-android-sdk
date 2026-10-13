@@ -15,7 +15,7 @@ import org.junit.Test
  * Covers [Document.Options.maxUndoDepth] (JS `document.ts`/`undo_depth_test.ts`'s
  * `describe('Document maxUndoDepth')`, `69a56c44`, #1424): the option wires through to
  * [dev.yorkie.document.history.History], is validated before [Document]'s own dispatcher is
- * created (D7), and the Document-level undo/redo surface honors it end to end.
+ * created, and the Document-level undo/redo surface honors it end to end.
  *
  * JS also parametrizes its reject cases over `1.5`, `NaN` and `Infinity` — all three are
  * unconstructible here ([Document.Options.maxUndoDepth] is [Int], so "not an integer" is a
@@ -138,7 +138,7 @@ class DocumentUndoDepthTest {
 
     @Test
     fun `copy onto an invalid maxUndoDepth is rejected the same way`() {
-        // D7: validation lives in Options.init, so it also guards the synthesized copy(),
+        // Validation lives in Options.init, so it also guards the synthesized copy(),
         // which re-invokes the primary constructor — not just the first-call path.
         val exception = assertThrows(YorkieException::class.java) {
             Document.Options().copy(maxUndoDepth = 0)

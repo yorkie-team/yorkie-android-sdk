@@ -190,7 +190,7 @@ class SnapshotConverterTest {
         assertEquals(docSizeBefore, CrdtRoot(root).docSize)
     }
 
-    // Spec 035 unit 1E (JS SDK b69169c0, #1404; D9): `toCrdtTreeRootNode` is
+    // (JS SDK b69169c0, #1404): `toCrdtTreeRootNode` is
     // SHARED by operation-content decode (`SplitLinkDecodeTest` pins that
     // half) and this snapshot decode path (`PBTree.toCrdtTree`, reached here
     // through a hand-built `JSONElement.Tree` rather than through a real

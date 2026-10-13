@@ -33,11 +33,11 @@ import org.junit.After
 import org.junit.Test
 
 /**
- * Ports `change_apply_error_test.ts` (JS SDK `4251ab7e`, #1403) as JVM unit tests (spec
- * 034 AC2), plus the Android-only two-layer-wrap cases ([Change.execute] names an
+ * Ports `change_apply_error_test.ts` (JS SDK `4251ab7e`, #1403) as JVM unit tests,
+ * plus the Android-only two-layer-wrap cases ([Change.execute] names an
  * operation; [Document.applyChangesInternal]'s per-change catch names a change-level
  * failure JS has no equivalent of, since JS has no clone/root two-pass split) and the
- * M1/L1 api-compat-checker findings recorded (not test-enforced; see the comments
+ * api-compat review findings recorded (not test-enforced; see the comments
  * before each, below) on top of the original port: a `CancellationException` reaching
  * any of [Document.applyChanges]'s outer catch, [Document.applyChangesInternal]'s
  * per-change catch or [Document.applyChangePack]'s stuck-checkpoint catch must
@@ -204,8 +204,8 @@ class ChangeApplyErrorTest {
         assertEquals("c", renamed.changeID)
     }
 
-    // --- JS 7 / L2: reports the stuck checkpoint, metadata only (never the cause message) ---
-    // LOW-3 (harness QA + cross-judge, spec 034 round-1 review): the log line also
+    // --- JS 7: reports the stuck checkpoint, metadata only (never the cause message) ---
+    // Review finding (diagnosability): the log line also
     // names the ChangeApplyError's own changeID/opIndex/operation -- payload-safe by
     // the same contract as `operation` itself -- without ever logging the cause's
     // message.
@@ -275,14 +275,14 @@ class ChangeApplyErrorTest {
         )
     }
 
-    // M1 (api-compat-checker, spec 034 Commit 2 fix round): a CancellationException
+    // Cancellation guard (api-compat review finding): a CancellationException
     // reaching any of Document.applyChanges's outer catch, applyChangesInternal's
     // per-change catch, or applyChangePack's stuck-checkpoint catch must propagate
     // unchanged -- never named as a ChangeApplyError, never logged as a false "stuck"
     // line -- because it is the caller's scope tearing down, not a change failing to
     // apply.
     //
-    // RED-not-reliably-constructible (recorded, not hidden -- no flaky test is shipped
+    // A red run is not reliably constructible (recorded, not hidden -- no flaky test is shipped
     // in its place): every construction this suite tried to force a GENUINE
     // CancellationException into these three catches funnels through
     // `kotlinx.coroutines.withContext(dispatcher)` (ensureClone/the outer
@@ -292,11 +292,11 @@ class ChangeApplyErrorTest {
     // `launch`'d `applyChangePack` against a real single-thread dispatcher) showed the
     // SAME final outcome (a `JobCancellationException`, body completed with the clone
     // left non-null, none of the three catches entered at all -- confirmed by a
-    // temporary per-catch trace) with the M1 fix BOTH present and reverted: the race is
+    // temporary per-catch trace) with the cancellation guard BOTH present and reverted: the race is
     // between the JVM's real thread scheduling and kotlinx.coroutines' own completion
     // bookkeeping, not between this fix's two code paths, so no construction tried
     // reliably discriminates the two. A flaky test that sometimes passes regardless of
-    // the fix is worse than no test -- it would erode trust in this suite's RED/GREEN
+    // the fix is worse than no test -- it would erode trust in this suite's red/green
     // discipline. Pinned by code inspection and precedent instead: the fix is a
     // structural, one-line-per-catch mirror of the SAME `catch (e: CancellationException)
     // { ...; throw e }` idiom this very file already uses at `Document.fromBytes`
@@ -304,15 +304,15 @@ class ChangeApplyErrorTest {
     // `triggerAppend` -- both already-reviewed, already-trusted call sites for exactly
     // this "never let cancellation be mistaken for a domain failure" contract.
 
-    // L1 (api-compat-checker, spec 034 Commit 2 fix round): rethrow a `java.lang.Error`
+    // Error guard (api-compat review finding): rethrow a `java.lang.Error`
     // (e.g. `OutOfMemoryError`/`StackOverflowError`) unwrapped from the same two
     // `Document` catches the cancellation test above exercises.
     //
-    // RED not constructible (recorded, not hidden -- no fake pass-trivially test is
+    // A red run is not constructible (recorded, not hidden -- no fake pass-trivially test is
     // written in its place): every path this suite can drive an operation failure
     // through funnels first through `Change.execute`'s own op-level catch (`Change.kt`,
     // out of this fix's scope -- it has no suspension points, so it carries no
-    // CancellationException risk, and the dispatch that opened finding M1 named only
+    // CancellationException risk, and the review finding named only
     // the three Document catches), which wraps ANY Throwable -- including an Error --
     // into a ChangeApplyError before either of Document's own `err is Error`/`e !is
     // Error` guards is ever reached. The only way those two Document-level guards could
@@ -327,8 +327,8 @@ class ChangeApplyErrorTest {
     // inspection and precedent only -- see that comment for why no test is shipped for
     // either).
 
-    // LOW-1 (harness QA + Sonnet cross-judge, spec 034 round-1 review): confirms
-    // directly what the L1 comment above already predicted by inspection -- an
+    // Review finding (error exclusion): confirms
+    // directly what the Error-guard comment above already predicted by inspection -- an
     // operation's own `execute` throwing a java.lang.Error for a Remote source IS
     // wrapped into a ChangeApplyError by Change.execute's per-op catch (Change.kt),
     // with the Error reachable as `cause`, exactly like any other Throwable the
@@ -338,11 +338,11 @@ class ChangeApplyErrorTest {
     // bookkeeping around the two change.execute calls, never one from inside them; see
     // the narrowed KDoc on Change.execute and Document.applyChanges.
     //
-    // RED-GREEN, done by hand for this hunk: temporarily added `if (source ==
+    // Red-green, done by hand for this hunk: temporarily added `if (source ==
     // OpSource.Remote && cause is Error) throw cause` ahead of the ChangeApplyError
-    // throw in Change.kt's per-op catch -> this test went RED (`OutOfMemoryError`
+    // throw in Change.kt's per-op catch -> this test went red (`OutOfMemoryError`
     // surfaced directly, failing `assertFailsWith<ChangeApplyError>`) -> reverted
-    // (`git diff` empty) -> GREEN again. The fix in this round is KDoc-only; Change.kt's
+    // (`git diff` empty) -> green again. The fix here is KDoc-only; Change.kt's
     // wrapping itself is intentionally unchanged (parity-preserving).
     @Test
     fun `a Remote op throwing an Error is wrapped into ChangeApplyError with the Error as cause`() =

@@ -51,7 +51,7 @@ public data class Change internal constructor(
      * `Throwable` the operation itself throws, with NO exclusion for a
      * `java.lang.Error` (e.g. `OutOfMemoryError`) or a `CancellationException`: the
      * original is always reachable via `Throwable.cause` on the resulting
-     * [ChangeApplyError] (harness QA + cross-judge finding, spec 034 round-1 review:
+     * [ChangeApplyError] (a review finding on the change apply error:
      * `Document.applyChanges`/`applyChangesInternal`'s own Error/CancellationException
      * guards do NOT reach an error from here — by the time those guards run, this
      * function has already wrapped it — so they only ever apply to a failure in

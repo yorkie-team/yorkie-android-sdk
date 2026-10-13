@@ -50,7 +50,7 @@ internal abstract class Operation {
      * Sets the given actorId to this [Operation].
      *
      * Open so [dev.yorkie.document.operation.TreeEditOperation] can also
-     * re-stamp the split tickets it records alongside [executedAt] (D5, port
+     * re-stamp the split tickets it records alongside [executedAt] (port
      * JS SDK `document.ts`/`tree_edit_operation.ts` b69169c0, #1404): a
      * caller holding only this [Operation]-typed reference (every call site
      * today -- [dev.yorkie.document.change.Change.setActor], in turn

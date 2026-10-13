@@ -311,8 +311,7 @@ internal data class CrdtTree(
             // Back-compat: older snapshots lack mergedAt on moved children.
             // A mergedAt already on the wire is the merge-time causal
             // boundary and must not be replaced by the source's removedAt,
-            // which a later LWW tombstone can still bump (round-1
-            // cross-judge BLOCKER-1, spec 035; JS SDK tree.ts
+            // which a later LWW tombstone can still bump (JS SDK tree.ts
             // rebuildMergeState, d3ffe946, #1406).
             if (node.mergedAt == null) {
                 node.mergedAt = source.removedAt
@@ -474,8 +473,7 @@ internal data class CrdtTree(
         //
         // This advance on BOTH anchors is also what RTCOLLABPLATFORM-787
         // (re-porting JS SDK c8928853, #1375) needed from removeStyle(),
-        // which used to drop it (see the unit-1D build report's history:
-        // reverses iOS 2e6979a0b1's reversal of Android's own v0.7.6
+        // which used to drop it (reverses iOS 2e6979a0b1's reversal of Android's own v0.7.6
         // divergence, 0b3eb7f5) — removeStyle() sharing this one resolution
         // with style() carries it for free, no removeStyle-specific call
         // site left to comment it on.
@@ -964,7 +962,7 @@ internal data class CrdtTree(
         // (below): that flag reads gcPairs.size as "did anything beyond the
         // plain deletes produce garbage", and these say nothing about
         // whether the captured spans describe the deletion. Port JS SDK
-        // tree.ts (d3ffe946, #1406; yorkie#2033; spec 035 unit 3C).
+        // tree.ts (d3ffe946, #1406; yorkie#2033).
         val contentAttrPairs = mutableListOf<GCPair<*>>()
         // Identity-preserving undo: capture one span per node THIS edit
         // transitions visible -> tombstoned. node.remove() returning true is
@@ -1277,8 +1275,7 @@ internal data class CrdtTree(
                     // them straight to docSize.gc, which purge gives back --
                     // the same routing a split, a snapshot load and a
                     // Set/Add element payload already use. Port JS SDK
-                    // tree.ts (d3ffe946, #1406; yorkie#2033; spec 035 unit
-                    // 3C).
+                    // tree.ts (d3ffe946, #1406; yorkie#2033).
                     contentAttrPairs.addAll(node.gcPairs)
                     // Capture this inserted node's identity span for
                     // identity-preserving insert undo/redo.
@@ -1916,7 +1913,7 @@ internal data class CrdtTree(
      * parent: a prior merge moves a node under the merge target, so the
      * parent no longer names the element that enclosed it when the position
      * was declared. The set doubles as the seen set, guarding against a
-     * cycle in a peer-supplied `mergedFrom` chain (D6: identity set, not a
+     * cycle in a peer-supplied `mergedFrom` chain (identity set, not a
      * hash set — see [resolveMergeTarget]). Port JS SDK `tree.ts`
      * `declaredBoundaries` (b69169c0, #1404; yorkie#2042). Fixes #1331.
      */

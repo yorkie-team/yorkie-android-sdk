@@ -44,9 +44,9 @@ public open class YorkieException(
     /**
      * Reproduces the data-class text `YorkieException(code=…, errorMessage=…)` for a
      * plain [YorkieException] — a hard-coded literal, NOT `javaClass.simpleName`, so
-     * the base class's own name stays byte-identical to the pre-D1 data-class output
-     * even under R8 minification in a consumer app with no keep rule for it (harness
-     * QA + Sonnet cross-judge LOW-2, spec 034 round-1 review: `javaClass.simpleName`
+     * the base class's own name stays byte-identical to the pre-open-class data-class output
+     * even under R8 minification in a consumer app with no keep rule for it (a review
+     * finding on the change apply error: `javaClass.simpleName`
      * alone is not R8-stable). A subclass — e.g.
      * `ChangeApplyError(code=…, errorMessage=…)` — still uses
      * [Any.javaClass]/[Class.getSimpleName], so its OWN name can be obfuscated by R8 in

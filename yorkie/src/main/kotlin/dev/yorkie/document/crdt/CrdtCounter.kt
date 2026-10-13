@@ -62,7 +62,7 @@ internal data class CrdtCounter(
     /**
      * Restores the HLL state from [data] and recomputes [value] from the
      * cardinality estimate, reporting whether [data] was accepted
-     * (`ac60f3d9`, #1422; D8). A rejected payload leaves both the HLL and
+     * (`ac60f3d9`, #1422). A rejected payload leaves both the HLL and
      * [value] as they were: the value it would recompute is derived from the
      * registers, and a malformed payload does not describe a cardinality.
      */
@@ -159,7 +159,7 @@ internal data class CrdtCounter(
         }
 
         // A short counter payload reads as its zero-padded value, same as
-        // CrdtPrimitive.fromBytes (ac60f3d9, #1422; D8): `copyOf` pads with
+        // CrdtPrimitive.fromBytes (ac60f3d9, #1422): `copyOf` pads with
         // zero at the end (little-endian, so the missing high-order bytes)
         // and truncates a longer one to the leading `width` bytes.
         fun ByteArray.asCounterValue(counterType: CounterType): Number {

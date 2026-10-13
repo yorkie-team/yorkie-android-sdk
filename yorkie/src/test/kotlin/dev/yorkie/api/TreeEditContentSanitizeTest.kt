@@ -20,7 +20,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_edit_content_sanitize_test.ts` (JS SDK `d3ffe946`, #1406) as JVM
- * unit tests (spec 035 AC8, Commit 3 unit 3C).
+ * unit tests.
  *
  * A TreeEdit's content is always freshly created by the editing client, so it
  * can never legitimately be a split product, carry a merge lineage, or arrive

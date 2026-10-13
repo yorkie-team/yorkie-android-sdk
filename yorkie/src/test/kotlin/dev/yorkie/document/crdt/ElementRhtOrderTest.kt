@@ -95,8 +95,8 @@ class ElementRhtOrderTest {
      * That is the shape the decoder replays on every snapshot load
      * (yorkie-js-sdk#1377, fixed yorkie-js-sdk#1395 `8d965dd2`): GC then waits
      * on the wrong ticket, and the replica's re-serialized snapshots and
-     * `docSize.gc` differ from replicas that never reloaded. RED at
-     * `4d353504` (the reverted hunk, `else if (!node.isRemoved)`), GREEN after
+     * `docSize.gc` differ from replicas that never reloaded. Red at
+     * `4d353504` (the reverted hunk, `else if (!node.isRemoved)`), green after
      * this commit's `else if (!node.isRemoved && !value.isRemoved)`.
      */
     @Test

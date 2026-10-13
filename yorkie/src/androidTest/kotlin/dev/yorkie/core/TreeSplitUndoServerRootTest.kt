@@ -19,7 +19,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented headline for spec 035 Commit 1 (`b69169c0`, #1404(a), AC1/AC9):
+ * Instrumented headline for #1404(a) (`b69169c0`):
  * an undo of two splitLevel-2 merge reverses recorded in ONE undo entry must
  * mint each reverse its own split tickets, over a real Yorkie server
  * (compose pin `yorkieteam/yorkie:0.7.24`), not just the JVM in-process shape
@@ -35,11 +35,11 @@ import org.junit.runner.RunWith
  * history op, so `TreeEditOperation.issueTimeTicket`'s fallback reconstructed
  * them by counting delimiters up from `executedAt` -- landing the SECOND
  * split reverse on the ticket the FIRST reverse in this same undo entry
- * already consumed, duplicating a node id on every replica (P2).
+ * already consumed, duplicating a node id on every replica.
  *
  * A THIRD client, c3, attaches only AFTER c1/c2 have already settled the
  * undo and synced -- exercising the RECORDED split tickets' own encode path
- * (`OperationConverter`, C12): c3 reconstructs the undo's split products
+ * (`OperationConverter`): c3 reconstructs the undo's split products
  * purely from the wire-carried tickets, never having seen either merge or
  * the undo live itself.
  *
@@ -108,8 +108,8 @@ class TreeSplitUndoServerRootTest {
         return counts.filterValues { it > 1 }.keys.toList()
     }
 
-    // Method name shortened from the spec/exec-plan's literal
-    // "...and_the_server_root" to "...and_server_root" -- dropping "the_"
+    // The method name is shortened ("...and_server_root" rather than
+    // "...and_the_server_root") -- dropping "the_"
     // (4 chars) is the only way to keep this name on one line under the
     // project's 100-char ktlint cap (.editorconfig max_line_length = 100)
     // without breaking ktlint's indent rule, which rejects a brace moved to
@@ -198,7 +198,7 @@ class TreeSplitUndoServerRootTest {
                 // A THIRD client attaches only now -- after c1/c2 already
                 // settled the undo -- and pulls the already-converged
                 // history cold: it reconstructs the undo's split products
-                // purely from the WIRE-encoded split tickets (C12), never
+                // purely from the WIRE-encoded split tickets, never
                 // having applied the merges or the undo itself.
                 attachAndAwaitWatch(c3, d3, Manual)
 

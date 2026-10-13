@@ -23,15 +23,14 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Converter-level coverage of the Commit 1 (JS SDK c8928853, #1375) decode
+ * Converter-level coverage of the (JS SDK c8928853, #1375) decode
  * split: a Set/Add/ArraySet payload (`PBJsonElementSimple.toCrdtElement`,
  * directly or nested via `dropSplitLinksInElement`'s `CrdtContainer` walk)
  * and operation content (`toCrdtTreeNodesWhenEdit`) both strip
  * `insPrevID`/`insNextID` on the way in, while a snapshot decode
- * (`PBJsonElement.toCrdtElement`) is untouched and keeps them -- spec 033
- * AC1, Commit 1 step 10.
+ * (`PBJsonElement.toCrdtElement`) is untouched and keeps them.
  *
- * Extended for spec 035 unit 1E (JS SDK b69169c0, #1404): operation content
+ * Extended for JS SDK b69169c0 (#1404): operation content
  * also rejects an entry decoding to no node and a depth naming no parent
  * (the latter SHARED with the snapshot decode path, [SnapshotConverterTest]
  * pins that half), and strips merge stamps (`dropMergeStamps`) alongside
@@ -72,7 +71,7 @@ class SplitLinkDecodeTest {
         return document.getRootObject()["t"] as CrdtTree
     }
 
-    // RED-then-GREEN target: `PBJsonElementSimple.toCrdtElement`'s
+    // Red-then-green target: `PBJsonElementSimple.toCrdtElement`'s
     // VALUE_TYPE_TREE branch. Reverting the `dropSplitLinksInElement(...)`
     // wrap back to a bare `value.toCrdtTree()` leaves these links in place.
     @Test
@@ -97,7 +96,7 @@ class SplitLinkDecodeTest {
         assertFalse(hasAnySplitLink(decodedTree.root))
     }
 
-    // RED-then-GREEN target: `toCrdtTreeNodesWhenEdit`'s `dropEngineOnlyLinks()`
+    // Red-then-green target: `toCrdtTreeNodesWhenEdit`'s `dropEngineOnlyLinks()`
     // call. Reverting it back to the bare `toCrdtTreeRootNode()` mapping
     // leaves the decoded content holding whatever links the wire bytes
     // carried.
@@ -125,8 +124,8 @@ class SplitLinkDecodeTest {
         assertTrue(hasAnySplitLink(decoded.root))
     }
 
-    // RED-then-GREEN target: `toCrdtTreeNodesWhenEdit`'s rejection of an
-    // entry whose own `contentList` is empty (spec 035 D9, unit 1E).
+    // Red-then-green target: `toCrdtTreeNodesWhenEdit`'s rejection of an
+    // entry whose own `contentList` is empty.
     // Reverting the throw back to the old `mapNotNull { ... }` silently
     // drops the entry instead -- an empty result list (the only entry) then
     // reads as "delete the range", not an insert.
@@ -139,8 +138,8 @@ class SplitLinkDecodeTest {
         assertEquals("tree edit content has an entry with no node", exception.errorMessage)
     }
 
-    // RED-then-GREEN target: `toCrdtTreeRootNode`'s rejection of a depth
-    // that names no parent (spec 035 D9, unit 1E). Reverting the throw back
+    // Red-then-green target: `toCrdtTreeRootNode`'s rejection of a depth
+    // that names no parent. Reverting the throw back
     // to the old `?: continue` silently drops the orphaned node instead.
     // This reader is SHARED with the snapshot decode path --
     // `SnapshotConverterTest` pins that half of the same hunk.
@@ -164,8 +163,8 @@ class SplitLinkDecodeTest {
         assertEquals("invalid tree node depth: 2", exception.errorMessage)
     }
 
-    // RED-then-GREEN target: `toCrdtTreeNodesWhenEdit`'s new `clearTombstones()`
-    // call (spec 035 D10, unit 1E). Reverting it back to a bare
+    // Red-then-green target: `toCrdtTreeNodesWhenEdit`'s new `clearTombstones()`
+    // call. Reverting it back to a bare
     // `dropEngineOnlyLinks()` call leaves a forged merge stamp on the decoded
     // node -- the exact shape a peer could use to steer `declaredBoundaries`
     // off a freshly inserted node.

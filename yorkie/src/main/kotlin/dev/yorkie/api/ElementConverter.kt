@@ -299,9 +299,9 @@ internal fun PBTree.toCrdtTree(): CrdtTree {
  * does. This reader is SHARED by [toCrdtTreeNodesWhenEdit] (operation
  * content) and [PBTree.toCrdtTree] (snapshot decode) -- a stored snapshot
  * with a depth hole is rejected too now, not silently trimmed; the server
- * never writes one, only a crafted/corrupt payload does (spec 035 D9,
- * Migration). Port JS SDK `converter.ts` `fromTreeNodes` (b69169c0, #1404;
- * spec 035 unit 1E).
+ * never writes one, only a crafted/corrupt payload does (see the commit
+ * message's Migration note). Port JS SDK `converter.ts` `fromTreeNodes`
+ * (b69169c0, #1404).
  */
 internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
     if (isEmpty()) {
@@ -520,9 +520,9 @@ internal fun List<CrdtTreeNode>.toPBTreeNodesWhenEdit(): List<PBTreeNodes> {
  * tombstones this reader decodes verbatim are left alone -- the undo
  * copy-reinsert path produces genuine ones -- and `edit` books them into gc
  * instead (`contentAttrPairs`, [dev.yorkie.document.crdt.CrdtTree.edit]).
- * REPLACES the Commit-1 `dropSplitLinks()` + `dropMergeStamps()` pair (spec
- * 035 D10). Port JS SDK `converter.ts` `fromTreeNodesWhenEdit` (d3ffe946,
- * #1406; yorkie#2033; spec 035 unit 3C).
+ * REPLACES the earlier `dropSplitLinks()` + `dropMergeStamps()` pair. Port
+ * JS SDK `converter.ts` `fromTreeNodesWhenEdit` (d3ffe946, #1406;
+ * yorkie#2033).
  */
 internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
     if (isEmpty()) {

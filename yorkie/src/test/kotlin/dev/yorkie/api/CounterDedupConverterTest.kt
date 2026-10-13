@@ -70,13 +70,13 @@ class CounterDedupConverterTest {
         assertNotNull(roundTripped) // sanity
     }
 
-    // ac60f3d9 (#1422; D8): `restoreHll` rejects an HLL payload whose length
+    // ac60f3d9 (#1422): `restoreHll` rejects an HLL payload whose length
     // or register values `add` could not have produced. The converter's one
     // call site (ElementConverter.kt toCrdtCounter) must not throw out of
     // decode on rejection -- it logs and keeps going.
     @Test
-    fun `converter discards wrong-length HLL, logs once, keeps create-state value (D11)`() {
-        // given - a dedup counter whose wire `value` is NOT zero: D11 pins
+    fun `converter discards wrong-length HLL, logs once, keeps create-state value`() {
+        // given - a dedup counter whose wire `value` is NOT zero: this pins
         // that Android's dedup decode never reads it (createDedup always
         // starts the counter at value 0), unlike JS which keeps the value it
         // decoded from the wire on a rejected HLL payload.
@@ -103,7 +103,7 @@ class CounterDedupConverterTest {
     }
 
     @Test
-    fun `converter discards out-of-range HLL register, logs once, keeps create-state (D11)`() {
+    fun `converter discards out-of-range HLL register, logs once, keeps create-state`() {
         // given - exactly HllRegisterCount bytes (so length alone would pass)
         // but one register value (52) is above the maximum `add` can produce.
         val logger = RecordingLogger()

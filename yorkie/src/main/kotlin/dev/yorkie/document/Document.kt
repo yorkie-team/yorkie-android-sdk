@@ -551,7 +551,7 @@ public class Document(
         // (reissued-content) ticketIndex: Android's copy-reinsert reverse
         // keeps id-less snapshots and mints fresh ids in buildFreshNodes at
         // execute time, so there is no [old, new] pair to collect for it
-        // (D9). Port yorkie-js-sdk `b173c093` (#1426).
+        // Port yorkie-js-sdk `b173c093` (#1426).
         val pending = mutableListOf<PendingTreeRepoint>()
         // The splitting operations whose re-pointing hook is still
         // registered, so it can be taken off once the change has been
@@ -562,7 +562,7 @@ public class Document(
         /**
          * Re-points every [TreeEditOperation]/[TreeStyleOperation] later in
          * this same entry (by loop index -- never by [TreeEditOperation]
-         * equality, which is structural: D8) from [prev] to [curr].
+         * equality, which is structural) from [prev] to [curr].
          */
         fun repointRest(
             fromIndex: Int,
@@ -780,7 +780,7 @@ public class Document(
         // (checked against getConsumedSplitTicketCount, which describes the
         // ROOT pass since it is reset per execute() and this reads it after
         // the root pass above). `op` is compared by reference (===), never
-        // by the data class's structural equals (D8). Port yorkie-js-sdk
+        // by the data class's structural equals. Port yorkie-js-sdk
         // `b173c093` (#1426).
         for ((op, prev, curr, ticketIndex) in pending) {
             if (undoRedoResult.executedOperations.none { it === op }) continue
@@ -985,7 +985,7 @@ public class Document(
      * these are payload-safe by the same contract as [ChangeApplyError.operation]
      * itself (type + ticket only, never the cause's message) -- so a redelivered pack
      * is diagnosable down to which change/operation is stuck, not just the failure's
-     * class name (harness QA + cross-judge LOW-3, spec 034 round-1 review). The
+     * class name (a review finding on the change apply error). The
      * no-cause-message guarantee is unchanged. A [CancellationException] skips the log
      * line and propagates unchanged: it is the caller's scope tearing down, not the
      * document getting stuck. Ports JS SDK `document.ts` `applyChangePack`
@@ -1006,7 +1006,7 @@ public class Document(
         } catch (err: CancellationException) {
             throw err
         } catch (err: Throwable) {
-            // LOW-3 (harness QA + cross-judge, spec 034 round-1 review): when `err` is
+            // Review finding (diagnosability): when `err` is
             // a ChangeApplyError, its own changeID/opIndex/operation are payload-safe
             // (never the cause's message) and name which change/operation is stuck, so
             // they are logged alongside the root failure's class name.
@@ -1125,8 +1125,8 @@ public class Document(
      * [java.lang.Error] (e.g. `OutOfMemoryError`) thrown by that SAME Document-owned
      * bookkeeping (not by an operation's own `execute`).
      *
-     * **Precise scope of the Error/CancellationException guards (harness QA + Sonnet
-     * cross-judge finding, spec 034 round-1 review):** these two guards only ever see
+     * **Precise scope of the Error/CancellationException guards (a review finding on
+     * the change apply error):** these two guards only ever see
      * an `Error`/`CancellationException` that originates in this function's or
      * [applyChangesInternal]'s OWN code around the two `change.execute` calls --
      * `ensureClone`, presence/event emission, [reconcileHistoryEdits]. An
@@ -1241,7 +1241,7 @@ public class Document(
                 // named it (Change.execute only names an operation-level failure);
                 // Local/LocalNoHistory/UndoRedo pass their error through unchanged --
                 // only a Remote change blocks the whole replica set's progress and
-                // needs naming (D2/D3, JS SDK `document.ts`, `4251ab7e`, #1403). A
+                // needs naming (JS SDK `document.ts`, `4251ab7e`, #1403). A
                 // java.lang.Error (e.g. OutOfMemoryError) from THIS function's own
                 // bookkeeping around the two change.execute calls above (presence/event
                 // handling, reconcileHistoryEdits) is never wrapped: an application
@@ -1250,8 +1250,8 @@ public class Document(
                 // execute inside change.execute -- that is already a ChangeApplyError
                 // by the time it reaches this catch (Change.execute wraps it first), so
                 // it fails the `e !is ChangeApplyError` check below and is rethrown
-                // unchanged regardless (harness QA + cross-judge finding, spec 034
-                // round-1 review; see Change.execute's KDoc).
+                // unchanged regardless (a review finding on the change apply error; see
+                // Change.execute's KDoc).
                 if (source == OpSource.Remote && e !is ChangeApplyError && e !is Error) {
                     throw ChangeApplyError(changeID = change.id.toTestString(), cause = e)
                 }
@@ -1323,9 +1323,9 @@ public class Document(
                         // tree-undo offsets shift once per node instead of
                         // once for the whole operation at a delta that only
                         // ever reflected the first node (port yorkie-js-sdk
-                        // `790422ce`, #1421; fixes backlog 009 — the single
-                        // always-[0,0] placeholder this used to read from
-                        // shifted nothing for a remote restore).
+                        // `790422ce`, #1421; fixes the previously pinned upstream
+                        // defect — the single always-[0,0] placeholder this used
+                        // to read from shifted nothing for a remote restore).
                         executedOp.getExecutedRanges().forEach { (from, to, insertedSize) ->
                             internalHistory.reconcileTreeEdit(
                                 executedOp.parentCreatedAt,
@@ -1349,9 +1349,9 @@ public class Document(
                                 // split visibly grows the index. A multi-character
                                 // text insert also now shifts by its padded size
                                 // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
-                                // backlog 009 second half). Restore/retombstone ops
+                                // the second half of that fix). Restore/retombstone ops
                                 // use their own per-node executedRanges loop above
-                                // instead (D7; Android has no
+                                // instead (Android has no
                                 // TreeEditOperation.normalizePos, so widening this
                                 // branch to cover them too is out of scope).
                                 internalHistory.reconcileTreeEdit(
@@ -1853,7 +1853,7 @@ public class Document(
      * exposes this on `Document` for its client code only (no module-private concept in
      * JS); every other store-backed-restore helper on this class ([restoreFromBytes],
      * [restoreMetaFromBytes], [restoreAppendedChanges], [persistBase]) is `internal` too,
-     * and this matches them rather than the exec-plan's literal "public" wording.
+     * and this matches them rather than being `public`.
      */
     internal suspend fun advanceClientSeqTo(clientSeq: UInt): Unit = withContext(dispatcher) {
         if (clientSeq > changeID.clientSeq) {
@@ -2399,7 +2399,7 @@ internal sealed interface RestoreResult {
 /**
  * One tree node id a split re-created during [Document.executeUndoRedoInternal],
  * and what it replaces: [op] is the splitting [TreeEditOperation] (compared by
- * reference elsewhere, never by its data-class `equals` -- D8), [prev] is the
+ * reference elsewhere, never by its data-class `equals`), [prev] is the
  * element the split's reverse names, [curr] is the freshly minted replacement,
  * and [ticketIndex] is which of [op]'s recorded split tickets [curr] is -- so
  * the drain after both execution passes can tell whether the ROOT pass really

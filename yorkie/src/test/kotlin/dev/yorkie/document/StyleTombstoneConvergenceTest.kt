@@ -617,7 +617,7 @@ class StyleTombstoneConvergenceTest {
      * SINGLE `!node.isRemoved` change-report gate (`CrdtTree.kt`, `style`),
      * closing the asymmetry: a split sibling the change reached now reports
      * a change only while it is still live, the same rule as any other
-     * reached node (spec 035, AC3). The attribute write itself
+     * reached node. The attribute write itself
      * ([CrdtTreeNode.setAttributes]) is unconditional for every target
      * regardless of liveness -- same as before -- so the tombstone still
      * carries the attribute; only the CHANGE EVENT for it is now gated.
@@ -699,7 +699,7 @@ class StyleTombstoneConvergenceTest {
      * the way a replica that never lost it would. Each copied tombstone is a
      * fresh piece of garbage no removal path produced, and `dataSize`
      * excludes it, so without a registration it sits in the RHT forever:
-     * uncounted and unpurgeable. RED at `ea06769d` (P6): `recreateFromSpan`'s
+     * uncounted and unpurgeable. Red at `ea06769d`: `recreateFromSpan`'s
      * `attach()` never booked `node.gcPairs` before this port.
      */
     @Test
@@ -733,11 +733,11 @@ class StyleTombstoneConvergenceTest {
     }
 
     /**
-     * The text half of the same hole, already at parity (P6): `RgaTreeSplit.
+     * The text half of the same hole, already at parity: `RgaTreeSplit.
      * restore` recreates a purged piece through `TextValue.substring`, which
      * deep-copies the RHT with its tombstones just as a tree split does, so
      * the copies already get the same booking `recreateFromSpan`'s `attach()`
-     * needed adding above. RED not constructible: this case is already green
+     * needed adding above. A red run is not constructible: this case is already green
      * at `ea06769d` -- pin only, no production change for this half.
      */
     @Test

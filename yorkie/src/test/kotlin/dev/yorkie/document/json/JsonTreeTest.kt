@@ -404,7 +404,7 @@ class JsonTreeTest {
     }
 
     /**
-     * Same contract as the index form (D11): a range given backwards is a
+     * Same contract as the index form: a range given backwards is a
      * caller error, not an empty range — JS throws a `YorkieError`, but
      * Android keeps `require` (`IllegalArgumentException`) here, like every
      * neighboring check in this class. Mirrors JS SDK `document/json/tree.ts`

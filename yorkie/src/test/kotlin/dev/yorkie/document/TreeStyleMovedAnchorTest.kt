@@ -510,7 +510,7 @@ class TreeStyleMovedAnchorTest {
         assertNull(boldOf(requireNotNull(b)))
     }
 
-    // T-PIN (spec 033 commit 1, scenario 9) -- UPDATED, reverses the prior
+    // UPDATED pin, reverses the prior
     // pin: removeStyle() now runs the same advancePastUnknownSplitSiblings
     // pass style()/edit() always have, mirroring JS SDK c8928853 (#1375,
     // RTCOLLABPLATFORM-787; iOS 915dd77fe6). The PRIOR version of this test
@@ -527,7 +527,7 @@ class TreeStyleMovedAnchorTest {
     // `<r><p><b bold="x">a</b></p><p><b bold="x">c</b></p><q>z</q></r>`,
     // "c" keeping its "bold".
     //
-    // RESOLVED (was: FINDING, drafted not filed, per spec 021 AC2): the
+    // RESOLVED (was a known finding): the
     // PRIOR raw-anchor version of this test pinned ONLY B's state because A
     // and B genuinely disagreed in this interleaving (A's local execution
     // never reached "c" at all, so A always kept its "bold"; B's raw
@@ -547,12 +547,12 @@ class TreeStyleMovedAnchorTest {
     // ("converges whichever side arrives first" / "converges when both
     // replicas split and one removes the style") passed.
     //
-    // RED on 0d0b2aac (spec 033 base): the OLD non-advancing removeStyle
+    // Red on 0d0b2aac: the OLD non-advancing removeStyle
     // lets B's raw anchor enter the unknown split product and strip "c"'s
     // "bold", producing
     // `<r><p><b bold="x">a</b></p><p><b>c</b></p><q>z</q></r>` and A/B
-    // divergence (`ComparisonFailure`, captured in the round build report).
-    // GREEN after this commit's `removeStyle` advance.
+    // divergence (`ComparisonFailure`).
+    // Green after this commit's `removeStyle` advance.
     @Test
     fun `removeStyle advances past an unknown split, like style() does`() = runTest {
         val d1 = Document("test-doc")

@@ -69,7 +69,7 @@ class CrdtTreeTest {
         // Rht.toXml entity-escapes every attribute value (and key), so a
         // stored `"t"` renders `&quot;t&quot;` -- Android has no
         // `parseAttrValue` to unwrap it back to the bare `t` JS renders
-        // (D12, port JS `6932da6a`, #1447; moved from the pre-escape
+        // (port JS `6932da6a`, #1447; moved from the pre-escape
         // `b=""t""` expectation).
         val elemWithAttrs = CrdtTreeElement(DIP, "p")
         elemWithAttrs.append(CrdtTreeText(DIP, "hello"))
@@ -691,7 +691,7 @@ class CrdtTreeTest {
         // sibling is still an unknown split sibling styleTargets carries
         // the style onto, but styleChangeRange (b69169c0, #1404) now
         // reports no change for a parentless node instead of the
-        // `requireNotNull` throw this test used to pin (AC3:
+        // `requireNotNull` throw this test used to pin (JS case
         // "styleChangeRange emits no change for a parentless node") --
         // propagation no longer requires every reached node to have a
         // parent, only every REPORTED one.
@@ -724,7 +724,7 @@ class CrdtTreeTest {
         // the detached sibling is still an unknown split sibling styleTargets
         // carries the remove-style onto, but styleChangeRange (b69169c0,
         // #1404) now reports no change for a parentless node instead of the
-        // `requireNotNull` throw this test used to pin (AC3: "styleChangeRange
+        // `requireNotNull` throw this test used to pin (JS case "styleChangeRange
         // emits no change for a parentless node") -- propagation no longer
         // requires every reached node to have a parent, only every REPORTED
         // one.

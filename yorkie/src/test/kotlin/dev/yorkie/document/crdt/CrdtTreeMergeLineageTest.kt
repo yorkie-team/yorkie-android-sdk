@@ -14,7 +14,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_merge_lineage_test.ts` (JS SDK `d3ffe946`, #1406) as JVM unit
- * tests (spec 035 AC8, Commit 3 unit 3B).
+ * tests.
  *
  * A merge pointer (`mergedFrom`, and the `mergedInto` derived from it) is not
  * always server-derived: an element payload (Set/Add/ArraySet) keeps the
@@ -160,7 +160,7 @@ class CrdtTreeMergeLineageTest {
      * (the only ways to attach a child in this SDK) all throw
      * `IllegalStateException("Text node cannot have children")` before the
      * forged state can even exist -- the JS shape is not constructible here
-     * (spec 035 probe P5d, D17). The guard is still ported in
+     * (a red run is not constructible). The guard is still ported in
      * [CrdtTree.rebuildMergeState] for parity with a crafted/corrupt
      * snapshot this reader does not itself validate; this test pins the
      * constructibility boundary instead of the (unreachable) rejection.
@@ -304,7 +304,7 @@ class CrdtTreeMergeLineageTest {
     }
 
     /**
-     * Round-1 cross-judge BLOCKER-1 (spec 035): the merge in [CrdtTree.edit]
+     * Review finding (blocker): the merge in [CrdtTree.edit]
      * stamps a moved child's [CrdtTreeNode.mergedAt] with the merge's own
      * ticket, once, on first move (`CrdtTree.kt:991-997`). A LATER,
      * unrelated op can still bump the merge source's OWN

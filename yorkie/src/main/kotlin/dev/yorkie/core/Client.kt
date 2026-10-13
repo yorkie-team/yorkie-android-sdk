@@ -169,7 +169,7 @@ private fun namespaceOf(
     return "$safeApiKey/$safeClientKey/$safeDocKey"
 }
 
-// Backs [generateClientKey]'s "was this key supplied or defaulted?" check (D4). A plain
+// Backs [generateClientKey]'s "was this key supplied or defaulted?" check. A plain
 // `HashSet` would leak one entry per [Client.Options] ever constructed with a defaulted
 // [Client.Options.key]; `WeakHashMap`-backed membership lets a generated key be reclaimed once
 // nothing else references the `String` anymore (the [Client.Options] instance that minted it, or
@@ -182,15 +182,15 @@ private val generatedClientKeys: MutableSet<String> =
 /**
  * Default-value generator for [Client.Options.key]: mints a fresh random key and records it into
  * [generatedClientKeys], so [Client]'s constructor can later tell a defaulted key apart from one
- * the caller passed explicitly (D4 — [Client.Options] has no public "was key supplied?" bit of its
+ * the caller passed explicitly ([Client.Options] has no public "was key supplied?" bit of its
  * own, unlike JS's optional `opts.key?: string`). Public signature/`copy`/`equals` of
  * [Client.Options] are unchanged: this only replaces the default-value *expression*, not the
  * property's type. A caller who explicitly re-passes a value that happens to already be in the set
  * (e.g. re-supplying a previously generated key) is indistinguishable from a defaulted key and
- * warns falsely — accepted (D4): the cost is one extra warning, not a correctness break. CSPRNG:
+ * warns falsely — accepted: the cost is one extra warning, not a correctness break. CSPRNG:
  * `UUID.randomUUID()` is RFC 4122 v4 (variant 2) backed by the JDK's `SecureRandom`, so JS's
  * `3b9c668c` CSPRNG half (replacing a `Math.random()`-seeded `uuid()`) is N/A here — Android's
- * default was already cryptographically strong (probed at `b1fa0d39`, recorded in the spec).
+ * default was already cryptographically strong (probed at `b1fa0d39`).
  */
 private fun generateClientKey(): String {
     val key = UUID.randomUUID().toString()
@@ -297,7 +297,7 @@ public class Client(
         // actor-mismatch event fires, because the old entries are never reached. Warn where the
         // two options meet: neither is wrong alone, the loss is silent, and [DocStore] has no
         // prune to reclaim the orphans. Ported from JS `client.ts`'s constructor warning
-        // (`3b9c668c`/#1402); `Options.key` has no "was it supplied?" bit of its own (D4 — a
+        // (`3b9c668c`/#1402); `Options.key` has no "was it supplied?" bit of its own (a
         // generator-recorded weak set stands in for JS's `opts.key` optionality), so this reads
         // [generatedClientKeys] instead of an `opts.key` presence check.
         if (options.docStore != null && options.key in generatedClientKeys) {
@@ -319,7 +319,7 @@ public class Client(
      * different identity's namespace. The session lock name (`"yorkie-session:${storeKey(...)}"`)
      * is derived from this same key, so this one change scopes both. Ported from JS `client.ts`
      * (`2291bf67`/#1338, escaping added in `3b9c668c`/#1402); `apiKey` may be null on Android
-     * (`options.apiKey ?: ""` — determination, recorded in the build report).
+     * (`options.apiKey ?: ""`).
      */
     private fun storeKey(docKey: String) = namespaceOf(options.apiKey ?: "", options.key, docKey)
 
@@ -811,7 +811,7 @@ public class Client(
      * ([DocStore.appendChange] is an upsert, and the watermark skips what is carried) — closing
      * the window where the triggered append has not run yet for a change still pending. Second,
      * [persistQueues]`[key]?.join()` awaits that catch-up append's own store write (JS `decide`
-     * deferral, D9): [append] chains its write via [enqueueWrite] and returns before the write
+     * deferral): [append] chains its write via [enqueueWrite] and returns before the write
      * lands, so without this join a write that is about to fail (and poison the key) can still be
      * in flight when the re-sample below runs — a hung store write delays this sync's tail no
      * longer than the store's own timeout bounds it to; Kotlin awaits this under the document
@@ -3196,7 +3196,7 @@ public class Client(
          * from it, and the default is a fresh random key per [Client], so leaving it unset means
          * every restart silently loses every un-pushed change and orphans the previous launch's
          * entries. This cannot be defaulted correctly — only the app knows what identity should
-         * outlive the process — so the constructor warns rather than guessing (`init {}`, D4/D5).
+         * outlive the process — so the constructor warns rather than guessing (`init {}`).
          * See [key] for why the value must not be a user id, a device id, or anything else
          * guessable or shared between users of one device.
          *

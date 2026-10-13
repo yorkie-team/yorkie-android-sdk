@@ -14,7 +14,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_split_link_payload_test.ts` (JS SDK c8928853, #1375) as JVM
- * unit tests (spec 033 AC1, Commit 1 steps 10-11).
+ * unit tests.
  *
  * A Set/Add/ArraySet payload carries a whole element, and the wire format
  * carries `insPrevID`/`insNextID` on every tree node it holds. The decode
@@ -76,21 +76,21 @@ class TreeSplitLinkPayloadTest {
     }
 
     // Sanity precondition for the two cases below: this depends on
-    // `CrdtTreeNode.split` setting insPrevID/insNextID, unrelated to this
-    // unit's hunks (ElementConverter.kt/Document.kt). RED not constructible
-    // against this unit's production code — nothing in steps 10-11 runs in
+    // `CrdtTreeNode.split` setting insPrevID/insNextID, unrelated to the
+    // ElementConverter.kt/Document.kt hunks. A red run is not constructible
+    // against this production code — nothing in the strip paths runs in
     // this test (no decode, no undo).
     @Test
     fun `a split tree carries links`() = runTest {
         assertTrue(splitLinks(withSplitTree(actor1)).isNotEmpty())
     }
 
-    // RED-then-GREEN target: Document.kt's executeUndoRedo strip. Reverting
+    // Red-then-green target: Document.kt's executeUndoRedo strip. Reverting
     // ONLY that hunk leaves d1's restored value holding the links its
     // deepcopy captured (the undo executes that copy directly, never
     // through the converter), while d2 -- decoding the same reverse
     // SetOperation over the wire -- still strips them via the (unreverted)
-    // ElementConverter.kt hunk from step 10. d1 and d2 then disagree, and
+    // ElementConverter.kt change. d1 and d2 then disagree, and
     // this fails.
     @Test
     fun `an undone Set restores no split links, identically on a replica`() = runTest {

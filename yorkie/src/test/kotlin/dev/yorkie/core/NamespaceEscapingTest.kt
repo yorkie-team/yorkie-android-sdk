@@ -21,20 +21,20 @@ import org.junit.Test
  * both; see [Client]'s `storeKey` KDoc). Two identity triples whose BARE `apiKey/clientKey/docKey`
  * join would collide must land on distinct store entries and distinct lock names; a literal `%`
  * in a part must not forge the `/` escape; a triple with no `/`/`%` anywhere keeps the exact
- * pre-#1402 bare-joined key, so an entry persisted before this change is still found (Migration
- * table, `harness-docs/specs/034_*.md`).
+ * pre-#1402 bare-joined key, so an entry persisted before this change is still found (see the
+ * migration note in the commit that introduced it).
  *
  * JS's `3b9c668c` adds no dedicated unit test for `namespaceOf`/`escapeNamespacePart` themselves
  * (only `client_options_test.ts`'s warning cases, ported separately in
- * `ClientOptionsKeyWarningTest`, unit 3B) — confirmed by `git -C yorkie-js-sdk show 3b9c668c --
+ * `ClientOptionsKeyWarningTest`) — confirmed by `git -C yorkie-js-sdk show 3b9c668c --
  * packages/sdk/test` and a repo-wide grep for `namespaceOf`/`escapeNamespacePart` under
  * `packages/sdk/test` at HEAD (no matches). Every case below is therefore an Android-only pin
  * derived from the commit's own stated injectivity goal, not a 1:1 JS port; each expected store
  * key is a literal string this test hand-derives from the documented
- * `escapeNamespacePart`/`namespaceOf` formula (spec 034 Commit 3 anchors), then confirmed via a
+ * `escapeNamespacePart`/`namespaceOf` formula, then confirmed via a
  * real [Client.attachDocument] restore — never by calling the private production function
- * directly, since [Client.storeKey]/`namespaceOf`/`escapeNamespacePart` are private (unit 3A
- * scope: routing only, no public surface).
+ * directly, since [Client.storeKey]/`namespaceOf`/`escapeNamespacePart` are private (routing
+ * only, no public surface).
  */
 class NamespaceEscapingTest {
 
@@ -114,39 +114,38 @@ class NamespaceEscapingTest {
     }
 
     @Test
-    fun `T1 two triples bare-joining to the same string get distinct keys and lock names`() =
-        runTest {
-            val store = MemoryDocStore()
-            val docKey = "doc"
-            // Bare-joined, BOTH triples below would read/write "a/b/c/doc" pre-#1402 — a
-            // collision. Escaped, triple 1 ("a/b", "c") -> "a%2Fb/c/doc" and triple 2
-            // ("a", "b/c") -> "a/b%2Fc/doc": distinct literal strings, hand-derived here from
-            // escapeNamespacePart (`%` first, then `/`) on each part in turn.
-            store.saveSnapshot("a%2Fb/c/doc", envelope(docKey, 1))
-            store.saveSnapshot("a/b%2Fc/doc", envelope(docKey, 2))
-            // A pre-#1402 entry at the literal bare-joined string must NOT be the one either
-            // triple reads — seeded with a THIRD value so reading it would be caught below.
-            store.saveSnapshot("a/b/c/doc", envelope(docKey, 3))
+    fun `two triples bare-joining to the same string get distinct keys and lock names`() = runTest {
+        val store = MemoryDocStore()
+        val docKey = "doc"
+        // Bare-joined, BOTH triples below would read/write "a/b/c/doc" pre-#1402 — a
+        // collision. Escaped, triple 1 ("a/b", "c") -> "a%2Fb/c/doc" and triple 2
+        // ("a", "b/c") -> "a/b%2Fc/doc": distinct literal strings, hand-derived here from
+        // escapeNamespacePart (`%` first, then `/`) on each part in turn.
+        store.saveSnapshot("a%2Fb/c/doc", envelope(docKey, 1))
+        store.saveSnapshot("a/b%2Fc/doc", envelope(docKey, 2))
+        // A pre-#1402 entry at the literal bare-joined string must NOT be the one either
+        // triple reads — seeded with a THIRD value so reading it would be caught below.
+        store.saveSnapshot("a/b/c/doc", envelope(docKey, 3))
 
-            val lock1 = RecordingSessionLock()
-            val lock2 = RecordingSessionLock()
-            val json1 = attachAndGetRoot("a/b", "c", store, lock1, docKey)
-            val json2 = attachAndGetRoot("a", "b/c", store, lock2, docKey)
+        val lock1 = RecordingSessionLock()
+        val lock2 = RecordingSessionLock()
+        val json1 = attachAndGetRoot("a/b", "c", store, lock1, docKey)
+        val json2 = attachAndGetRoot("a", "b/c", store, lock2, docKey)
 
-            assertTrue(json1.contains("\"k\":1"), "triple 1 did not restore its own entry: $json1")
-            assertTrue(json2.contains("\"k\":2"), "triple 2 did not restore its own entry: $json2")
-            assertTrue(!json1.contains("\"k\":3"), "triple 1 read the stale bare-joined entry")
-            assertTrue(!json2.contains("\"k\":3"), "triple 2 read the stale bare-joined entry")
+        assertTrue(json1.contains("\"k\":1"), "triple 1 did not restore its own entry: $json1")
+        assertTrue(json2.contains("\"k\":2"), "triple 2 did not restore its own entry: $json2")
+        assertTrue(!json1.contains("\"k\":3"), "triple 1 read the stale bare-joined entry")
+        assertTrue(!json2.contains("\"k\":3"), "triple 2 read the stale bare-joined entry")
 
-            assertTrue(lock1.acquired.isNotEmpty())
-            assertTrue(lock2.acquired.isNotEmpty())
-            assertNotEquals(lock1.acquired.single(), lock2.acquired.single())
-            assertTrue(lock1.acquired.single() == "yorkie-session:a%2Fb/c/doc")
-            assertTrue(lock2.acquired.single() == "yorkie-session:a/b%2Fc/doc")
-        }
+        assertTrue(lock1.acquired.isNotEmpty())
+        assertTrue(lock2.acquired.isNotEmpty())
+        assertNotEquals(lock1.acquired.single(), lock2.acquired.single())
+        assertTrue(lock1.acquired.single() == "yorkie-session:a%2Fb/c/doc")
+        assertTrue(lock2.acquired.single() == "yorkie-session:a/b%2Fc/doc")
+    }
 
     @Test
-    fun `T2 a literal percent in a part does not forge the slash escape`() = runTest {
+    fun `a literal percent in a part does not forge the slash escape`() = runTest {
         val store = MemoryDocStore()
         val docKey = "doc"
         // apiKey "a/b" (a REAL slash) escapes to "a%2Fb". apiKey "a%2Fb" (a LITERAL percent
@@ -174,12 +173,12 @@ class NamespaceEscapingTest {
     }
 
     @Test
-    fun `T3 a separator-free triple keeps the exact pre-#1402 bare-joined key`() = runTest {
+    fun `a separator-free triple keeps the exact pre-#1402 bare-joined key`() = runTest {
         val store = MemoryDocStore()
         val docKey = "doc"
         // No part contains "/" or "%": escapeNamespacePart is a no-op on every part, so the
         // escaped key is byte-identical to the old bare join — an entry persisted before
-        // #1402 is still found, with no migration needed for it (Migration table).
+        // #1402 is still found, with no migration needed for it.
         store.saveSnapshot("a/b/doc", envelope(docKey, 9))
 
         val lock = RecordingSessionLock()

@@ -19,9 +19,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented headline for spec 036 Commit 4 (JS `6932da6a`, #1447, unit
- * 4D): a LOCAL Text/Tree index that splits a UTF-16 surrogate pair (one
- * non-BMP character, "😀", same fixture as the JVM `SurrogateIndexTest`) is
+ * Instrumented headline for #1447 (JS `6932da6a`): a LOCAL Text/Tree index that
+ * splits a UTF-16 surrogate pair (one non-BMP character, "😀", same fixture as the JVM `SurrogateIndexTest`) is
  * rejected over the REAL sync loop (a real Yorkie server, compose pin
  * `yorkieteam/yorkie:0.7.24`) exactly as the JVM in-process cases already
  * pin, and a whole-character edit on either side of the pair still

@@ -156,7 +156,7 @@ internal data class CrdtPrimitive(
             // right-sized zero-filled array before reading (`ByteArray.copyOf`
             // pads with zero at the end / truncates). Never mutates `bytes`
             // itself — `toByteArray()` is already a defensive copy (ac60f3d9,
-            // #1422; D8).
+            // #1422).
             fun ByteString.fixedWidthBuffer(width: Int) = ByteBuffer.wrap(
                 toByteArray().copyOf(width),
             ).order(

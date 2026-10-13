@@ -151,10 +151,10 @@ internal data class TreeEditOperation(
      * in turn so a restore/retombstone spanning several nodes shifts pending
      * tree-undo offsets once per node, not once for the whole operation with
      * a delta that never reflected more than the first node (port
-     * yorkie-js-sdk `790422ce`, #1421; fixes backlog 009). Null before
+     * yorkie-js-sdk `790422ce`, #1421). Null before
      * [executeRestore] runs and always null for an ordinary (non-restore)
-     * edit, which keeps Android's pre-existing first-opInfo reconcile (D7 --
-     * Android has no `TreeEditOperation.normalizePos`). Reset at the top of
+     * edit, which keeps Android's pre-existing first-opInfo reconcile
+     * (Android has no `TreeEditOperation.normalizePos`). Reset at the top of
      * [execute].
      */
     private var executedRanges: List<Triple<Int, Int, Int>>? = null
@@ -188,7 +188,7 @@ internal data class TreeEditOperation(
      * replacements get new ids (see [splitTickets]), so whoever runs this
      * split re-points every recorded operation at them ([reconcileNodeID]).
      * Declared in the class BODY, not the constructor, so `copy()`/`equals`/
-     * `hashCode` ignore it (D8) -- [executeRestore]'s `copy(restoreMode =
+     * `hashCode` ignore it -- [executeRestore]'s `copy(restoreMode =
      * ...)` must not carry a redo reverse's [replacedIDs] onto its own
      * restore reverse. Local to the replica that recorded it; never
      * encoded. Port yorkie-js-sdk `b173c093` (#1426).
@@ -284,7 +284,7 @@ internal data class TreeEditOperation(
      * the split tickets must move with it or every replica mints that
      * split's elements under the WRONG actor while the rest of the change
      * carries the right one. Lamport/delimiter are untouched -- only the
-     * actor component changes (D5).
+     * actor component changes.
      */
     override fun setActor(actorID: String) {
         super.setActor(actorID)
@@ -501,9 +501,9 @@ internal data class TreeEditOperation(
      * [CrdtTree.retombstone]/[CrdtTree.restore] measured as it changed, in
      * `[retombstone…, restore…]` order — replacing the single always-`[0,
      * 0]`, node-less placeholder this op used to emit unconditionally (port
-     * yorkie-js-sdk `790422ce`, #1421; resolves the TODO(RTCOLLABPLATFORM-754)
-     * interim-contract note and the KNOWN DEFECT this op used to carry, PR
-     * #360 review F3 / backlog 009: `Document.reconcileHistoryEdits` fed that
+     * yorkie-js-sdk `790422ce`, #1421; resolves the old
+     * interim-contract note and the KNOWN DEFECT this op used to carry (PR
+     * #360's review): `Document.reconcileHistoryEdits` fed that
      * zero-width opInfo to `History.reconcileTreeEdit`, so a peer's identity
      * restore re-indexed pending tree undos by 0 and a later split-undo
      * deleted live text — see `TreeUpstreamDefectPinTest`, now flipped).
@@ -542,7 +542,7 @@ internal data class TreeEditOperation(
         // the requested state (a peer deleted/revived it first —
         // retombstone()'s and restore()'s idempotent-skip cases) nothing
         // changed: not executed, so the undo consumes its entry WITHOUT
-        // enqueuing a phantom local change (spec 002 AC6, UndoRedoTest
+        // enqueuing a phantom local change (UndoRedoTest
         // vanished-target case). Diverges from JS, which treats this as
         // executed unconditionally; matches the Text twin, whose opInfos come
         // from the actual textChanges.
@@ -579,11 +579,11 @@ internal data class TreeEditOperation(
         // can be empty even when [changed] is true (e.g. the whole restore
         // sat under a removed ancestor, or was a split-only isolate with no
         // node identity change). That is a deliberate, disclosed behaviour
-        // change (AC3, D4): a subscriber that indexed `operations.first()`
+        // change: a subscriber that indexed `operations.first()`
         // must tolerate an empty list on an executed change. The gate that
         // publishes the surrounding event on `executed`/`executedOperations`
-        // rather than on `opInfos.isNotEmpty()` is a separate unit of this
-        // same spec.
+        // rather than on `opInfos.isNotEmpty()` is a separate change in
+        // Document.kt.
         val edits = retombstoneResult.edits + restored.edits
         executedRanges = edits.map { Triple(it.change.from, it.change.to, it.insertedSize) }
         val opInfos = edits.map { edit ->

@@ -16,8 +16,8 @@ import org.junit.Test
 
 /**
  * Ports the identity-preserving undo/redo cases in `document_test.ts` (JS SDK
- * 5d5cac63, #1293) as JVM unit tests (AC6, AC7, AC11). Also carries the two
- * `text_restore_after_gc_test.ts` cases JS `cab55005` (#1442) added (AC6):
+ * 5d5cac63, #1293) as JVM unit tests. Also carries the two
+ * `text_restore_after_gc_test.ts` cases JS `cab55005` (#1442) added:
  * convergence when only the undoing replica purged the deleted run, with and
  * without its left neighbour also purged -- pinned green at the baseline,
  * since `cab55005` only changed `Text.normalizePos`'s cost, not this
@@ -241,7 +241,7 @@ class TextRestoreTest {
     // them in place; in the `purgeLeft` case the text left of the run is
     // ALSO purged on d1, so no piece of any neighbour survives there and the
     // first recreated fragment falls back to the operation's own position.
-    // Pinned green at the baseline (P7): Android's restore/retombstone ladder
+    // Pinned green at the baseline: Android's restore/retombstone ladder
     // is unchanged by `cab55005` (a Text position-lookup change only).
     private suspend fun runUndoingReplicaPurgedConvergence(
         purgeLeft: Boolean,

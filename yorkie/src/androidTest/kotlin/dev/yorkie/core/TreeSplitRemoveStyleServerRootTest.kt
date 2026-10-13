@@ -15,10 +15,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented headline for spec 033 (yorkie-js-sdk v0.7.24, `c8928853` /
- * #1375) against a real Yorkie server (compose pin `yorkieteam/yorkie:0.7.24`),
- * AC5. Ports `TreeRemoveStyleSplitTest`'s `converges whichever side arrives
- * first` JVM case (spec 033 scenario 1 + 4) as a two-client, Manual-sync,
+ * Instrumented headline for yorkie-js-sdk v0.7.24 (`c8928853` / #1375)
+ * against a real Yorkie server (compose pin `yorkieteam/yorkie:0.7.24`).
+ * Ports `TreeRemoveStyleSplitTest`'s `converges whichever side arrives
+ * first` JVM case as a two-client, Manual-sync,
  * over-the-wire run, with the server's OWN replayed root
  * (pattern: [GcContainmentTest.serverRoot]) and a from-scratch
  * [CrdtRoot] rebuild of each client's own root as two further oracles beyond
@@ -28,12 +28,12 @@ import org.junit.runner.RunWith
  * and "de" (`editByPath(.., splitLevel = 1)`); concurrently, BEFORE seeing
  * that split, d2 `removeStyleByPath`-es the whole original span's `bold`
  * attribute. Once both changes cross the wire, `CrdtTree.removeStyle`'s
- * `advancePastUnknownSplitSiblings` call (commit 1 of this spec) must carry
+ * `advancePastUnknownSplitSiblings` call (from the #1375 port) must carry
  * d2's attribute range across the boundary d1's split introduced, so the
  * removal reaches BOTH resulting spans rather than stopping at the first:
  * confirmed locally (JVM, in-process `exchange`, not this file) to converge
  * on `<doc><p><span>abc</span><span>de</span></p></doc>` -- no `bold` left on
- * either side. RED at `0d0b2aac`: `removeStyle` had no advance at all, so the
+ * either side. Red at `0d0b2aac`: `removeStyle` had no advance at all, so the
  * second span would keep `bold="true"` on whichever replica applied the
  * split locally before the remote `removeStyle` arrived.
  */
@@ -122,9 +122,8 @@ class TreeSplitRemoveStyleServerRootTest {
             assertEquals(expectedXml, d2Xml)
 
             // docSize equals a from-scratch CrdtRoot(deepCopy) rebuild on
-            // both clients -- the #1392 docSize-rebuild invariant (spec 033
-            // AC2), checked here too since this run already has both
-            // replicas settled.
+            // both clients -- the #1392 docSize-rebuild invariant, checked here too
+            // since this run already has both replicas settled.
             val d1Rebuild = CrdtRoot(d1.getRootObject().deepCopy())
             val d2Rebuild = CrdtRoot(d2.getRootObject().deepCopy())
             assertEquals(d1Rebuild.docSize, d1.getDocSize())

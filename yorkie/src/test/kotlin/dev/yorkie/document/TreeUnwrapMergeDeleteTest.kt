@@ -13,7 +13,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_unwrap_merge_delete_test.ts` (JS SDK `b69169c0`, #1404) as JVM
- * in-process cross-sync tests (spec 035 AC2, Commit 1 unit 1B).
+ * in-process cross-sync tests.
  *
  * An unwrap -- a content-less edit over a paragraph's opening token, which
  * hoists its children into the root -- has to converge with a concurrent

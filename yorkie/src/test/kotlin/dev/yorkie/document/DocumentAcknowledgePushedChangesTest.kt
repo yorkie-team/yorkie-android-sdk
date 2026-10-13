@@ -13,7 +13,7 @@ import org.junit.Test
 
 /**
  * Ports JS SDK `document.ts` `acknowledgePushedChanges` (`bed81143`, #1401) as
- * a JVM unit test (spec 034 AC1).
+ * a JVM unit test.
  *
  * [Document.acknowledgePushedChanges] is used for a response [ChangePack]
  * dropped without applying its remote state (push-only/sync-off): the

@@ -92,11 +92,11 @@ class OperationConverterSplitTicketTest {
         assertTrue(decoded.splitTickets.isEmpty())
     }
 
-    // Unit 1A (#1404, b69169c0): a replica reads back the EXACT tickets the
+    // (#1404, b69169c0): a replica reads back the EXACT tickets the
     // sending change issued, driven end to end through a real document edit
     // (JsonTree.edit -> Document.createChangePack), not a hand-built op --
     // OperationConverter.kt:158/:309 already carry splitTickets, this pins
-    // the real-document shape too (verify only, "RED not constructible").
+    // the real-document shape too (verify only; a red run is not constructible).
     @Test
     fun `a replica reads back the tickets the sending change issued`() = runTest {
         val doc = Document("doc")
@@ -121,7 +121,7 @@ class OperationConverterSplitTicketTest {
         assertEquals(sentOp.splitTickets, decoded.splitTickets)
     }
 
-    // Unit 1A (#1404, b69169c0): a ticket whose delimiter sits BELOW
+    // (#1404, b69169c0): a ticket whose delimiter sits BELOW
     // executedAt's -- a shape issueTimeTicket's fallback (which only ever
     // counts delimiters UP from executedAt) could never produce -- still
     // reads back exactly as sent. Proves the decode path trusts the wire

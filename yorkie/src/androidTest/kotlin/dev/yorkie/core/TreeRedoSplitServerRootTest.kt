@@ -16,9 +16,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented headline for spec 036 Commit 2 (JS `b173c093`, #1426, unit
- * 2D): redoing a split that re-creates an element a merge took away must
- * re-point the style operation that followed it at the new element, over the
+ * Instrumented headline for #1426 (JS `b173c093`): redoing a split that re-creates
+ * an element a merge took away must re-point the style operation that followed it at the new element, over the
  * REAL sync loop (a real Yorkie server, compose pin `yorkieteam/yorkie:0.7.24`)
  * and AFTER the SERVER's own replica has collected the merged-away element --
  * not just the in-process `crossSync` wire round trip the JVM

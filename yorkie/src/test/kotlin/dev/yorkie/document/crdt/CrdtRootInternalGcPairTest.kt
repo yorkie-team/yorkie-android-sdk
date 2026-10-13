@@ -19,7 +19,7 @@ import kotlinx.coroutines.test.runTest
  * Ports `root_internal_gc_pair_test.ts` (yorkie-js-sdk `dbff8892`, #1405;
  * itself a port of Go `TestRegisterElementBooksInternalTombstones`/
  * `TestRegisterElementSkipsTombstonedTreeRoot`, yorkie#2033) as JVM unit
- * tests (spec 035 AC6).
+ * tests.
  *
  * [CrdtRoot.registerElement] now books the tombstones an element carries
  * INSIDE itself (a [CrdtTree]'s removed nodes/attributes, a [CrdtText]'s
@@ -70,7 +70,7 @@ class CrdtRootInternalGcPairTest {
 
     /**
      * Port of Go `TestRegisterElementBooksInternalTombstones` (yorkie#2033).
-     * RED at `ea06769d` (P6): before this port, `registerElement` never
+     * Red at `ea06769d`: before this port, `registerElement` never
      * walked a freshly-registered element's own internal structure, so a
      * tombstone a Set payload carried inside its tree was invisible to gc
      * until the next snapshot rebuild.
@@ -108,7 +108,7 @@ class CrdtRootInternalGcPairTest {
 
     /**
      * Port of Go `TestRegisterElementSkipsTombstonedTreeRoot` (yorkie#2033).
-     * RED at `ea06769d` (P6): the tree-wide scan booked a removed node
+     * Red at `ea06769d`: the tree-wide scan booked a removed node
      * regardless of whether it had a parent, so a crafted payload marking
      * the root itself removed got the root booked as a collectable child —
      * [CrdtTree.gcPairs]'s `node.parent != null` guard is what this pins.
@@ -143,7 +143,7 @@ class CrdtRootInternalGcPairTest {
      * An undone container removal re-sets a deep copy of the whole subtree
      * under the ORIGINAL `SetOperation` path (`Document.history`'s reverse
      * op), so the tombstone the tree held before it was removed has to be
-     * booked again on the way back in. RED at `ea06769d` (P6).
+     * booked again on the way back in. Red at `ea06769d`.
      */
     @Test
     fun `books the tombstones an undone container removal brings back`() = runTest {
@@ -173,7 +173,7 @@ class CrdtRootInternalGcPairTest {
     /**
      * The same, but across the wire: a remote replica decodes the SAME Set
      * (not a locally-issued undo), proving the booking is not tied to the
-     * local undo code path. RED at `ea06769d` (P6).
+     * local undo code path. Red at `ea06769d`.
      */
     @Test
     fun `books them on a replica that decodes the same Set`() = runTest {

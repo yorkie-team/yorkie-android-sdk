@@ -14,7 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented headline for spec 035 Commit 2 (`dbff8892`, #1405, AC5/AC9):
+ * Instrumented headline for #1405 (`dbff8892`):
  * the two JS `gc_test.ts` integration cases that exercise the successor
  * barrier end to end over a real Yorkie server (compose pin
  * `yorkieteam/yorkie:0.7.24`), not just the JVM in-process shapes
@@ -75,9 +75,8 @@ class GcSuccessorBarrierTest {
      * (`dbff8892`, #1405) -- the same interleaving as JS's "concurrent
      * garbage collection test" (and this project's
      * [dev.yorkie.core.GCTest.test_gc_with_text_for_multi_client] family,
-     * which never happens to hit this exact race -- see the Commit 2 build
-     * report's "GCTest sweep" section for why no existing `GCTest` assertion
-     * moved), carried one round further: a delay is acceptable, a leak is
+     * which never happens to hit this exact race, so no existing `GCTest`
+     * assertion moved), carried one round further: a delay is acceptable, a leak is
      * not, so retention has to reach zero once both replicas sync with no
      * further edits.
      */

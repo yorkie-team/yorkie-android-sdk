@@ -11,7 +11,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_remove_style_split_test.ts` (JS SDK c8928853, #1375) as JVM
- * in-process convergence tests (spec 033 AC1).
+ * in-process convergence tests.
  *
  * [CrdtTree.removeStyle][dev.yorkie.document.crdt.CrdtTree.removeStyle] now
  * advances past unknown split siblings on both range anchors, the same as

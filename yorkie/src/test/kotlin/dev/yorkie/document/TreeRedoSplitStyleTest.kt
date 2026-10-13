@@ -167,7 +167,7 @@ class TreeRedoSplitStyleTest {
 
     // The style names the inline the FIRST (innermost) split ticket minted,
     // nested under the paragraph the SECOND ticket minted -- only resolves if
-    // the replacedIDs <-> ticket-index pairing is innermost-first (D8/mergedAwayIDs).
+    // the replacedIDs <-> ticket-index pairing is innermost-first (mergedAwayIDs).
     @Test
     fun `peer applies redo of a two level split with the new inline bold`() = runTest {
         runShape(collect = false) { t ->

@@ -24,8 +24,7 @@ import org.junit.After
 import org.junit.Test
 
 /**
- * Ports `clone_reset_test.ts` (JS SDK `ec7558e9`, #1394) as JVM unit tests
- * (spec 033 AC4).
+ * Ports `clone_reset_test.ts` (JS SDK `ec7558e9`, #1394) as JVM unit tests.
  *
  * `Change.execute` applies operations one at a time and does not roll back,
  * so a change or undo/redo that throws partway through leaves [Document.clone]
@@ -34,18 +33,18 @@ import org.junit.Test
  * that rethrows, mirroring [Document.updateAsync]'s existing behavior on an
  * updater throw.
  *
- * **Disclosure (spec 034 Commit 2, JS `4251ab7e`, #1403):** "drops the clone when a
+ * **Behaviour change (JS `4251ab7e`, #1403):** "drops the clone when a
  * remote change fails partway" originally asserted the raw [IllegalStateException]
  * escaped [Document.applyChangePack] unnamed; it now asserts a [ChangeApplyError]
  * wrapping that same exception as [Throwable.cause] -- the clone-reset assertion this
  * test exists for is unchanged, only the exception type naming the failure is. The
- * undo/redo case below is unaffected: `OpSource.UndoRedo` is not named (D2), so its
+ * undo/redo case below is unaffected: `OpSource.UndoRedo` is not named, so its
  * raw [IllegalStateException] still escapes unchanged.
  *
  * `clone` is `internal`, so it is read directly here rather
  * than through a cast-based accessor the way JS's `internals()` helper does.
  *
- * **Spec 034 Commit 4 additions (JS `clone_reset_test.ts`, `e29d17e0`, #1397; iOS
+ * **Later additions (JS `clone_reset_test.ts`, `e29d17e0`, #1397; iOS
  * `915dd77fe6`):** a root-pass throw not only drops the clone (above) but also burns
  * the lamport and this actor's version-vector entry, clientSeq unchanged, so the next
  * change's TimeTickets never collide with whatever prefix of the failed change already
@@ -96,7 +95,7 @@ class DocumentCloneResetTest {
 
     /**
      * JS `change_apply_error_test.ts` "leaves the error of a local update untouched"
-     * (`4251ab7e`, #1403): `OpSource.Local` is never named (D2) -- the caller of
+     * (`4251ab7e`, #1403): `OpSource.Local` is never named -- the caller of
      * `updateAsync` asked for this failure and matches on the [YorkieException.code]
      * the operation threw, so the raw error (code and all) must reach it unchanged --
      * but the clone must still drop (same as the remote case above): the root took only
@@ -158,12 +157,12 @@ class DocumentCloneResetTest {
     }
 
     /**
-     * The central probe-reproducing case (spec 034 Context, executed probe at
+     * The central probe-reproducing case (executed probe at
      * `b1fa0d39`): a 2-op change whose 2nd operation throws on the root pass. The
      * 1st op's SetOperation is `calls == 1` (succeeds, lands on the root); the 2nd
      * is `calls == 2` (throws) -- `Change.execute` applies one op at a time with no
      * rollback, so the landed prefix ("a") stays on the root while the failing op
-     * ("b") never does. RED at `b1fa0d39`: with the lamport unburned, the next
+     * ("b") never does. Red at `b1fa0d39`: with the lamport unburned, the next
      * change's context re-mints the exact same ticket the landed prefix used,
      * colliding `a.createdAt` with the next change's element -- the probe's own
      * `a.createdAt == c.createdAt`.
@@ -202,7 +201,7 @@ class DocumentCloneResetTest {
      * change would), this actor's version-vector entry tracks it, and clientSeq
      * is left untouched -- the failed change never claims a clientSeq slot (it is
      * never appended to `localChanges`), so advancing it here would open a gap the
-     * next real change's clientSeq would have to skip over. RED at `b1fa0d39`:
+     * next real change's clientSeq would have to skip over. Red at `b1fa0d39`:
      * `changeID` is untouched by a root-pass throw today, so `after == before`.
      */
     @Test
@@ -236,14 +235,13 @@ class DocumentCloneResetTest {
      * (no local change appended, matching [Document.hasLocalChanges]), no undo
      * entry is pushed, no presence is applied, and the next change's clientSeq is
      * gapless (`before.clientSeq + 1`, matching JS's own "the counter is untouched"
-     * assertion) -- all four already held before this commit and are NOT RED at
+     * assertion) -- all four already held before this commit and are NOT red at
      * `b1fa0d39` (confirmed by experiment: this test still passes with the burn
      * hunk reverted): the throw happens inside `change.execute`, strictly before
      * `localChanges +=`/history push/presence read/clientSeq advance, all below the
      * try/catch, and clientSeq is left completely untouched by a root-pass throw
-     * whether or not the lamport is burned. Included for full spec-034 Scenario 5
-     * coverage, not as a burn-dependent regression guard (that is the next two
-     * tests below). The presence follow-up mirrors JS's own "the same update
+     * whether or not the lamport is burned. Included for full coverage of the JS cases,
+     * not as a burn-dependent regression guard (that is the next two tests below). The presence follow-up mirrors JS's own "the same update
      * without a throwing operation does record the presence", proving the assertion
      * above is about this failure, not about presence being broken generally.
      */
@@ -289,7 +287,7 @@ class DocumentCloneResetTest {
      * `change.execute` twice (clone validation, then the real root application --
      * see "drops the clone when an undo fails partway" above), so arming the spy
      * for call 2 fails the ROOT pass specifically, after the clone-only validation
-     * pass already succeeded. RED at `b1fa0d39`: `changeID` is left completely
+     * pass already succeeded. Red at `b1fa0d39`: `changeID` is left completely
      * untouched by an undo's root-pass throw today (no burn, and the success-path
      * `changeID = context.getNextId()` a few lines below is never reached).
      */

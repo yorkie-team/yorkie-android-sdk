@@ -16,10 +16,10 @@ import org.junit.Test
 /**
  * Ports the narrow rule of `CRDTTree.mergeSourceOf` (JS SDK `b173c093`,
  * #1426) as a standalone JVM unit test, plus the `TreeEditOperation`
- * getters/state it feeds (spec 036 Commit 2 unit 2B).
+ * getters/state it feeds.
  *
  * [mergeSourceOf] takes its node lookup as a resolver lambda rather than a
- * [CrdtTree] receiver (D10, ratchet relief), so every narrow-rule case here
+ * [CrdtTree] receiver (keeping CrdtTree.kt under its size-guard limit), so every narrow-rule case here
  * is a hand-built node graph with a purpose-built resolver -- no [CrdtTree]
  * required. The "Wiring" section below then confirms the real
  * [CrdtTree.findFloorNode] resolver and [CrdtTree.edit]'s own split loop
@@ -208,7 +208,7 @@ class CrdtTreeMergeSourceOfTest {
     }
 
     // ---------------------------------------------------------------------
-    // Part C -- the TreeEditOperation getters/state this unit adds.
+    // Part C -- the TreeEditOperation getters/state this change adds.
     // ---------------------------------------------------------------------
 
     private val rootTicket = TimeTicket(1L, 0u, actor)
@@ -295,8 +295,8 @@ class CrdtTreeMergeSourceOfTest {
         // reported (toReverseOperation's mergeLevel > 0 branch).
         assertEquals(listOf(p2ID), reverseOp.getReplacedIDs())
 
-        // reconcileNodeID re-points replacedIDs too (the line unit 2A
-        // flagged as owed): simulate a later split re-creating p2 under
+        // reconcileNodeID re-points replacedIDs too (the line the earlier
+        // reconcile change owed): simulate a later split re-creating p2 under
         // ANOTHER id before this reverse ever runs.
         val laterID = CrdtTreeNodeID(makeTicket(50), 0)
         reverseOp.reconcileNodeID(p2ID, laterID)

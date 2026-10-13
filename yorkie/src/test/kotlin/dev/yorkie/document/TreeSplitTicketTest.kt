@@ -28,11 +28,11 @@ import org.junit.Test
  * Ports `split_ticket_test.ts` (JS SDK `b69169c0`, #1404 -- extends the
  * pre-existing `4ec66cc0` cases with three new ones) as JVM tests: an
  * element split's tickets are recorded on the operation and re-stamped with
- * the actor when it is set after the edit (P1), and a split reverse in an
+ * the actor when it is set after the edit, and a split reverse in an
  * undo entry mints its own tickets instead of reconstructing them from
  * `executedAt`, which would otherwise land on the NEXT operation's ticket in
  * the same undo entry and leave two live nodes under one id on every
- * replica (P2). The last case is the Android dispatch pin for D5 (the
+ * replica. The last case is the Android dispatch pin (the
  * Kotlin analogue of iOS's static-dispatch finding): `Operation.setActor`
  * must be `open` and overridden by [TreeEditOperation] so a caller holding
  * only an [Operation]-typed reference -- every call site today -- still
@@ -103,9 +103,9 @@ class TreeSplitTicketTest {
         }
     }
 
-    // AC1 (pre-existing 4ec66cc0 case, regression lock -- this test exercises
+    // Pre-existing 4ec66cc0 case, regression lock -- this test exercises
     // the forward-edit path, not executeUndoRedoInternal, so it is already
-    // green at ea06769d; RED not constructible for this case).
+    // green at ea06769d; a red run is not constructible for this case.
     @Test
     fun `does not land on the content the same edit inserts`() = runTest {
         val doc = Document("doc")
@@ -122,9 +122,9 @@ class TreeSplitTicketTest {
         assertEquals(emptyList(), duplicatedIds(doc))
     }
 
-    // AC1 (pre-existing 4ec66cc0 case, regression lock -- OperationConverter
-    // already carries splitTickets end to end per the exec plan's grounding
-    // of OperationConverter.kt:158/:309; RED not constructible for this case).
+    // Pre-existing 4ec66cc0 case, regression lock -- OperationConverter
+    // already carries splitTickets end to end (OperationConverter.kt:158/:309);
+    // a red run is not constructible for this case.
     @Test
     fun `survives the round trip to the wire`() = runTest {
         val doc = Document("doc")
@@ -149,7 +149,7 @@ class TreeSplitTicketTest {
         assertEquals(sent, received, "a replica reads back the tickets the originator issued")
     }
 
-    // AC1 (NEW, P1): RED at ea06769d -- the split ticket's actor stays the
+    // New case: red at ea06769d -- the split ticket's actor stays the
     // placeholder INITIAL_ACTOR_ID after setActor, because Operation.setActor
     // is final and TreeEditOperation has no override to re-stamp splitTickets.
     @Test
@@ -181,7 +181,7 @@ class TreeSplitTicketTest {
         assertEquals(sent, received, "a replica reads back the tickets the originator issued")
     }
 
-    // AC1 (NEW, P2): RED at ea06769d -- `lamport 3 delimiter 3` occurs twice
+    // New case: red at ea06769d -- `lamport 3 delimiter 3` occurs twice
     // after undo (duplicatedIds non-empty), because the second splitLevel-2
     // reverse's fallback ticket reconstruction lands on the ticket the first
     // reverse already consumed in this same undo entry.
@@ -210,7 +210,7 @@ class TreeSplitTicketTest {
         assertEquals(emptyList(), duplicatedIds(doc), "no duplicate id after redo then undo again")
     }
 
-    // AC1 (NEW, P2 wire twin): the same undo entry, applied to a fresh
+    // New case (wire twin): the same undo entry, applied to a fresh
     // replica across an actual protobuf round trip, agrees on XML, live ids
     // and has no duplicate id either.
     @Test
@@ -245,10 +245,10 @@ class TreeSplitTicketTest {
         assertEquals(emptyList(), duplicatedIds(replica))
     }
 
-    // Android dispatch pin (D5): setActor called through an Operation-typed
+    // Android dispatch pin: setActor called through an Operation-typed
     // reference -- the shape every real call site uses (Change.setActor
     // iterates List<Operation>) -- re-stamps executedAt AND every split
-    // ticket; an empty ticket list stays empty. RED at ea06769d (setActor is
+    // ticket; an empty ticket list stays empty. red at ea06769d (setActor is
     // final on Operation; TreeEditOperation has no override at all, so this
     // would not even compile before the fix).
     @Test

@@ -46,10 +46,10 @@ import kotlinx.coroutines.test.runTest
  *
  * The array-move cases reach an element's CURRENT POSITION via the internal
  * [CrdtArray.getAllRGANodes]/`elementEntry`, not the public [JsonArray]
- * insert surface (spec 035 D20): [JsonArray.put]'s anchor is element
+ * insert surface: [JsonArray.put]'s anchor is element
  * identity, not position identity, so it cannot by itself reproduce the
- * shape a concurrent move leaves behind — see backlog
- * `020_jsonarray-anchor-on-moved-element-position.md`.
+ * shape a concurrent move leaves behind (a known follow-up, tracked
+ * separately).
  */
 class GcSuccessorBarrierTest {
 
@@ -64,8 +64,8 @@ class GcSuccessorBarrierTest {
     private fun arrJson(d: Document): String = arrayTarget(d).toJson()
 
     /**
-     * Resolves [elementCreatedAt] to its CURRENT position identity (spec 035
-     * D20). [JsonArray.put]'s `prevCreatedAt` resolves a POSITION key first
+     * Resolves [elementCreatedAt] to its CURRENT position identity.
+     * [JsonArray.put]'s `prevCreatedAt` resolves a POSITION key first
      * and falls back to an element key only through
      * [dev.yorkie.document.crdt.RgaTreeList]'s `nodeMapByPositionCreatedAt`,
      * which still holds a moved element's ORIGINAL position node under that
@@ -74,9 +74,8 @@ class GcSuccessorBarrierTest {
      * moved silently resolves to its OLD slot instead of its current one.
      * [CrdtArray.posCreatedAt] is the position-identity lookup the public
      * [JsonArray] surface has no equivalent of (JS `ArrayProxy.insertAfter`
-     * does this internally); backlog
-     * `020_jsonarray-anchor-on-moved-element-position.md` tracks closing the
-     * gap publicly. Needed only for an anchor that may have moved -- an
+     * does this internally); closing the
+     * gap publicly is a known follow-up, tracked separately. Needed only for an anchor that may have moved -- an
      * anchor on an element never moved on [d] resolves to the same ticket
      * either way.
      */

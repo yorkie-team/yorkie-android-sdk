@@ -10,7 +10,7 @@ import org.junit.Test
 
 /**
  * Ports `tree_split_link_guard_test.ts` (JS SDK c8928853, #1375) as JVM unit
- * tests (spec 033 AC1).
+ * tests.
  *
  * `insNextID` is a structural pointer only [CrdtTreeNode.split] is supposed
  * to write, but it also arrives verbatim from client-supplied bytes, so a
@@ -21,7 +21,7 @@ import org.junit.Test
  *
  * The converter now strips the field from client-supplied content
  * (`toCrdtTreeNodesWhenEdit` for operation content, `dropSplitLinksInElement`
- * for the element bytes a Set/Add/ArraySet carries -- unit 1B), so these
+ * for the element bytes a Set/Add/ArraySet carries), so these
  * chains should no longer be constructible going forward. The walks stay
  * bounded anyway: a document stored before that change already carries
  * whatever a client sent.
@@ -165,8 +165,8 @@ class CrdtTreeSplitLinkGuardTest {
 
     /**
      * `dropSplitLinks` and the merge-lineage clearing folded into
-     * `dropEngineOnlyLinks` (replacing the Commit-1 `dropMergeStamps`, spec
-     * 035 unit 3C) are deliberately separate (D10): the edit-content decode
+     * `dropEngineOnlyLinks` (replacing the earlier `dropMergeStamps`) are
+     * deliberately separate: the edit-content decode
      * path calls `dropEngineOnlyLinks` (split links + merge lineage) then
      * `clearTombstones`, but the Set/Add/ArraySet element path
      * (`dropSplitLinksInElement`) calls only `dropSplitLinks`, because a
@@ -217,7 +217,7 @@ class CrdtTreeSplitLinkGuardTest {
      * the root, which `resolveMergeTarget` leaves unchanged since the root
      * is never removed), so [CrdtTree.edit]'s 03-1 cascade calls
      * `declaredBoundaries(range.first, range.second)` lazily, and that walk
-     * runs straight into the forged cycle. Spec 035 unit 1B
+     * runs straight into the forged cycle.
      * (`declaredBoundaries`, port JS SDK `tree.ts` b69169c0, #1404;
      * yorkie#2042).
      */
@@ -277,7 +277,7 @@ class CrdtTreeSplitLinkGuardTest {
      * (`left.insPrevID = right.id`, `right.insPrevID = left.id`).
      *
      * `style`/`removeStyle` resolve their reached set through `styleTargets`
-     * (spec 035 units 1C/1D), which unconditionally resolves
+     * (see `styleTargets`), which unconditionally resolves
      * `declaredLineage` for BOTH range endpoints via `styleSkipPredicate` --
      * before any version-vector or End-token guard runs. `declaredLineageOf`
      * walks [splitOriginsOf] (which follows `insPrevID`) for the declared
@@ -290,7 +290,7 @@ class CrdtTreeSplitLinkGuardTest {
      * declared parent, so `declaredLineageOf`'s ancestor walk never visits
      * them. [InsNextWalker] (the same per-call identity-set guard
      * [splitOriginsOf] already uses for [CrdtTree.edit]'s own cycle test
-     * above) stops this one too. Spec 035 unit 1E.
+     * above) stops this one too.
      */
     private fun insPrevCycleTree(): Triple<CrdtTree, CrdtTreeNode, CrdtTreeNode> {
         val issue = ticketer()

@@ -24,9 +24,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Instrumented headline for spec 036 Commit 1 (JS `790422ce`, #1421, unit
- * 1D): the JVM `dev.yorkie.document.TreeUndoOpInfoTest` follow-mirror
- * (probe P1) and removed-ancestor (probe P2) cases, exercised over the REAL
+ * Instrumented headline for #1421 (JS `790422ce`): the JVM
+ * `dev.yorkie.document.TreeUndoOpInfoTest` follow-mirror and
+ * removed-ancestor cases, exercised over the REAL
  * sync loop (a real Yorkie server, compose pin `yorkieteam/yorkie:0.7.24`)
  * instead of the bare in-memory `crossSync` helper that test uses -- the
  * wire-encoded, server-relayed path those JVM cases cannot reach on their
@@ -292,7 +292,7 @@ class HistoryTreeOpInfoTest {
         }
     }
 
-    // Probe P2, over the real sync loop: an undo whose node lands under a
+    // Removed-ancestor case, over the real sync loop: an undo whose node lands under a
     // PEER's removed ancestor. d1 deletes just the leaf text (its own undo
     // entry); d2 concurrently removes the whole paragraph that text lives in,
     // before either side has synced the other's edit. d1's later undo still
@@ -304,8 +304,8 @@ class HistoryTreeOpInfoTest {
     // `history_tree_opinfo_test`'s own integration case: the undo must still
     // be delivered). Port yorkie-js-sdk `790422ce` (#1421).
     //
-    // Re-probes backlog 013 (`restore under a tombstoned parent diverges`,
-    // pinned by `TreeUpstreamDefectPinTest`): un-tombstoning the leaf text
+    // Re-probes the known issue `restore under a tombstoned parent diverges`
+    // (pinned by `TreeUpstreamDefectPinTest`): un-tombstoning the leaf text
     // under its still-removed parent is counted LIVE by the running
     // `docSize` even though the node stays structurally unreachable (hidden)
     // from the root, so a from-scratch rebuild -- which only walks
@@ -313,7 +313,7 @@ class HistoryTreeOpInfoTest {
     // deliberately not fixed Android-only; this test RECORDS the divergence
     // instead of asserting `docSize == rebuild`, the same way the open
     // §9.5 pair in `TreeReachedSetServerRootTest` records instead of
-    // asserting (D19). The visible XML/JSON -- what every oracle below this
+    // asserting. The visible XML/JSON -- what every oracle below this
     // comment actually checks -- is unaffected: all three (d1, d2, the
     // server) still agree on the hidden node reporting nothing.
     @Test
@@ -414,15 +414,15 @@ class HistoryTreeOpInfoTest {
                 "the peer's version vector for the undoing actor must advance despite empty ops",
             )
 
-            // backlog 013 re-probe (see the class-level comment above this
-            // test): RECORD the running vs. from-scratch-rebuild docSize.live
+            // Re-probe of the known tombstoned-parent restore issue (see the
+            // comment above this test): RECORD the running vs. from-scratch-rebuild docSize.live
             // instead of asserting them equal -- the revived "ab" text stays
             // hidden under the tombstoned "<p>" on both replicas, which is
             // what the XML/JSON/server-root oracles below actually check.
             val d1Rebuild = CrdtRoot(d1.getRootObject().deepCopy())
             val d2Rebuild = CrdtRoot(d2.getRootObject().deepCopy())
             println(
-                "spec 036 backlog 013 re-probe -- d1.docSize=${d1.getDocSize()} " +
+                "tombstoned-parent restore re-probe -- d1.docSize=${d1.getDocSize()} " +
                     "d1Rebuild.docSize=${d1Rebuild.docSize} d2.docSize=${d2.getDocSize()} " +
                     "d2Rebuild.docSize=${d2Rebuild.docSize}",
             )

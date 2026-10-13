@@ -134,7 +134,7 @@ class CrdtPrimitiveTest {
         }
     }
 
-    // Port of yorkie-js-sdk primitive_test.ts (ac60f3d9, #1422; D8): a
+    // Port of yorkie-js-sdk primitive_test.ts (ac60f3d9, #1422): a
     // fixed-width reader trusts a peer's payload length — JS reads a payload
     // shorter than the type's width as its zero-padded value instead of
     // throwing. Probe at b1fa0d39 confirmed Android throws
@@ -272,7 +272,7 @@ class CrdtPrimitiveTest {
     // shares") does not reproduce on Android: `fromBytes` reads off
     // `ByteString.toByteArray()`, which is already a defensive copy (an
     // immutable ByteString has no writable backing array to share in the
-    // first place) — RED not constructible, see the spec's D8/probe table.
+    // first place) — a red run is not constructible.
     // Pin the guarantee instead: decoding never mutates the source, and
     // decoding the same ByteString twice agrees.
     @Test
@@ -291,8 +291,8 @@ class CrdtPrimitiveTest {
         assertArrayEquals(sourceArrayBeforeDecode, bytes.toByteArray())
     }
 
-    // Decode-level pin (D8 / probe row "Document.applyChangePack(snapshot)
-    // whose root holds a Double 4B throws... out of applyChangePack"): a
+    // Decode-level pin ("Document.applyChangePack(snapshot) whose root holds a
+    // Double 4B throws... out of applyChangePack"): a
     // snapshot from a peer whose Double payload is short must decode through
     // the full applyChangePack path rather than wedging the client that
     // pulls it.

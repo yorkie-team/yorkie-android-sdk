@@ -549,6 +549,17 @@ public class JsonTree internal constructor(
 
             when (treeNode) {
                 is TextNode -> {
+                    // Mirrors the JS SDK's `validateTextNode` call in its own
+                    // `buildDescendants` (yorkie-js-sdk `6932da6a`, #1447): an
+                    // initial text node reaches the tree through this same
+                    // path `setNewTree` takes, so it needs the same lone-
+                    // surrogate guard every other text-content entry point
+                    // already has (`JsonTree.edit`'s `validateTextNodes`,
+                    // `CrdtText.createRange`). JS also rejects an empty
+                    // initial text node here; Android's `buildDescendants`
+                    // does not enforce that separately and this fix leaves
+                    // that pre-existing divergence alone.
+                    ensureNoLoneSurrogate(treeNode.value)
                     val textNode = CrdtTreeText(id, treeNode.value)
                     parent.append(textNode)
                     return

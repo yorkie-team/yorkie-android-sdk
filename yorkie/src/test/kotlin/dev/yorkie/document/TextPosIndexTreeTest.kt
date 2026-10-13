@@ -31,14 +31,22 @@ private const val GC_STEPS = 40
 private const val TYPING_EDIT_COUNT = 40_000
 private const val REMOTE_EDIT_COUNT = 20_000
 
-// Generous: the measured isolated baselines are 1,310ms / 103ms (P7); the
-// full `yorkie:testDebugUnitTest` run is 5-10x slower per test than running
-// one class alone (JaCoCo instrumentation + CPU contention from Gradle's
-// other parallel test-worker forks -- the same reason documented in
-// `TreeStyleReachedSetScanTest`'s KDoc), so these bounds are sized off that
-// full-suite figure, not a bare 3x of the isolated number.
-private const val TYPING_BOUND_MS = 15_000L
-private const val REMOTE_BOUND_MS = 5_000L
+// Sized to actually catch a regression, not just to avoid flaking: the
+// measured baselines are typing ~1,043ms / remote ~103ms in a full
+// `yorkie:testDebugUnitTest` run (JaCoCo instrumentation + CPU contention
+// from Gradle's other parallel test-worker forks, the same reason documented
+// in `TreeStyleReachedSetScanTest`'s KDoc), and a reintroduced O(n) chain walk
+// (the thing `cab55005` replaced with the O(1) `treeByIndex.indexOf` read)
+// adds roughly 3s to typing and 2s to remote on top of that baseline. The
+// prior bounds (15s / 5s) were wider than baseline + the chain-walk cost
+// combined, so a regression of exactly that shape would never trip them.
+// These bounds (~3x baseline, confirmed stable across three full-suite runs)
+// still clear the chain-walk-cost margin by roughly 2x. They are a coarse
+// smoke check only -- `treeByIndex sums to the same length` and this class's
+// other chain-walk-vs-index-tree equivalence tests are the real guard against
+// the chain walk coming back; these two just bound how long it may take.
+private const val TYPING_BOUND_MS = 3_500L
+private const val REMOTE_BOUND_MS = 1_000L
 
 /**
  * Pins `RgaTreeSplit.posToIndex` (and the `treeByIndex` sum it reads) against
@@ -305,7 +313,7 @@ class TextPosIndexTreeTest {
     // counting `prev` hops (no hop-instrumentation point exists on the JVM
     // port, since Android never had the chain walk to instrument).
     @Test
-    fun `types 40,000 single-character edits within a generous bound of the 1,310 ms baseline`() =
+    fun `types 40,000 single-character edits within a tight bound of the 1,043 ms baseline`() =
         runTest {
             val document = Document("text-pos-index-tree-typing-cost")
             document.updateAsync { root, _ -> root.setNewText("t") }.await()
@@ -327,7 +335,7 @@ class TextPosIndexTreeTest {
             assertTrue(
                 elapsed < TYPING_BOUND_MS,
                 "typing $TYPING_EDIT_COUNT single-character edits took ${elapsed}ms," +
-                    " expected under ${TYPING_BOUND_MS}ms (measured baseline 1,310ms, P7)",
+                    " expected under ${TYPING_BOUND_MS}ms (measured baseline ~1,043ms)",
             )
         }
 
@@ -338,37 +346,36 @@ class TextPosIndexTreeTest {
     // sender's local edits is excluded from the bound -- it is unrelated
     // setup cost, not the path `cab55005` sped up).
     @Test
-    fun `applies 20,000 remote single-character edits within a generous bound of the baseline`() =
-        runTest {
-            val sender = Document("text-pos-index-tree-remote-cost")
-            sender.updateAsync { root, _ -> root.setNewText("t") }.await()
-            repeat(REMOTE_EDIT_COUNT) { i ->
-                sender.updateAsync { root, _ -> root.getAs<JsonText>("t").edit(i, i, "a") }.await()
-            }
-            val pack = sender.createChangePack()
+    fun `applies 20,000 remote edits within a tight bound of the 103 ms baseline`() = runTest {
+        val sender = Document("text-pos-index-tree-remote-cost")
+        sender.updateAsync { root, _ -> root.setNewText("t") }.await()
+        repeat(REMOTE_EDIT_COUNT) { i ->
+            sender.updateAsync { root, _ -> root.getAs<JsonText>("t").edit(i, i, "a") }.await()
+        }
+        val pack = sender.createChangePack()
 
-            val receiver = Document("text-pos-index-tree-remote-cost")
-            val elapsed = measureTimeMillis {
-                receiver.applyChangePack(
-                    ChangePack(
-                        sender.getKey(),
-                        CheckPoint.InitialCheckPoint,
-                        pack.changes,
-                        null,
-                        false,
-                        VersionVector(),
-                    ),
-                )
-            }
-
-            assertEquals(
-                REMOTE_EDIT_COUNT,
-                receiver.getRoot().getAs<JsonText>("t").toString().length,
-            )
-            assertTrue(
-                elapsed < REMOTE_BOUND_MS,
-                "applying $REMOTE_EDIT_COUNT remote single-character edits took ${elapsed}ms," +
-                    " expected under ${REMOTE_BOUND_MS}ms (measured baseline 103ms, P7)",
+        val receiver = Document("text-pos-index-tree-remote-cost")
+        val elapsed = measureTimeMillis {
+            receiver.applyChangePack(
+                ChangePack(
+                    sender.getKey(),
+                    CheckPoint.InitialCheckPoint,
+                    pack.changes,
+                    null,
+                    false,
+                    VersionVector(),
+                ),
             )
         }
+
+        assertEquals(
+            REMOTE_EDIT_COUNT,
+            receiver.getRoot().getAs<JsonText>("t").toString().length,
+        )
+        assertTrue(
+            elapsed < REMOTE_BOUND_MS,
+            "applying $REMOTE_EDIT_COUNT remote single-character edits took ${elapsed}ms," +
+                " expected under ${REMOTE_BOUND_MS}ms (measured baseline ~103ms)",
+        )
+    }
 }

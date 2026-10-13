@@ -160,20 +160,25 @@ internal data class TreeEditOperation(
     private var executedRanges: List<Triple<Int, Int, Int>>? = null
 
     /**
-     * [executedRanges], or -- when a restore/retombstone changed the tree
-     * but reported no measurable edit (every revived/removed node sat under
+     * [executedRanges] once [executeRestore] has set it -- UNCHANGED, even
+     * when it measured no edit at all (every revived/removed node sat under
      * a removed ancestor, or the change was a split-only isolate with no
-     * node identity change) -- a single best-effort range built from this
-     * op's own undo offsets and [getContentSize]. JS falls back to
-     * `[normalizePos(), getContentSize()]`; Android has no `normalizePos` on
-     * this operation (D7), so the already-tracked undo offsets stand in.
+     * node identity change). Mirrors JS exactly: `if (this.executedRanges)
+     * return this.executedRanges` returns its field as-is, including an
+     * empty array, because JS's own fallback
+     * (`[this.normalizePos(), this.getContentSize()]`) is unreachable for a
+     * restore op -- `normalizePos()` reads from `fromPos`/`toPos`, which
+     * [executeRestore] never touches. Android has no `normalizePos` on this
+     * operation and does not need one here either: the fallback below
+     * only ever fires when [executedRanges] is still null, which means this
+     * is a NON-restore op's undo/redo entry (only [executeRestore] ever
+     * assigns [executedRanges]) -- a case [isRestoreOp] callers never reach.
      * Only meaningful for a restore op -- callers must check [isRestoreOp]
      * first, exactly as [dev.yorkie.document.Document.reconcileHistoryEdits]
      * does.
      */
     internal fun getExecutedRanges(): List<Triple<Int, Int, Int>> =
-        executedRanges.takeUnless { it.isNullOrEmpty() }
-            ?: listOf(Triple(undoFromOffset, undoToOffset, getContentSize()))
+        executedRanges ?: listOf(Triple(undoFromOffset, undoToOffset, getContentSize()))
 
     /**
      * Set on a split that re-creates elements a merge removed -- the redo of

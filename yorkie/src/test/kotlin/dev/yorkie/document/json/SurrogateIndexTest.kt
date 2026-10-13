@@ -16,9 +16,13 @@ import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.RgaTreeSplit
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.helper.crossSync
+import dev.yorkie.helper.pull
+import dev.yorkie.helper.push
 import dev.yorkie.issueTime
 import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_ROOT_TYPE
 import dev.yorkie.util.YorkieException
@@ -36,8 +40,13 @@ import org.junit.Test
  * Text and Tree indexes carry are UTF-16 units. This class holds the
  * standalone `Strings.kt` helper cases, the Text entry-point cases
  * (`CrdtText`/`JsonText`) and the Tree entry-point cases
- * (`CrdtTree`/`JsonTree`), including the crafted-wire regression locks for
- * an index the document computed itself.
+ * (`CrdtTree`/`JsonTree`), the initial-tree content cases (`setNewTree`'s own
+ * `ensureNoLoneSurrogate` guard), the crafted-wire regression locks for an
+ * index the document computed itself, and the `Document`-level wire-delivery
+ * regression locks (an older client's own stale index, and a receiver's
+ * locally-computed reverse) that exercise a real
+ * [dev.yorkie.document.history.History] stack instead of a hand-built
+ * [dev.yorkie.document.crdt.CrdtTree].
  */
 class SurrogateIndexTest {
 
@@ -591,6 +600,250 @@ class SurrogateIndexTest {
             document.history.redoAsync().await()
             assertEquals(edited, document.getRoot().getAs<JsonTree>("tree").toXml(), name)
         }
+    }
+
+    // ---- Initial tree content (setNewTree / buildDescendants) ----
+    //
+    // An initial tree's text reaches the CRDT through `buildRoot` ->
+    // `buildDescendants`, never through `JsonTree.edit`'s
+    // `validateTextNodes` -- so it needs its own lone-surrogate case, the
+    // same way JS's `buildDescendants` calls `validateTextNode` (ported from
+    // `6932da6a`, #1447).
+    @Test
+    fun `setNewTree rejects a lone surrogate in the initial text`() = runTest {
+        val document = Document("surrogate-index")
+        val result = document.updateAsync { root, _ ->
+            root.setNewTree("tree", element("r") { text { "a$high" } })
+        }.await()
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `setNewTree accepts a whole emoji in the initial text`() = runTest {
+        val document = Document("surrogate-index")
+        document.updateAsync { root, _ ->
+            root.setNewTree("tree", element("r") { element("p") { text { "a😀b" } } })
+        }.await()
+        assertEquals(
+            "<r><p>a😀b</p></r>",
+            document.getRoot().getAs<JsonTree>("tree").toXml(),
+        )
+    }
+
+    @Test
+    fun `setNewTree rejects a lone surrogate nested two levels deep`() = runTest {
+        val document = Document("surrogate-index")
+        val result = document.updateAsync { root, _ ->
+            root.setNewTree(
+                "tree",
+                element("r") { element("section") { element("p") { text { "${low}b" } } } },
+            )
+        }.await()
+        assertTrue(result.isFailure)
+    }
+
+    // ---- Text counterpart of "undoes and redoes Tree edits around an
+    // intact pair" ----
+    @Test
+    fun `undoes and redoes Text edits around an intact pair`() = runTest {
+        val cases: List<Pair<String, suspend (JsonText) -> Unit>> = listOf(
+            "insert after the pair" to { text -> text.edit(2, 2, "y") },
+            "delete the pair" to { text -> text.edit(0, 2, "") },
+            "replace the pair" to { text -> text.edit(0, 2, "y") },
+        )
+        for ((name, fn) in cases) {
+            val document = Document("surrogate-index")
+            document.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, surrogateText)
+            }.await()
+            val original = document.getRoot().getAs<JsonText>("text").toString()
+
+            document.updateAsync { root, _ -> fn(root.getAs<JsonText>("text")) }.await()
+            val edited = document.getRoot().getAs<JsonText>("text").toString()
+
+            document.history.undoAsync().await()
+            assertEquals(original, document.getRoot().getAs<JsonText>("text").toString(), name)
+            document.history.redoAsync().await()
+            assertEquals(edited, document.getRoot().getAs<JsonText>("text").toString(), name)
+        }
+    }
+
+    // ---- Document wire-delivery regression locks (push/pull, with History) ----
+    //
+    // Ports the JS `surrogate_index_test.ts` cases under "Mid-surrogate-pair
+    // indexes the document computed" (`6932da6a`, #1447) that were missing or
+    // under-covered here: these go through a real [Document] (sender and
+    // receiver, or two replicas) instead of a hand-built [CrdtTree], so
+    // [dev.yorkie.document.history.History]'s own undo/redo stack is real and
+    // exercised, not just the operation in isolation.
+
+    // Remote operations carry CRDT positions and never resolve an index, so
+    // an operation an older client minted before an intervening edit shifted
+    // the index space must still apply even though it now lands inside a
+    // pair -- and must not break the receiver's own pending undo/redo.
+    // `push`/`pull` hand back the decoded operations before delivery, so the
+    // position is shifted here exactly the way an older client's own
+    // (now-stale) index would have decoded.
+    @Test
+    fun `a remote Tree op from an older client lands mid-pair without breaking undo redo`() =
+        runTest {
+            val sender = Document("surrogate-index")
+            val receiver = Document("surrogate-index")
+            sender.setActor("000000000000000000000001")
+            receiver.setActor("000000000000000000000002")
+            sender.updateAsync { root, _ -> root.setNewTree("tree", surrogateTreeRoot()) }.await()
+            pull(receiver, push(sender))
+
+            // The receiver makes a local edit it will later undo and redo.
+            receiver.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(4, 4, JsonTree.TextNode("z"))
+            }.await()
+
+            // The sender inserts right after the emoji -- a valid index.
+            sender.updateAsync { root, _ ->
+                root.getAs<JsonTree>("tree").edit(3, 3, JsonTree.TextNode("y"))
+            }.await()
+            val shifted = push(sender).map { change ->
+                change.copy(
+                    operations = change.operations.map { op ->
+                        when (op) {
+                            is TreeEditOperation -> op.copy(
+                                fromPos = op.fromPos.copy(
+                                    leftSiblingID = op.fromPos.leftSiblingID.copy(
+                                        offset = op.fromPos.leftSiblingID.offset - 1,
+                                    ),
+                                ),
+                                toPos = op.toPos.copy(
+                                    leftSiblingID = op.toPos.leftSiblingID.copy(
+                                        offset = op.toPos.leftSiblingID.offset - 1,
+                                    ),
+                                ),
+                            )
+                            else -> op
+                        }
+                    },
+                )
+            }
+            pull(receiver, shifted)
+
+            // The edit landed inside the pair, so the emoji no longer
+            // survives -- what the lone half becomes is a Go/JS divergence
+            // (yorkie#2065), not pinned here.
+            val applied = receiver.getRoot().getAs<JsonTree>("tree").toXml()
+            assertFalse(applied.contains("😀"), "the remote edit split the pair")
+
+            receiver.history.undoAsync().await()
+            assertEquals(
+                applied.replace("z", ""),
+                receiver.getRoot().getAs<JsonTree>("tree").toXml(),
+            )
+            receiver.history.redoAsync().await()
+            assertEquals(applied, receiver.getRoot().getAs<JsonTree>("tree").toXml())
+        }
+
+    // The Text counterpart of the Tree case above.
+    @Test
+    fun `a remote Text op from an older client lands mid-pair without breaking undo redo`() =
+        runTest {
+            val sender = Document("surrogate-index")
+            val receiver = Document("surrogate-index")
+            sender.setActor("000000000000000000000001")
+            receiver.setActor("000000000000000000000002")
+            sender.updateAsync { root, _ ->
+                root.setNewText("text").edit(0, 0, surrogateText)
+            }.await()
+            pull(receiver, push(sender))
+
+            receiver.updateAsync { root, _ ->
+                root.getAs<JsonText>("text").edit(3, 3, "z")
+            }.await()
+
+            sender.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(2, 2, "y") }.await()
+            val shifted = push(sender).map { change ->
+                change.copy(
+                    operations = change.operations.map { op ->
+                        when (op) {
+                            is EditOperation -> op.copy(
+                                fromPos = op.fromPos.copy(
+                                    relativeOffSet = op.fromPos.relativeOffSet - 1,
+                                ),
+                                toPos = op.toPos.copy(
+                                    relativeOffSet = op.toPos.relativeOffSet - 1,
+                                ),
+                            )
+                            else -> op
+                        }
+                    },
+                )
+            }
+            pull(receiver, shifted)
+
+            val applied = receiver.getRoot().getAs<JsonText>("text").toString()
+            assertFalse(applied.contains("😀"), "the remote edit split the pair")
+
+            receiver.history.undoAsync().await()
+            assertEquals(
+                applied.replace("z", ""),
+                receiver.getRoot().getAs<JsonText>("text").toString(),
+            )
+            receiver.history.redoAsync().await()
+            assertEquals(applied, receiver.getRoot().getAs<JsonText>("text").toString())
+        }
+
+    // Applying a change builds its reverse too, remote or not, from indexes
+    // the receiver computes on its OWN tree. Every edit below is at a valid
+    // caller index, but on `a` the reverse of `b`'s emoji insert ends inside
+    // one of `a`'s own emojis -- checking that index would refuse the
+    // remote change outright, and it must not.
+    @Test
+    fun `applies a remote Tree change whose reverse lands inside a pair`() = runTest {
+        val a = Document("surrogate-index")
+        val b = Document("surrogate-index")
+        a.setActor("000000000000000000000002")
+        b.setActor("000000000000000000000001")
+        a.updateAsync { root, _ ->
+            root.setNewTree(
+                "tree",
+                element("r") {
+                    element("section") {
+                        element("p") { text { "a😀b" } }
+                        element("p") { text { "c😀d" } }
+                    }
+                },
+            )
+        }.await()
+        crossSync(a, b)
+
+        b.updateAsync { root, _ ->
+            root.getAs<JsonTree>("tree").edit(1, 2, JsonTree.TextNode("😀"))
+        }.await()
+        a.updateAsync { root, _ ->
+            root.getAs<JsonTree>("tree").edit(11, 11, JsonTree.TextNode("x"))
+        }.await()
+        a.updateAsync { root, _ ->
+            root.getAs<JsonTree>("tree").edit(0, 2, JsonTree.TextNode("x"))
+        }.await()
+        a.updateAsync { root, _ ->
+            root.getAs<JsonTree>("tree").edit(7, 7, JsonTree.TextNode("😀"))
+        }.await()
+        crossSync(a, b)
+
+        val converged = a.getRoot().getAs<JsonTree>("tree").toXml()
+        assertEquals(converged, b.getRoot().getAs<JsonTree>("tree").toXml())
+
+        // Strengthens the JS case: the receiving replica's own undo/redo
+        // (of the local edit whose reverse landed inside the pair) must
+        // still run and stay convergent afterward.
+        a.history.undoAsync().await()
+        crossSync(a, b)
+        assertEquals(
+            a.getRoot().getAs<JsonTree>("tree").toXml(),
+            b.getRoot().getAs<JsonTree>("tree").toXml(),
+        )
+        a.history.redoAsync().await()
+        crossSync(a, b)
+        assertEquals(converged, a.getRoot().getAs<JsonTree>("tree").toXml())
+        assertEquals(converged, b.getRoot().getAs<JsonTree>("tree").toXml())
     }
 
     // ---- Crafted-wire regression locks ----

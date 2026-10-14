@@ -17,6 +17,7 @@ import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.IndexTree
 import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.IndexTreeNode.Companion.DEFAULT_TEXT_TYPE
 import dev.yorkie.util.IndexTreeNodeList
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.Logger.Companion.logError
@@ -2687,6 +2688,7 @@ internal data class CrdtTree(
         val pairs: List<GCPair<*>>
         try {
             for (span in spans) {
+                if (!restoreSpanKindAgrees(span)) continue
                 if (!span.isText) {
                     val node = findFloorNode(span.id)
                     if (node != null && node.id == span.id) {
@@ -2814,6 +2816,7 @@ internal data class CrdtTree(
         var diff = DataSize(data = 0, meta = 0)
         val edits = mutableListOf<TreeVisibleEdit>()
         for (span in spans) {
+            if (!restoreSpanKindAgrees(span)) continue
             val start = span.id.offset
             // Upstream-inherited quirk (JS Math.max(span.length, 1)): a
             // zero-length text span would isolate and re-remove one character
@@ -2924,10 +2927,8 @@ internal data class CrdtTree(
         offset: Int,
         length: Int,
     ): CrdtTreeNode? {
-        val parent = span.parentID?.let(::findFloorNode)
-        if (parent == null || parent.id != span.parentID) {
-            return null
-        }
+        val id = CrdtTreeNodeID(span.id.createdAt, offset)
+        val parent = recreateParent(span, id) ?: return null
 
         val node = if (span.isText) {
             val spanValue = span.value ?: throw YorkieException(
@@ -2936,7 +2937,7 @@ internal data class CrdtTree(
             )
             val relativeOffset = offset - span.id.offset
             CrdtTreeNode.CrdtTreeText(
-                CrdtTreeNodeID(span.id.createdAt, offset),
+                id,
                 spanValue.substring(relativeOffset, relativeOffset + length),
             )
         } else {

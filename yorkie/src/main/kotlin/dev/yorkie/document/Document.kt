@@ -3,6 +3,7 @@ package dev.yorkie.document
 import androidx.annotation.VisibleForTesting
 import com.google.protobuf.ByteString
 import dev.yorkie.api.PBChangePack
+import dev.yorkie.api.reissueOperations
 import dev.yorkie.api.snapshotToBytes
 import dev.yorkie.api.toByteString
 import dev.yorkie.api.toChangeID
@@ -70,6 +71,7 @@ import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -121,8 +123,19 @@ public class Document(
      */
     internal var onLocalChange: (() -> Unit)? = null
 
-    @Volatile
-    private var isUpdating = false
+    /**
+     * Counts in-flight [updateAsync]/undo-redo passes (D2, backlog 019,
+     * spec 038). Must be a COUNT, not a boolean: two overlapping passes each
+     * increment on entry and decrement in their own `finally`, so the flag
+     * [isUpdating] derives from it only goes false once every in-flight pass
+     * has finished, even when they finish out of order. A boolean flag that
+     * the FIRST-to-finish pass cleared unconditionally let a re-issue run
+     * while a second, still-suspended pass was in flight, reverting the
+     * actor underneath it (cross-judge MEDIUM-1, round 3).
+     */
+    private val inFlight = AtomicInteger(0)
+    private val isUpdating: Boolean
+        get() = inFlight.get() > 0
 
     @Volatile
     private var maxSizeLimit = 0
@@ -197,6 +210,50 @@ public class Document(
 
     @Volatile
     private var status = ResourceStatus.Detached
+
+    // Set sites: context §3.2.
+    // - absorbedRemote: applySnapshot, applyChangesInternal (source ==
+    //   Remote), fromBytes, restoreFrom, restoreAppendedChanges -- cleared
+    //   only by resetForReanchor.
+    // - mintedOperations: updateAsync/executeUndoRedoInternal when the
+    //   queued change has operations, fromBytes, restoreFrom,
+    //   restoreAppendedChanges (if any replayed change has operations) --
+    //   NEVER cleared.
+    // Both back [neverSynced] and [hasMintedOperations], which
+    // `Client.attach`'s pre-attach ticket re-issue reads (spec
+    // 038_sync-js-sdk-v0725-pre-attach-reissue).
+    @Volatile
+    private var absorbedRemote = false
+
+    @Volatile
+    private var mintedOperations = false
+
+    /**
+     * True once this document has queued a change carrying at least one
+     * operation -- local, undo/redo, or replayed from a store. Read by
+     * [dev.yorkie.core.Client] to decide whether this document's key takes
+     * the per-client pre-attach re-issue claim on attach or on detach. Ports
+     * yorkie-js-sdk `document.ts`'s `hasMintedOperations()` (`ed25355e`,
+     * #1449, yorkie#2111).
+     */
+    public fun hasMintedOperations(): Boolean = mintedOperations
+
+    /**
+     * True when this document has never absorbed any remote/restored state
+     * (snapshot, remote change, restore, or append-log replay), is
+     * [ResourceStatus.Detached], sits at [CheckPoint.InitialCheckPoint], and
+     * its version vector names no actor other than its own current one --
+     * the exact four JS conditions a pre-attach ticket re-issue requires
+     * (context §3.2). `internal` (not `public`): only [setActor]'s own
+     * `reissue` overload and its tests need it.
+     */
+    internal val neverSynced: Boolean
+        get() {
+            if (absorbedRemote || status != ResourceStatus.Detached) return false
+            if (checkPoint != CheckPoint.InitialCheckPoint) return false
+            val actor = changeID.actor
+            return changeID.versionVector.vectorMap.keys.none { it != actor }
+        }
 
     @VisibleForTesting
     public val garbageLength: Int
@@ -313,15 +370,32 @@ public class Document(
                 message = message,
             )
             val actorID = changeID.actor
-            val result = runCatching {
-                val proxy = JsonObject(context, clone.root.rootObject)
-                updater.invoke(
-                    proxy,
-                    DocPresence(context, clone.presences[changeID.actor].orEmpty()),
-                )
-            }.onFailure {
-                this@Document.clone = null
-                ensureActive()
+            // D2 (backlog 019, spec 038_sync-js-sdk-v0725-pre-attach-reissue):
+            // the updater is a suspend lambda running against `clone.root` --
+            // any suspension inside it lets another coroutine on this
+            // document's own dispatcher run, including a pre-attach ticket
+            // re-issue's atomic swap. isUpdating gates that: `setActor`'s
+            // reissue overload refuses while this is true, so a resumed
+            // updater never finishes executing ops minted under the OLD
+            // actor against a root already swapped to the NEW one.
+            // inFlight is a COUNT, not a boolean: two overlapping updateAsync
+            // calls each increment/decrement their own pass, so isUpdating
+            // only goes false once EVERY in-flight pass has finished, even if
+            // they finish out of order (cross-judge MEDIUM-1, round 3).
+            inFlight.incrementAndGet()
+            val result = try {
+                runCatching {
+                    val proxy = JsonObject(context, clone.root.rootObject)
+                    updater.invoke(
+                        proxy,
+                        DocPresence(context, clone.presences[changeID.actor].orEmpty()),
+                    )
+                }.onFailure {
+                    this@Document.clone = null
+                    ensureActive()
+                }
+            } finally {
+                inFlight.decrementAndGet()
             }
             if (result.isFailure) {
                 return@async result
@@ -427,6 +501,9 @@ public class Document(
             val reverseOps = localResult.reverseOps
 
             localChanges += change
+            if (change.hasOperations) {
+                mintedOperations = true
+            }
             onLocalChange?.invoke()
             changeID = context.getNextId()
 
@@ -500,6 +577,14 @@ public class Document(
             // NOTE: The refusal above must not drop the clone: an updater is
             // holding a proxy over it, and `updateAsync` reads it again
             // after the updater returns.
+            // D2: the same isUpdating gate updateAsync sets around its
+            // updater now also covers undo/redo's own execute pass, so a
+            // pre-attach re-issue's atomic swap refuses to interleave here
+            // too, and the existing refusal guard above (line 552) becomes
+            // live against a CONCURRENT updateAsync (this flag was never
+            // set before, so that guard never actually fired -- backlog
+            // 019). Shares the same inFlight COUNT as updateAsync.
+            inFlight.incrementAndGet()
             try {
                 executeUndoRedoInternal(isUndo)
             } catch (err: Throwable) {
@@ -515,6 +600,8 @@ public class Document(
                 // #1394).
                 this@Document.clone = null
                 throw err
+            } finally {
+                inFlight.decrementAndGet()
             }
         }
     }
@@ -756,7 +843,7 @@ public class Document(
             return Result.success(Unit)
         }
 
-        val change = context.toChange()
+        val change = context.toChange().apply { isUndoRedo = true }
         val undoRedoResult = try {
             // Execute on clone (validation). Never touches the root, so a
             // throw here needs no lamport burn -- it propagates to
@@ -875,6 +962,9 @@ public class Document(
         }
 
         localChanges += change
+        if (change.hasOperations) {
+            mintedOperations = true
+        }
         onLocalChange?.invoke()
         changeID = context.getNextId()
 
@@ -1117,6 +1207,10 @@ public class Document(
         }
         changeID = changeID.setClocks(snapshotVector.maxLamport(), snapshotVector)
         clone = null
+        // A snapshot absorbs remote state -- the document is no longer
+        // "never synced" from here on, even if a later resetForReanchor
+        // clears its checkpoint back to InitialCheckPoint (context §3.2).
+        absorbedRemote = true
         removePushedLocalChanges(clientSeq)
         clearHistory()
         eventStream.emit(Event.Snapshot(snapshot))
@@ -1191,6 +1285,12 @@ public class Document(
     }
 
     private suspend fun applyChangesInternal(changes: List<Change>, source: OpSource) {
+        if (source == OpSource.Remote) {
+            // A remote change absorbs server state -- never-synced tracking
+            // (context §3.2) stops here regardless of checkpoint, which a
+            // later resetForReanchor may still roll back.
+            absorbedRemote = true
+        }
         val clone = ensureClone()
         changes.forEach { change ->
             try {
@@ -1522,6 +1622,110 @@ public class Document(
     }
 
     /**
+     * Re-issues every ticket this document's local changes minted under its
+     * current actor to [actor], when [reissue] is true AND every pre-attach
+     * condition holds ([neverSynced], has local changes, [actor] actually
+     * differs from the current one); otherwise behaves exactly like the
+     * plain [setActor] above. Returns whether a re-issue happened --
+     * [dev.yorkie.core.Client] uses that, together with
+     * [hasMintedOperations], to decide whether this attach takes the
+     * per-client pre-attach-reissue claim.
+     *
+     * The whole check + rebuild + replay + swap runs in ONE [withContext]
+     * hop with NO inner suspension -- [reissueOperations] (a wire-format
+     * walk) and [Change.execute] are both non-suspending -- so no other
+     * coroutine on this document's [dispatcher] can ever observe a partially
+     * rebuilt state. D2 (backlog 019): a re-issue requested while an
+     * [updateAsync]/undo/redo is in flight on this SAME dispatcher refuses
+     * instead of letting a resumed updater mint old-actor operations against
+     * a root already swapped to the new actor; the document is left
+     * completely untouched (nothing is assigned below until the rebuild has
+     * fully succeeded, so a throw anywhere in the rebuild also leaves the
+     * document untouched). Ports yorkie-js-sdk `document.ts`'s
+     * `reissueActor` (`ed25355e`, #1449, yorkie#2111).
+     */
+    internal suspend fun setActor(actor: String, reissue: Boolean): Boolean =
+        withContext(dispatcher) {
+            val prevActor = changeID.actor
+            if (!reissue || actor == prevActor || localChanges.isEmpty() || !neverSynced) {
+                setActor(actor)
+                return@withContext false
+            }
+            if (isUpdating) {
+                throw YorkieException(
+                    ErrInvalidArgument,
+                    "cannot re-issue document($key) actor while an update is in flight",
+                )
+            }
+
+            // ---- Build aside: nothing below assigns to `this` until every
+            // step here has already succeeded. ----
+            val newRoot =
+                CrdtRoot(CrdtObject(createdAt = InitialTimeTicket, memberNodes = ElementRht()))
+            var accPresences: Presences = UninitializedPresences
+            val newLocalChanges = localChanges.map { change ->
+                val newId = change.id.setActor(actor)
+                    .setVersionVector(
+                        reissueVersionVector(change.id.versionVector, prevActor, actor),
+                    )
+                val newOperations = reissueOperations(change.operations, prevActor, actor)
+                change.copy(id = newId, operations = newOperations)
+                    .also { it.isUndoRedo = change.isUndoRedo }
+            }
+            for (change in newLocalChanges) {
+                val result = change.execute(newRoot, accPresences, replaySourceOf(change))
+                result.newPresences?.let { accPresences = it }
+            }
+            val newChangeID = changeID.setActor(actor)
+                .setVersionVector(reissueVersionVector(changeID.versionVector, prevActor, actor))
+
+            // ---- Atomic swap: no suspension between any of these. ----
+            root = newRoot
+            _presences.value = accPresences
+            val onlineNow = onlineClients.value
+            if (prevActor in onlineNow) {
+                onlineClients.value = onlineNow - prevActor + actor
+            }
+            changeID = newChangeID
+            localChanges.clear()
+            localChanges.addAll(newLocalChanges)
+            clone = null
+            clearHistory()
+            true
+        }
+
+    /**
+     * The replay source [setActor]'s re-issue runs each rebuilt change
+     * under: [OpSource.UndoRedo] reproduces an undo/redo's own skip guards
+     * (none are actually consumed on Android today -- see [Change.execute]'s
+     * own KDoc -- but replaying under the ORIGINAL source is still what
+     * makes this replay reproduce the original run byte-for-byte), every
+     * other change replays under [OpSource.Local].
+     */
+    private fun replaySourceOf(change: Change): OpSource {
+        return if (change.isUndoRedo) OpSource.UndoRedo else OpSource.Local
+    }
+
+    /**
+     * Moves [from]'s entry of [vector] to [to], taking the max of the two
+     * lamports if [to] already has an entry of its own (context §3.2's
+     * `reissueVersionVector`). [vector] itself is never mutated --
+     * [VersionVector.deepCopy] is edited and returned.
+     */
+    private fun reissueVersionVector(
+        vector: VersionVector,
+        from: String,
+        to: String,
+    ): VersionVector {
+        val fromLamport = vector.get(from) ?: return vector.deepCopy()
+        val copy = vector.deepCopy()
+        copy.unset(from)
+        val existing = copy.get(to)
+        copy.set(to, if (existing != null) maxOf(existing, fromLamport) else fromLamport)
+        return copy
+    }
+
+    /**
      * `hasLocalChanges` returns whether this document has local changes or not.
      */
     override fun hasLocalChanges(): Boolean {
@@ -1662,6 +1866,13 @@ public class Document(
         epoch = restored.epoch
         docId = restored.docId
         clone = null
+        // A restored document is never re-issued (context §3.2; D1 -- a
+        // restored document replays its log under Local and never
+        // re-issues): its checkpoint/changeID came from a prior session that
+        // already synced or minted, regardless of what this fresh checkpoint
+        // now reads.
+        absorbedRemote = true
+        mintedOperations = true
         // Reverse-ops reference the pre-restore root/changeID.
         clearHistory()
         return RestoreResult.Restored
@@ -1817,6 +2028,14 @@ public class Document(
         // clientSeq it will skip.
         applyChanges(changes, OpSource.Local)
         localChanges.addAll(changes.filter { it.id.clientSeq > ackedClientSeq })
+        // Replaying a persisted append log means this document was already
+        // synced in a prior session -- never re-issued, regardless of what
+        // a fresh in-memory checkpoint reads (context §3.2). A replayed
+        // change that minted operations also counts toward the claim.
+        absorbedRemote = true
+        if (changes.any { it.hasOperations }) {
+            mintedOperations = true
+        }
 
         // Adopt the last replayed change's ID as the document's own
         // counter. applyChanges only syncs clocks, which leaves clientSeq
@@ -1907,6 +2126,11 @@ public class Document(
         root = CrdtRoot(CrdtObject(createdAt = InitialTimeTicket, memberNodes = ElementRht()))
         _presences.value = UninitializedPresences
         clone = null
+        // Only absorbedRemote is cleared -- a re-anchored document is once
+        // again eligible to be considered never-synced by checkpoint/status
+        // alone. mintedOperations is NEVER cleared (context §3.2): whatever
+        // this document already minted stays minted even across a reanchor.
+        absorbedRemote = false
         clearHistory()
     }
 
@@ -2369,6 +2593,12 @@ public class Document(
                     } else {
                         ""
                     }
+                    // A document rebuilt from a byte envelope is never
+                    // re-issued (context §3.2): its snapshot/checkpoint/log
+                    // came from a prior session that already synced or
+                    // minted, regardless of what this fresh checkpoint reads.
+                    doc.absorbedRemote = true
+                    doc.mintedOperations = true
                 }
             } catch (e: CancellationException) {
                 doc.close()

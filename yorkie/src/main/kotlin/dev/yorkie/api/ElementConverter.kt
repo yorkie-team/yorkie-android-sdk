@@ -192,12 +192,30 @@ internal fun PBJsonArray.toCrdtArray(): CrdtArray {
 internal fun PBText.toCrdtText(): CrdtText {
     val rgaTreeSplit = RgaTreeSplit<TextValue>()
 
+    // decoded tracks every node built so far (by its OWN id), so a link
+    // resolves only to an already-decoded node -- never a floor/approximate
+    // match. A link is accepted only when the target is of the SAME
+    // insertion (hasSameCreatedAt) and at a STRICTLY LOWER offset than the
+    // current node -- a split's earlier piece, never a dangling id (not yet
+    // decoded) and never a forged cross-insertion link (a real, but
+    // unrelated, node's id). Port yorkie-js-sdk `converter.ts` `fromText`
+    // (`ed25355e`, #1449, yorkie#2111): the prior `findNode` floor-matched
+    // and crashed on a dangling link via `requireNotNull`.
+    val decoded = mutableMapOf<RgaTreeSplitNodeID, RgaTreeSplitNode<TextValue>>()
     var prev = rgaTreeSplit.head
     nodesList.forEach { node ->
         val current = rgaTreeSplit.insertAfter(prev, node.toRgaTreeSplitNode())
         if (node.hasInsPrevId()) {
-            current.setInsertionPrev(rgaTreeSplit.findNode(node.insPrevId.toRgaTreeSplitNodeID()))
+            val targetId = node.insPrevId.toRgaTreeSplitNodeID()
+            val target = decoded[targetId]
+            if (target != null &&
+                targetId.hasSameCreatedAt(current.id) &&
+                targetId.offset < current.id.offset
+            ) {
+                current.setInsertionPrev(target)
+            }
         }
+        decoded[current.id] = current
         prev = current
     }
     return CrdtText(
@@ -569,11 +587,22 @@ internal fun CrdtText.toPBText(): PBJsonElement {
 }
 
 internal fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
+    // emitted tracks every node id already written to the output list, so
+    // insPrevId is written only when its target was ALREADY emitted --
+    // mirrors yorkie-js-sdk `converter.ts` `toTextNodes` (`ed25355e`, #1449,
+    // yorkie#2111). Without this every snapshot and every Text nested in a
+    // pushed value lost the links between split pieces (the field was never
+    // written at all), and `PBText.toCrdtText`'s floor-match `findNode` then
+    // either crashed on a dangling link or mis-linked a forged one.
+    val emitted = mutableSetOf<RgaTreeSplitNodeID>()
     return this@toPBTextNodes.map { node ->
+        val linkTarget = node.insertionPrev?.takeIf { it.id in emitted }
+        emitted += node.id
         textNode {
             id = node.id.toPBTextNodeID()
             value = node.value.content
             node.removedAt?.let { removedAt = it.toPBTimeTicket() } ?: clearRemovedAt()
+            linkTarget?.let { insPrevId = it.id.toPBTextNodeID() }
             node.value.attributesWithTimeTicket.forEach {
                 attributes[it.key] = nodeAttr {
                     value = it.value

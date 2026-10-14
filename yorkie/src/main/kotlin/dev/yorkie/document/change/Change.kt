@@ -29,6 +29,21 @@ public data class Change internal constructor(
     internal val message: String? = null,
 ) {
 
+    /**
+     * Set by undo/redo just before this change is queued into
+     * `Document.localChanges`, and read by `Document`'s pre-attach re-issue
+     * replay to pick this change's replay source
+     * ([dev.yorkie.document.operation.OpSource.UndoRedo] vs
+     * [dev.yorkie.document.operation.OpSource.Local]). In the class body
+     * (not a constructor param) so it stays out of [equals]/[copy] --
+     * nothing but the replay path reads it. In-memory only: never written to
+     * the envelope, the append log, or `toChangePack` (D1, spec
+     * 038_sync-js-sdk-v0725-pre-attach-reissue). Ports yorkie-js-sdk
+     * `document/change/change.ts`'s `undoRedo` field (`ed25355e`, #1449,
+     * yorkie#2111).
+     */
+    internal var isUndoRedo: Boolean = false
+
     internal val hasPresenceChange: Boolean
         get() = presenceChange != null
 

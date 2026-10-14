@@ -289,6 +289,25 @@ public class Client(
     // enqueueWrite yet. Entries remove themselves on completion, like persistQueues.
     private val persistTriggers = ConcurrentHashMap<String, Job>()
 
+    // True only for the FIRST Client built from a given generated key string (D3,
+    // spec 038_sync-js-sdk-v0725-pre-attach-reissue): the consume-once `remove` just
+    // below means a second `Client(Options(key = prev.options.key))` reusing that
+    // same string finds it already gone from [generatedClientKeys], so it reads as an
+    // explicit key -- exactly the shared-key case where a pre-attach re-issue would be
+    // unsound (another session of the same key may already hold the same lamports).
+    // Read once here, before the docStore warning below (which must see the SAME
+    // generated-or-not verdict this field freezes, not a second, already-consumed
+    // membership check).
+    private val keyGenerated: Boolean
+
+    // Per-document-key claim: once a document of this client has minted operations
+    // under an actor (reissued-to or synced-under), a second never-synced document of
+    // the SAME key is declined a re-issue of its own (context §3.2's "claim"). Written
+    // from attachDocument (client dispatcher) and from a keepalive detachDocument
+    // running on GlobalScope + Dispatchers.IO -- hence a concurrent map, not a plain
+    // one confined to the client dispatcher like [attachingDocs].
+    private val reissueClaims = ConcurrentHashMap<String, String>()
+
     init {
         // A store with no caller-supplied key cannot survive a restart, by construction: the
         // generated key (see [generateClientKey]) is per-instance, and it scopes both the store
@@ -300,7 +319,18 @@ public class Client(
         // (`3b9c668c`/#1402); `Options.key` has no "was it supplied?" bit of its own (a
         // generator-recorded weak set stands in for JS's `opts.key` optionality), so this reads
         // [generatedClientKeys] instead of an `opts.key` presence check.
-        if (options.docStore != null && options.key in generatedClientKeys) {
+        val wasGenerated = options.key in generatedClientKeys
+        // D3 consume-once: a generated key is per-instance ONLY the first time it is
+        // used to build a Client. Removing it here (not merely reading it) means a
+        // caller who re-passes a previously generated key string to build a SECOND
+        // Client (e.g. simulating "another session of the same key") gets an explicit
+        // key the second time -- generatedClientKeys no longer contains it to say
+        // otherwise. Port yorkie-js-sdk `client.ts`'s `keyGenerated` (`ed25355e`,
+        // #1449, yorkie#2111), adapted for Android's weak-set stand-in for JS's
+        // `opts.key` optionality (see [generateClientKey]'s own KDoc).
+        generatedClientKeys.remove(options.key)
+        keyGenerated = wasGenerated
+        if (options.docStore != null && wasGenerated) {
             logError(
                 "PS",
                 "c:\"${options.key}\" offline persistence needs a stable clientKey: `docStore` " +
@@ -311,6 +341,27 @@ public class Client(
                     "user id or a device id).",
             )
         }
+    }
+
+    /**
+     * Whether a never-synced document of [key] may re-issue its tickets to [actor]
+     * on this attach (D3 + context §3.2's claim): the client's key must have been
+     * generated (an explicit key keeps the initial actor, since another session of
+     * the key may already hold the same lamports), AND no document of this SAME key
+     * has already minted operations under a DIFFERENT actor on this client.
+     */
+    private fun claimReissue(actor: String, key: String): Boolean {
+        return keyGenerated && reissueClaims[key] != actor
+    }
+
+    /**
+     * Records that [key] has minted operations under [actor] on this client, so a
+     * later never-synced document of the same key is declined a re-issue
+     * ([claimReissue]). Never released -- the claim is for the LIFETIME of this
+     * client instance, matching yorkie-js-sdk's own "taken once, never freed" claim.
+     */
+    private fun markReissueClaim(actor: String, key: String) {
+        reissueClaims[key] = actor
     }
 
     /**
@@ -1932,8 +1983,25 @@ public class Client(
                     try {
                         // Actor-before-elements: setActor rewrites localChanges/changeID
                         // only, never root elements, so it must run before restoreFromBytes
-                        // — whose actor guard compares against this value.
-                        document.setActor(requireActorId())
+                        // — whose actor guard compares against this value. The re-issue
+                        // overload falls back to this same plain rename whenever the
+                        // document has already synced, so this call is safe on every
+                        // attach, not only a never-synced one. Claim BEFORE the session
+                        // lock / restoreFromBytes / RPC below. This is NOT because nothing
+                        // above suspends -- setActor itself does -- but because
+                        // `attachingDocs` already rejects a concurrent attach of this SAME
+                        // key before this function is ever entered (line ~2246), so no
+                        // second never-synced document of this key can be racing the claim
+                        // regardless of where setActor's own suspension point falls
+                        // (context §5.3, spec 038_sync-js-sdk-v0725-pre-attach-reissue).
+                        val actorId = requireActorId()
+                        val reissued = document.setActor(
+                            actorId,
+                            reissue = claimReissue(actorId, documentKey),
+                        )
+                        if (reissued || document.hasMintedOperations()) {
+                            markReissueClaim(actorId, documentKey)
+                        }
 
                         // (1) Lease — store path only; contention fails fast (does not
                         // suspend waiting for the lock to free up). ErrDocumentOpenElsewhere
@@ -2541,6 +2609,29 @@ public class Client(
 
     private suspend fun detachInternal(key: String, drain: Boolean = true) {
         val attachment = attachments[key] ?: return
+        // Claim BEFORE the first suspension below (drainPersist): a document
+        // that minted operations while attached takes the claim under the
+        // CLIENT's actor (JS `this.actorID ?? this.id`) -- `applyStatus`
+        // resets neither the document's actor nor its flags on detach on
+        // Android (context §3.1), so a later never-synced document of the
+        // same key must still be declined even though this one no longer
+        // looks "detached-and-never-synced" to its own neverSynced check.
+        // The keepalive detach path runs on GlobalScope + Dispatchers.IO
+        // (NonCancellable), off this client's own dispatcher -- reissueClaims
+        // is a ConcurrentHashMap for exactly that reason.
+        if ((attachment.resource as? Document)?.hasMintedOperations() == true) {
+            // Non-throwing fallback (mirrors JS `this.actorID ?? this.id`): the
+            // keepalive detach path runs on GlobalScope off this client's own
+            // dispatcher and can reach here AFTER deactivateInternal has already
+            // flipped status away from Activated -- requireClientId() would throw
+            // ErrClientNotActivated here, uncaught, on a cleanup path that must
+            // not fail. Android has no stored id once Deactivated (unlike JS's
+            // `this.id`), so the claim is skipped entirely rather than guessed.
+            val reissueActor = actorId ?: (status.value as? Status.Activated)?.clientId
+            if (reissueActor != null) {
+                markReissueClaim(reissueActor, key)
+            }
+        }
         attachment.cancelWatchJob()
         // MEDIUM-1: drain this attachment's persist chain (bounded to 5s) BEFORE
         // clearing the local-change hook below — a write already registered in

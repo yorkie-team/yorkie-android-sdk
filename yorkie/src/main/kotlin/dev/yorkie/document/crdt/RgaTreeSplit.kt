@@ -683,7 +683,14 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         node: RgaTreeSplitNode<T>,
         offset: Int,
     ): Pair<RgaTreeSplitNode<T>?, DataSize> {
-        if (offset > node.contentLength) {
+        // A negative offset is rejected the same as one past the end: JS's
+        // `substring`/`truncate` silently clamp it to 0, duplicating content
+        // instead of failing (port yorkie-js-sdk `rga_tree_split.ts`
+        // `ed25355e`, #1449, yorkie#2111). Before this guard, Android instead
+        // reached `TextValue.subSequence`'s `substring(negative, len)`, which
+        // throws `StringIndexOutOfBoundsException` AFTER already allocating
+        // the node -- this guard rejects it up front, before any mutation.
+        if (offset < 0 || offset > node.contentLength) {
             throw IllegalArgumentException("offset should be less than or equal to length")
         }
 

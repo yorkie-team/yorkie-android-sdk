@@ -130,19 +130,22 @@ class Rht : Collection<RhtNode> {
     /**
      * Converts the given [Rht] to XML String.
      *
-     * Both the key and the value are peer-chosen (a remote [set] can write
-     * either one raw), so each is escaped before interpolation: unescaped, a
-     * `"` closes the attribute and a `<` opens an element, letting a peer
-     * forge markup into every reader's rendered tree (port JS
-     * `document/crdt/tree.ts` `escapeXMLAttr`, `6932da6a`, #1447) -- the XML
-     * half of the forging [toJson] already closes for the JSON encoding via
-     * [escapeString].
+     * The value is rendered through [logicalValue] first, same as JS
+     * `toXML` reads it back through `parseAttrValue`: a JSON-encoded string
+     * (what a JS peer stores for a `string` attribute) unwraps to its bare
+     * form, while an object/number/boolean/malformed value stays exactly as
+     * stored. Both the key and the (now-unwrapped) value are peer-chosen,
+     * so each is escaped before interpolation: unescaped, a `"` closes the
+     * attribute and a `<` opens an element, letting a peer forge markup
+     * into every reader's rendered tree (port JS `document/crdt/tree.ts`
+     * `escapeXMLAttr`, `6932da6a`, #1447) -- the XML half of the forging
+     * [toJson] already closes for the JSON encoding via [escapeString].
      */
     fun toXml(): String {
         return nodeMapByKey.filterValues { !it.isRemoved }.entries
             .sortedBy { it.key }
             .joinToString(" ") { (key, node) ->
-                "${escapeXmlAttr(key)}=\"${escapeXmlAttr(node.value)}\""
+                "${escapeXmlAttr(key)}=\"${escapeXmlAttr(logicalValue(node.value))}\""
             }
     }
 
@@ -284,17 +287,19 @@ private fun utf8Length(s: String): Int {
 private fun valueSize(stored: String): Int = utf8Length(logicalValue(stored)) * 2
 
 /**
- * Returns [stored] as a peer storing attribute values raw would hold it. JS
- * `logicalValue` parses [stored] as JSON and unwraps only when the parsed
- * value is a string, tolerating surrounding whitespace the way `JSON.parse`
- * does; Android carries no JSON parser (and must not add one solely for
- * this — YAGNI), so this hand-rolls the one case the ported sizing tests
- * exercise: [stored], once trimmed, is a well-formed JSON string literal —
- * length >= 2, first and last char `"` — in which case the outer quotes are
- * stripped and the interior is JSON-unescaped. Anything else (an unquoted
- * word, a number, a boolean, malformed quoting, or an escape `JSON.parse`
- * would reject) passes through as the original [stored], matching
- * `JSON.parse`'s catch branch.
+ * Returns [stored] as a peer storing attribute values raw would hold it —
+ * the same value [toXml] renders and [valueSize] charges for. JS
+ * `parseAttrValue` parses [stored] as JSON and `toXML`/sizing unwrap only
+ * when the parsed value is a string, tolerating surrounding whitespace the
+ * way `JSON.parse` does; Android carries no JSON parser (and must not add
+ * one solely for this — YAGNI), so this hand-rolls the one case that
+ * matters for either caller: [stored], once trimmed, is a well-formed JSON
+ * string literal — length >= 2, first and last char `"` — in which case the
+ * outer quotes are stripped and the interior is JSON-unescaped. Anything
+ * else (an unquoted word, a number, a boolean, malformed quoting, or an
+ * escape `JSON.parse` would reject) passes through as the original
+ * [stored], matching `JSON.parse`'s catch branch (and `typeof obj ===
+ * 'string'` being false for a non-string parse).
  */
 private fun logicalValue(stored: String): String {
     val trimmed = stored.trim { it == ' ' || it == '\t' || it == '\n' || it == '\r' }

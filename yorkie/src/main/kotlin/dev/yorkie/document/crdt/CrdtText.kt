@@ -24,9 +24,14 @@ internal data class CrdtText(
 
     override val gcPairs: List<GCPair<*>>
         get() = buildList {
-            // Only reached when a root is built from a snapshot, where
-            // docSize.live counted visible nodes only. Tombstoned nodes were
-            // never part of live, so their pairs carry gcOnlySize.
+            // Reached on every element registration — constructor scan,
+            // snapshot load, a remote/replayed Set/Add/ArraySet payload, and
+            // an undo's deep copy of a removed container (CrdtRoot
+            // .registerInternalGCPairs calls GCCrdtElement.gcPairs for all of
+            // these, not only snapshot load). getDataSize() (live) skips
+            // removed nodes, so a tombstoned node's size was never folded
+            // into live and its pair carries gcOnlySize here instead of a
+            // size swap.
             //
             // node.value.gcPairs (TextValue.getDataSize skips removed
             // attributes) never covers a node's OWN removed attributes

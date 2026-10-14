@@ -66,22 +66,25 @@ class CrdtTreeTest {
         elem.append(text)
         assertEquals("<p>hello</p>", elem.toXml())
 
-        // Rht.toXml entity-escapes every attribute value (and key), so a
-        // stored `"t"` renders `&quot;t&quot;` -- Android has no
-        // `parseAttrValue` to unwrap it back to the bare `t` JS renders
-        // (port JS `6932da6a`, #1447; moved from the pre-escape
-        // `b=""t""` expectation).
+        // Rht.toXml renders the logical (JSON-unwrapped) value, same as JS
+        // `toXML` reads it back through `parseAttrValue`: a JSON-quoted
+        // string stored `"t"` unwraps to the bare `t`, while a non-string
+        // JSON value (an object here) stays exactly as stored (port JS
+        // `document/crdt/tree_test.ts`, `6932da6a`, #1447 -- the test there
+        // moved from the pre-escape `b=""t""` expectation to
+        // `b="t" ... img="{&quot;src&quot;:&quot;yorkie.png&quot;}"`, which
+        // this mirrors).
         val elemWithAttrs = CrdtTreeElement(DIP, "p")
         elemWithAttrs.append(CrdtTreeText(DIP, "hello"))
         elemWithAttrs.setAttributes(mapOf("b" to "\"t\"", "i" to "true"), TimeTicket.MaxTimeTicket)
-        assertEquals("<p b=\"&quot;t&quot;\" i=\"true\">hello</p>", elemWithAttrs.toXml())
+        assertEquals("<p b=\"t\" i=\"true\">hello</p>", elemWithAttrs.toXml())
 
         elemWithAttrs.setAttributes(
             mapOf("img" to "{\"src\":\"yorkie.png\"}"),
             TimeTicket.MaxTimeTicket,
         )
         assertEquals(
-            "<p b=\"&quot;t&quot;\" i=\"true\" img=\"{&quot;src&quot;:&quot;yorkie.png&quot;}\">" +
+            "<p b=\"t\" i=\"true\" img=\"{&quot;src&quot;:&quot;yorkie.png&quot;}\">" +
                 "hello</p>",
             elemWithAttrs.toXml(),
         )

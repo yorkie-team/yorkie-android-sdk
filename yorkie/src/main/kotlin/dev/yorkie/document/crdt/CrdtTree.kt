@@ -942,14 +942,18 @@ internal data class CrdtTree(
         // tombstoned, so that a reverse TreeEditOperation can convert them to plain
         // TreeNode snapshots for undo re-insertion. Only root-level removed nodes are
         // captured; their children are already included in each node's subtree via deepCopy().
-        // Skipped entirely when the caller will never produce a reverse op (F2).
+        // The deep COPY is skipped entirely when the caller will never produce a reverse op
+        // (F2), but the root-level set itself (and its total size) is always computed --
+        // M1 (team-review, RTCOLLABPLATFORM-789) needs the size on every execution,
+        // including a remote (non-reverse-producing) one, to measure
+        // TreeEditOperation.normalizePos()'s removed span.
+        val rootLevelRemoved = nodesToBeRemoved.filter { it.parent !in nodesToBeRemoved }
         val removedNodes = if (captureRemovedNodes) {
-            nodesToBeRemoved
-                .filter { it.parent !in nodesToBeRemoved }
-                .map(CrdtTreeNode::deepCopy)
+            rootLevelRemoved.map(CrdtTreeNode::deepCopy)
         } else {
             emptyList()
         }
+        val removedNodesSize = rootLevelRemoved.sumOf { it.paddedSize }
 
         // 02. Delete: delete the nodes that are marked as removed. Widened to
         // GCPair<*> (was GCPair<CrdtTreeNode>): drainPendingGcPairs() (below)
@@ -1115,6 +1119,24 @@ internal data class CrdtTree(
             var parent = fromParent
             var left = fromLeft
             var actualSplitLevel = 0
+            // Where the split is reported. `fromIndex`/`fromPath` say where
+            // the edit asked for it, but the split itself decides where it
+            // opens on this replica: a concurrent insert at the boundary
+            // stays on its left (section 7.3), and the per-iteration advance
+            // below can move past unknown split siblings (section 7.5).
+            // Reporting the requested position then tells a binding
+            // replaying OpInfos by index to move those nodes into the new
+            // element, which this tree did not do. So the first level is
+            // measured once it has split, at the end of what stayed in the
+            // node: the split only adds to the right of it, so that is also
+            // its index and path before the split. Port yorkie-js-sdk
+            // a74b2513 (#1455).
+            var splitFromIdx = fromIndex
+            var splitFromPath = fromPath
+            // The first level that measured a boundary, and which level it
+            // was, so the levels above can be checked against it.
+            var splitBoundaryIdx: Int? = null
+            var splitBoundaryLevel = 0
             // `run` so an exhausted ancestor chain terminates the whole loop
             // (return@run), rather than re-splitting the same node.
             run {
@@ -1178,6 +1200,56 @@ internal data class CrdtTree(
                         mergeSourceOf(splitNode, target, ::findFloorNode)?.let { recreated ->
                             splitRecreatedIDs.add(recreated to splitNode.id)
                         }
+                        // `parent`, not `target`: when `orderSameBoundarySplit`
+                        // redirects to a concurrent split product, the split is
+                        // at the end of `parent` (it only redirects there), and
+                        // the next level splits after `parent` too, so that is
+                        // where a binding has to split.
+                        //
+                        // Live children only (`parent.children`). A tombstone
+                        // takes no room in the index, so the last live child
+                        // measures the same boundary, while `toIndex`/`toPath`
+                        // on a removed node is a position the walk cannot
+                        // resolve. This measurement only refines a position the
+                        // change already has, so the pair is computed first and
+                        // published only once both calls returned -- a half
+                        // assignment would emit an index and a path describing
+                        // different positions -- and a throw degrades to the
+                        // unrefined, requested pair instead.
+                        val siblings = parent.children
+                        val last = siblings.lastOrNull() ?: parent
+                        try {
+                            val idx = toIndex(parent, last)
+                            val path = toPath(parent, last)
+                            if (actualSplitLevel == 0) {
+                                splitFromIdx = idx
+                                splitFromPath = path
+                            }
+                            val boundaryIdx = splitBoundaryIdx
+                            val levelDelta = actualSplitLevel - splitBoundaryLevel
+                            if (boundaryIdx == null) {
+                                splitBoundaryIdx = idx
+                                splitBoundaryLevel = actualSplitLevel
+                            } else if (idx != boundaryIdx + levelDelta) {
+                                // Nesting alone moves the boundary one to the
+                                // right per level (the close tag of the level
+                                // below). Anything else means this level split
+                                // somewhere the level below did not, and the
+                                // levels describe different boundaries. The
+                                // change carries one position, so it still
+                                // reports the first level's.
+                                val impliedIdx = boundaryIdx + levelDelta
+                                logDebug(
+                                    TAG,
+                                    "split level $actualSplitLevel opened at $idx, not at " +
+                                        "$impliedIdx as level $splitBoundaryLevel implies; " +
+                                        "the reported split position describes the inner " +
+                                        "level only",
+                                )
+                            }
+                        } catch (e: RuntimeException) {
+                            logDebug(TAG, "failed to measure split position: $e")
+                        }
                     }
                     actualSplitLevel++
                     left = parent
@@ -1188,10 +1260,10 @@ internal data class CrdtTree(
                 changes.add(
                     TreeChange(
                         type = TreeChangeType.Content,
-                        from = fromIndex,
-                        to = fromIndex,
-                        fromPath = fromPath,
-                        toPath = fromPath,
+                        from = splitFromIdx,
+                        to = splitFromIdx,
+                        fromPath = splitFromPath,
+                        toPath = splitFromPath,
                         actorID = executedAt.actorID,
                         splitLevel = actualSplitLevel,
                     ),
@@ -1289,6 +1361,15 @@ internal data class CrdtTree(
             if (aliveContents.isNotEmpty()) {
                 val value = aliveContents.map(CrdtTreeNode::toTreeNode)
                 val lastChange = changes.lastOrNull()
+                // `fromIndex`, not the split position: the content was
+                // inserted at `fromParent`/`fromLeft` above, i.e. where the
+                // edit asked for it, which is where a migrated split
+                // boundary moves away from. This comparison is what keeps
+                // the two apart -- when the split reported a different
+                // boundary (`splitFromIdx != fromIndex` above) it no longer
+                // matches, and the insert is emitted as its own change
+                // instead of being merged onto a split that happened
+                // somewhere else. Port yorkie-js-sdk a74b2513 (#1455).
                 if (changes.isNotEmpty() && lastChange?.from == fromIndex) {
                     changes[changes.lastIndex] = lastChange.copy(value = value)
                 } else {
@@ -1346,6 +1427,7 @@ internal data class CrdtTree(
             // instead (see splitNode), never through this diff.
             DocSize(live = diff, gc = DataSize(0, 0)),
             removedNodes,
+            removedNodesSize = removedNodesSize,
             mergeLevel = toBeMergedNodes.size,
             removedSpans = if (spansComplete) removedSpans else emptyList(),
             // traverseAll is postorder (children before parent), so reverse
@@ -1357,6 +1439,7 @@ internal data class CrdtTree(
             splitSize = splitSize,
             mergedNodes = toBeMergedNodes,
             splitRecreatedIDs = splitRecreatedIDs,
+            preEditFromIdx = fromIndex,
         )
     }
 

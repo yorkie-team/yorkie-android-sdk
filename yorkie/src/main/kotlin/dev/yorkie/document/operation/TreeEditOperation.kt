@@ -174,6 +174,55 @@ internal data class TreeEditOperation(
     internal fun getContentSize(): Int = insertedContentSize + splitSize
 
     /**
+     * Per-edit `[from, to, insertedSize]` ranges [executeRestore] measured, in
+     * the same order as the [OperationInfo.TreeEditOpInfo]s it published. Set
+     * only by [executeRestore]; reset to null at the top of every [execute].
+     */
+    private var executedRanges: List<Triple<Int, Int, Int>>? = null
+
+    /**
+     * Visible-index `from` [dev.yorkie.document.crdt.CrdtTree.edit] resolved
+     * [fromPos] to, captured BEFORE this edit mutated the tree -- see
+     * [dev.yorkie.document.crdt.TreeOperationResult.preEditFromIdx]. Set from
+     * that field at [execute] time for a non-restore edit; null until then
+     * and always null for a restore op (which never calls `tree.edit`).
+     * Mirrors JS `tree_edit_operation.ts`'s `lastFromIdx`.
+     */
+    private var lastFromIdx: Int? = null
+
+    /**
+     * [lastFromIdx] plus [dev.yorkie.document.crdt.TreeOperationResult.removedNodesSize] --
+     * always measured, regardless of whether
+     * [dev.yorkie.document.crdt.TreeOperationResult.removedNodes] itself was captured (a
+     * remote application skips that deep copy, M1 fix). Mirrors JS
+     * `tree_edit_operation.ts`'s `lastToIdx` (`preEditFromIdx + removedSize`).
+     */
+    private var lastToIdx: Int? = null
+
+    /**
+     * Visible-index range this (non-restore) execution actually replaced: a
+     * CRDT value captured BEFORE the edit mutated the tree
+     * ([lastFromIdx]/[lastToIdx]), never the position [OperationInfo.TreeEditOpInfo]
+     * reports the change landed at -- a remote split can migrate a boundary
+     * concurrently, so the reported position and the pre-edit index can
+     * differ (port yorkie-js-sdk `a74b2513`/`4d714068`, #1455/#1478, M1 fix).
+     * [isUndoOp] prefers the stored [undoFromOffset]/[undoToOffset] instead,
+     * mirroring JS `normalizePos`'s own undo-ops branch, though
+     * [dev.yorkie.document.Document.reconcileHistoryEdits] never reaches this
+     * op in that shape (an undo/redo change reconciles through
+     * `executeUndoRedoInternal`'s own stacks, not this function). Falls back
+     * to `0 to 0` only before [execute] has ever run.
+     */
+    internal fun normalizePos(): Pair<Int, Int> {
+        if (isUndoOp) {
+            return undoFromOffset to undoToOffset
+        }
+        val from = lastFromIdx ?: return 0 to 0
+        val to = lastToIdx ?: return 0 to 0
+        return from to to
+    }
+
+    /**
      * Per-edit `[from, to, insertedSize]` ranges [executeRestore] measured,
      * in the same order as the [OperationInfo.TreeEditOpInfo]s it published.
      * [dev.yorkie.document.Document.reconcileHistoryEdits] replays each one
@@ -182,26 +231,11 @@ internal data class TreeEditOperation(
      * a delta that never reflected more than the first node (port
      * yorkie-js-sdk `790422ce`, #1421). Null before
      * [executeRestore] runs and always null for an ordinary (non-restore)
-     * edit, which keeps Android's pre-existing first-opInfo reconcile
-     * (Android has no `TreeEditOperation.normalizePos`). Reset at the top of
-     * [execute].
-     */
-    private var executedRanges: List<Triple<Int, Int, Int>>? = null
-
-    /**
-     * [executedRanges] once [executeRestore] has set it -- UNCHANGED, even
-     * when it measured no edit at all (every revived/removed node sat under
-     * a removed ancestor, or the change was a split-only isolate with no
-     * node identity change). Mirrors JS exactly: `if (this.executedRanges)
-     * return this.executedRanges` returns its field as-is, including an
-     * empty array, because JS's own fallback
+     * edit -- that case now reads [normalizePos]/[getContentSize] instead
+     * (M1 fix), matching how JS's own fallback
      * (`[this.normalizePos(), this.getContentSize()]`) is unreachable for a
-     * restore op -- `normalizePos()` reads from `fromPos`/`toPos`, which
-     * [executeRestore] never touches. Android has no `normalizePos` on this
-     * operation and does not need one here either: the fallback below
-     * only ever fires when [executedRanges] is still null, which means this
-     * is a NON-restore op's undo/redo entry (only [executeRestore] ever
-     * assigns [executedRanges]) -- a case [isRestoreOp] callers never reach.
+     * restore op: `normalizePos()` reads from [lastFromIdx]/[lastToIdx],
+     * which [executeRestore] never sets.
      * Only meaningful for a restore op -- callers must check [isRestoreOp]
      * first, exactly as [dev.yorkie.document.Document.reconcileHistoryEdits]
      * does.
@@ -394,6 +428,8 @@ internal data class TreeEditOperation(
         insertedContentSize = 0
         splitSize = 0
         executedRanges = null
+        lastFromIdx = null
+        lastToIdx = null
         consumedSplitTickets = 0
         splitRecreatedIDs = emptyList()
         reissuedContentIDs = emptyList()
@@ -502,6 +538,10 @@ internal data class TreeEditOperation(
         insertedContentSize = result.insertedContentSize
         splitSize = result.splitSize
         splitRecreatedIDs = result.splitRecreatedIDs
+        // M1 fix: captured BEFORE the edit (preEditFromIdx) rather than read
+        // off the reported change position -- see normalizePos's doc.
+        lastFromIdx = result.preEditFromIdx
+        lastToIdx = result.preEditFromIdx + result.removedNodesSize
 
         val opInfos =
             result.changes.map {

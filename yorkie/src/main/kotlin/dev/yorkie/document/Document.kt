@@ -1368,32 +1368,32 @@ public class Document(
                             )
                         }
                     } else {
-                        // For tree edits there may be multiple TreeEditOpInfos per operation
-                        // (split/merge decomposes into multiple ranges). Reconcile using the
-                        // first deletion range's from/to and the inserted node count.
-                        opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
-                            .firstOrNull()
-                            ?.let { opInfo ->
-                                // getContentSize() (insertedContentSize + splitSize)
-                                // replaces the prior node-COUNT measurement
-                                // (opInfo.nodes?.size): a split-only edit has no
-                                // `value`, so the node count was always 0 and never
-                                // shifted stacked tree-undo offsets, even though the
-                                // split visibly grows the index. A multi-character
-                                // text insert also now shifts by its padded size
-                                // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
-                                // the second half of that fix). Restore/retombstone ops
-                                // use their own per-node executedRanges loop above
-                                // instead (Android has no
-                                // TreeEditOperation.normalizePos, so widening this
-                                // branch to cover them too is out of scope).
-                                internalHistory.reconcileTreeEdit(
-                                    executedOp.parentCreatedAt,
-                                    opInfo.from,
-                                    opInfo.to,
-                                    executedOp.getContentSize(),
-                                )
-                            }
+                        // A zero-effect edit (e.g. a dropped/out-of-range op) emits no
+                        // TreeEditOpInfo at all -- gate on that the same as before, but
+                        // reconcile from normalizePos()'s pre-edit index + removed size
+                        // (a CRDT value captured before the edit mutated the tree), NOT
+                        // from the opInfo's own from/to: those report where a remote
+                        // split LANDED, which a concurrent boundary migration can move
+                        // away from the index this edit actually consumed (port
+                        // yorkie-js-sdk `a74b2513`/`4d714068`, #1455/#1478, M1 fix).
+                        // getContentSize() (insertedContentSize + splitSize) replaces
+                        // the prior node-COUNT measurement (opInfo.nodes?.size): a
+                        // split-only edit has no `value`, so the node count was always
+                        // 0 and never shifted stacked tree-undo offsets, even though
+                        // the split visibly grows the index. A multi-character text
+                        // insert also now shifts by its padded size instead of by 1
+                        // (port e41069df, yorkie-js-sdk#1360, the second half of that
+                        // fix). Restore/retombstone ops use their own per-node
+                        // executedRanges loop above instead.
+                        if (opInfosForOp.any { it is OperationInfo.TreeEditOpInfo }) {
+                            val (from, to) = executedOp.normalizePos()
+                            internalHistory.reconcileTreeEdit(
+                                executedOp.parentCreatedAt,
+                                from,
+                                to,
+                                executedOp.getContentSize(),
+                            )
+                        }
                     }
                 }
 

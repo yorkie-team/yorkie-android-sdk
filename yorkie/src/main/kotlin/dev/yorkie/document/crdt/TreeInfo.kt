@@ -106,6 +106,16 @@ internal data class TreeOperationResult(
      */
     val removedNodes: List<CrdtTreeNode> = emptyList(),
     /**
+     * [removedNodes]' total [dev.yorkie.util.IndexTreeNode.paddedSize], measured BEFORE
+     * tombstoning regardless of whether [removedNodes] itself was captured (its deep
+     * copies are skipped for a source that will never produce a reverse op, e.g. a
+     * remote application -- see `CrdtTree.edit`'s `captureRemovedNodes`). Unlike
+     * [removedNodes], this is always populated: [dev.yorkie.document.operation.TreeEditOperation]
+     * needs it on every execution, including a remote one, to measure `normalizePos()`'s
+     * removed span (M1, RTCOLLABPLATFORM-789).
+     */
+    val removedNodesSize: Int = 0,
+    /**
      * Previous attribute values captured from the first styled node in the
      * range.  Used to build the reverse style operation for undo/redo.
      */
@@ -175,4 +185,16 @@ internal data class TreeOperationResult(
      * (#1426).
      */
     val splitRecreatedIDs: List<Pair<CrdtTreeNodeID, CrdtTreeNodeID>> = emptyList(),
+    /**
+     * Visible-index position [CrdtTree.edit] resolved [range]'s `from` side
+     * to, captured after boundary text-node splits but before any deletion --
+     * a CRDT value fixed before the edit mutates the tree, never the
+     * reported split/change position. Read by
+     * [dev.yorkie.document.operation.TreeEditOperation.execute] to compute
+     * the forward (non-undo) op's `[preEditFromIdx, preEditFromIdx +
+     * removedSize]` range for history reconciliation, mirroring JS
+     * `tree_edit_operation.ts`'s `preEditFromIdx` (`normalizePos`). Port
+     * yorkie-js-sdk `a74b2513` (#1455).
+     */
+    val preEditFromIdx: Int = 0,
 )

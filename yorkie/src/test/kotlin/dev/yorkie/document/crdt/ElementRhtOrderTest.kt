@@ -84,6 +84,38 @@ class ElementRhtOrderTest {
         }
     }
 
+    /**
+     * The losing branch marks the incoming value removed so key iteration
+     * skips it. A value that arrives already removed is already skipped, so
+     * the marking has nothing to do -- but [CrdtElement.remove] accepts any
+     * later ticket, so ungated it is not a no-op: it moves the tombstone's
+     * `removedAt` off the ticket of the removal that actually happened and
+     * onto the occupant's `positionedAt`.
+     *
+     * That is the shape the decoder replays on every snapshot load
+     * (yorkie-js-sdk#1377, fixed yorkie-js-sdk#1395 `8d965dd2`): GC then waits
+     * on the wrong ticket, and the replica's re-serialized snapshots and
+     * `docSize.gc` differ from replicas that never reloaded. Red at
+     * `4d353504` (the reverted hunk, `else if (!node.isRemoved)`), green after
+     * this commit's `else if (!node.isRemoved && !value.isRemoved)`.
+     */
+    @Test
+    fun `leaves a losing tombstone removedAt alone`() {
+        for (order in permute(listOf(0, 1))) {
+            val rht = ElementRht<CrdtElement>()
+            val elems = members()
+            val tomb = elems[1]
+            for (idx in order) rht.set("frame", elems[idx], elems[idx].getPositionedAt())
+
+            assertTrue("order $order: tombstone revived", tomb.isRemoved)
+            assertEquals(
+                "order $order: removedAt moved from $t4 to ${tomb.removedAt}",
+                t4,
+                tomb.removedAt,
+            )
+        }
+    }
+
     @Test
     fun `keeps the key readable when the loser is live`() {
         // Three readers of the tombstoned-winner bug would disagree: `has(key)` says false,
@@ -186,6 +218,50 @@ class ElementRhtOrderTest {
         decodesIdentically(true)
 
     /**
+     * A snapshot round-trip must be a fixpoint on the tombstones it carries.
+     * The decoder replays every decoded member through [ElementRht.set], and a
+     * tombstone that sorts after the live occupant takes the losing branch --
+     * which used to bump its `removedAt` to the occupant's `positionedAt`. The
+     * document then measures differently depending on whether it has been
+     * through a snapshot load (yorkie-js-sdk#1377, fixed yorkie-js-sdk#1395
+     * `8d965dd2`).
+     *
+     * `createdAt(live) < createdAt(tomb) < removedAt(tomb) < movedAt(live)`:
+     * the tombstone loses to the undo-restored occupant, and its own removal
+     * is strictly older than the ticket that restored the occupant. Actor IDs
+     * must be the wire's 24-hex form -- anything else fails
+     * [dev.yorkie.api.toByteString]'s hex decode before the comparison is
+     * even reached.
+     */
+    @Test
+    fun `preserves each tombstone removedAt across a decode`() {
+        val actorA = "000000000000000000000001"
+        val actorB = "000000000000000000000002"
+        val live = CrdtPrimitive("kept", TimeTicket(1, 0u, actorA)).apply {
+            movedAt = TimeTicket(5, 0u, actorA)
+        }
+        val tomb = CrdtPrimitive("displaced", TimeTicket(3, 0u, actorB)).apply {
+            remove(TimeTicket(4, 0u, actorB))
+        }
+        val rht = ElementRht<CrdtElement>()
+        rht.set("frame", live, live.getPositionedAt())
+        rht.set("frame", tomb, tomb.getPositionedAt())
+        val root = CrdtObject(TimeTicket.InitialTimeTicket, memberNodes = rht)
+
+        fun removedAts(obj: CrdtObject): Map<TimeTicket, TimeTicket?> =
+            obj.memberNodes.associate { it.value.createdAt to it.value.removedAt }
+
+        val want = removedAts(root)
+        assertTrue(
+            "the key must carry a tombstone for this to test anything",
+            want.values.any { it != null },
+        )
+
+        val rebuilt = root.toPBJsonObject().toCrdtElement() as CrdtObject
+        assertEquals(want, removedAts(rebuilt))
+    }
+
+    /**
      * The single-replica decoder cases above are pinned again over the
      * wire, converging two live replicas plus a third rebuilt directly from the first's root
      * bytes -- the exact shape seen live (a fresh client decoding an
@@ -215,5 +291,47 @@ class ElementRhtOrderTest {
 
         JsonParser.parseString(d2.toJson())
         JsonParser.parseString(rebuilt.toJson())
+    }
+
+    /**
+     * yorkie-js-sdk#1398 (`97f10734`): exercises the fix through the full
+     * local-execution path -- [dev.yorkie.document.operation.SetOperation.execute]
+     * and [CrdtRoot.registerElement] -- not a raw [ElementRht.set] call.
+     * Client 1 sets then deletes a key locally, tombstoning the eventual
+     * winner, before it ever learns of client 2's concurrent, lower-ticket
+     * set on the same key; syncing then delivers that loser to client 1
+     * AFTER its occupant is already a tombstone. Before this commit the
+     * loser stayed live and uncollectable in `nodeMapByCreatedAt`: `has`
+     * correctly reported the key absent while `toJson` leaked it back in via
+     * iteration, and `docSize.live` never released its charge to `gc`. Both
+     * replicas must converge, the key must resolve to absent everywhere, and
+     * `docSize` must agree with a from-scratch rebuild on both.
+     */
+    @Test
+    fun `tombstones a live loser arriving after the occupant is already removed`() = runTest {
+        val actorA = "000000000000000000000001"
+        val actorB = "000000000000000000000002"
+        val d1 = Document("test-doc").apply { setActor(actorA) }
+        val d2 = Document("test-doc").apply { setActor(actorB) }
+
+        // Advance d1's clock past d2's so the eventual winner's ticket
+        // compares higher than the loser's, regardless of delivery order.
+        d1.updateAsync { root, _ -> root["z"] = "warmup" }.await()
+        d1.updateAsync { root, _ -> root["key"] = "v1" }.await()
+        d1.updateAsync { root, _ -> root.remove("key") }.await()
+
+        d2.updateAsync { root, _ -> root["key"] = "v2" }.await()
+
+        crossSync(d1, d2)
+
+        assertEquals("""{"z":"warmup"}""", d1.toJson())
+        assertEquals("""{"z":"warmup"}""", d2.toJson())
+        assertFalse("the loser must not surface via has(key)", d1.getRootObject().has("key"))
+        assertFalse("the loser must not surface via has(key)", d2.getRootObject().has("key"))
+
+        val rebuiltD1 = CrdtRoot(d1.getRootObject().deepCopy())
+        val rebuiltD2 = CrdtRoot(d2.getRootObject().deepCopy())
+        assertEquals("docSize must agree with a rebuild on d1", rebuiltD1.docSize, d1.getDocSize())
+        assertEquals("docSize must agree with a rebuild on d2", rebuiltD2.docSize, d2.getDocSize())
     }
 }

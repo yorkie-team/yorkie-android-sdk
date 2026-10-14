@@ -303,6 +303,41 @@ class ElementRhtTest {
     }
 
     @Test
+    fun `should remove a losing value when the occupant is a tombstone`() {
+        // given: client A sets "key" (winner), then removes it (the occupant
+        // is now a tombstone, still linked under the key)
+        val elementRht = ElementRht<CrdtPrimitive>()
+        val winnerTicket = generateTimeTicket(6, 0, "actorA")
+        val winner = CrdtPrimitive("v2", winnerTicket)
+        elementRht.set(key = "key", value = winner, executedAt = winnerTicket)
+
+        val removedAt = generateTimeTicket(7, 0, "actorA")
+        elementRht.delete(winnerTicket, removedAt)
+        assertTrue(winner.isRemoved)
+
+        // when: a live, concurrent, lower-ticket set for the same key arrives
+        // AFTER the occupant is already a tombstone (yorkie-js-sdk#1398)
+        val loserTicket = generateTimeTicket(5, 0, "actorB")
+        val loser = CrdtPrimitive("v3", loserTicket)
+        elementRht.set(key = "key", value = loser, executedAt = loserTicket)
+
+        // then: the loser is tombstoned too, and has/get agree with key
+        // iteration -- neither resolves the key
+        assertTrue("the losing value should be removed", loser.isRemoved)
+        assertFalse(elementRht.has("key"))
+        assertThrows(NoSuchElementException::class.java) {
+            elementRht["key"]
+        }
+
+        val obj = CrdtObject(
+            TimeTicket.InitialTimeTicket,
+            memberNodes = elementRht as ElementRht<CrdtElement>,
+        )
+        assertEquals(emptyList<String>(), obj.keys)
+        assertEquals("{}", obj.toJson())
+    }
+
+    @Test
     fun `Verity the getKeyOfQueue() using sequence`() {
         val elementRht = ElementRht<CrdtPrimitive>()
         val list = mutableListOf<String>()

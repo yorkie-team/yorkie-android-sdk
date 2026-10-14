@@ -55,14 +55,15 @@ internal data class CrdtArray(
 
     /**
      * Moves the given [createdAt] element after the [prevCreatedAt] element using an LWW
-     * position register. Returns the displaced dead position node the caller must register
-     * for GC, or `null` when the move lost the LWW race / was already processed.
+     * position register. Returns an [RgaTreeListMove] — the displaced dead position node
+     * the caller must register for GC (absent when the move lost the LWW race / was
+     * already processed) and the size the move added to the moved element itself (#1392).
      */
     fun moveAfter(
         prevCreatedAt: TimeTicket,
         createdAt: TimeTicket,
         executedAt: TimeTicket,
-    ): RgaTreeList.Node? {
+    ): RgaTreeListMove {
         return elements.moveAfter(prevCreatedAt, createdAt, executedAt)
     }
 
@@ -91,6 +92,19 @@ internal data class CrdtArray(
         val node = elements.get(createdAt)
         if (node?.isRemoved == true) return null
         return node
+    }
+
+    /**
+     * Returns the element of the given [createdAt] whether it is removed or
+     * not. Ports JS SDK `crdt/array.ts` `getByID` (`8fb5a71c`, #1392): unlike
+     * the filtered [get], a move's post-move re-lookup of the element it just
+     * moved must find it even when it was removed concurrently (e.g. a
+     * `moveFront`/`moveAfter` naming an already-deleted element's id) --
+     * [get] would answer `null` there and the caller's non-null assertion
+     * would crash.
+     */
+    fun getByID(createdAt: TimeTicket): CrdtElement? {
+        return elements.get(createdAt)
     }
 
     /**
@@ -124,6 +138,15 @@ internal data class CrdtArray(
      */
     override fun purge(element: CrdtElement) {
         elements.purge(element)
+    }
+
+    /**
+     * Implements [CrdtContainer.purgeBarrierAt] by delegating to
+     * [RgaTreeList.purgeBarrierAt]: purging an element unlinks the position
+     * node holding it, so the array's order decides when that is safe.
+     */
+    override fun purgeBarrierAt(element: CrdtElement): TimeTicket? {
+        return elements.purgeBarrierAt(element)
     }
 
     /**

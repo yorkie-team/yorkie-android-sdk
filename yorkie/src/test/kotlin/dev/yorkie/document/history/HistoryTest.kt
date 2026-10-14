@@ -20,6 +20,23 @@ class HistoryTest {
         )
     }
 
+    /** Builds a history entry whose [IncreaseOperation.parentCreatedAt] lamport is [n], so eviction order is observable. */
+    private fun markedOp(n: Long): HistoryOperation.Op {
+        val ticket = InitialTimeTicket.copy(lamport = n)
+        val primitive = CrdtPrimitive(1, ticket)
+        return HistoryOperation.Op(
+            IncreaseOperation(primitive, ticket, ticket),
+        )
+    }
+
+    /** Reads back the marker lamport of each entry on a stack built from [markedOp]. */
+    private fun marks(stack: List<List<HistoryOperation>>): List<Long> {
+        return stack.map { ops ->
+            ((ops.first() as HistoryOperation.Op).operation as IncreaseOperation)
+                .parentCreatedAt.lamport
+        }
+    }
+
     @Test
     fun `undo stack push and pop`() {
         val history = History()
@@ -130,5 +147,44 @@ class HistoryTest {
         assertEquals(op2, history.popUndo())
         assertEquals(op1, history.popUndo())
         assertNull(history.popUndo())
+    }
+
+    @Test
+    fun `getMaxDepth falls back to the default depth when constructed without one`() {
+        assertEquals(MaxUndoRedoStackDepth, History().getMaxDepth())
+    }
+
+    @Test
+    fun `getMaxDepth reports the depth it was constructed with`() {
+        assertEquals(7, History(maxDepth = 7).getMaxDepth())
+    }
+
+    @Test
+    fun `undo stack drops the oldest entry once a custom depth is exceeded`() {
+        val history = History(maxDepth = 3)
+        for (n in 0 until 5) {
+            history.pushUndo(listOf(markedOp(n.toLong())))
+        }
+        assertEquals(listOf(2L, 3L, 4L), marks(history.getUndoStackForTest()))
+    }
+
+    @Test
+    fun `redo stack drops the oldest entry once a custom depth is exceeded`() {
+        val history = History(maxDepth = 3)
+        for (n in 0 until 5) {
+            history.pushRedo(listOf(markedOp(n.toLong())))
+        }
+        assertEquals(listOf(2L, 3L, 4L), marks(history.getRedoStackForTest()))
+    }
+
+    @Test
+    fun `redo stack bounds independently of the default depth when custom depth exceeds it`() {
+        val customDepth = MaxUndoRedoStackDepth + 5
+        val history = History(maxDepth = customDepth)
+        for (n in 0 until customDepth) {
+            history.pushRedo(listOf(markedOp(n.toLong())))
+        }
+        assertEquals(customDepth, history.getRedoStackForTest().size)
+        assertEquals(0L, marks(history.getRedoStackForTest()).first())
     }
 }

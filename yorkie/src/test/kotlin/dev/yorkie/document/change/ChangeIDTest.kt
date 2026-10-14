@@ -98,4 +98,16 @@ class ChangeIDTest {
         assertEquals(42, updated.lamport)
         assertEquals(3L, updated.versionVector.get(actorA))
     }
+
+    @Test
+    fun `toTestString should format lamport, actor suffix and clientSeq`() {
+        val id = ChangeID(
+            clientSeq = 5u,
+            lamport = 3,
+            actor = actorA,
+            versionVector = VersionVector(mapOf(actorA to 3L)),
+        )
+
+        assertEquals("3:01:5", id.toTestString())
+    }
 }

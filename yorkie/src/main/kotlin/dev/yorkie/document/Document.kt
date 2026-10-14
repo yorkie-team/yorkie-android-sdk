@@ -25,10 +25,13 @@ import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtRoot
+import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.crdt.countNodes
+import dev.yorkie.document.crdt.dropSplitLinksInElement
 import dev.yorkie.document.history.History
 import dev.yorkie.document.history.HistoryOperation
+import dev.yorkie.document.history.MaxUndoRedoStackDepth
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonElement
 import dev.yorkie.document.json.JsonObject
@@ -37,7 +40,9 @@ import dev.yorkie.document.operation.ArraySetOperation
 import dev.yorkie.document.operation.EditOperation
 import dev.yorkie.document.operation.OpSource
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.operation.TreeEditOperation
+import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
@@ -50,8 +55,10 @@ import dev.yorkie.document.schema.validateYorkieRuleset
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.document.time.VersionVector
+import dev.yorkie.util.ChangeApplyError
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logDebug
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.OperationResult
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentRemoved
@@ -102,7 +109,7 @@ public class Document(
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val localChanges = mutableListOf<Change>()
-    private val internalHistory = History()
+    private val internalHistory = History(options.maxUndoDepth)
 
     /**
      * Fired synchronously, right after a local [Change] is appended to [localChanges] (both
@@ -373,11 +380,48 @@ public class Document(
                 return@async result
             }
             val change = context.toChange()
-            val localResult = change.execute(
-                root,
-                _presences.value,
-                if (skipHistory) OpSource.LocalNoHistory else OpSource.Local,
-            )
+            val localResult = try {
+                change.execute(
+                    root,
+                    _presences.value,
+                    if (skipHistory) OpSource.LocalNoHistory else OpSource.Local,
+                )
+            } catch (err: Throwable) {
+                // Change.execute applies operations one at a time and does not roll
+                // back, so a root-pass throw here leaves the clone ahead of the root
+                // (the clone's own copy of a prefix of this change already ran via
+                // the updater proxy above). Drop it so the next access rebuilds it
+                // from the root -- the local source passes err through unchanged
+                // (Change.execute never wraps a non-Remote source). Port JS SDK
+                // `document.ts` `update()` (`4251ab7e`, #1403).
+                this@Document.clone = null
+                // The root pass above still consumed this context's lamport-advanced
+                // TimeTickets for whatever prefix of operations landed on the root
+                // before it threw (Change.execute does not roll back). Leaving
+                // changeID at its pre-change value would let the NEXT change's
+                // context re-mint the exact same tickets (same lamport, same
+                // per-context delimiter sequence) -- reproduced: a failed 2-op
+                // change's landed first element and the next change's element end
+                // up sharing one createdAt, and the first becomes unreachable.
+                // Burn the lamport and this actor's version-vector entry via
+                // context.getNextId() (prevId.next() for an operation change,
+                // which also sets this actor's entry in a copy of the version
+                // vector), but pin clientSeq back to its pre-change value: this
+                // change was never appended to localChanges (only the success path
+                // below does that) and never claims a clientSeq slot, so advancing
+                // it here would open a gap the next real change's clientSeq must
+                // not have to skip over. Skipped for a presence-only context (no
+                // operations landed on the root, nothing to burn tickets against).
+                // Never reached for a Remote source (applyChangesInternal has its
+                // own, unrelated catch) -- a replica never burns another actor's
+                // tickets. Port JS SDK `document.ts` `update()`'s catch
+                // (`e29d17e0`, #1397; iOS `915dd77fe6`): JS's `this.changeID =
+                // ctx.getNextID().setClientSeq(this.changeID.getClientSeq())`.
+                if (!context.isPresenceOnlyChange()) {
+                    changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+                }
+                throw err
+            }
             val operationInfos = localResult.opInfos
             val newPresences = localResult.newPresences
             val reverseOps = localResult.reverseOps
@@ -403,6 +447,21 @@ public class Document(
                 for (op in change.operations) {
                     if (op is ArraySetOperation) {
                         internalHistory.reconcileCreatedAt(op.createdAt, op.value.createdAt)
+                    }
+                }
+                // A plain local split can re-create an element a merge took
+                // away too (a peer merged two blocks and this user splits
+                // them apart again), and the stacks may still name the
+                // merged-away element. Re-point them the same way
+                // reconcileHistoryEdits does for a peer's split and
+                // executeUndoRedoInternal does for an undo/redo one, before
+                // this change's own reverse ops are pushed below. Port
+                // yorkie-js-sdk `b173c093` (#1426).
+                for (op in change.operations) {
+                    if (op is TreeEditOperation) {
+                        op.getSplitRecreatedIDs().forEach { (prevID, currID) ->
+                            internalHistory.reconcileTreeNodeID(op.parentCreatedAt, prevID, currID)
+                        }
                     }
                 }
                 val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
@@ -438,129 +497,402 @@ public class Document(
                 )
             }
 
-            val ops = if (isUndo) {
-                internalHistory.popUndo()
-            } else {
-                internalHistory.popRedo()
+            // NOTE: The refusal above must not drop the clone: an updater is
+            // holding a proxy over it, and `updateAsync` reads it again
+            // after the updater returns.
+            try {
+                executeUndoRedoInternal(isUndo)
+            } catch (err: Throwable) {
+                // Change.execute applies operations one at a time and does
+                // not roll back, so an undo/redo that throws partway leaves
+                // the clone ahead of the root. Drop it so the next access
+                // rebuilds it from the root, the way updateAsync already
+                // does on an updater throw. A throw here surfaces through
+                // this Deferred -- including CancellationException, which
+                // must still reset the clone before it propagates, never be
+                // swallowed. Port JS SDK `document.ts`
+                // `executeUndoRedo`/`executeUndoRedoInternal` (ec7558e9,
+                // #1394).
+                this@Document.clone = null
+                throw err
             }
-            if (ops == null) {
-                // Empty stack is a no-op so callers need not always guard with
-                // canUndo()/canRedo(). Mirrors JS SDK PR #1238.
-                return@async Result.success(Unit)
-            }
-
-            val clone = ensureClone()
-            val context = ChangeContext(
-                prevId = changeID,
-                root = clone.root,
-            )
-
-            for ((index, historyOp) in ops.withIndex()) {
-                when (historyOp) {
-                    is HistoryOperation.Op -> {
-                        val op = historyOp.operation
-                        val ticket = context.issueTimeTicket()
-                        op.executedAt = ticket
-
-                        // Reconcile createdAt for ArraySet and Add operations
-                        if (op is ArraySetOperation) {
-                            val prev = op.createdAt
-                            val prevValueId = op.value.createdAt
-                            op.value.createdAt = ticket
-                            internalHistory.reconcileCreatedAt(prev, ticket)
-                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
-                            // The value is re-issued under a new id here too: member ops
-                            // built in the same update (`setNewObject(i)["k"] = v`) name
-                            // the value's OLD id as their parent, not the target slot's id
-                            // reconciled just above, so both must be retargeted.
-                            internalHistory.reconcileCreatedAt(prevValueId, ticket)
-                            reconcileOpsCreatedAt(ops, index + 1, prevValueId, ticket)
-                        } else if (op is AddOperation) {
-                            val prev = op.value.createdAt
-                            op.value.createdAt = ticket
-                            internalHistory.reconcileCreatedAt(prev, ticket)
-                            reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
-                        } else if (op is TreeEditOperation && op.removedNodeSnapshots != null) {
-                            // Copy-reinsert undo (port 4ec66cc0): buildFreshNodes
-                            // mints one fresh ticket per node in every snapshot
-                            // subtree, starting right after `ticket`'s delimiter,
-                            // but those tickets were never reserved in this
-                            // context — a later op in the same undo/redo batch
-                            // would otherwise repeat one via its own
-                            // issueTimeTicket() call. Reserve exactly that many
-                            // so the next op resumes after the range
-                            // buildFreshNodes will consume. Restore-mode
-                            // reverses (removedNodeSnapshots == null) never call
-                            // buildFreshNodes and need no reservation.
-                            val ticketCount = op.removedNodeSnapshots.sumOf { it.countNodes() }
-                            repeat(ticketCount) { context.issueTimeTicket() }
-                        }
-
-                        context.push(op)
-                    }
-
-                    is HistoryOperation.Presence -> {
-                        // Presence undo — not implemented in v0.6.36 scope
-                    }
-                }
-            }
-
-            if (!context.hasChange) {
-                return@async Result.success(Unit)
-            }
-
-            val change = context.toChange()
-            // Execute on clone (validation)
-            change.execute(clone.root, clone.presences, OpSource.UndoRedo)
-            // Execute on root (real application)
-            val undoRedoResult = change.execute(
-                root,
-                _presences.value,
-                OpSource.UndoRedo,
-            )
-            val opInfos = undoRedoResult.opInfos
-            val reverseOps = undoRedoResult.reverseOps
-
-            val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
-            if (reverseHistoryOps.isNotEmpty()) {
-                if (isUndo) {
-                    internalHistory.pushRedo(reverseHistoryOps)
-                } else {
-                    internalHistory.pushUndo(reverseHistoryOps)
-                }
-            }
-
-            // The test is whether an operation RAN, not whether it produced an
-            // OpInfo. Those differ: a style may change CRDT state without
-            // anything an editor could render, because canStyle admits a node
-            // another client removed concurrently and a tombstone has no
-            // index to report. Gating on opInfos dropped such a reverse style
-            // on the floor -- it mutated this replica and never reached the
-            // others, the divergence canStyle exists to prevent, reintroduced
-            // through undo. executedOperations already excludes an operation
-            // whose target was garbage-collected while the undo was pending
-            // (its own execute found no target to act on), so that case is
-            // still gated out here. A target merely tombstoned by a peer is
-            // not: JS skips Set/Remove there under OpSource.UndoRedo, Android
-            // still executes, sends the change and emits LocalChange
-            // (replicas converge either way). The gate matches JS
-            // document.ts's `!operations.length`; a no-op restore or
-            // retombstone counts as not executed here, where JS always
-            // reports a result for it.
-            if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
-                return@async Result.success(Unit)
-            }
-
-            localChanges += change
-            onLocalChange?.invoke()
-            changeID = context.getNextId()
-
-            if (opInfos.isNotEmpty()) {
-                eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
-            }
-
-            Result.success(Unit)
         }
+    }
+
+    /**
+     * Pops the next history entry for [isUndo] and applies it to the clone
+     * and the root.
+     */
+    private suspend fun executeUndoRedoInternal(isUndo: Boolean): OperationResult {
+        val ops = if (isUndo) {
+            internalHistory.popUndo()
+        } else {
+            internalHistory.popRedo()
+        }
+        if (ops == null) {
+            // Empty stack is a no-op so callers need not always guard with
+            // canUndo()/canRedo(). Mirrors JS SDK PR #1238.
+            return Result.success(Unit)
+        }
+
+        val clone = ensureClone()
+        val context = ChangeContext(
+            prevId = changeID,
+            root = clone.root,
+        )
+
+        // Tree node ids this entry re-mints, and what they replace, together
+        // with which of the split's own tickets `curr` is -- so the drain
+        // below can tell whether the ROOT execution got that far (the hook
+        // that records a pair fires on the clone pass first, and the two
+        // passes need not mint the same number of elements). Collected while
+        // the change is built below and applied to the history stacks only
+        // once both passes have run. A copy-reinsert reverse's pairs carry
+        // ticketIndex -1: unlike a split, buildFreshNodes never mints a
+        // partial result, so those pairs are unconditional -- see the drain
+        // below and TreeEditOperation.getReissuedContentIDs. Port
+        // yorkie-js-sdk `b173c093` (#1426).
+        val pending = mutableListOf<PendingTreeRepoint>()
+        // The splitting/content-reissuing operations whose re-pointing hook
+        // is still registered, so it can be taken off once the change has
+        // been applied to both the clone and the root -- the hook closes
+        // over this entry, which must not outlive it.
+        val splitOps = mutableListOf<TreeEditOperation>()
+        val reissueOps = mutableListOf<TreeEditOperation>()
+
+        /**
+         * Re-points every [TreeEditOperation]/[TreeStyleOperation] later in
+         * this same entry (by loop index -- never by [TreeEditOperation]
+         * equality, which is structural) from [prev] to [curr].
+         */
+        fun repointRest(
+            fromIndex: Int,
+            prev: CrdtTreeNodeID,
+            curr: CrdtTreeNodeID,
+        ) {
+            for (later in ops.subList(fromIndex + 1, ops.size)) {
+                if (later !is HistoryOperation.Op) continue
+                when (val laterOp = later.operation) {
+                    is TreeEditOperation -> laterOp.reconcileNodeID(prev, curr)
+                    is TreeStyleOperation -> laterOp.reconcileNodeID(prev, curr)
+                    else -> Unit
+                }
+            }
+        }
+
+        for ((index, historyOp) in ops.withIndex()) {
+            when (historyOp) {
+                is HistoryOperation.Op -> {
+                    val op = historyOp.operation
+                    val ticket = context.issueTimeTicket()
+                    op.executedAt = ticket
+
+                    // Strip split-sibling links from a reverse op's restored
+                    // value in place: this element is freshly reinstated by
+                    // the editing client -- never a split product of the live
+                    // tree it lands in -- but `execute()`'s deep copy of it
+                    // preserves whatever insPrevID/insNextID chain it already
+                    // carries. Must run before `context.push(op)`/`execute()`
+                    // below, and mirrors the identical strip the decode path
+                    // runs (ElementConverter.kt) so a local reverse value and
+                    // a peer-decoded one agree. Port JS SDK document.ts
+                    // (c8928853, #1375).
+                    when (op) {
+                        is SetOperation -> dropSplitLinksInElement(op.value)
+                        is AddOperation -> dropSplitLinksInElement(op.value)
+                        is ArraySetOperation -> dropSplitLinksInElement(op.value)
+                        else -> Unit
+                    }
+
+                    // Reconcile createdAt for ArraySet and Add operations
+                    if (op is ArraySetOperation) {
+                        val prev = op.createdAt
+                        val prevValueId = op.value.createdAt
+                        op.value.createdAt = ticket
+                        internalHistory.reconcileCreatedAt(prev, ticket)
+                        reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                        // The value is re-issued under a new id here too: member ops
+                        // built in the same update (`setNewObject(i)["k"] = v`) name
+                        // the value's OLD id as their parent, not the target slot's id
+                        // reconciled just above, so both must be retargeted.
+                        internalHistory.reconcileCreatedAt(prevValueId, ticket)
+                        reconcileOpsCreatedAt(ops, index + 1, prevValueId, ticket)
+                    } else if (op is AddOperation) {
+                        val prev = op.value.createdAt
+                        op.value.createdAt = ticket
+                        internalHistory.reconcileCreatedAt(prev, ticket)
+                        reconcileOpsCreatedAt(ops, index + 1, prev, ticket)
+                    } else if (op is TreeEditOperation && op.removedNodeSnapshots != null) {
+                        // Copy-reinsert undo (port 4ec66cc0): buildFreshNodes
+                        // mints one fresh ticket per node in every snapshot
+                        // subtree, starting right after `ticket`'s delimiter,
+                        // but those tickets were never reserved in this
+                        // context — a later op in the same undo/redo batch
+                        // would otherwise repeat one via its own
+                        // issueTimeTicket() call. Reserve exactly that many
+                        // so the next op resumes after the range
+                        // buildFreshNodes will consume. Restore-mode
+                        // reverses (removedNodeSnapshots == null) never call
+                        // buildFreshNodes and need no reservation.
+                        val ticketCount = op.removedNodeSnapshots.sumOf { it.countNodes() }
+                        repeat(ticketCount) { context.issueTimeTicket() }
+                    }
+
+                    // A split reverse -- the undo of a merge-delete, or the
+                    // redo of a split -- mints one element per split level,
+                    // and each needs a ticket of its own: issueTimeTicket's
+                    // fallback (used when splitTickets is empty) reconstructs
+                    // them by counting delimiters up from executedAt, which
+                    // runs straight over the ticket the NEXT operation in
+                    // this same undo/redo entry is issued above -- landing
+                    // two LIVE elements under one id, on every replica and
+                    // the server, since the change carries both operations.
+                    // Recording them here -- after the removedNodeSnapshots
+                    // reservation above, so issue order matches JS -- is what
+                    // stops any other replica reconstructing them either.
+                    // Independent of (never both at once with, see
+                    // toReverseOperation) the removedNodeSnapshots branch
+                    // above: every copy-reinsert/restore-mode reverse this op
+                    // could be already carries splitLevel == 0.
+                    //
+                    // One per level is an upper bound, not an exact count:
+                    // CrdtTree.edit's walk can stop early at the root, and
+                    // issueTimeTicket only ever consumes as many as it needs
+                    // -- a ticket nobody consumes just advances the
+                    // delimiter. Port JS SDK document.ts (b69169c0, #1404).
+                    if (op is TreeEditOperation && op.splitLevel > 0) {
+                        op.splitTickets = List(op.splitLevel) { context.issueTimeTicket() }
+
+                        // The split re-creates elements a merge removed,
+                        // under the new tickets. Operations recorded against
+                        // the old elements -- the rest of this entry (the
+                        // style that followed a split, say) and any other
+                        // entry in the stacks -- still name them. Once
+                        // garbage collection has purged the old elements, a
+                        // replica applying such an operation cannot find
+                        // them and rejects the whole change. Re-point them,
+                        // so the change is encoded with the ids every
+                        // replica will have.
+                        //
+                        // Driven from the split itself, as it takes each
+                        // ticket: only then is it known that the element
+                        // exists -- the split stops as soon as it runs out
+                        // of ancestors, so a level it never reached mints
+                        // nothing, and re-pointing that level up front, on
+                        // the strength of splitLevel alone, would leave an
+                        // operation naming a ticket no node ever received.
+                        // The rest of THIS entry cannot wait for the split
+                        // to return either: those operations run in the same
+                        // change, right after it, so the hook fires
+                        // mid-execution, while they are still pending. The
+                        // history stacks could wait, but are collected here
+                        // and applied below (after both passes) for a
+                        // different reason -- the new reverse ops are built
+                        // from the executed state and must not be pushed
+                        // before the stacks are re-pointed. Port
+                        // yorkie-js-sdk `b173c093` (#1426).
+                        op.onSplitTicketConsumed { ticketIndex ->
+                            // Read through the operation rather than off a
+                            // captured snapshot: an earlier re-point in this
+                            // same entry may already have replaced
+                            // replacedIDs wholesale (reconcileNodeID).
+                            val prev = op.getReplacedIDs().getOrNull(ticketIndex)
+                                ?: return@onSplitTicketConsumed
+                            val curr = CrdtTreeNodeID(op.splitTickets[ticketIndex], 0)
+                            // Called once per execution, and the change is
+                            // executed twice (clone, then root). repointRest
+                            // no longer finds prev the second time, but the
+                            // pending entry would be a duplicate.
+                            if (pending.any { it.op === op && it.prev == prev }) {
+                                return@onSplitTicketConsumed
+                            }
+                            repointRest(index, prev, curr)
+                            pending += PendingTreeRepoint(op, prev, curr, ticketIndex)
+                        }
+                        splitOps += op
+                    }
+
+                    // A copy-reinsert reverse -- the undo of a plain content
+                    // delete -- mints fresh ids for the content it restores
+                    // (buildFreshNodes), one per removed node; the undo/redo
+                    // entry can still carry a LATER operation recorded
+                    // against one of the removed originals (a style applied
+                    // to a node the same update then deleted). Register the
+                    // hook so its pairs re-point the rest of this entry
+                    // before they run -- same timing contract as the split
+                    // hook above, and for the same reason: the ids are only
+                    // known from inside this op's own execute(). Port
+                    // yorkie-js-sdk `b173c093` (#1426).
+                    if (op is TreeEditOperation && op.removedNodeSnapshots != null) {
+                        op.onContentIDsReissued { pairs ->
+                            for ((prev, curr) in pairs) {
+                                // Same duplicate guard as the split hook:
+                                // buildFreshNodes mints the SAME ids on both
+                                // the clone and the root pass (a pure
+                                // function of removedNodeSnapshots and
+                                // executedAt, both fixed before either pass
+                                // runs), so the second call would otherwise
+                                // double-push.
+                                if (pending.any { it.op === op && it.prev == prev }) {
+                                    continue
+                                }
+                                repointRest(index, prev, curr)
+                                pending += PendingTreeRepoint(op, prev, curr, ticketIndex = -1)
+                            }
+                        }
+                        reissueOps += op
+                    }
+
+                    context.push(op)
+                }
+
+                is HistoryOperation.Presence -> {
+                    // Presence undo — not implemented in v0.6.36 scope
+                }
+            }
+        }
+
+        if (!context.hasChange) {
+            return Result.success(Unit)
+        }
+
+        val change = context.toChange()
+        val undoRedoResult = try {
+            // Execute on clone (validation). Never touches the root, so a
+            // throw here needs no lamport burn -- it propagates to
+            // executeUndoRedo's outer catch, which resets the clone the same
+            // as every other path. Moved inside this try (rather than run
+            // separately above it) so the `finally` below detaches every
+            // split-ticket handler whichever of the two passes throws, or
+            // neither does -- a handler must never outlive this entry. Port
+            // yorkie-js-sdk `b173c093` (#1426).
+            change.execute(clone.root, clone.presences, OpSource.UndoRedo)
+            // Execute on root (real application). Mirrors updateAsync's own
+            // root-pass catch above: a throw partway through still consumed
+            // this context's lamport-advanced tickets for whatever prefix
+            // landed, so burn the lamport and this actor's version-vector
+            // entry here too, clientSeq unchanged (this undo/redo change is
+            // never appended to localChanges on this path -- that happens
+            // only below, on success). Port JS SDK `document.ts`
+            // `executeUndoRedo`'s root pass (`e29d17e0`, #1397; iOS
+            // `915dd77fe6`).
+            try {
+                change.execute(root, _presences.value, OpSource.UndoRedo)
+            } catch (err: Throwable) {
+                if (!context.isPresenceOnlyChange()) {
+                    changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+                }
+                throw err
+            }
+        } finally {
+            // Detach the handlers whether or not either pass succeeded, so a
+            // later execution of these operations cannot re-point anything
+            // and the closures do not keep this popped entry alive. Port
+            // yorkie-js-sdk `b173c093` (#1426).
+            splitOps.forEach { it.onSplitTicketConsumed(null) }
+            reissueOps.forEach { it.onContentIDsReissued(null) }
+        }
+        val opInfos = undoRedoResult.opInfos
+        val reverseOps = undoRedoResult.reverseOps
+
+        // Now that the operations have run, re-point the history stacks at
+        // the ids this entry actually minted. Deferred to here because the
+        // new reverse ops built below are already built from the executed
+        // state and so already carry the new ids -- they must not be pushed
+        // before this runs.
+        //
+        // Two things can still make a collected pair moot, and both are only
+        // knowable now. `change.execute` skips an operation whose target
+        // element was removed during undo/redo, so it minted nothing at all
+        // (excluded by the executedOperations check). And a pair is
+        // collected as the split takes its ticket on WHICHEVER execution
+        // runs first -- the clone -- while the stacks have to follow the
+        // root: the clone and the root are separate trees, so a split that
+        // crossed a level in the clone can stop short of it in the root,
+        // leaving a pair naming a ticket no node in the root ever received
+        // (checked against getConsumedSplitTicketCount, which describes the
+        // ROOT pass since it is reset per execute() and this reads it after
+        // the root pass above). `op` is compared by reference (===), never
+        // by the data class's structural equals. A content-reissue pair
+        // (`ticketIndex == -1`) skips that check entirely and applies
+        // whenever its op executed: buildFreshNodes mints unconditionally,
+        // with no early-exit for the clone/root passes to disagree over.
+        // Port yorkie-js-sdk `b173c093` (#1426).
+        for ((op, prev, curr, ticketIndex) in pending) {
+            if (undoRedoResult.executedOperations.none { it === op }) continue
+            if (ticketIndex >= 0 && ticketIndex >= op.getConsumedSplitTicketCount()) continue
+            internalHistory.reconcileTreeNodeID(op.parentCreatedAt, prev, curr)
+        }
+
+        // And then what the TREE says the split re-created, the same signal
+        // the local `update()` and remote `reconcileHistoryEdits` paths
+        // re-point from. The pairs above come from the reverse op, which
+        // names the merge IT reverses; the split as executed can reverse one
+        // this entry never knew about -- a peer merged two blocks while the
+        // undo sat on the stack, and the redo of an unrelated split
+        // separates them again. Neither signal subsumes the other: the tree
+        // derives a pair only where the merge left mergedFrom stamps behind
+        // (CrdtTree.mergeSourceOf), which a split's own boundary-deletion
+        // undo does not. Both are applied, in that order; a pair the other
+        // already handled sweeps nothing and costs nothing. Port
+        // yorkie-js-sdk `b173c093` (#1426).
+        undoRedoResult.executedOperations.forEach { executedOp ->
+            if (executedOp is TreeEditOperation) {
+                executedOp.getSplitRecreatedIDs().forEach { (prev, curr) ->
+                    internalHistory.reconcileTreeNodeID(executedOp.parentCreatedAt, prev, curr)
+                }
+            }
+        }
+
+        val reverseHistoryOps = reverseOps.map { HistoryOperation.Op(it) }
+        if (reverseHistoryOps.isNotEmpty()) {
+            if (isUndo) {
+                internalHistory.pushRedo(reverseHistoryOps)
+            } else {
+                internalHistory.pushUndo(reverseHistoryOps)
+            }
+        }
+
+        // The test is whether an operation RAN, not whether it produced an
+        // OpInfo. Those differ: a style may change CRDT state without
+        // anything an editor could render, because canStyle admits a node
+        // another client removed concurrently and a tombstone has no
+        // index to report. Gating on opInfos dropped such a reverse style
+        // on the floor -- it mutated this replica and never reached the
+        // others, the divergence canStyle exists to prevent, reintroduced
+        // through undo. executedOperations already excludes an operation
+        // whose target was garbage-collected while the undo was pending
+        // (its own execute found no target to act on), so that case is
+        // still gated out here. A target merely tombstoned by a peer is
+        // not: JS skips Set/Remove there under OpSource.UndoRedo, Android
+        // still executes, sends the change and emits LocalChange
+        // (replicas converge either way). The gate matches JS
+        // document.ts's `!operations.length`; a no-op restore or
+        // retombstone counts as not executed here, where JS always
+        // reports a result for it.
+        if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
+            return Result.success(Unit)
+        }
+
+        localChanges += change
+        onLocalChange?.invoke()
+        changeID = context.getNextId()
+
+        // Gate the publish on the same executedOperations the early return
+        // above already checked, not on opInfos: an identity-preserving
+        // restore/retombstone that revived or re-removed a node under a
+        // removed ancestor executes (changed the CRDT, is queued and sent)
+        // but visibleRangeOf cannot measure a position for it, so its
+        // TreeEditOpInfo list is empty (CrdtTree.kt's restore/retombstone,
+        // TreeEditOperation.executeRestore). The old opInfos-based gate
+        // suppressed this event entirely, even though the change still
+        // reached the peer -- an editor watching only Document.events would
+        // never learn the undo ran. Port yorkie-js-sdk `790422ce` (#1421).
+        if (undoRedoResult.executedOperations.isNotEmpty()) {
+            eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
+        }
+
+        return Result.success(Unit)
     }
 
     /**
@@ -670,17 +1002,60 @@ public class Document(
      * Applies the given [pack] into this document.
      * 1. Update the checkpoint.
      * 2. Do Garbage collection.
+     *
+     * The checkpoint only advances past this point, so a pack whose apply throws is
+     * redelivered by the server on every subsequent pull until the cause is fixed; one
+     * metadata-only line (document key + the pre-forward [checkPoint] + the failing
+     * exception's class name ONLY, never its message -- a cause's own message can
+     * carry content, e.g. a collection's "requested value: ..." text; the full message
+     * -- including the cause's -- is still reachable via a thrown [ChangeApplyError]'s
+     * own `errorMessage`/[Throwable.message], see its KDoc) is logged before
+     * rethrowing, so the stuck document is diagnosable instead of silently retried
+     * forever. [err] reaching this catch for a Remote source is always a
+     * [ChangeApplyError] by construction ([applyChanges]'s own catch already wrapped
+     * it); the class name logged is [err]'s own [Throwable.cause] (the original,
+     * innermost failure) when present, so the line names the root failure type rather
+     * than the uninformative "ChangeApplyError" every entry would otherwise share. When
+     * [err] is a [ChangeApplyError] its own [ChangeApplyError.changeID],
+     * [ChangeApplyError.opIndex] and [ChangeApplyError.operation] are ALSO logged --
+     * these are payload-safe by the same contract as [ChangeApplyError.operation]
+     * itself (type + ticket only, never the cause's message) -- so a redelivered pack
+     * is diagnosable down to which change/operation is stuck, not just the failure's
+     * class name. The
+     * no-cause-message guarantee is unchanged. A [CancellationException] skips the log
+     * line and propagates unchanged: it is the caller's scope tearing down, not the
+     * document getting stuck. Ports JS SDK `document.ts` `applyChangePack`
+     * (`4251ab7e`, #1403).
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
-        if (pack.hasSnapshot) {
-            applySnapshot(
-                pack.versionVector,
-                checkNotNull(pack.snapshot),
-                pack.checkPoint.clientSeq,
+        try {
+            if (pack.hasSnapshot) {
+                applySnapshot(
+                    pack.versionVector,
+                    checkNotNull(pack.snapshot),
+                    pack.checkPoint.clientSeq,
+                )
+            } else {
+                applyChanges(pack.changes)
+                removePushedLocalChanges(pack.checkPoint.clientSeq)
+            }
+        } catch (err: CancellationException) {
+            throw err
+        } catch (err: Throwable) {
+            // When `err` is a ChangeApplyError, its own changeID/opIndex/operation are
+            // payload-safe (never the cause's message) and name which change/operation
+            // is stuck, so they are logged alongside the root failure's class name.
+            val changeApplyDetails = (err as? ChangeApplyError)?.let {
+                "; changeID=${it.changeID}, opIndex=${it.opIndex}, operation=${it.operation}"
+            }.orEmpty()
+            logError(
+                "Document.applyChangePack",
+                "\"$key\" cannot apply the pack at checkpoint ${checkPoint.toTestString()}; " +
+                    "the server will redeliver it until this is resolved: " +
+                    (err.cause ?: err)::class.simpleName +
+                    changeApplyDetails,
             )
-        } else {
-            applyChanges(pack.changes)
-            removePushedLocalChanges(pack.checkPoint.clientSeq)
+            throw err
         }
 
         checkPoint = checkPoint.forward(pack.checkPoint)
@@ -696,6 +1071,32 @@ public class Document(
             applyStatus(ResourceStatus.Removed)
         }
     }
+
+    /**
+     * Removes the local changes the server has confirmed, and forwards only
+     * the client seq of the checkpoint. Used for a response [pack] dropped
+     * without applying its remote state: the server seq must stay put so the
+     * skipped state is pulled again once realtime sync resumes, while the
+     * confirmed changes must not be pushed again.
+     *
+     * The pack's metadata is not remote state, and is taken in full: the
+     * compaction epoch and the removal flag describe the document itself,
+     * not the content being skipped, and neither is re-sent by a later pull
+     * the way the skipped changes are. Ports JS SDK `document.ts`
+     * `acknowledgePushedChanges` (`bed81143`, #1401).
+     */
+    internal suspend fun acknowledgePushedChanges(pack: ChangePack): Unit =
+        withContext(dispatcher) {
+            removePushedLocalChanges(pack.checkPoint.clientSeq)
+            checkPoint = checkPoint.forward(
+                CheckPoint(checkPoint.serverSeq, pack.checkPoint.clientSeq),
+            )
+            epoch = pack.epoch
+
+            if (pack.isRemoved) {
+                applyStatus(ResourceStatus.Removed)
+            }
+        }
 
     /**
      * Applies the given [snapshot] into this document.
@@ -736,72 +1137,158 @@ public class Document(
      * (defaults to [OpSource.Remote], the pre-existing behaviour of every
      * caller other than [restoreAppendedChanges], which applies a replayed
      * log as [OpSource.Local]).
+     *
+     * [Change.execute] applies its operations one at a time and does not
+     * roll back, so a change that throws partway leaves [clone] holding a
+     * prefix of it the root never took (the clone's own copy of this
+     * operation already ran before the root's copy threw). Drop the clone
+     * so the next access rebuilds it from the root, the way [updateAsync]
+     * already does on an updater throw. Port JS SDK `document.ts`
+     * `applyChange`/`applyChangeInternal` (ec7558e9, #1394).
+     *
+     * A [source] of [OpSource.Remote] that throws is always a [ChangeApplyError] by
+     * construction ([Change.execute] names an operation failure; [applyChangesInternal]
+     * names a change-level failure that is not already one) -- this adds the document
+     * key, the one piece neither of those call sites can know. The `?:` fallback only
+     * covers a pre-loop [ensureClone] failure, which is outside #1403's scope. Every
+     * other [source] rethrows the original error unchanged (JS SDK `document.ts`
+     * `applyChangePack`/`applyChange`, `4251ab7e`, #1403). Two exceptions are never
+     * named/wrapped even for a Remote source, and only reset the clone before
+     * propagating: a [CancellationException] -- [applyChangesInternal] suspends
+     * (`ensureClone`'s `withContext`, the event publish, `emitPresences`), so this can
+     * be the caller's scope tearing down, not a change failing to apply -- and a
+     * [java.lang.Error] (e.g. `OutOfMemoryError`) thrown by that SAME Document-owned
+     * bookkeeping (not by an operation's own `execute`).
+     *
+     * **Precise scope of the Error/CancellationException guards:** these two guards only ever see
+     * an `Error`/`CancellationException` that originates in this function's or
+     * [applyChangesInternal]'s OWN code around the two `change.execute` calls --
+     * `ensureClone`, presence/event emission, [reconcileHistoryEdits]. An
+     * `Error`/`CancellationException` thrown by an operation's own `execute` is
+     * already wrapped into a [ChangeApplyError] by [Change.execute] (with the
+     * original reachable via its `cause`) BEFORE either guard runs, so it never
+     * reaches them unwrapped -- an application catching `Error`-level conditions by
+     * their real type sees that real type only for a failure in Document's own
+     * bookkeeping, not for one an operation itself threw. See [Change.execute]'s KDoc.
      */
     private suspend fun applyChanges(changes: List<Change>, source: OpSource = OpSource.Remote) {
+        try {
+            applyChangesInternal(changes, source)
+        } catch (err: CancellationException) {
+            this.clone = null
+            throw err
+        } catch (err: Throwable) {
+            this.clone = null
+            if (source != OpSource.Remote || err is Error) {
+                throw err
+            }
+            throw (err as? ChangeApplyError)?.withDocKey(key) ?: ChangeApplyError(
+                docKey = key,
+                changeID = "<unavailable>",
+                cause = err,
+            )
+        }
+    }
+
+    private suspend fun applyChangesInternal(changes: List<Change>, source: OpSource) {
         val clone = ensureClone()
         changes.forEach { change ->
-            change.execute(clone.root, clone.presences, source).also { cloneResult ->
-                this.clone = clone.copy(presences = cloneResult.newPresences ?: return@also)
-            }
-            val actorID = change.id.actor
-            var presenceEvent: PresenceChanged? = null
-            if (change.hasPresenceChange && actorID in onlineClients.value) {
-                val presenceChange = change.presenceChange ?: return@forEach
-                presenceEvent = when (presenceChange) {
-                    is PresenceChange.Put -> {
-                        if (actorID in _presences.value) {
-                            createPresenceChangedEvent(actorID, presenceChange.presence)
-                        } else {
+            try {
+                change.execute(clone.root, clone.presences, source).also { cloneResult ->
+                    this.clone = clone.copy(presences = cloneResult.newPresences ?: return@also)
+                }
+                val actorID = change.id.actor
+                var presenceEvent: PresenceChanged? = null
+                if (change.hasPresenceChange && actorID in onlineClients.value) {
+                    val presenceChange = change.presenceChange ?: return@forEach
+                    presenceEvent = when (presenceChange) {
+                        is PresenceChange.Put -> {
+                            if (actorID in _presences.value) {
+                                createPresenceChangedEvent(actorID, presenceChange.presence)
+                            } else {
+                                // NOTE(chacha912): When the user exists in onlineClients, but
+                                // their presence was initially absent, we can consider that we have
+                                // received their initial presence, so trigger the 'watched' event.
+                                Others.Watched(PresenceInfo(actorID, presenceChange.presence))
+                            }
+                        }
+
+                        is PresenceChange.Clear -> {
                             // NOTE(chacha912): When the user exists in onlineClients, but
-                            // their presence was initially absent, we can consider that we have
-                            // received their initial presence, so trigger the 'watched' event.
-                            Others.Watched(PresenceInfo(actorID, presenceChange.presence))
+                            // PresenceChange(clear) is received, we can consider it as detachment
+                            // occurring before unwatching.
+                            // Detached user is no longer participating in the document, we remove
+                            // them from the online clients and trigger the 'unwatched' event.
+                            presences.value[actorID]?.let { presence ->
+                                Others.Unwatched(PresenceInfo(actorID, presence))
+                            }.takeIf { actorID in onlineClients.value }
+                                ?.also { removeOnlineClient(actorID) }
                         }
                     }
-
-                    is PresenceChange.Clear -> {
-                        // NOTE(chacha912): When the user exists in onlineClients, but
-                        // PresenceChange(clear) is received, we can consider it as detachment
-                        // occurring before unwatching.
-                        // Detached user is no longer participating in the document, we remove
-                        // them from the online clients and trigger the 'unwatched' event.
-                        presences.value[actorID]?.let { presence ->
-                            Others.Unwatched(PresenceInfo(actorID, presence))
-                        }.takeIf { actorID in onlineClients.value }
-                            ?.also { removeOnlineClient(actorID) }
-                    }
                 }
-            }
 
-            val remoteResult = change.execute(root, _presences.value, source)
-            val opInfos = remoteResult.opInfos
-            val newPresences = remoteResult.newPresences
+                val remoteResult = change.execute(root, _presences.value, source)
+                val opInfos = remoteResult.opInfos
+                val newPresences = remoteResult.newPresences
 
-            // Reconcile text and tree undo/redo stack entries against remote edits.
-            // Only reconcile against changes from other clients.
-            if (change.id.actor != changeID.actor) {
-                reconcileHistoryEdits(remoteResult)
-            }
+                // Reconcile text and tree undo/redo stack entries against remote edits.
+                // Only reconcile against changes from other clients.
+                if (change.id.actor != changeID.actor) {
+                    reconcileHistoryEdits(remoteResult)
+                }
 
-            if (opInfos.isNotEmpty()) {
-                val info = change.toChangeInfo(opInfos)
-                eventStream.emit(
-                    if (source == OpSource.Local) {
-                        Event.LocalChange(
-                            info,
-                        )
-                    } else {
-                        Event.RemoteChange(info)
-                    },
-                )
-            }
-            newPresences?.let {
-                emitPresences(it, presenceEvent)
-            }
-            changeID = if (disableGC) {
-                changeID.syncLamport(change.id)
-            } else {
-                changeID.syncClocks(change.id)
+                // Gate on executedOperations, not opInfos: a peer's
+                // identity-preserving restore/retombstone that revived or
+                // re-removed a node under a removed ancestor still executed
+                // (reconcileHistoryEdits above already ran for it), but its
+                // TreeEditOpInfo list is empty when visibleRangeOf cannot
+                // measure a position -- the apply must still publish once,
+                // not be silently dropped. Port yorkie-js-sdk `790422ce`
+                // (#1421).
+                if (remoteResult.executedOperations.isNotEmpty()) {
+                    val info = change.toChangeInfo(opInfos)
+                    eventStream.emit(
+                        if (source == OpSource.Local) {
+                            Event.LocalChange(
+                                info,
+                            )
+                        } else {
+                            Event.RemoteChange(info)
+                        },
+                    )
+                }
+                newPresences?.let {
+                    emitPresences(it, presenceEvent)
+                }
+                changeID = if (disableGC) {
+                    changeID.syncLamport(change.id)
+                } else {
+                    changeID.syncClocks(change.id)
+                }
+            } catch (e: CancellationException) {
+                // eventStream.emit/emitPresences above suspend; a cancellation here is
+                // the caller's scope tearing down, not a change failing to apply --
+                // never name/wrap it.
+                throw e
+            } catch (e: Throwable) {
+                // Names the change alone when no single operation's own throw already
+                // named it (Change.execute only names an operation-level failure);
+                // Local/LocalNoHistory/UndoRedo pass their error through unchanged --
+                // only a Remote change blocks the whole replica set's progress and
+                // needs naming (JS SDK `document.ts`, `4251ab7e`, #1403). A
+                // java.lang.Error (e.g. OutOfMemoryError) from THIS function's own
+                // bookkeeping around the two change.execute calls above (presence/event
+                // handling, reconcileHistoryEdits) is never wrapped: an application
+                // catching Error-level conditions specially must still see the real
+                // type there. This does NOT cover an Error thrown by an operation's own
+                // execute inside change.execute -- that is already a ChangeApplyError
+                // by the time it reaches this catch (Change.execute wraps it first), so
+                // it fails the `e !is ChangeApplyError` check below and is rethrown
+                // unchanged regardless (see Change.execute's KDoc).
+                if (source == OpSource.Remote && e !is ChangeApplyError && e !is Error) {
+                    throw ChangeApplyError(changeID = change.id.toTestString(), cause = e)
+                }
+                throw e
             }
         }
     }
@@ -842,28 +1329,72 @@ public class Document(
                 }
 
                 is TreeEditOperation -> {
-                    // For tree edits there may be multiple TreeEditOpInfos per operation
-                    // (split/merge decomposes into multiple ranges). Reconcile using the
-                    // first deletion range's from/to and the inserted node count.
-                    opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
-                        .firstOrNull()
-                        ?.let { opInfo ->
-                            // getContentSize() (insertedContentSize + splitSize)
-                            // replaces the prior node-COUNT measurement
-                            // (opInfo.nodes?.size): a split-only edit has no
-                            // `value`, so the node count was always 0 and never
-                            // shifted stacked tree-undo offsets, even though the
-                            // split visibly grows the index. A multi-character
-                            // text insert also now shifts by its padded size
-                            // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
-                            // backlog 009 second half).
+                    // A split re-creates the elements a merge took away,
+                    // under brand-new ids -- see CrdtTree.mergeSourceOf. That
+                    // happens whichever replica sent the split: the local
+                    // `update`/`executeUndoRedoInternal` paths re-point this
+                    // replica's own stacks when the split is its own, and
+                    // this one re-points for a peer's split AND a local
+                    // skipHistory write (this function serves both). Left
+                    // un-re-pointed, an entry naming the element a peer
+                    // replaced addresses a node garbage collection will
+                    // purge, and the change it eventually pushes is rejected
+                    // on every replica. Done before the index reconciliation
+                    // below, for the same reason the undo/redo path defers
+                    // its own re-point to after execution: the pairs are
+                    // only known once the split has run. Port yorkie-js-sdk
+                    // `b173c093` (#1426).
+                    executedOp.getSplitRecreatedIDs().forEach { (prev, curr) ->
+                        internalHistory.reconcileTreeNodeID(executedOp.parentCreatedAt, prev, curr)
+                    }
+
+                    if (executedOp.isRestoreOp) {
+                        // Identity-preserving restore/retombstone can revive
+                        // or re-remove several nodes in one operation, each
+                        // at its OWN position; replay every measured range in
+                        // the order executeRestore published it so pending
+                        // tree-undo offsets shift once per node instead of
+                        // once for the whole operation at a delta that only
+                        // ever reflected the first node (port yorkie-js-sdk
+                        // `790422ce`, #1421; fixes the previously pinned upstream
+                        // defect — the single always-[0,0] placeholder this used
+                        // to read from shifted nothing for a remote restore).
+                        executedOp.getExecutedRanges().forEach { (from, to, insertedSize) ->
                             internalHistory.reconcileTreeEdit(
                                 executedOp.parentCreatedAt,
-                                opInfo.from,
-                                opInfo.to,
-                                executedOp.getContentSize(),
+                                from,
+                                to,
+                                insertedSize,
                             )
                         }
+                    } else {
+                        // For tree edits there may be multiple TreeEditOpInfos per operation
+                        // (split/merge decomposes into multiple ranges). Reconcile using the
+                        // first deletion range's from/to and the inserted node count.
+                        opInfosForOp.filterIsInstance<OperationInfo.TreeEditOpInfo>()
+                            .firstOrNull()
+                            ?.let { opInfo ->
+                                // getContentSize() (insertedContentSize + splitSize)
+                                // replaces the prior node-COUNT measurement
+                                // (opInfo.nodes?.size): a split-only edit has no
+                                // `value`, so the node count was always 0 and never
+                                // shifted stacked tree-undo offsets, even though the
+                                // split visibly grows the index. A multi-character
+                                // text insert also now shifts by its padded size
+                                // instead of by 1 (port e41069df, yorkie-js-sdk#1360,
+                                // the second half of that fix). Restore/retombstone ops
+                                // use their own per-node executedRanges loop above
+                                // instead (Android has no
+                                // TreeEditOperation.normalizePos, so widening this
+                                // branch to cover them too is out of scope).
+                                internalHistory.reconcileTreeEdit(
+                                    executedOp.parentCreatedAt,
+                                    opInfo.from,
+                                    opInfo.to,
+                                    executedOp.getContentSize(),
+                                )
+                            }
+                    }
                 }
 
                 else -> Unit
@@ -1330,6 +1861,40 @@ public class Document(
     }
 
     /**
+     * Moves this document's [ChangeID.clientSeq] counter forward to [clientSeq], never
+     * backward. Mirrors JS `Document.advanceClientSeqTo` (yorkie-js-sdk#1395).
+     *
+     * Exists for the one caller (the store-backed restore's log-discontinuity repair, in
+     * `Client.kt`) that has to undo a persisted header without undoing the counter inside
+     * it. [restoreFromBytes] returns [checkPoint], [epoch] and [changeID] to what the
+     * snapshot carries, which is right for a header the appended log cannot back — except
+     * for the counter. A counter is not a claim about content the way a checkpoint is: it
+     * records which [ChangeID.clientSeq] values this client has already MINTED, and the
+     * server has taken some of them. Rewinding it to the snapshot's counter mints those
+     * sequences a second time; the server skips them as duplicates, and the next ack —
+     * whose clientSeq covers them — drops them from [localChanges] as pushed. The edits are
+     * lost with no event.
+     *
+     * The position the caller hands over is the acked checkpoint, not the header's own
+     * counter: the server validates continuity from the position it holds, so the next
+     * change must be its clientSeq plus one; the counter can lead that (an edit minted
+     * while a sync was in flight), and resuming there would mint past the server and wedge
+     * every later push on `ErrInvalidClientSeq`.
+     *
+     * Forward-only by construction: a caller that hands over a stale position cannot pull
+     * this document back into reusing sequence numbers. `internal`, not `public` — JS
+     * exposes this on `Document` for its client code only (no module-private concept in
+     * JS); every other store-backed-restore helper on this class ([restoreFromBytes],
+     * [restoreMetaFromBytes], [restoreAppendedChanges], [persistBase]) is `internal` too,
+     * and this matches them rather than being `public`.
+     */
+    internal suspend fun advanceClientSeqTo(clientSeq: UInt): Unit = withContext(dispatcher) {
+        if (clientSeq > changeID.clientSeq) {
+            changeID = changeID.copy(clientSeq = clientSeq)
+        }
+    }
+
+    /**
      * Mirrors constructing a brand-new Document instance without forcing the
      * caller to swap the object reference it already holds.
      */
@@ -1669,7 +2234,9 @@ public class Document(
         )
     }
 
-    public data class Options(
+    public data class Options
+    @JvmOverloads
+    constructor(
         /**
          * Disables garbage collection if true.
          */
@@ -1679,7 +2246,26 @@ public class Document(
          * value from the attach response takes precedence once attached.
          */
         public val disablePresence: Boolean = false,
-    )
+        /**
+         * How many entries `history.undo()` can go back, and likewise for
+         * `history.redo()`. Each [updateAsync] that changes the document is
+         * one entry; the oldest is dropped once a stack is full. Must be a
+         * positive integer, otherwise construction throws
+         * [YorkieException] with [ErrInvalidArgument]. Defaults to 50. A
+         * reverse entry keeps a copy of the content it would restore, so a
+         * larger depth holds more memory.
+         */
+        public val maxUndoDepth: Int = MaxUndoRedoStackDepth,
+    ) {
+        init {
+            if (maxUndoDepth < 1) {
+                throw YorkieException(
+                    ErrInvalidArgument,
+                    "maxUndoDepth must be a positive integer: $maxUndoDepth",
+                )
+            }
+        }
+    }
 
     /**
      * `BroadcastOptions` are the options to create a new broadcast.
@@ -1844,6 +2430,26 @@ internal sealed interface RestoreResult {
     object Restored : RestoreResult
     class ActorMismatch(val pending: List<Change>) : RestoreResult
 }
+
+/**
+ * One tree node id a split OR a copy-reinsert reverse re-created during
+ * [Document.executeUndoRedoInternal], and what it replaces: [op] is the
+ * [TreeEditOperation] (compared by reference elsewhere, never by its
+ * data-class `equals`), [prev] is the element the reverse names, [curr] is
+ * the freshly minted replacement, and [ticketIndex] is which of [op]'s
+ * recorded split tickets [curr] is -- so the drain after both execution
+ * passes can tell whether the ROOT pass really consumed that ticket
+ * ([TreeEditOperation.getConsumedSplitTicketCount]) -- or `-1` for a
+ * copy-reinsert's reissued content id, which is minted unconditionally (no
+ * early-exit for the two passes to disagree over) and so skips that check.
+ * Port yorkie-js-sdk `b173c093` (#1426).
+ */
+private data class PendingTreeRepoint(
+    val op: TreeEditOperation,
+    val prev: CrdtTreeNodeID,
+    val curr: CrdtTreeNodeID,
+    val ticketIndex: Int,
+)
 
 /**
  * Projects this [Change] into a [Document.Event.DroppedChange] for an

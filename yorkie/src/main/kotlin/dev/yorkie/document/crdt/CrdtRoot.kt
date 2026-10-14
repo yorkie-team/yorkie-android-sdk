@@ -104,30 +104,9 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
 
     init {
         // Tombstones are not re-registered here: [registerElement] already
-        // booked every one of them into gc (yorkie-js-sdk#1350).
+        // books every one of them into gc, along with the tombstones its
+        // elements carry inside themselves (yorkie-js-sdk#1350, dbff8892/#1405).
         registerElement(rootObject, null)
-
-        rootObject.getDescendants { element, _ ->
-            if (element is GCCrdtElement) {
-                element.gcPairs.forEach(::registerGCPair)
-            }
-            // Register dead position nodes in a CrdtArray so they are collected once all
-            // peers have applied the winning move. Dead nodes have no element, so
-            // getDescendants never yields them — register them explicitly here.
-            if (element is CrdtArray) {
-                element.getAllRGANodes().forEach { node ->
-                    if (node.elementEntry == null && node.positionRemovedAt != null) {
-                        // A dead position node's size was never counted in
-                        // live (it holds no element); gcOnlySize says so,
-                        // mirroring JS root.ts's constructor scan.
-                        registerGCPair(
-                            GCPair(element.getRGATreeList(), node, gcOnlySize = node.dataSize),
-                        )
-                    }
-                }
-            }
-            false
-        }
     }
 
     /**
@@ -179,10 +158,16 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * Adoption is a second pass on purpose: adopting a tombstone moves its
      * whole subtree, and doing it during the first walk would move
      * descendants [DocSize.live] has not been charged for yet.
+     *
+     * [registerInternalGCPairs] runs last: it books tombstones [element] and
+     * its descendants carry INSIDE themselves (removed tree nodes/attributes,
+     * removed text pieces, dead array positions), which neither pass above
+     * can see since those never surface as a [CrdtElement] of their own.
      */
     fun registerElement(element: CrdtElement, parent: CrdtContainer?) {
         registerLive(element, parent)
         adoptTombstones(element)
+        registerInternalGCPairs(element)
     }
 
     /**
@@ -214,6 +199,63 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
                 if (elem.removedAt != null) {
                     adoptRemovedElement(elem)
                 }
+                false
+            }
+        }
+    }
+
+    /**
+     * Books the tombstones [element] and its descendant elements carry
+     * INSIDE themselves into gc: removed [CrdtTree] nodes/attributes and
+     * removed [CrdtText] pieces (both [GCCrdtElement.gcPairs]), plus a
+     * [CrdtArray]'s dead position nodes. These never surface as a
+     * [CrdtElement] of their own — [getDescendants] only ever yields
+     * elements — so [registerLive]/[adoptTombstones] above cannot find them.
+     *
+     * Every route that brings such an element in has to book them, not only
+     * snapshot load: a Set/Add/ArraySet payload is decoded by the same
+     * readers a snapshot is, and an undo re-sets a deep copy of a removed
+     * container whose tree may still hold nodes that were tombstoned before
+     * it. Left unbooked they are invisible to every later edit — charged to
+     * nothing and collectable by nothing, so the bytes stay in the document
+     * forever. Freshly created content has none of these, so this costs one
+     * walk of the registered subtree and no registration in the common case.
+     *
+     * Formerly a one-time scan run only from [init] over the whole document;
+     * folded into every [registerElement] call so a Set/Add/ArraySet payload
+     * and an undone container removal book their own inner tombstones too
+     * (yorkie-js-sdk#1350 booked the constructor scan; this is yorkie-js-sdk
+     * `dbff8892`, #1405, which generalizes it). [registerGCPair] toggles on a
+     * second registration of the same child; this is still the only call
+     * site of [GCCrdtElement.gcPairs] (`grep -rn "\.gcPairs" yorkie/src/main`
+     * — every other hit is a different property), so no element is ever
+     * booked through it twice.
+     */
+    private fun registerInternalGCPairs(element: CrdtElement) {
+        fun register(elem: CrdtElement) {
+            if (elem is GCCrdtElement) {
+                elem.gcPairs.forEach(::registerGCPair)
+            }
+            // Register dead position nodes in a CrdtArray so they are collected once all
+            // peers have applied the winning move. Dead nodes have no element, so
+            // getDescendants never yields them — register them explicitly here.
+            if (elem is CrdtArray) {
+                elem.getAllRGANodes().forEach { node ->
+                    if (node.elementEntry == null && node.positionRemovedAt != null) {
+                        // A dead position node's size was never counted in
+                        // live (it holds no element); gcOnlySize says so.
+                        registerGCPair(
+                            GCPair(elem.getRGATreeList(), node, gcOnlySize = node.dataSize),
+                        )
+                    }
+                }
+            }
+        }
+
+        register(element)
+        if (element is CrdtContainer) {
+            element.getDescendants { elem, _ ->
+                register(elem)
                 false
             }
         }
@@ -515,10 +557,38 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
     }
 
     /**
-     * Deletes elements that were removed before [executedAt].
+     * Deletes elements that were removed before [minSyncedVersionVector].
+     *
+     * A pass can hold a purge back (see [GCParent.purgeBarrierAt]), and
+     * holding one back can be the only reason another is held back: purging
+     * a node hands its successor to the node in front of it, and that
+     * successor is one this pass already found stable. So a pass that both
+     * purged and deferred may have more to do, and the loop repeats until a
+     * pass purges nothing new or defers nothing. Everything held back stays
+     * on the worklist for the next vector that covers it. The repeat also
+     * makes the result independent of iteration order, which decides only
+     * how many passes it takes, not what ends up collected. Ported from JS
+     * `CRDTRoot.garbageCollect`/`collect` (yorkie-js-sdk `dbff8892`, #1405).
      */
     fun garbageCollect(minSyncedVersionVector: VersionVector): Int {
         var count = 0
+        while (true) {
+            val (purged, deferred) = collect(minSyncedVersionVector)
+            count += purged
+            if (purged == 0 || deferred == 0) {
+                return count
+            }
+        }
+    }
+
+    /**
+     * Runs one collection pass, returning how much it purged and how much it
+     * held back on a [GCParent.purgeBarrierAt] barrier.
+     */
+    private fun collect(minSyncedVersionVector: VersionVector): Pair<Int, Int> {
+        var count = 0
+        var deferred = 0
+
         gcElementSetByCreatedAt.toSet().forEach { createdAt ->
             // Neither lookup is guaranteed to hit (yorkie-js-sdk#1341): skip,
             // don't drop — the element's size is still charged to gc, which
@@ -526,10 +596,22 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
             val pair = elementPairMapByCreatedAt[createdAt] ?: return@forEach
             val parent = pair.parent ?: return@forEach
             val removedAt = pair.element.removedAt
-            if (removedAt != null && minSyncedVersionVector.afterOrEqual(removedAt)) {
-                parent.purge(pair.element)
-                count += deregisterElement(pair.element)
+            if (removedAt == null || !minSyncedVersionVector.afterOrEqual(removedAt)) {
+                return@forEach
             }
+
+            // A tombstone is not only a value that is gone, it is also a
+            // place in its parent that other replicas may still be deciding
+            // against. removedAt covers the value; the barrier covers the
+            // place.
+            val elementBarrier = parent.purgeBarrierAt(pair.element)
+            if (elementBarrier != null && !minSyncedVersionVector.afterOrEqual(elementBarrier)) {
+                deferred++
+                return@forEach
+            }
+
+            parent.purge(pair.element)
+            count += deregisterElement(pair.element)
         }
 
         val iterator = gcPairMap.values.iterator()
@@ -547,17 +629,25 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
                 iterator.remove()
                 continue
             }
-            if (minSyncedVersionVector.afterOrEqual(removedAt)) {
-                pair.parent.deleteChild(pair.child)
-                docSize = DocSize(
-                    live = docSize.live,
-                    gc = subDataSize(docSize.gc, pair.child.dataSize),
-                )
-                iterator.remove()
-                count++
+            if (!minSyncedVersionVector.afterOrEqual(removedAt)) {
+                continue
             }
+
+            val barrier = pair.parent.purgeBarrierAt(pair.child)
+            if (barrier != null && !minSyncedVersionVector.afterOrEqual(barrier)) {
+                deferred++
+                continue
+            }
+
+            pair.parent.deleteChild(pair.child)
+            docSize = DocSize(
+                live = docSize.live,
+                gc = subDataSize(docSize.gc, pair.child.dataSize),
+            )
+            iterator.remove()
+            count++
         }
-        return count
+        return count to deferred
     }
 
     /**
@@ -619,6 +709,35 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         docSize = docSize.copy(
             gc = addDataSizes(docSize.gc, diff),
         )
+    }
+
+    /**
+     * `accMovedElement` books the size a move added to the moved element.
+     *
+     * An element already tombstoned when it is moved — a remove and a move of
+     * the same element, concurrent on two replicas, arrive in some order on
+     * each — is not in live at all: its whole size was moved to gc when it
+     * was removed. Charging the ticket to live there would leave live
+     * permanently ahead of a rebuild, and gc permanently behind by the same
+     * amount, which is the drift in the delivery order where the remove
+     * lands first. The gc charge also has to be topped up so collection,
+     * which subtracts the element's CURRENT size, does not overshoot (#1392).
+     */
+    fun accMovedElement(element: CrdtElement, diff: DataSize) {
+        val charged = sizeInGC[element]
+        if (charged != null) {
+            // A zero charge is releaseCharge's marker for a subtree orphaned
+            // by a restore: neither side is holding it and neither takes the
+            // ticket. No real charge is zero — every element carries a
+            // createdAt.
+            if (charged == DataSize(0, 0)) return
+
+            docSize = docSize.copy(gc = addDataSizes(docSize.gc, diff))
+            sizeInGC[element] = addDataSizes(charged, diff)
+            return
+        }
+
+        docSize = docSize.copy(live = addDataSizes(docSize.live, diff))
     }
 
     companion object {

@@ -74,10 +74,17 @@ class Rht : Collection<RhtNode> {
 
     /**
      * Removes the Element of the given [key].
+     *
+     * The tombstone still STORES the value — what goes on the wire is
+     * unchanged — but stops being CHARGED for it, because [RhtNode.dataSize]
+     * skips a removed node's value (#1392). [RhtRemoval.valueDropped] is what
+     * the caller takes back out of whichever side of the ledger was holding
+     * those bytes.
      */
-    fun remove(key: String, executedAt: TimeTicket): List<RhtNode> {
+    fun remove(key: String, executedAt: TimeTicket): RhtRemoval {
         val prev = nodeMapByKey[key]
-        return buildList {
+        var valueDropped = DataSize(data = 0, meta = 0)
+        val gcNodes = buildList {
             if (prev == null) {
                 numberOfRemovedElements++
                 nodeMapByKey[key] = RhtNode(key, "", executedAt, true).also { add(it) }
@@ -86,10 +93,12 @@ class Rht : Collection<RhtNode> {
                     add(prev)
                 } else {
                     numberOfRemovedElements++
+                    valueDropped = DataSize(data = valueSize(prev.value), meta = 0)
                 }
                 nodeMapByKey[key] = RhtNode(key, prev.value, executedAt, true).also { add(it) }
             }
         }
+        return RhtRemoval(gcNodes, valueDropped)
     }
 
     /**
@@ -120,12 +129,23 @@ class Rht : Collection<RhtNode> {
 
     /**
      * Converts the given [Rht] to XML String.
+     *
+     * The value is rendered through [logicalValue] first, same as JS
+     * `toXML` reads it back through `parseAttrValue`: a JSON-encoded string
+     * (what a JS peer stores for a `string` attribute) unwraps to its bare
+     * form, while an object/number/boolean/malformed value stays exactly as
+     * stored. Both the key and the (now-unwrapped) value are peer-chosen,
+     * so each is escaped before interpolation: unescaped, a `"` closes the
+     * attribute and a `<` opens an element, letting a peer forge markup
+     * into every reader's rendered tree (port JS `document/crdt/tree.ts`
+     * `escapeXMLAttr`, `6932da6a`, #1447) -- the XML half of the forging
+     * [toJson] already closes for the JSON encoding via [escapeString].
      */
     fun toXml(): String {
         return nodeMapByKey.filterValues { !it.isRemoved }.entries
             .sortedBy { it.key }
             .joinToString(" ") { (key, node) ->
-                "$key=\"${node.value}\""
+                "${escapeXmlAttr(key)}=\"${escapeXmlAttr(logicalValue(node.value))}\""
             }
     }
 
@@ -170,12 +190,39 @@ data class RhtNode(
 
     override val removedAt: TimeTicket? = executedAt.takeIf { isRemoved }
 
+    /**
+     * A tombstone charges its key only (#1392). The value it still carries
+     * is dead weight — nothing reads it, [Rht.has]/[Rht.toJson]/[Rht.toXml]
+     * all gate on [isRemoved] — and charging it made the running `docSize`
+     * disagree with a rebuild of the same document, which replays the same
+     * removals. The value is left on the node rather than cleared so that
+     * what this SDK stores and serializes for a tombstone is byte-for-byte
+     * what it was, and what a peer sends us is kept verbatim: the
+     * convergence fix belongs in the accounting, not the wire format.
+     */
     override val dataSize: DataSize
         get() = DataSize(
-            data = (utf8Length(key) + utf8Length(logicalValue(value))) * 2,
+            data = utf8Length(key) * 2 + (if (isRemoved) 0 else valueSize(value)),
             meta = TIME_TICKET_SIZE,
         )
 }
+
+/**
+ * [RhtRemoval] is what [Rht.remove] reports back.
+ *
+ * [gcNodes] are the tombstones this removal made collectable.
+ *
+ * [valueDropped] is the size of the value the removal stopped charging for,
+ * which no node's [RhtNode.dataSize] accounts for any more. The caller
+ * subtracts it from whichever side of the ledger was holding it: live for an
+ * attribute that was live on a live node, gc for one on a node that is
+ * itself a tombstone. Zero when the attribute was already a tombstone, since
+ * a tombstone's value was not being charged in the first place.
+ */
+data class RhtRemoval(
+    val gcNodes: List<RhtNode>,
+    val valueDropped: DataSize,
+)
 
 /**
  * [RhtWrite] is what [Rht.set] reports back.
@@ -234,17 +281,25 @@ private fun utf8Length(s: String): Int {
 }
 
 /**
- * Returns [stored] as a peer storing attribute values raw would hold it. JS
- * `logicalValue` parses [stored] as JSON and unwraps only when the parsed
- * value is a string, tolerating surrounding whitespace the way `JSON.parse`
- * does; Android carries no JSON parser (and must not add one solely for
- * this — YAGNI), so this hand-rolls the one case the ported sizing tests
- * exercise: [stored], once trimmed, is a well-formed JSON string literal —
- * length >= 2, first and last char `"` — in which case the outer quotes are
- * stripped and the interior is JSON-unescaped. Anything else (an unquoted
- * word, a number, a boolean, malformed quoting, or an escape `JSON.parse`
- * would reject) passes through as the original [stored], matching
- * `JSON.parse`'s catch branch.
+ * Returns the [DataSize.data] bytes an attribute value of the given stored
+ * form contributes, on the same terms as [RhtNode.dataSize].
+ */
+private fun valueSize(stored: String): Int = utf8Length(logicalValue(stored)) * 2
+
+/**
+ * Returns [stored] as a peer storing attribute values raw would hold it —
+ * the same value [toXml] renders and [valueSize] charges for. JS
+ * `parseAttrValue` parses [stored] as JSON and `toXML`/sizing unwrap only
+ * when the parsed value is a string, tolerating surrounding whitespace the
+ * way `JSON.parse` does; Android carries no JSON parser (and must not add
+ * one solely for this — YAGNI), so this hand-rolls the one case that
+ * matters for either caller: [stored], once trimmed, is a well-formed JSON
+ * string literal — length >= 2, first and last char `"` — in which case the
+ * outer quotes are stripped and the interior is JSON-unescaped. Anything
+ * else (an unquoted word, a number, a boolean, malformed quoting, or an
+ * escape `JSON.parse` would reject) passes through as the original
+ * [stored], matching `JSON.parse`'s catch branch (and `typeof obj ===
+ * 'string'` being false for a non-string parse).
  */
 private fun logicalValue(stored: String): String {
     val trimmed = stored.trim { it == ' ' || it == '\t' || it == '\n' || it == '\r' }
@@ -317,6 +372,28 @@ private fun unescapeJsonString(interior: String): String? {
             }
             else -> return null
         }
+    }
+    return result.toString()
+}
+
+private val xmlAttrEscapes = mapOf(
+    '&' to "&amp;",
+    '<' to "&lt;",
+    '>' to "&gt;",
+    '"' to "&quot;",
+    '\'' to "&apos;",
+)
+
+/**
+ * Escapes a name or a value for interpolation into a double-quoted XML
+ * attribute (port JS `escapeXMLAttr`, `6932da6a`, #1447). A single left-to-
+ * right pass over [value]'s original characters, so an entity this function
+ * inserts (e.g. `&amp;` for a literal `&`) is never itself re-escaped.
+ */
+private fun escapeXmlAttr(value: String): String {
+    val result = StringBuilder(value.length)
+    for (c in value) {
+        result.append(xmlAttrEscapes[c] ?: c.toString())
     }
     return result.toString()
 }

@@ -317,4 +317,27 @@ class CrdtTreeDuplicateIdTest {
         assertEquals(1, reverse.retombstoneSpans?.size)
         assertEquals(acceptedID, reverse.retombstoneSpans?.single()?.id)
     }
+
+    // purgeBarrierAt looks its argument up among its parent's children with
+    // `siblings.indexOf(treeNode)` -- CrdtTreeNode's generated `equals()` is
+    // structural (id/type/value/children/attrs), so two duplicate-ID empty
+    // text siblings here are `.equals()` to each other even though only one
+    // is tombstoned. Were the lookup to stay structural, `indexOf` would
+    // resolve `tombstoned` to `live`'s earlier position (the first match)
+    // and report `tombstoned` itself back as "the sibling after it" instead
+    // of the correct answer: nothing follows the real last child.
+    @Test
+    fun `purgeBarrierAt resolves a duplicate-ID sibling by identity, not structural equality`() {
+        val sharedID = CrdtTreeNodeID(issueTime(), 0)
+        val root = CrdtTreeElement(issuePos(), "root")
+        val live = CrdtTreeText(sharedID, "")
+        val tombstoned = CrdtTreeText(sharedID, "")
+        assertEquals(live, tombstoned) // the fixture: structurally equal, distinct objects
+        root.append(live)
+        root.append(tombstoned)
+        tombstoned.remove(issueTime())
+        val tree = CrdtTree(root, issueTime())
+
+        assertEquals(null, tree.purgeBarrierAt(tombstoned))
+    }
 }

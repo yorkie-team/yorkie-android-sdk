@@ -764,4 +764,60 @@ class TreeEditOperationReverseTest {
         assertEquals(before.gc, root.docSize.gc)
         assertEquals(0, root.garbageLength)
     }
+
+    // getExecutedRanges() must return executedRanges UNCHANGED once
+    // executeRestore has set it, even empty -- never the undo-offset
+    // fallback, which is only for a restore that has not run at all. A
+    // restore whose target sits under an ancestor ANOTHER edit tombstoned
+    // revives the target (changed = true) but measures no position for it
+    // (TreeUndoSupport.visibleRangeOf finds the removed ancestor and returns
+    // null), so executedRanges ends up a real, measured EMPTY list -- the
+    // exact case the old `executedRanges.takeUnless { it.isNullOrEmpty() }`
+    // mishandled by falling through to the undo-offset fallback instead.
+    @Test
+    fun `getExecutedRanges stays empty for a restore under a removed ancestor, not the fallback`() {
+        // given: <root><p>ab</p></root>
+        val (tree, root) = buildTreeRoot()
+        val pID = CrdtTreeNodeID(makeTicket(3), 0)
+        makeTreeEditOp(tree, 0, 0, listOf(CrdtTreeElement(pID, "p")), 3)
+            .execute(root, OpSource.Local, null)
+        val textID = CrdtTreeNodeID(makeTicket(4), 0)
+        makeTreeEditOp(tree, 1, 1, listOf(CrdtTreeText(textID, "ab")), 4)
+            .execute(root, OpSource.Local, null)
+        assertEquals("<root><p>ab</p></root>", tree.toXml())
+
+        // delete "ab" -- its reverse is an identity-preserving restore of textID.
+        val deleteTextResult = makeTreeEditOp(
+            tree,
+            1,
+            3,
+            null,
+            5,
+        ).execute(root, OpSource.Local, null)
+        val restoreText = deleteTextResult.reverseOps.single() as TreeEditOperation
+        assertEquals(RestoreMode.Restore, restoreText.restoreMode)
+        assertEquals(textID, restoreText.restoreSpans?.single()?.id)
+
+        // delete the now-empty <p> too -- textID's tombstone sits under a
+        // tombstoned ancestor by the time restoreText runs.
+        makeTreeEditOp(tree, 0, 2, null, 6).execute(root, OpSource.Local, null)
+        assertEquals("<root></root>", tree.toXml())
+
+        // when: a peer's copy of the ORIGINAL "ab" restore is delivered.
+        restoreText.executedAt = makeTicket(7)
+        restoreText.execute(root, OpSource.Remote, null)
+
+        // then: the node is revived (structural only -- <p> stays tombstoned)...
+        assertFalse(requireNotNull(tree.findFloorNode(textID)).isRemoved)
+        assertEquals(
+            "<root></root>",
+            tree.toXml(),
+            "the revived node stays under its tombstoned parent",
+        )
+
+        // ...but no edit was measurable, so getExecutedRanges() must return
+        // that EMPTY list, not a single fallback entry built from this op's
+        // own undo offsets.
+        assertEquals(emptyList(), restoreText.getExecutedRanges())
+    }
 }

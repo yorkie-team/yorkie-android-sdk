@@ -25,21 +25,41 @@ import org.junit.Test
  * flip — when one of them fails after a sync-up, update the expectation
  * together with the port and delete the defect note. F2's RECREATE route was
  * flipped this way (yorkie-js-sdk 248551a1, #1364): see `recreate under a
- * tombstoned parent is now born tombstoned` below.
+ * tombstoned parent is now born tombstoned` below. F1's style/removeStyle
+ * case was flipped the same way by b69169c0 (#1404): see `fixed upstream
+ * defect - merge relocating tombstones no longer breaks a concurrent
+ * boundary style` below. F4 was flipped the same way by dbff8892 (#1405):
+ * see `fixed upstream defect - copied attribute tombstones are now swept`
+ * below. F3 was flipped the same way by `790422ce` (#1421): see `fixed
+ * upstream defect - a remote identity restore now re-indexes pending tree
+ * undos` below.
  *
- * - F1: `CrdtTree.edit`'s merge phase relocates the merge source's TOMBSTONED
- *   children into the live merge target (`allChildren` + `moveChild`, port of
- *   JS c5d5c851). A concurrent position anchored on such a tombstone then
- *   resolves into the live target, so the `realParent.isRemoved` redirect and
- *   the `Boundary.Range` branch in `findNodesAndSplitText` never fire and a
- *   concurrent cross-boundary style (or delete) lands on the wrong nodes.
+ * - F1 (STYLE/REMOVESTYLE case, FIXED): `CrdtTree.edit`'s merge phase still
+ *   relocates the merge source's TOMBSTONED children into the live merge
+ *   target exactly as before (`allChildren` + `moveChild`, port of JS
+ *   c5d5c851) — that root cause is untouched. What changed is how a style's
+ *   reached set is resolved: `styleTargets`/`declaredBoundaries`/
+ *   `DeclaredLineage` (yorkie-js-sdk b69169c0, #1404; yorkie#2038/#2070) walk
+ *   the CHANGE's own positions rather than resolving the anchor in the
+ *   receiving replica's current index space, so it no longer matters that a
+ *   concurrent merge relocated the tombstone the anchor named — both
+ *   replicas now resolve the same target and converge. A concurrent
+ *   cross-boundary DELETE across the same relocated tombstone is NOT covered
+ *   by this port (#1404(c)'s scope is style/removeStyle only) and may still
+ *   share the underlying relocation defect; not probed by this file.
  *   Upstream issue draft: harness-docs round-1 build report of spec 014.
- * - F3: `TreeEditOperation.executeRestore` emits a `TreeEditOpInfo` with
- *   `from == to == 0` and no nodes for a decoded remote restore, exactly like
- *   JS (`normalizePos() -> [0,0]`, `getContentSize() -> 0`), so
- *   `Document.reconcileHistoryEdits` shifts pending tree undos by 0 although
- *   the restore changed the index space; a later undo of a pure split then
- *   deletes live text. Backlog candidate 009 (`tree-restore-history-reconcile-delta`).
+ * - F3 (FIXED): `TreeEditOperation.executeRestore` used to emit a single
+ *   `TreeEditOpInfo` with `from == to == 0` and no nodes for a decoded remote
+ *   restore, exactly like JS's pre-fix shape (`normalizePos() -> [0,0]`,
+ *   `getContentSize() -> 0`), so `Document.reconcileHistoryEdits` shifted
+ *   pending tree undos by 0 although the restore changed the index space; a
+ *   later undo of a pure split then deleted live text. Port yorkie-js-sdk
+ *   `790422ce` (#1421) now reports one populated `TreeEditOpInfo` per node
+ *   the restore actually measured and records the per-node ranges as
+ *   `executedRanges`, which `Document.reconcileHistoryEdits` replays one at a
+ *   time, so the peer's restore now re-indexes the pending split-undo by the
+ *   restored width; see `fixed upstream defect - a remote identity restore
+ *   now re-indexes pending tree undos` below (was `known defect - ...`).
  * - F2 (UNREMOVE route, STILL OPEN): `CrdtTree.restore` un-tombstones a
  *   target with no removed-ancestor guard, exactly like JS `tree.ts`
  *   `restore`. The node is invisible yet counted live, and a replica that
@@ -56,13 +76,36 @@ import org.junit.Test
  *   replicas resolve the same relayed op identically, so this stays
  *   convergent; see `recreate under a tombstoned parent is now born
  *   tombstoned` below (was `... is counted live`).
- * - F4: `recreateFromSpan` deep-copies the span's attribute snapshot with its
- *   tombstoned `RhtNode`s and registers no GC pair for them (JS does the
- *   same), so the copies are unreachable by any sweep until a snapshot
- *   reload. UNRELATED to, and not fixed by, the split-path fix above (port
- *   #1363, which covers only `CrdtTreeNode.split`'s own copied tombstones,
- *   not `recreateFromSpan`'s) — still pinned by `copied attribute tombstones
- *   are never swept`.
+ * - F4 (FIXED): `recreateFromSpan` deep-copies the span's attribute snapshot
+ *   with its tombstoned `RhtNode`s. Port yorkie-js-sdk `dbff8892` (#1405) now
+ *   books each one through `getGCPairs`/`attach()` into `CrdtRoot`'s
+ *   registered pairs, so the copies are reachable by the next sweep instead
+ *   of sitting unreachable until a snapshot reload. UNRELATED to, and not
+ *   fixed by, the split-path fix above (port #1363, which covers only
+ *   `CrdtTreeNode.split`'s own copied tombstones, not `recreateFromSpan`'s);
+ *   see `fixed upstream defect - copied attribute tombstones are now swept`
+ *   below (was `... are never swept`).
+ *
+ * yorkie-js-sdk `b173c093` (#1426) ports two re-pointing mechanisms together:
+ * the split-ticket one (`onSplitTicketConsumed`) and a second one for a
+ * reverse that copy-reinsert deleted content (`reissueContentIDs`). An
+ * earlier round of this file pinned a THIRD test here as a "known defect" for
+ * the second mechanism, reasoning by analogy from the split-ticket shape:
+ * style a node, delete it in the same update, undo, expect the style to
+ * survive like a JS replica's. Re-investigated while porting that mechanism
+ * (`TreeUndoContentIdentityTest`, this round): that specific scenario's
+ * delete is merge/split-free, so `CrdtTree.edit`'s `spansComplete` guard
+ * takes the IDENTITY-PRESERVING restore path on BOTH platforms (same guard,
+ * ported identically; see `TreeEditOperationReverseTest`'s `reverse of pure
+ * delete is a pure insert`) -- never the copy-reinsert one `reissueContentIDs`
+ * exists for. Losing the style there is not a defect: undoing the WHOLE
+ * transaction reverts atomically to the pre-transaction state, which had no
+ * style (it was added and the node deleted in the SAME update). See `control
+ * - undoing a style and a delete from the same update reverts atomically`
+ * below, and `TreeUndoContentIdentityTest` for the mechanism itself,
+ * demonstrated against a hand-seeded copy-reinsert entry (the branch is
+ * unreachable via any public-API sequence found this round -- see that
+ * file's class KDoc).
  */
 class TreeUpstreamDefectPinTest {
 
@@ -82,14 +125,18 @@ class TreeUpstreamDefectPinTest {
         return d1 to d2
     }
 
-    // KNOWN UPSTREAM DEFECT (F1) — do not fix Android-only. Reviewer's probe:
-    // d1 merges the two paragraphs while d2 styles across their boundary.
-    // The style's `to` anchor is the text "cd", which the merge tombstones
-    // AND relocates into the surviving <p>, so on d1 the style collapses
-    // inside that <p> and never reaches its tokens, while on d2 the style ran
-    // before the merge arrived. The replicas do NOT converge.
+    // F1 FIXED — yorkie-js-sdk b69169c0 (#1404; yorkie#2038/#2070). The
+    // receiving replica no longer resolves a style's reached set in its own
+    // index space: `styleTargets`/`declaredBoundaries`/`DeclaredLineage`
+    // walk the CHANGE's own positions instead, so a concurrent merge that
+    // tombstones and relocates the style's `to` anchor (the text "cd", moved
+    // into the surviving <p>) no longer silently redirects it. d1 (ran the
+    // merge) and d2 (ran the style) now resolve the same target and
+    // converge. Flipped per this file's own documented process ("update the
+    // expectation together with the port and delete the defect note" --
+    // same flip F2's RECREATE route already got, port 248551a1 above).
     @Test
-    fun `known upstream defect - merge relocating tombstones breaks a concurrent boundary style`() =
+    fun `fixed upstream defect - merge relocating tombstones no longer breaks a boundary style`() =
         runTest {
             val (d1, d2) = pair {
                 element("r") {
@@ -105,22 +152,24 @@ class TreeUpstreamDefectPinTest {
             }.await()
             crossSync(d1, d2)
 
-            // Pinned CURRENT outcome (yorkie-js-sdk v0.7.14 parity): divergence.
-            assertEquals("<r><p></p></r>", d1.xml())
+            // Converged CURRENT outcome (yorkie-js-sdk b69169c0 parity).
+            assertEquals("<r><p bold=\"x\"></p></r>", d1.xml())
             assertEquals("<r><p bold=\"x\"></p></r>", d2.xml())
-            assertNotEquals(
+            assertEquals(
                 d1.xml(),
                 d2.xml(),
-                "pinned divergence — flip this when the upstream fix is ported",
+                "converges now -- b69169c0 (#1404) fixed F1",
             )
         }
 
-    // KNOWN DEFECT (F3, JS parity; backlog 009) — a peer's identity restore
-    // reports an index delta of 0, so d1's pending split-undo keeps offsets
-    // that are stale by the restored width. Undoing the split then deletes
-    // live text ("34") instead of merging the paragraphs back.
+    // F3, NOW FIXED (port yorkie-js-sdk `790422ce`, #1421) — a peer's
+    // identity restore used to report an index delta of 0, so d1's pending split-undo kept offsets that were stale by the
+    // restored width and later destroyed live text ("34"). executeRestore
+    // now measures and publishes the restore's real range (and
+    // Document.reconcileHistoryEdits replays it), so d1's split-undo shifts
+    // correctly and the paragraphs merge back whole.
     @Test
-    fun `known defect - a remote identity restore does not re-index pending tree undos`() =
+    fun `fixed upstream defect - a remote identity restore now re-indexes pending tree undos`() =
         runTest {
             val (d1, d2) = pair { element("doc") { element("p") { text { "0123456789" } } } }
 
@@ -134,20 +183,22 @@ class TreeUpstreamDefectPinTest {
             crossSync(d1, d2)
             assertEquals("<doc><p>234</p><p>56789</p></doc>", d1.xml())
 
-            // d2 undoes: an identity restore revives "01" on both replicas, but
-            // its opInfo carries delta 0, so d1's pending undo is NOT shifted +2.
+            // d2 undoes: an identity restore revives "01" on both replicas, and
+            // its executedRanges now carry the real [from, to, insertedSize],
+            // so d1's pending undo IS shifted +2.
             d2.history.undoAsync().await()
             crossSync(d1, d2)
             assertEquals("<doc><p>01234</p><p>56789</p></doc>", d1.xml())
             assertEquals(d1.xml(), d2.xml())
 
-            // d1 undoes its split. Correct: <doc><p>0123456789</p></doc>.
+            // d1 undoes its split.
             d1.history.undoAsync().await()
             crossSync(d1, d2)
 
-            // Pinned CURRENT outcome (JS parity): the boundary deletion lands two
-            // characters early and destroys "34" on BOTH replicas.
-            assertEquals("<doc><p>012</p><p>56789</p></doc>", d1.xml())
+            // FIXED outcome (yorkie-js-sdk 790422ce parity, executed BOTH
+            // sides): the paragraphs merge back whole
+            // instead of the boundary deletion landing two characters early.
+            assertEquals("<doc><p>0123456789</p></doc>", d1.xml())
             assertEquals(d1.xml(), d2.xml())
         }
 
@@ -193,7 +244,7 @@ class TreeUpstreamDefectPinTest {
     // attach() now stamps the recreated node with <p>'s own removedAt instead
     // of placing it live: the node is NOT counted live, and registers a
     // pending gcOnlySize pair so a later purge of <p> does not orphan it.
-    // Figures below are read off the executed GREEN run, not guessed.
+    // Figures below are read off the executed green run, not guessed.
     @Test
     fun `recreate under a tombstoned parent is now born tombstoned`() = runTest {
         val (d1, d2) = pair { element("doc") { element("p") { text { "hello" } } } }
@@ -232,13 +283,15 @@ class TreeUpstreamDefectPinTest {
         assertEquals(d1.xml(), d2.xml())
     }
 
-    // KNOWN UPSTREAM DEFECT (F4) — JS `recreateFromSpan` deep-copies the span's
-    // attribute snapshot, tombstoned RhtNodes included (removeStyle leaves its
-    // tombstone inside the Rht; an overwrite's tombstone is a detached copy and
-    // never enters it), and registers no GC pair for them: the copy stays
-    // unreachable by any sweep until a snapshot reload.
+    // F4, NOW FIXED (port yorkie-js-sdk dbff8892, #1405): `recreateFromSpan`
+    // still deep-copies the span's attribute snapshot, tombstoned RhtNodes
+    // included (removeStyle leaves its tombstone inside the Rht; an
+    // overwrite's tombstone is a detached copy and never enters it), but
+    // `attach()` now books each one through `CrdtRoot.registerGCPair` --
+    // reachable by the next sweep instead of an unregistered leak. Figures
+    // below are read off the executed green run, not guessed.
     @Test
-    fun `known upstream defect - copied attribute tombstones are never swept`() = runTest {
+    fun `fixed upstream defect - copied attribute tombstones are now swept`() = runTest {
         val document = Document("test-doc")
         document.setActor(actor1)
         val vector = maxVectorOf(listOf(actor1))
@@ -259,15 +312,19 @@ class TreeUpstreamDefectPinTest {
         assertEquals("<doc><p>x</p></doc>", document.xml())
         val recreated = (document.getRootObject()["t"] as CrdtTree).indexTree.root.allChildren
             .single { !it.isRemoved && it.type == "p" }
-        // Pinned CURRENT outcome (JS parity): the tombstone rides along unregistered.
+        // The tombstone still rides along inside the recreated node's Rht --
+        // recreateFromSpan's deep copy is unchanged; what moved is whether
+        // CrdtRoot has it registered.
         assertEquals(1, recreated.gcPairs.size)
         assertEquals(
-            0,
+            1,
             document.garbageLength,
-            "pinned leak — flip when the upstream fix is ported",
+            "FIXED: the copied tombstone is registered, not an unreachable leak",
         )
-        assertEquals(0, document.garbageCollect(vector))
-        assertEquals(1, recreated.gcPairs.size)
+        assertEquals(1, document.garbageCollect(vector))
+        // The sweep purges the RhtNode out of the Rht itself, not merely out
+        // of CrdtRoot's bookkeeping.
+        assertEquals(0, recreated.gcPairs.size)
     }
 
     // Control for the F3 pin: without the remote delete/restore the same
@@ -282,5 +339,59 @@ class TreeUpstreamDefectPinTest {
             crossSync(d1, d2)
             assertEquals("<doc><p>0123456789</p></doc>", d1.xml())
             assertEquals(d1.xml(), d2.xml())
+        }
+
+    // CONTROL (re-investigated this round, yorkie-js-sdk b173c093, #1426):
+    // previously pinned here as "known upstream defect - a style undone
+    // alongside a copy-reinsert is dropped", reasoning by analogy from the
+    // split-ticket shape that this scenario needed `reissueContentIDs`'s
+    // re-pointing and so should keep the style, as a JS replica allegedly
+    // does. Re-checked while actually porting that mechanism
+    // (`TreeUndoContentIdentityTest`): this delete is merge/split-free, so
+    // `CrdtTree.edit`'s `spansComplete` guard takes the IDENTITY-PRESERVING
+    // restore path here -- confirmed by instrumenting both `execute()`
+    // methods during this round -- never the copy-reinsert one
+    // `reissueContentIDs`/`getReissuedContentIDs` exists for (same guard on
+    // both platforms; see `TreeEditOperationReverseTest`'s `reverse of pure
+    // delete is a pure insert`). The revived node's restore span is captured
+    // from LIVE state, so it comes back bold; the style-reverse then runs
+    // (by original id, found exactly -- nothing stale here) and removes it.
+    // Net effect: the WHOLE transaction (style, then delete, one update)
+    // reverts atomically to the state before either op ran, which had no
+    // style. That is correct, not a defect -- the style was never part of
+    // any state a peer could have observed. The real `reissueContentIDs`
+    // hazard (a later op stranded on a stale id after an ACTUAL
+    // copy-reinsert) is pinned and fixed in `TreeUndoContentIdentityTest`,
+    // against a hand-seeded entry: no public-API sequence was found this
+    // round that naturally reaches `TreeEditOperation.removedNodeSnapshots`
+    // (see that file's class KDoc for the reachability gap this pins).
+    @Test
+    fun `control - undoing a style and a delete from the same update reverts atomically`() =
+        runTest {
+            val document = Document("test-doc")
+            document.setActor(actor1)
+            document.updateAsync { root, _ ->
+                root.setNewTree("t", element("doc") { element("p") { text { "hello" } } })
+            }.await()
+            document.clearHistory()
+
+            document.updateAsync { root, _ ->
+                val t = root.getAs<JsonTree>("t")
+                t.styleByPath(listOf(0), mapOf("bold" to "true"))
+                t.editByPath(listOf(0), listOf(1))
+            }.await()
+            assertEquals("<doc></doc>", document.xml())
+
+            document.history.undoAsync().await()
+
+            // Correct: reverts to the pre-transaction state (no style existed
+            // before this update ran), not `<doc><p bold="true">hello</p></doc>`.
+            assertEquals("<doc><p>hello</p></doc>", document.xml())
+
+            document.garbageCollect(maxVectorOf(listOf(actor1)))
+            document.history.redoAsync().await()
+            // The redo re-applies the original transaction's net effect: the
+            // node is deleted again.
+            assertEquals("<doc></doc>", document.xml())
         }
 }

@@ -9,6 +9,7 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.totalDataSize
 import java.util.Date
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -163,6 +164,31 @@ class JsonArrayTest {
         val firstElement = requireNotNull(target.getAs<JsonPrimitive>(0))
         target.moveLast(firstElement.id)
         assertEquals("[2,3,1]", target.toJson())
+    }
+
+    // Ports JS SDK `crdt/array.ts` `getByID` parity (`8fb5a71c`, #1392): moving an id
+    // already removed must not crash, and the move's size must still be topped up to gc
+    // -- never silently dropped -- exactly like a move that lands on a live element.
+    @Test
+    fun `moveFront of an already-removed element does not NPE and books its move to gc`() {
+        target.apply {
+            put(1)
+            put(2)
+            put(3)
+        }
+        val removedElement = requireNotNull(target.getAs<JsonPrimitive>(2))
+        target.remove(removedElement.id)
+        assertEquals("[1,2]", target.toJson())
+
+        val gcBeforeMove = totalDataSize(target.context.root.docSize.gc)
+
+        target.moveFront(removedElement.id)
+
+        assertEquals("[1,2]", target.toJson(), "the removed element must stay out of the live view")
+        assertTrue(
+            totalDataSize(target.context.root.docSize.gc) > gcBeforeMove,
+            "the move must top up the already-removed element's gc charge, not drop it",
+        )
     }
 
     @Test

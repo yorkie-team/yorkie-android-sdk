@@ -1557,6 +1557,193 @@ class ClientTest {
         assertTrue(target.shouldRefreshToken)
     }
 
+    // --- #1393/b34118b4: a push-only reply is a push ack only -----------------------
+
+    /**
+     * Builds a [Client] wired to a fresh [MockYorkieService] (not the class-level [target]/
+     * [service], which do not expose the mock's own mutable fields), activates it, and
+     * attaches a fresh [Document] keyed [docKey] with [syncMode]. Returns the trio so a
+     * test can configure the service's response for [docKey] before driving a sync.
+     */
+    private suspend fun newPushAckClient(
+        docKey: String,
+        syncMode: Client.SyncMode,
+    ): Triple<Client, MockYorkieService, Document> {
+        val mockYorkieService = MockYorkieService()
+        val client = Client(
+            host = "0.0.0.0",
+            options = Client.Options(key = TEST_KEY, apiKey = TEST_KEY),
+        )
+        client.service = mockYorkieService
+        client.activateAsync().await()
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = syncMode).await()
+        return Triple(client, mockYorkieService, document)
+    }
+
+    /**
+     * One local add + remove under the client's own actor: a tombstone eligible for GC the
+     * instant a version vector names [TEST_ACTOR_ID] past its removal's lamport -- the
+     * fixture every test below purges (or must not purge).
+     */
+    private suspend fun Document.addAndRemoveOneKey() {
+        updateAsync { root, _ -> root["x"] = 1 }.await()
+        updateAsync { root, _ -> root.remove("x") }.await()
+    }
+
+    /**
+     * Mocks [android.util.Base64] for [block]'s duration -- these four tests put a real,
+     * non-empty [dev.yorkie.document.time.VersionVector] on the wire via
+     * [MockYorkieService.ackOnlyVersionVectorOverride], and encoding it
+     * (`VersionVector.toPBVersionVector`) Base64-encodes each actor id, which
+     * [android.util.Base64] stubs out ("Stub!") off-device. Scoped to these tests only --
+     * see [ClientPersistenceTest]'s identical class-level mock for the same reason.
+     */
+    private suspend fun withMockedBase64(block: suspend () -> Unit) {
+        mockkStatic(Base64::class)
+        try {
+            every { Base64.encodeToString(any(), any()) } answers {
+                java.util.Base64.getEncoder().encodeToString(firstArg<ByteArray>())
+            }
+            every { Base64.decode(any<String>(), any()) } answers {
+                java.util.Base64.getDecoder().decode(firstArg<String>())
+            }
+            block()
+        } finally {
+            unmockkStatic(Base64::class)
+        }
+    }
+
+    @Test
+    fun `A a push-only reply with no changes and no snapshot still only acks -- GC does not run`() =
+        runTest {
+            withMockedBase64 {
+                runBlocking {
+                    val (client, mockYorkieService, document) = newPushAckClient(
+                        "push-only-empty-reply-doc",
+                        RealtimePushOnly,
+                    )
+                    document.addAndRemoveOneKey()
+                    assertEquals(1, document.garbageLength)
+
+                    // The reply carries neither changes nor a snapshot, yet its minimum
+                    // version vector would purge the tombstone above if it were applied.
+                    mockYorkieService.ackOnlyPushPullKeys += document.getKey()
+                    mockYorkieService.ackOnlyVersionVectorOverride[document.getKey()] =
+                        VersionVector(mapOf(TEST_ACTOR_ID to Long.MAX_VALUE))
+
+                    // Let the sync loop tick while the pending edit keeps needRealTimeSync()
+                    // true for this RealtimePushOnly attachment.
+                    delay(500)
+
+                    assertEquals(
+                        1,
+                        document.garbageLength,
+                        "a push-only reply must never run GC, no matter what it carries",
+                    )
+
+                    client.detachDocument(document).await()
+                    client.deactivateAsync().await()
+                    client.close()
+                }
+            }
+        }
+
+    @Test
+    fun `B explicit sync on a SyncOff document drops an empty reply the same way`() = runTest {
+        withMockedBase64 {
+            val (client, mockYorkieService, document) = newPushAckClient(
+                "syncoff-explicit-sync-doc",
+                Client.SyncMode.RealtimeSyncOff,
+            )
+            document.addAndRemoveOneKey()
+            assertEquals(1, document.garbageLength)
+
+            mockYorkieService.ackOnlyPushPullKeys += document.getKey()
+            mockYorkieService.ackOnlyVersionVectorOverride[document.getKey()] =
+                VersionVector(mapOf(TEST_ACTOR_ID to Long.MAX_VALUE))
+
+            // syncAsync(document) always sends PushPull (never push-only) regardless of the
+            // attachment's own mode -- it is the CURRENT-mode clause that must drop this
+            // reply here, not the request-mode one `A` exercises.
+            client.syncAsync(document).await()
+
+            assertEquals(
+                1,
+                document.garbageLength,
+                "a SyncOff document's reply must still be ack-only even over an explicit sync",
+            )
+
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
+    @Test
+    fun `C a mode change mid-flight is judged by the mode the request was sent in`() = runTest {
+        withMockedBase64 {
+            runBlocking {
+                val (client, mockYorkieService, document) = newPushAckClient(
+                    "mode-change-in-flight-doc",
+                    RealtimePushOnly,
+                )
+                document.addAndRemoveOneKey()
+                assertEquals(1, document.garbageLength)
+
+                mockYorkieService.ackOnlyPushPullKeys += document.getKey()
+                mockYorkieService.ackOnlyVersionVectorOverride[document.getKey()] =
+                    VersionVector(mapOf(TEST_ACTOR_ID to Long.MAX_VALUE))
+                // Flips the ATTACHMENT to Realtime while the push-only request above is
+                // still in flight -- fires once, from inside the mocked RPC.
+                mockYorkieService.inFlightPushPullHook = {
+                    client.changeSyncMode(document, Client.SyncMode.Realtime)
+                }
+
+                delay(500)
+
+                assertEquals(
+                    1,
+                    document.garbageLength,
+                    "the request's own PushOnly mode must still drop the reply, even though " +
+                        "the attachment is Realtime by the time the response lands",
+                )
+
+                client.detachDocument(document).await()
+                client.deactivateAsync().await()
+                client.close()
+            }
+        }
+    }
+
+    @Test
+    fun `D control -- a Realtime document still runs GC on an empty PushPull reply`() = runTest {
+        withMockedBase64 {
+            val (client, mockYorkieService, document) = newPushAckClient(
+                "control-realtime-empty-reply-doc",
+                Client.SyncMode.Realtime,
+            )
+            document.addAndRemoveOneKey()
+            assertEquals(1, document.garbageLength)
+
+            mockYorkieService.ackOnlyPushPullKeys += document.getKey()
+            mockYorkieService.ackOnlyVersionVectorOverride[document.getKey()] =
+                VersionVector(mapOf(TEST_ACTOR_ID to Long.MAX_VALUE))
+
+            client.syncAsync(document).await()
+
+            assertEquals(
+                0,
+                document.garbageLength,
+                "an ordinary PushPull reply must still run GC exactly as before this fix",
+            )
+
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
     private fun assertIsTestActorID(clientId: String) {
         assertEquals(TEST_ACTOR_ID, clientId)
     }

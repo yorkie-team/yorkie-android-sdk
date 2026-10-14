@@ -793,6 +793,47 @@ public class Client(
     }
 
     /**
+     * Chains [decide] onto [key]'s persist queue, exactly the atomic shape [enqueueWrite] uses
+     * for a store write, EXCEPT it runs on [scope]'s own (client) dispatcher instead of
+     * [Dispatchers.IO]: [decide] re-reads [PersistState] and [Document] state that the rest of
+     * this file's persist machinery ([append], [persistAfterSync], [persistBaseOrPoison]) assumes
+     * is confined to the client dispatcher, never [Dispatchers.IO]. The job this installs joins
+     * [ConcurrentHashMap.compute]'s own `previous` parameter -- the value already occupying
+     * [persistQueues]`[key]` at the moment this is called, captured atomically before the new job
+     * starts running -- never the job it is itself installing, so there is no self-join deadlock.
+     *
+     * That job keeps occupying [persistQueues]`[key]` for its entire body, including the suspend
+     * call into [decide]: so a [drainPersist]/[drainAllPersists] call (and so [detachInternal]/
+     * [close]) that lands while [decide] is still running sees an ordinary pending write and waits
+     * for it, the same as any [enqueueWrite] job. Whatever [decide] itself chains -- through
+     * [persistBaseOrPoison] or [saveMetaToStore], both of which call [enqueueWrite] -- replaces
+     * this job as the queue's new tail before this job's own body returns, so a drain that joins
+     * this job and rechecks the map keeps going and joins that write too, with no gap where the
+     * decision is "between" queue entries and invisible to a drain. [NonCancellable] for the same
+     * reason [enqueueWrite]'s own job is: this can be sitting on `previous?.join()` behind an
+     * arbitrarily slow earlier write when [close] cancels [scope], and letting that cancel
+     * [decide] here would silently drop the post-sync persist decision instead of letting it run
+     * to completion independently of the bounded drain -- the same contract [enqueueWrite]'s write
+     * already has.
+     */
+    private fun enqueueDecision(key: String, decide: suspend () -> Unit): Job {
+        val job = checkNotNull(
+            persistQueues.compute(key) { _, previous ->
+                scope.launch {
+                    withContext(NonCancellable) {
+                        previous?.join()
+                        runCatching { decide() }.onFailure {
+                            logError("PS", "persist decision for $key failed", it)
+                        }
+                    }
+                }
+            },
+        )
+        job.invokeOnCompletion { persistQueues.remove(key, job) }
+        return job
+    }
+
+    /**
      * The post-sync persist decision, run after [Document.applyChangePack]/
      * [Document.acknowledgePushedChanges] under the document's mutex (JS `client.ts`'s sync-site
      * persist). [movedRoot] is true only when the response's remote state (changes or a snapshot)
@@ -804,29 +845,33 @@ public class Client(
      * client with nothing left to edit. A healthy pure ack (including a dropped pack's ack)
      * writes meta only, leaving the snapshot and the log untouched.
      *
-     * Three Kotlin-forced guards keep meta from ever leading the log. JS persists synchronously inside the event publish,
-     * so by the time its sync site runs every local change is already in the log; Android's
-     * the triggered append is asynchronous. A base write needs none of them — it embeds the whole pending
-     * queue. Before a meta-only write, first, the catch-up [append] runs — cheap and idempotent
-     * ([DocStore.appendChange] is an upsert, and the watermark skips what is carried) — closing
-     * the window where the triggered append has not run yet for a change still pending. Second,
-     * [persistQueues]`[key]?.join()` awaits that catch-up append's own store write (JS `decide`
-     * deferral): [append] chains its write via [enqueueWrite] and returns before the write
-     * lands, so without this join a write that is about to fail (and poison the key) can still be
-     * in flight when the re-sample below runs — bounded to 5s, the same bound [drainPersist]
-     * gives a drain, NOT by the store's own timeout: [DocStore] carries no such contract, and an
-     * app-supplied store that simply never completes a write would otherwise wedge every later
-     * sync/detach of this document under [resource]'s mutex forever. A join that does not land in
-     * time poisons the key instead of re-sampling an outcome it cannot know — the write may still
-     * be in flight, so the state is treated as unknown rather than caught up, routing the NEXT
-     * write through this function's own `state.poisoned` branch above (or [append]'s matching
-     * guard) to repair with a fresh base. Kotlin awaits this under the document
-     * mutex rather than JS's promise `.then`. Third, a change the server acked that the log never
-     * received (the triggered append's dispatcher hop resumed after [Document.applyChangePack]
-     * had already dropped it from the pending queue, so no later append can ever see it) shows as
-     * a checkpoint ahead of the watermark; that takes the snapshot-repair branch, whose base
-     * embeds the acked content, instead of a meta-only write that would claim a position the log
-     * cannot back.
+     * The pure-ack branch cannot decide from what [append] leaves synchronously behind: [append]
+     * chains its write via [enqueueWrite] and returns before the write lands (JS persists
+     * synchronously inside the event publish, so by the time its sync site runs every local
+     * change is already in the log; Android's triggered append is asynchronous), so a write that
+     * is about to fail -- and poison the key -- can still be in flight right after [append]
+     * returns. Deciding anyway would read a healthy, un-poisoned state and queue the cheap
+     * meta-only write over the hole that failure is about to leave (JS `decide` deferral,
+     * `client.ts`: `queued.then(decide, decide)`).
+     *
+     * So the decision itself -- re-sampling [PersistState] and choosing the repair or meta-only
+     * branch -- is deferred via [enqueueDecision] to run once the queue [append] just chained onto
+     * has settled, INSTEAD OF being awaited here under [resource]'s mutex: this function used to
+     * block on `persistQueues[key]?.join()`, bounded to 5s so an app-supplied store that never
+     * completes a write could not wedge every sync of this document (and every other attachment
+     * queued behind it in the same sync pass) forever. [enqueueDecision] needs no such bound --
+     * nothing is waiting under a mutex for it any more, so it can simply wait for the queue to
+     * settle for however long that takes; [drainPersist]/[drainAllPersists] still give a caller a
+     * BOUNDED chance to observe it finishing, exactly as they already do for a slow store write.
+     *
+     * Deferred, the decision re-reads everything at the moment it actually runs rather than the
+     * moment [persistAfterSync] returned: [document] may have been removed or detached by then
+     * (checked first, mirroring JS `decide`'s own `doc.getStatus() === Removed` guard -- a
+     * removal learned from this very sync, or a concurrent detach/remove, must not resurrect an
+     * envelope or write stale meta over an entry a removal already cleared), and a LATER sync's
+     * own deferred decision for the same key chains strictly after this one on the same queue (the
+     * mechanism [enqueueDecision] documents), so it only ever re-samples a watermark this decision
+     * already finished advancing -- never races it to write stale meta over a newer base.
      */
     private suspend fun persistAfterSync(
         attachment: Attachment<out Attachable>,
@@ -840,25 +885,17 @@ public class Client(
             return
         }
         append(attachment)
-        // `withTimeoutOrNull`'s own null means "timed out" -- but
-        // `persistQueues[key]?.join()` ALSO evaluates to null whenever there is
-        // no job to join (the common case: nothing left in flight), which is
-        // not a timeout at all. `true` is a non-null marker the join itself
-        // never produces, so it disambiguates the two.
-        val caughtUpInTime = withTimeoutOrNull(5_000) {
-            persistQueues[key]?.join()
-            true
-        } != null
-        if (!caughtUpInTime) {
-            persistStates[key]?.poisoned = true
-            return
-        }
-        val caughtUp = persistStates[key] ?: return
-        val ackedPastLog = document.checkPoint.clientSeq > caughtUp.lastAppendedClientSeq
-        if (caughtUp.poisoned || ackedPastLog) {
-            persistBaseOrPoison(key, document)
-        } else {
-            saveMetaToStore(key, document.metaToBytes())
+        enqueueDecision(key) {
+            if (document.getStatus() == ResourceStatus.Removed) {
+                return@enqueueDecision
+            }
+            val caughtUp = persistStates[key] ?: return@enqueueDecision
+            val ackedPastLog = document.checkPoint.clientSeq > caughtUp.lastAppendedClientSeq
+            if (caughtUp.poisoned || ackedPastLog) {
+                persistBaseOrPoison(key, document)
+            } else {
+                saveMetaToStore(key, document.metaToBytes())
+            }
         }
     }
 

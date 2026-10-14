@@ -40,6 +40,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -2855,6 +2856,183 @@ class ClientPersistenceTest {
 
         client.detachDocument(document).await()
         client.deactivateAsync().await()
+        client.close()
+    }
+
+    /**
+     * Hangs the next [appendChange] call on [gate] until the test completes or fails it --
+     * [DelayedFailingAppendStore] times the hang; this lets a test control the exact instant the
+     * write resolves, to prove the deferred decision in `persistAfterSync` (PR #386 review item
+     * 1) does not need a bound any more: nothing waits under the document mutex for it, so it can
+     * simply wait on this gate for however long the test holds it closed.
+     */
+    private class GatedAppendStore(
+        private val inner: DocStore = MemoryDocStore(),
+    ) : DocStore {
+        val gate = CompletableDeferred<Unit>()
+        var appendAttempts = 0
+        override suspend fun load(docKey: String): StoredDoc? = inner.load(docKey)
+        override suspend fun saveSnapshot(docKey: String, bytes: ByteArray) =
+            inner.saveSnapshot(docKey, bytes)
+
+        override suspend fun appendChange(docKey: String, change: StoredChange) {
+            appendAttempts++
+            if (appendAttempts == 1) {
+                gate.await()
+            }
+            inner.appendChange(docKey, change)
+        }
+
+        override suspend fun saveMeta(docKey: String, bytes: ByteArray) =
+            inner.saveMeta(docKey, bytes)
+
+        override suspend fun remove(docKey: String) = inner.remove(docKey)
+    }
+
+    @Test
+    fun `a hung store write does not block sync or stall a second document's sync`() = runTest {
+        val store = GatedAppendStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+
+        val hungKey = "hung-append-doc"
+        val hungDocument = Document(hungKey)
+        client.attachDocument(hungDocument, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(hungKey)) }
+
+        val secondKey = "second-doc-not-stalled"
+        val secondDocument = Document(secondKey)
+        client.attachDocument(secondDocument, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(secondKey)) }
+
+        hungDocument.updateAsync { root, _ -> root["k"] = 1 }.await()
+        // The onLocalChange-triggered append for this edit is now hanging on `store.gate`.
+        service.ackOnlyPushPullKeys += hungKey
+
+        val start = System.currentTimeMillis()
+        // Syncs every attachment in one call, in attach order -- the sync loop's own shape
+        // (`runSyncLoop`'s `for` over `attachments`) -- so `secondDocument` is the proof: the old
+        // bounded join ran under `hungDocument`'s own mutex, but the attachments were still
+        // synced one after another in this same call, so a slow/hung write for the first one
+        // delayed every attachment queued behind it.
+        val result = client.syncAsync().await()
+        val elapsedMs = System.currentTimeMillis() - start
+        assertTrue(result.isSuccess, "sync failed: ${result.exceptionOrNull()}")
+        assertTrue(
+            elapsedMs < 2_000,
+            "sync must return promptly instead of waiting on the hung write (and so must not " +
+                "stall a later attachment behind it): ${elapsedMs}ms",
+        )
+
+        store.gate.complete(Unit)
+        client.detachDocument(hungDocument).await()
+        client.detachDocument(secondDocument).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `the deferred decision repairs with a snapshot once the hung write finally fails`() =
+        runTest {
+            val store = GatedAppendStore()
+            val service = MockYorkieService()
+            val client = newClient(service, docStore = store)
+            client.activateAsync().await()
+            val docKey = "hung-append-fails-doc"
+            val document = Document(docKey)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+            awaitCondition { store.load(storeKeyFor(docKey)) }
+
+            document.updateAsync { root, _ -> root["k"] = 1 }.await()
+            service.ackOnlyPushPullKeys += docKey
+            client.syncAsync(document).await()
+
+            // The deferred decision is still waiting on the hung append; failing it now proves
+            // the decision re-samples `poisoned` AFTER the wait, not from what `append()` left
+            // synchronously behind.
+            store.gate.completeExceptionally(java.io.IOException("append failed"))
+
+            val stored = awaitCondition(timeoutMs = 3_000) {
+                store.load(storeKeyFor(docKey))?.takeIf {
+                    Document.fromBytes(docKey, it.snapshot).toJson().contains("\"k\":1")
+                }
+            }
+            assertTrue(
+                stored.changes.isEmpty(),
+                "the repair must fold the failed change into a fresh snapshot",
+            )
+            assertEquals(null, stored.meta, "never a meta header claiming an ack past the hole")
+
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+
+    @Test
+    fun `the deferred decision writes meta only once the hung write finally succeeds`() = runTest {
+        val store = GatedAppendStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "hung-append-succeeds-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        val baseSnapshot = awaitCondition { store.load(storeKeyFor(docKey))?.snapshot }
+
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+
+        store.gate.complete(Unit)
+
+        val stored = awaitCondition(timeoutMs = 3_000) {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        assertTrue(
+            stored.snapshot.contentEquals(baseSnapshot),
+            "a healthy log takes the cheap header write, not a fresh base",
+        )
+        assertEquals(1, stored.changes.size)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `a document removed before the deferred decision runs writes nothing`() = runTest {
+        val store = GatedAppendStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "removed-before-decision-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+
+        // The deferred decision is still waiting on the hung append. Mark the document Removed
+        // before releasing it, as a sync's own Removed branch or a concurrent remove/detach
+        // would -- the decision's `document.getStatus() == Removed` guard must skip its write.
+        document.applyStatus(ResourceStatus.Removed)
+        store.gate.complete(Unit)
+
+        awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+        // The append itself still lands (it is not what the removed-guard skips); give the
+        // decision a real window to run, if it were going to, before checking it did not.
+        withContext(Dispatchers.Default) { delay(300) }
+        assertEquals(
+            null,
+            store.load(storeKeyFor(docKey))?.meta,
+            "a document removed before the deferred decision ran must not get a meta write",
+        )
+
         client.close()
     }
 

@@ -3305,9 +3305,16 @@ internal data class CrdtTree(
         var resultNode = node
         val leftNode = if (node.isText) {
             resultNode = requireNotNull(node.parent)
-            node.parent?.takeIf {
-                it.children.firstOrNull() == node && offset == 0
-            } ?: node
+            // A text node reached at offset 0 anchors on its previous LIVE
+            // sibling, not only when it happens to be the first child: a
+            // text following an element (e.g. `<p><b>hello</b> world</p>`)
+            // is offset 0 of ITS OWN node but is not the first child of
+            // `<p>`, so the prior `it.children.firstOrNull() == node` check
+            // missed it and fell through to anchoring on the text itself,
+            // which resolves one position too late (after the whole text,
+            // not after the preceding element). Port yorkie-js-sdk
+            // `CRDTTreePos.fromTreePos` (8ad8ce77, #1482).
+            if (offset == 0) node.prevSibling ?: resultNode else node
         } else {
             if (offset == 0) node else node.children[offset - 1]
         }

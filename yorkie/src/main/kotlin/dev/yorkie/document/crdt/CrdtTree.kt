@@ -824,6 +824,29 @@ internal data class CrdtTree(
         // Treat missing or empty VersionVector as local operation.
         val isLocal = versionVector == null || versionVector.size() == 0
 
+        // `enclosed` reports whether this delete covers a node whole, start
+        // and end tokens both. Collected lazily, once per edit, on first use
+        // by the split-sibling cascade below -- most deletes never ask. Port
+        // yorkie-js-sdk 6f690a14 (#1456).
+        var enclosedNodes: Set<CrdtTreeNode>? = null
+        val enclosed: (CrdtTreeNode) -> Boolean = { candidate ->
+            val found = enclosedNodes ?: mutableSetOf<CrdtTreeNode>().also { collected ->
+                traverseInPosRange(
+                    fromParent = collectFromParent,
+                    fromLeft = collectFromLeft,
+                    toParent = toParent,
+                    toLeft = toLeft,
+                    includeRemoved = true,
+                ) { (token, tokenType), ended ->
+                    if (tokenType == TokenType.Start && ended) {
+                        collected.add(token)
+                    }
+                }
+                enclosedNodes = collected
+            }
+            candidate in found
+        }
+
         traverseInPosRange(
             fromParent = collectFromParent,
             fromLeft = collectFromLeft,
@@ -906,13 +929,24 @@ internal data class CrdtTree(
                             // InsNextWalker. Unguarded, this also grows
                             // nodesToBeRemoved without bound.
                             if (!cascadeWalker.visit(next)) break
-                            val splitCreationKnown = if (isLocal) {
-                                true
+                            if (ticketKnown(versionVector, next.createdAt)) {
+                                // A known sibling the editor saw removed --
+                                // merged back into `node`, say -- or enclosed
+                                // whole by this delete lets the walk pass:
+                                // what lies past it was then inside `node` or
+                                // inside the deleted range for the editor
+                                // too. Any other known sibling ends the
+                                // cascade here instead of tombstoning a
+                                // concurrent product the editor's model still
+                                // holds live content in (e.g. a split at
+                                // offset 0 whose empty left piece this delete
+                                // removes, next to a concurrent split product
+                                // holding the moved text, #1408). Port
+                                // yorkie-js-sdk 6f690a14 (#1456).
+                                val seenGone = next.removedAt
+                                    ?.let { ticketKnown(versionVector, it) } == true
+                                if (!seenGone && !enclosed(next)) break
                             } else {
-                                val vv = versionVector?.get(next.createdAt.actorID)
-                                vv != null && vv >= next.createdAt.lamport
-                            }
-                            if (!splitCreationKnown) {
                                 // Cascade through the full subtree, not just
                                 // immediate children. PREORDER, not JS's
                                 // postorder traverseAll: nodesToBeRemoved order

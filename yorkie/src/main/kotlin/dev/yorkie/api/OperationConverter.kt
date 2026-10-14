@@ -155,6 +155,16 @@ internal fun List<PBOperation>.toOperations(): List<Operation> {
                     splitLevel = it.treeEdit.splitLevel,
                     // Empty for a change written before this field existed;
                     // issueTimeTicket falls back to the reconstruction then.
+                    //
+                    // This is not a trust boundary, and no check here could
+                    // make it one. The only reference a decoder has for
+                    // these tickets is executedAt, off the same wire, so a
+                    // shape check would read one of the sender's fields
+                    // against another; and the content node ids and
+                    // restore-span ids beside them (below) name nodes just
+                    // as freely. What bounds a hostile id is at the point of
+                    // use -- CrdtTree.dropDuplicateContents and its node
+                    // registration (port yorkie-js-sdk `b173c093`, #1426).
                     splitTickets = it.treeEdit.splitTicketsList.map { ticket ->
                         ticket.toTimeTicket()
                     },

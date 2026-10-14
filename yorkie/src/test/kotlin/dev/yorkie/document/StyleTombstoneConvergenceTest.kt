@@ -602,36 +602,28 @@ class StyleTombstoneConvergenceTest {
     }
 
     /**
-     * Pins the ONLY way a tree style reaches an already-removed node: the
-     * split-sibling propagation loop ([CrdtTree.style]'s `insNextID` walk),
-     * not the main `canStyle` traversal. `CrdtTree.style`/`removeStyle` both
-     * call [IndexTree.tokensBetween] with its default `includeRemoved =
-     * false` ([CrdtTree.traverseInPosRange]), so the main loop's callback
-     * (`CrdtTree.kt:307-308`, where [CrdtTreeNode.canStyle] and its
-     * `!node.isRemoved` change-gate sibling at `:342` are evaluated) is
-     * NEVER invoked with a removed node -- `node.isRemoved` is always false
-     * there. That makes a mutant which has `canStyle` re-read `removedAt`,
-     * and a mutant which drops the `!node.isRemoved` sibling gate at `:342`,
-     * EQUIVALENT MUTANTS for tree nodes: no reachable call ever exercises
-     * either branch's removed-node case, so no test -- adversarial or
-     * otherwise -- can distinguish them from the fix. (Confirmed
-     * empirically, not just by reading: reverting either hunk leaves every
-     * test in this file, plus this one, green.) This KDoc states the
-     * equivalence directly, since `tokensBetween(..., includeRemoved =
-     * false)` never visits a removed node outside the split-sibling loop
-     * below.
-     *
-     * The split-sibling loop itself (`CrdtTree.kt:371-402`) is a genuinely
-     * different, UNGATED path: it calls `next.setAttributes(...)` and emits
-     * `next`'s own [OperationInfo.TreeStyleOpInfo] with no live/removed
-     * check on `next` at all, so a style decided before a concurrent split
-     * lands on -- and reports a change for -- a removed split sibling
-     * unconditionally. That is pinned below (the tombstone carries the
-     * attribute) as real, current behaviour; it is a separate, disclosed,
-     * not-fixed-here gap from the `:342` gate's removed-node case.
+     * Pins the reached split sibling's report gate after `styleTargets`
+     * unified the reached-set resolution (JS SDK `tree.ts`, b69169c0,
+     * #1404). Before that port, `CrdtTree.style`'s inline `insNextID`
+     * split-sibling propagation loop (then `CrdtTree.kt:371-402`) emitted
+     * its own [OperationInfo.TreeStyleOpInfo] for a reached sibling with NO
+     * live/removed check at all, while the main `canStyle` traversal loop
+     * gated every OTHER report on `!node.isRemoved` -- an asymmetry this
+     * test used to pin as a disclosed, not-fixed-here gap (2 reports: the
+     * live left half, PLUS the removed right half the split-sibling loop
+     * reached). `styleTargets` resolves the whole reached set -- the main
+     * traversal's nodes AND the [unknownSplitSiblings] it carries the style
+     * onto -- once, and [CrdtTree.style] then walks that ONE list through a
+     * SINGLE `!node.isRemoved` change-report gate (`CrdtTree.kt`, `style`),
+     * closing the asymmetry: a split sibling the change reached now reports
+     * a change only while it is still live, the same rule as any other
+     * reached node. The attribute write itself
+     * ([CrdtTreeNode.setAttributes]) is unconditional for every target
+     * regardless of liveness -- same as before -- so the tombstone still
+     * carries the attribute; only the CHANGE EVENT for it is now gated.
      */
     @Test
-    fun `remote tree style on a removed split sibling lands on the tombstone`() = runTest {
+    fun `remote tree style on a removed split sibling writes but reports no change`() = runTest {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
@@ -667,10 +659,12 @@ class StyleTombstoneConvergenceTest {
             .flatMap { it.changeInfo.operations }
             .filterIsInstance<OperationInfo.TreeStyleOpInfo>()
         assertEquals(
-            2,
+            1,
             styleInfos.size,
-            "the live left half's main-loop report, plus the split-sibling loop's own " +
-                "report for the tombstone",
+            "only the live left half's report -- the removed right half the split-sibling " +
+                "propagation reaches is gated out by the shared !node.isRemoved check " +
+                "styleTargets' unification now applies to every reached node alike " +
+                "(b69169c0, #1404; was 2 before this port)",
         )
 
         // The split leaves the doc with two "p" elements: the live left
@@ -681,20 +675,91 @@ class StyleTombstoneConvergenceTest {
         val rightHalf = paragraphs[1]
         assertTrue(rightHalf.isRemoved, "sanity: the split's right half is a tombstone")
 
-        // Exactly one reported TreeStyleOpInfo must be the split-sibling
-        // loop's OWN entry for `rightHalf` -- toPath [1] is rightHalf's
-        // position directly under the tree root -- carrying the "b"
-        // attribute this style op wrote, not just any non-empty report.
+        // No reported TreeStyleOpInfo is the removed right half's own
+        // entry -- toPath [1] is rightHalf's position directly under
+        // the tree root.
         val tombstoneStyleInfo = styleInfos.singleOrNull { it.toPath == listOf(1) }
         assertEquals(
-            mapOf("b" to "L".repeat(16)),
-            tombstoneStyleInfo?.attributes,
-            "the split-sibling propagation loop must report its own change for the tombstone",
+            null,
+            tombstoneStyleInfo,
+            "a reached node that is removed reports no change, the split sibling included",
         )
 
         assertTrue(
             rightHalf.getAttrs().has("b"),
-            "the split-sibling propagation loop must still reach the tombstone",
+            "the attribute write still reaches the tombstone even though no change is reported",
         )
+    }
+
+    /**
+     * Port of Go `TestRecreateCarriesAttributeTombstones` (yorkie-js-sdk
+     * `dbff8892`, #1405). Restoring a PURGED tree node recreates it from the
+     * span, whose attributes are a deep copy of the original RHT -- tombstones
+     * included, because a recreated node has to resolve a concurrent style
+     * the way a replica that never lost it would. Each copied tombstone is a
+     * fresh piece of garbage no removal path produced, and `dataSize`
+     * excludes it, so without a registration it sits in the RHT forever:
+     * uncounted and unpurgeable. Red at `ea06769d`: `recreateFromSpan`'s
+     * `attach()` never booked `node.gcPairs` before this port.
+     */
+    @Test
+    fun `books the attribute tombstones a recreated tree node carries`() = runTest {
+        val d = Document("test-doc")
+        d.setActor(actor1)
+        d.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "ab" } }
+                },
+            )
+        }.await()
+        // Style then undo it -> the reverse is a removeStyle, which
+        // tombstones the attribute on <p>.
+        d.updateAsync { root, _ ->
+            root.getAs<JsonTree>("t").style(0, 4, mapOf("bbbb" to "vvvv"))
+        }.await()
+        d.history.undoAsync().await()
+
+        // Remove the <p>, purge it, then undo the removal so it is RECREATED.
+        d.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(0, 4) }.await()
+        d.garbageCollect(maxVectorOf(listOf(actor1)))
+        d.history.undoAsync().await()
+        assertEquals("<doc><p>ab</p></doc>", d.getRoot().getAs<JsonTree>("t").toXml())
+
+        // Matches the rebuild, AND is collectable, not just counted --
+        // assertLedgerExact runs garbageCollect and checks nothing is left.
+        assertLedgerExact(d, "after the recreate", listOf(actor1))
+    }
+
+    /**
+     * The text half of the same hole, already at parity: `RgaTreeSplit.
+     * restore` recreates a purged piece through `TextValue.substring`, which
+     * deep-copies the RHT with its tombstones just as a tree split does, so
+     * the copies already get the same booking `recreateFromSpan`'s `attach()`
+     * needed adding above. A red run is not constructible: this case is already green
+     * at `ea06769d` -- pin only, no production change for this half.
+     */
+    @Test
+    fun `pins that a recreated text piece already books its attribute tombstones`() = runTest {
+        val d = Document("test-doc")
+        d.setActor(actor1)
+        d.updateAsync { root, _ -> root.setNewText("t").edit(0, 0, "abcd") }.await()
+        // Style then undo it -> the reverse is a removeStyle, which
+        // tombstones the attribute on the piece.
+        d.updateAsync { root, _ ->
+            root.getAs<JsonText>("t").style(0, 4, mapOf("bbbb" to "vvvv"))
+        }.await()
+        d.history.undoAsync().await()
+
+        // Remove the text, purge it, then undo the removal so it is RECREATED.
+        d.updateAsync { root, _ -> root.getAs<JsonText>("t").edit(0, 4, "") }.await()
+        d.garbageCollect(maxVectorOf(listOf(actor1)))
+        d.history.undoAsync().await()
+
+        assertEquals("""[{"val":"abcd"}]""", crdtText(d).toJson())
+        assertEquals(listOf("\"abcd\" [bbbb=vvvv*]"), nodeAttrs(d))
+
+        assertLedgerExact(d, "after the recreate", listOf(actor1))
     }
 }

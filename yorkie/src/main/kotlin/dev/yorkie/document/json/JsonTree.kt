@@ -44,9 +44,10 @@ public class JsonTree internal constructor(
      * produced by [CrdtTree.edit]'s own split step. Mirrors JS
      * `document/json/tree.ts` `splitByPath` (v0.7.23).
      *
-     * @throws YorkieException with ErrInvalidArgument if [path] is empty or
+     * @throws YorkieException with ErrInvalidArgument if [path] is empty,
      *   resolves to the root node (a text node's element parent with no
-     *   parent of its own, or an element node with no parent).
+     *   parent of its own, or an element node with no parent), or resolves
+     *   to an index inside a UTF-16 surrogate pair.
      */
     public fun splitByPath(path: List<Int>) {
         if (path.isEmpty()) {
@@ -78,7 +79,10 @@ public class JsonTree internal constructor(
      * children. Mirrors JS `document/json/tree.ts` `mergeByPath` (v0.7.23).
      *
      * @throws YorkieException if [path] is empty, resolves to a text node,
-     *   or resolves to the first child (no left sibling).
+     *   resolves to the first child (no left sibling), or the computed
+     *   merge boundary resolves to an index inside a UTF-16 surrogate pair
+     *   (the boundary this derives from [path] goes through the checked
+     *   `CrdtTree.pathToPos`, same as [splitByPath]).
      */
     public fun mergeByPath(path: List<Int>) {
         if (path.isEmpty()) {
@@ -118,6 +122,9 @@ public class JsonTree internal constructor(
 
     /**
      * Sets the [attributes] to the element at the given [path].
+     *
+     * @throws YorkieException with ErrInvalidArgument if [path] resolves to
+     *   an index inside a UTF-16 surrogate pair.
      */
     public fun styleByPath(path: List<Int>, attributes: Map<String, String>) {
         require(path.isNotEmpty()) {
@@ -131,6 +138,12 @@ public class JsonTree internal constructor(
     /**
      * Sets the [attributes] to the elements in the path range
      * between [fromPath] and [toPath].
+     *
+     * @throws IllegalArgumentException if [fromPath] is ordered after
+     * [toPath] (JS SDK throws `YorkieError` for the same backwards
+     * range instead).
+     * @throws YorkieException with ErrInvalidArgument if [fromPath] or
+     *   [toPath] resolves to an index inside a UTF-16 surrogate pair.
      */
     public fun styleByPath(
         fromPath: List<Int>,
@@ -143,6 +156,14 @@ public class JsonTree internal constructor(
         require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
             "path should not be empty"
         }
+        // Same contract as the index form: a range given backwards is
+        // a caller error, not an empty range. Mirrors JS SDK
+        // `document/json/tree.ts` `styleByPath` (b69169c0, #1404) -- `require`
+        // (IllegalArgumentException), not YorkieException, to match every
+        // neighboring check in this file.
+        require(comparePath(fromPath, toPath) <= 0) {
+            "from should be less than or equal to to"
+        }
 
         val fromPos = target.pathToPos(fromPath)
         val toPos = target.pathToPos(toPath)
@@ -151,6 +172,9 @@ public class JsonTree internal constructor(
 
     /**
      * Sets the [attributes] to the elements of the given range.
+     *
+     * @throws YorkieException with ErrInvalidArgument if [fromIndex] or
+     *   [toIndex] splits a UTF-16 surrogate pair.
      */
     public fun style(
         fromIndex: Int,
@@ -189,6 +213,9 @@ public class JsonTree internal constructor(
     /**
      * Removes the attributes in [attributesToRemove] from the elements
      * in the given index range.
+     *
+     * @throws YorkieException with ErrInvalidArgument if [fromIndex] or
+     *   [toIndex] splits a UTF-16 surrogate pair.
      */
     public fun removeStyle(
         fromIndex: Int,
@@ -207,6 +234,12 @@ public class JsonTree internal constructor(
     /**
      * Removes the attributes in [attributesToRemove] from the elements
      * in the path range between [fromPath] and [toPath].
+     *
+     * @throws IllegalArgumentException if [fromPath] is ordered after
+     * [toPath] (JS SDK throws `YorkieError` for the same backwards
+     * range instead).
+     * @throws YorkieException with ErrInvalidArgument if [fromPath] or
+     *   [toPath] resolves to an index inside a UTF-16 surrogate pair.
      */
     public fun removeStyleByPath(
         fromPath: List<Int>,
@@ -218,6 +251,12 @@ public class JsonTree internal constructor(
         }
         require(fromPath.isNotEmpty() && toPath.isNotEmpty()) {
             "path should not be empty"
+        }
+        // Same contract as the index form: a range given backwards is
+        // a caller error, not an empty range. Mirrors JS SDK
+        // `document/json/tree.ts` `removeStyleByPath` (b69169c0, #1404).
+        require(comparePath(fromPath, toPath) <= 0) {
+            "from should be less than or equal to to"
         }
 
         val fromPos = target.pathToPos(fromPath)
@@ -254,7 +293,8 @@ public class JsonTree internal constructor(
      *
      * @throws YorkieException with ErrInvalidArgument if an edit boundary
      * resolves to an out-of-range text split offset (a document whose
-     * history carries a duplicate tree node ID).
+     * history carries a duplicate tree node ID), splits a UTF-16 surrogate
+     * pair, or [contents] holds a lone surrogate half.
      */
     public fun editByPath(
         fromPath: List<Int>,
@@ -279,7 +319,8 @@ public class JsonTree internal constructor(
      *
      * @throws YorkieException with ErrInvalidArgument if an edit boundary
      * resolves to an out-of-range text split offset (a document whose
-     * history carries a duplicate tree node ID).
+     * history carries a duplicate tree node ID), splits a UTF-16 surrogate
+     * pair, or [content] holds a lone surrogate half.
      */
     public fun edit(
         fromIndex: Int,
@@ -294,7 +335,8 @@ public class JsonTree internal constructor(
      *
      * @throws YorkieException with ErrInvalidArgument if an edit boundary
      * resolves to an out-of-range text split offset (a document whose
-     * history carries a duplicate tree node ID).
+     * history carries a duplicate tree node ID), splits a UTF-16 surrogate
+     * pair, or [contents] holds a lone surrogate half.
      */
     public fun edit(
         fromIndex: Int,
@@ -391,7 +433,14 @@ public class JsonTree internal constructor(
     }
 
     /**
-     * Ensures that a text node has a non-empty string value.
+     * Ensures that a text node has a non-empty string value that does not
+     * carry a lone half of a UTF-16 surrogate pair. [CrdtTree.findPos]'s
+     * check refuses an index that would SPLIT a pair; this is the other
+     * half of the same contract, since a stored lone half pairs with
+     * whatever code unit it is kept next to, turning the index at that seam
+     * into one the index check would refuse for as long as the text lives.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447) `validateTextNode`.
      */
     private fun validateTextNodes(nodes: Array<out TreeNode>) {
         require(
@@ -399,6 +448,7 @@ public class JsonTree internal constructor(
                 it is TextNode && it.value.isNotEmpty()
             },
         )
+        nodes.forEach { ensureNoLoneSurrogate((it as TextNode).value) }
     }
 
     /**
@@ -499,6 +549,17 @@ public class JsonTree internal constructor(
 
             when (treeNode) {
                 is TextNode -> {
+                    // Mirrors the JS SDK's `validateTextNode` call in its own
+                    // `buildDescendants` (yorkie-js-sdk `6932da6a`, #1447): an
+                    // initial text node reaches the tree through this same
+                    // path `setNewTree` takes, so it needs the same lone-
+                    // surrogate guard every other text-content entry point
+                    // already has (`JsonTree.edit`'s `validateTextNodes`,
+                    // `CrdtText.createRange`). JS also rejects an empty
+                    // initial text node here; Android's `buildDescendants`
+                    // does not enforce that separately and this fix leaves
+                    // that pre-existing divergence alone.
+                    ensureNoLoneSurrogate(treeNode.value)
                     val textNode = CrdtTreeText(id, treeNode.value)
                     parent.append(textNode)
                     return
@@ -586,4 +647,16 @@ public class JsonTree internal constructor(
             }
         }
     }
+}
+
+/**
+ * Compares two paths of equal length in document order: negative when [a] is
+ * before [b], positive when after, zero when equal. Mirrors JS SDK
+ * `document/json/tree.ts` `comparePath` (b69169c0, #1404).
+ */
+private fun comparePath(a: List<Int>, b: List<Int>): Int {
+    for (i in a.indices) {
+        if (a[i] != b[i]) return a[i] - b[i]
+    }
+    return 0
 }

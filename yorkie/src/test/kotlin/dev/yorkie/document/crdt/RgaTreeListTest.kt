@@ -189,7 +189,7 @@ class RgaTreeListTest {
         assertEquals(4, list.length)
 
         // when — op2 (lamport 6): move A after D → [B, C, D, A]
-        val dead2 = list.moveAfter(d.createdAt, a.createdAt, tick(6))
+        val dead2 = list.moveAfter(d.createdAt, a.createdAt, tick(6)).deadNode
 
         // then — op2 wins and returns a dead node for the old position
         assertNotNull(dead2)
@@ -197,7 +197,7 @@ class RgaTreeListTest {
         assertEquals("A", valueAt(list, 3))
 
         // when — op1 (lamport 5 < 6): move A after C → loses LWW
-        val dead1 = list.moveAfter(c.createdAt, a.createdAt, tick(5))
+        val dead1 = list.moveAfter(c.createdAt, a.createdAt, tick(5)).deadNode
 
         // then — op1 loses but still creates a bare dead position node; list unchanged
         assertNotNull(dead1)
@@ -240,14 +240,14 @@ class RgaTreeListTest {
         listOf(a, b, c).forEach(list::insert)
 
         // win: move A after C (lamport 5)
-        val winnerDead = list.moveAfter(c.createdAt, a.createdAt, tick(5))
+        val winnerDead = list.moveAfter(c.createdAt, a.createdAt, tick(5)).deadNode
         assertNotNull(winnerDead)
         assertNotNull(winnerDead?.positionRemovedAt)
         assertNull(winnerDead?.elementEntry)
         assertEquals(3, list.length)
 
         // loss: move A again with an older executedAt (lamport 4)
-        val loserDead = list.moveAfter(b.createdAt, a.createdAt, tick(4))
+        val loserDead = list.moveAfter(b.createdAt, a.createdAt, tick(4)).deadNode
         assertNotNull(loserDead)
         assertNotNull(loserDead?.positionRemovedAt)
         assertNull(loserDead?.elementEntry)
@@ -269,7 +269,7 @@ class RgaTreeListTest {
         val a = CrdtPrimitive("A", tick(1))
         val b = CrdtPrimitive("B", tick(2))
         listOf(a, b).forEach(list::insert)
-        val dead = requireNotNull(list.moveAfter(b.createdAt, a.createdAt, tick(3)))
+        val dead = requireNotNull(list.moveAfter(b.createdAt, a.createdAt, tick(3)).deadNode)
 
         // when — purge the dead position node and anchor an insert on A's element key
         list.delete(dead)
@@ -298,8 +298,8 @@ class RgaTreeListTest {
         val b = CrdtPrimitive("B", tick(2))
         listOf(a, b).forEach(list::insert)
 
-        val dead = list.moveAfter(b.createdAt, a.createdAt, tick(3))
-        val duplicate = list.moveAfter(b.createdAt, a.createdAt, tick(3))
+        val dead = list.moveAfter(b.createdAt, a.createdAt, tick(3)).deadNode
+        val duplicate = list.moveAfter(b.createdAt, a.createdAt, tick(3)).deadNode
 
         assertNotNull(dead)
         assertNull(duplicate)
@@ -318,7 +318,7 @@ class RgaTreeListTest {
         list.moveAfter(b.createdAt, a.createdAt, tick(4))
 
         // when — a later move of the same element (executedAt > posMovedAt) wins
-        val dead = list.moveAfter(c.createdAt, a.createdAt, tick(5))
+        val dead = list.moveAfter(c.createdAt, a.createdAt, tick(5)).deadNode
 
         // then — [B, C, A] and the first move's position is returned dead
         assertNotNull(dead)
@@ -333,7 +333,7 @@ class RgaTreeListTest {
         val a = CrdtPrimitive("A", tick(1))
         val b = CrdtPrimitive("B", tick(2))
         listOf(a, b).forEach(list::insert)
-        val dead = requireNotNull(list.moveAfter(b.createdAt, a.createdAt, tick(3)))
+        val dead = requireNotNull(list.moveAfter(b.createdAt, a.createdAt, tick(3)).deadNode)
         assertEquals(3, list.allNodes().size)
 
         list.delete(dead)
@@ -408,7 +408,7 @@ class RgaTreeListTest {
         val live = requireNotNull(list.getByIndex(0))
         assertEquals(TimeTicket.TIME_TICKET_SIZE, live.dataSize.meta)
 
-        val dead = requireNotNull(list.moveAfter(b.createdAt, a.createdAt, tick(3)))
+        val dead = requireNotNull(list.moveAfter(b.createdAt, a.createdAt, tick(3)).deadNode)
         assertEquals(TimeTicket.TIME_TICKET_SIZE * 2, dead.dataSize.meta)
     }
 

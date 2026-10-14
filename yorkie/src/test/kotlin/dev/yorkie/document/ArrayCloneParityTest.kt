@@ -8,6 +8,7 @@ import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
+import dev.yorkie.util.DataSize
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.addDataSizes
 import kotlin.test.assertEquals
@@ -180,21 +181,30 @@ class ArrayCloneParityTest {
     /**
      * A bare position node (no element) holds no content; its size was never
      * counted in `live` in the first place, so a move must book its dead
-     * old-position node to `gc` with `gcOnlySize` and leave `live` exactly
-     * as it was. Before this was wired (`gcOnlySize = deadNode.dataSize` at
-     * the registration in `MoveOperation.execute`/`JsonArray.moveInternal`/
-     * `JsonArray.moveAfterByIndex`), the generic registration path moved the
-     * dead node's own size OUT of live and added an extra time-ticket charge
-     * on top -- self-consistent against a from-scratch rebuild (which hit
-     * the identical unfixed path in `CrdtRoot`'s own snapshot scan), so no
-     * prior ledger-exactness check against a rebuild could see it; only an
-     * absolute before/after comparison can. Mirrors JS SDK e0609c7a's
-     * `move_operation.ts`/`array.ts` (server twin yorkie#2012, `6731bb6c`,
-     * #1368 commit body: "array dead position nodes were debited from live,
-     * on the move path and in the snapshot-load scan").
+     * old-position node to `gc` with `gcOnlySize`, leaving `live` untouched
+     * BY THE DEAD NODE. Before this was wired (`gcOnlySize =
+     * deadNode.dataSize` at the registration in `MoveOperation.execute`/
+     * `JsonArray.moveInternal`/`JsonArray.moveAfterByIndex`), the generic
+     * registration path moved the dead node's own size OUT of live and added
+     * an extra time-ticket charge on top -- self-consistent against a
+     * from-scratch rebuild (which hit the identical unfixed path in
+     * `CrdtRoot`'s own snapshot scan), so no prior ledger-exactness check
+     * against a rebuild could see it; only an absolute before/after
+     * comparison can. Mirrors JS SDK e0609c7a's `move_operation.ts`/
+     * `array.ts` (server twin yorkie#2012, `6731bb6c`, #1368 commit body:
+     * "array dead position nodes were debited from live, on the move path
+     * and in the snapshot-load scan").
+     *
+     * `live` is NOT otherwise untouched, though: separately from the dead
+     * node, the MOVED element's own `movedAt` stamp is one ticket in
+     * `CrdtElement.getMetaUsage`, and this is the element's first move, so
+     * `RgaTreeList.moveAfter`'s `movedDiff` charges that one ticket to live
+     * (#1392, `8fb5a71c` — `CrdtRoot.accMovedElement`; disclosed update to
+     * this assertion, which previously pinned the pre-#1392 under-charge as
+     * "untouched").
      */
     @Test
-    fun `a local move leaves live untouched and books exactly the dead node's size to gc`() =
+    fun `a local move books the dead node's size to gc and the first movedAt stamp to live`() =
         runTest {
             val document = Document("")
             document.updateAsync { root, _ ->
@@ -214,9 +224,9 @@ class ArrayCloneParityTest {
             val after = document.getDocSize()
 
             assertEquals(
-                before.live,
+                addDataSizes(before.live, DataSize(data = 0, meta = TimeTicket.TIME_TICKET_SIZE)),
                 after.live,
-                "a bare position node holds no element; its size must never move through live",
+                "the first movedAt stamp on the moved element is one ticket, charged to live",
             )
             assertEquals(addDataSizes(before.gc, deadNode.dataSize), after.gc)
         }

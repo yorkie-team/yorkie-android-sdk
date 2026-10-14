@@ -48,10 +48,15 @@ import dev.yorkie.document.crdt.RgaTreeSplitPos
 import dev.yorkie.document.crdt.Rht
 import dev.yorkie.document.crdt.RhtNode
 import dev.yorkie.document.crdt.TextValue
+import dev.yorkie.document.crdt.clearTombstones
+import dev.yorkie.document.crdt.dropEngineOnlyLinks
+import dev.yorkie.document.crdt.dropSplitLinksInElement
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.time.TimeTicket.Companion.InitialTimeTicket
 import dev.yorkie.util.IndexTreeNode
+import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 import dev.yorkie.util.traverseAll
 
@@ -247,8 +252,15 @@ internal fun PBCounter.toCrdtCounter(): CrdtCounter {
         }
     }
     val hllBytes = hllRegisters.toByteArray()
-    if (counter.isDedup() && hllBytes.isNotEmpty()) {
-        counter.restoreHll(hllBytes)
+    if (counter.isDedup() && hllBytes.isNotEmpty() && !counter.restoreHll(hllBytes)) {
+        // A rejected payload is logged and dropped rather than thrown on: snapshot
+        // decode has no handler, so throwing would stop this client from opening
+        // the document at all over one peer's malformed counter (ac60f3d9, #1422).
+        logError(
+            "ElementConverter",
+            "discarding malformed HLL registers for counter " +
+                "${counter.createdAt.toTestString()}: ${hllBytes.size} bytes",
+        )
     }
     return counter
 }
@@ -272,6 +284,24 @@ internal fun PBTree.toCrdtTree(): CrdtTree {
     )
 }
 
+/**
+ * Rebuilds the root [CrdtTreeNode] a flat, depth-ordered [PBTreeNode] list
+ * describes, or `null` for an empty list (no node at all -- callers decide
+ * what that means: [toCrdtTreeNodesWhenEdit] rejects it per entry, while an
+ * empty outer edit-content list is a delete-range).
+ *
+ * A node's depth has to name an already-built, non-text parent: any other
+ * depth is a hole the wire bytes should never contain, but a crafted payload
+ * can send regardless. The hole used to resolve through `?: continue`,
+ * silently dropping that node (and, transitively, every one of its own
+ * descendants) from the rebuilt tree rather than failing the decode. Reject
+ * it instead, the way every other malformed field this converter decodes
+ * does. This reader is SHARED by [toCrdtTreeNodesWhenEdit] (operation
+ * content) and [PBTree.toCrdtTree] (snapshot decode) -- a stored snapshot
+ * with a depth hole is rejected too now, not silently trimmed; the server
+ * never writes one, only a crafted/corrupt payload does. Port JS SDK
+ * `converter.ts` `fromTreeNodes` (b69169c0, #1404).
+ */
 internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
     if (isEmpty()) {
         return null
@@ -281,7 +311,13 @@ internal fun List<PBTreeNode>.toCrdtTreeRootNode(): CrdtTreeNode? {
     val depthTable = mutableMapOf<Int, CrdtTreeNode>()
     depthTable[this.last().depth] = nodes.last()
     for (i in size - 2 downTo 0) {
-        val parent = depthTable[this[i].depth - 1] ?: continue
+        val parent = depthTable[this[i].depth - 1]
+        if (parent == null || parent.isText) {
+            throw YorkieException(
+                ErrInvalidArgument,
+                "invalid tree node depth: ${this[i].depth}",
+            )
+        }
         parent.prepend(nodes[i])
         depthTable[this[i].depth] = nodes[i]
     }
@@ -458,8 +494,50 @@ internal fun List<CrdtTreeNode>.toPBTreeNodesWhenEdit(): List<PBTreeNodes> {
     }
 }
 
+/**
+ * Decodes a [TreeEditOperation][dev.yorkie.document.operation.TreeEditOperation]'s
+ * wire content: an empty LIST stays `null` (the operation deletes the range,
+ * no insert), but an entry that decodes to no node -- its own `contentList`
+ * is empty -- throws instead of being silently dropped. Keeping a hole in the
+ * result list would crash every later reader that indexes it; dropping the
+ * entry instead would read a payload the sender wrote as an insert as a
+ * deletion once the result list empties out, and the split-ticket delimiters
+ * this replica reconstructs ([dev.yorkie.document.operation.TreeEditOperation.issueTimeTicket])
+ * would no longer line up with the sender's. Reject the pack at the boundary
+ * instead, as every other malformed field here does.
+ *
+ * Operation content is fully client-controlled and always freshly created by
+ * the editing client, so it can never be a split product, carry a merge
+ * lineage, or arrive already tombstoned -- [dev.yorkie.document.crdt.CrdtTree.edit]
+ * stamps the lineage on the content it inserts from the merge parent it
+ * resolves locally, and tombstones it itself when the parent it lands in is
+ * removed. Strip the engine-only links ([dropEngineOnlyLinks]) and the
+ * tombstones ([clearTombstones]) the wire format carries anyway: the tree
+ * follows the links as trusted structural pointers once `edit` registers
+ * these nodes, and a node born tombstoned under a live parent would be
+ * counted as live content that no GC pair would ever collect. The ATTRIBUTE
+ * tombstones this reader decodes verbatim are left alone -- the undo
+ * copy-reinsert path produces genuine ones -- and `edit` books them into gc
+ * instead (`contentAttrPairs`, [dev.yorkie.document.crdt.CrdtTree.edit]).
+ * REPLACES the earlier `dropSplitLinks()` + `dropMergeStamps()` pair. Port
+ * JS SDK `converter.ts` `fromTreeNodesWhenEdit` (d3ffe946, #1406;
+ * yorkie#2033).
+ */
 internal fun List<PBTreeNodes>.toCrdtTreeNodesWhenEdit(): List<CrdtTreeNode>? {
-    return mapNotNull { it.contentList.toCrdtTreeRootNode() }.ifEmpty { null }
+    if (isEmpty()) {
+        return null
+    }
+    return map {
+        val root = it.contentList.toCrdtTreeRootNode()
+            ?: throw YorkieException(
+                ErrInvalidArgument,
+                "tree edit content has an entry with no node",
+            )
+        root.apply {
+            dropEngineOnlyLinks()
+            clearTombstones()
+        }
+    }
 }
 
 internal fun CrdtTreePos.toPBTreePos(): PBTreePos {
@@ -640,7 +718,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
                     memberNodes = ElementRht(),
                 )
             } else {
-                value.toCrdtObject()
+                dropSplitLinksInElement(value.toCrdtObject())
             }
         }
 
@@ -648,7 +726,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
             if (value.isEmpty) {
                 CrdtArray(createdAt.toTimeTicket())
             } else {
-                value.toCrdtArray()
+                dropSplitLinksInElement(value.toCrdtArray())
             }
         }
 
@@ -679,7 +757,7 @@ internal fun PBJsonElementSimple.toCrdtElement(): CrdtElement {
         PBValueType.VALUE_TYPE_INTEGER_DEDUP_CNT ->
             CrdtCounter.createDedup(createdAt.toTimeTicket())
 
-        PBValueType.VALUE_TYPE_TREE -> value.toCrdtTree()
+        PBValueType.VALUE_TYPE_TREE -> dropSplitLinksInElement(value.toCrdtTree())
 
         else -> throw YorkieException(ErrUnimplemented, "unimplemented element : $this")
     }

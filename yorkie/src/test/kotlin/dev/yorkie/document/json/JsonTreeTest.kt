@@ -403,6 +403,40 @@ class JsonTreeTest {
         }
     }
 
+    /**
+     * Same contract as the index form: a range given backwards is a
+     * caller error, not an empty range — JS throws a `YorkieError`, but
+     * Android keeps `require` (`IllegalArgumentException`) here, like every
+     * neighboring check in this class. Mirrors JS SDK `document/json/tree.ts`
+     * `styleByPath` and the `Tree style by path` / `rejects a backwards
+     * range` test (b69169c0, #1404).
+     */
+    @Test
+    fun `should throw on a backwards range for range styleByPath`() {
+        val target = createTreeWithTwoParagraphs()
+        assertThrows(IllegalArgumentException::class.java) {
+            target.styleByPath(listOf(1, 0), listOf(0, 1), mapOf("bold" to "x"))
+        }
+    }
+
+    @Test
+    fun `should throw on a backwards range for removeStyleByPath`() {
+        val target = createTreeWithTwoParagraphs()
+        assertThrows(IllegalArgumentException::class.java) {
+            target.removeStyleByPath(listOf(1, 0), listOf(0, 1), listOf("bold"))
+        }
+    }
+
+    @Test
+    fun `should style a forward by-path range after rejecting a backwards one`() {
+        val target = createTreeWithTwoParagraphs()
+        target.styleByPath(listOf(0, 0), listOf(1, 0), mapOf("bold" to "x"))
+        assertEquals(
+            """<doc><p bold="x">ab</p><p bold="x">cd</p></doc>""",
+            target.toXml(),
+        )
+    }
+
     @Test
     fun `should emit Tree edit operations accordingly when edited with index`() = runTest {
         val document = Document("")

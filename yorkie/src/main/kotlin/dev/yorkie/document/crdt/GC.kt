@@ -34,6 +34,44 @@ internal interface GCParent<T : GCChild> {
     fun deleteChild(node: GCChild) {
         delete(node as T)
     }
+
+    /**
+     * [purgeBarrierAt] is an optional capability of a GC parent whose
+     * surviving order is decided by which nodes are still linked.
+     *
+     * Every such container resolves a concurrent insert by walking forward
+     * from the anchor and stopping at the first node whose positioning
+     * ticket does not follow the insert: [RgaTreeList]'s
+     * `findNextBeforeExecutedAt`, the skip in [RgaTreeSplit]'s
+     * `findNodeWithSplit`, and the sibling skip in [CrdtTree]'s
+     * `findNodesAndSplitText`. The walk reads the nodes currently linked,
+     * tombstones included, so a tombstone with a small ticket is a hard
+     * barrier that ends the walk. Purging it physically unlinks it, which
+     * means collection mutates the input to the insertion rule: a replica
+     * that has collected sends a still-in-flight insert past the node behind
+     * the tombstone, a replica that has not does not, and the two orders
+     * never reconverge.
+     *
+     * [GCChild.removedAt] alone does not authorise the unlink. What does is
+     * the node that would become the walk's new stopping point: once that
+     * node is causally stable, every future insert carries a ticket after
+     * it, so every future walk stops there whether or not the tombstone in
+     * front of it still exists. This returns that successor's positioning
+     * ticket, which [CrdtRoot.garbageCollect] requires the version vector to
+     * cover as well as [GCChild.removedAt], or `null` when [node] has no
+     * successor (or is not a child of this parent's kind) and unlinking it
+     * cannot move anything.
+     *
+     * Declared over [GCChild] (not the generic [T]) because the only caller
+     * ([CrdtRoot]'s collection pass) only ever holds a type-erased
+     * `GCPair<*>` — the same reason [deleteChild] exists beside [delete].
+     * Each override narrows [node] with an `is`/`as?` check, mirroring JS's
+     * own `instanceof` dispatch.
+     *
+     * Mirrors Go's `crdt.GCBarrier` (yorkie `ba82ed91`); ported from JS
+     * `GCParent.purgeBarrierAt` (yorkie-js-sdk `dbff8892`, #1405).
+     */
+    fun purgeBarrierAt(node: GCChild): TimeTicket? = null
 }
 
 /**

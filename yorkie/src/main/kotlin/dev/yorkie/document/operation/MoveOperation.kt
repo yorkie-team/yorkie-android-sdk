@@ -35,7 +35,12 @@ internal data class MoveOperation(
         return if (parentObject is CrdtArray) {
             val prevCreatedAtBefore = parentObject.getPrevCreatedAt(createdAt)
             val previousIndex = parentObject.subPathOf(createdAt).toInt()
-            val deadNode = parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
+            val (deadNode, movedDiff) = parentObject.moveAfter(prevCreatedAt, createdAt, executedAt)
+
+            // The `movedAt` stamp is part of the moved element's size; see
+            // CrdtRoot.accMovedElement for why it cannot simply go to live.
+            root.accMovedElement(root.findByCreatedAt(createdAt)!!, movedDiff)
+
             if (deadNode != null) {
                 // The dead position node's size was never counted in live --
                 // gcOnlySize says so, mirroring JS move_operation.ts.

@@ -191,11 +191,14 @@ internal data class TreeEditOperation(
     private var lastFromIdx: Int? = null
 
     /**
-     * [lastFromIdx] plus [dev.yorkie.document.crdt.TreeOperationResult.removedNodesSize] --
-     * always measured, regardless of whether
-     * [dev.yorkie.document.crdt.TreeOperationResult.removedNodes] itself was captured (a
-     * remote application skips that deep copy, M1 fix). Mirrors JS
-     * `tree_edit_operation.ts`'s `lastToIdx` (`preEditFromIdx + removedSize`).
+     * [lastFromIdx] plus the padded size of every node this edit removed, counting both
+     * [dev.yorkie.document.crdt.TreeOperationResult.removedNodesSize] (always measured,
+     * regardless of whether [dev.yorkie.document.crdt.TreeOperationResult.removedNodes]
+     * itself was captured -- a remote application skips that deep copy, M1 fix) and
+     * [dev.yorkie.document.crdt.TreeOperationResult.strandedNodes] -- the merge
+     * cycle-guard's in-place tombstones drain size out of the consumed range without
+     * appearing in either. Mirrors JS `tree_edit_operation.ts`'s `lastToIdx`
+     * (`preEditFromIdx + removedSize`).
      */
     private var lastToIdx: Int? = null
 
@@ -539,9 +542,13 @@ internal data class TreeEditOperation(
         splitSize = result.splitSize
         splitRecreatedIDs = result.splitRecreatedIDs
         // M1 fix: captured BEFORE the edit (preEditFromIdx) rather than read
-        // off the reported change position -- see normalizePos's doc.
+        // off the reported change position -- see normalizePos's doc. The
+        // merge cycle-guard's stranded tombstones drain size out of the
+        // consumed range without appearing in removedNodes, so both are
+        // summed (port yorkie-js-sdk `4d714068`, #1478).
         lastFromIdx = result.preEditFromIdx
-        lastToIdx = result.preEditFromIdx + result.removedNodesSize
+        lastToIdx = result.preEditFromIdx + result.removedNodesSize +
+            result.strandedNodes.sumOf { it.paddedSize }
 
         val opInfos =
             result.changes.map {

@@ -458,6 +458,23 @@ abstract class IndexTreeNode<T : IndexTreeNode<T>> {
         }
 
     /**
+     * Returns true if this node is a (strict) ancestor of [node]: self is
+     * never its own ancestor. Port JS SDK `index_tree.ts` `ancestorOf`
+     * (yorkie-js-sdk `4d714068`, #1478) — used to guard a merge destination
+     * that would otherwise land inside a child the same merge is moving,
+     * closing a parent cycle in the index tree.
+     */
+    fun isAncestorOf(node: T): Boolean {
+        if (this === node) return false
+        var current: T? = node.parent
+        while (current != null) {
+            if (current === this) return true
+            current = current.parent
+        }
+        return false
+    }
+
+    /**
      * Returns the children of the node.
      * Tombstone nodes remain awhile in the tree during editing.
      * They will be removed after the editing is done.

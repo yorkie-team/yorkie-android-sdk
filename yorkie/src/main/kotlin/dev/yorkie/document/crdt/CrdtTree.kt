@@ -726,6 +726,27 @@ internal data class CrdtTree(
     }
 
     /**
+     * Tombstones every live node in [node]'s subtree (including [node]
+     * itself) as of [editedAt], skipping anything already removed, and
+     * returns the nodes this call actually transitioned. Used by the merge
+     * loop's cycle guard (below) to strand a child whose destination turns
+     * out to be itself or inside it, instead of moving it and closing a
+     * parent cycle in the index tree. Order-independent for tombstone/size/
+     * GC bookkeeping, so postorder [traverseAll] (disjoint from step-02's
+     * removals) is fine here. Port JS SDK `tree.ts` `tombstoneSubtree`
+     * (yorkie-js-sdk `4d714068`, #1478).
+     */
+    private fun tombstoneSubtree(node: CrdtTreeNode, editedAt: TimeTicket): List<CrdtTreeNode> {
+        val removed = mutableListOf<CrdtTreeNode>()
+        traverseAll(node) { n, _ ->
+            if (n.removedAt == null && n.remove(editedAt)) {
+                removed.add(n)
+            }
+        }
+        return removed
+    }
+
+    /**
      * Edits the tree with the given [range] and [contents].
      * If the [contents] is null, the [range] will be removed.
      */
@@ -1038,6 +1059,18 @@ internal data class CrdtTree(
         // intermediate.
         val dest = resolveMergeTarget(fromParent)
 
+        // A forged `mergedFrom` lineage can name a destination that is
+        // itself one of the children this same merge is about to move, or a
+        // node already inside one -- moving it would close a parent cycle
+        // in the index tree and spin updateAncestorSize forever walking a
+        // ring with no root. Once the cycle is detected, every later child
+        // of this merge is stranded too (its own destination lookup can no
+        // longer be trusted): tombstoned in place instead of moved, with a
+        // GC pair booked per node and reported on the result so the caller
+        // can size the removal. Port JS SDK `tree.ts` (`4d714068`, #1478).
+        val stranded = mutableListOf<CrdtTreeNode>()
+        var destTombstoned = false
+
         // 03. Merge: move the nodes that are marked as moved. A moved child
         // must have a source parent to record; skip otherwise rather than
         // move an untracked node (Fix 8). Tombstoned children are moved too
@@ -1049,6 +1082,15 @@ internal data class CrdtTree(
         // index positions stay correct (port c5d5c851).
         toBeMovedToFromParents.forEach { node ->
             val oldParent = node.parent ?: return@forEach
+            if (node === dest || node.isAncestorOf(dest)) {
+                destTombstoned = true
+                stranded.addAll(tombstoneSubtree(node, executedAt))
+                return@forEach
+            }
+            if (destTombstoned) {
+                stranded.addAll(tombstoneSubtree(node, executedAt))
+                return@forEach
+            }
             // mergedFrom/mergedAt are stamped only on the first move, so a
             // child carried through a chained merge keeps its original
             // source and the original merge ticket (Fix 20).
@@ -1079,6 +1121,7 @@ internal data class CrdtTree(
                 src.mergedInto = dest.id
             }
         }
+        stranded.forEach { gcPairs.add(GCPair(this, it)) }
 
         // 03-1. Propagate deletes to children moved by prior merges. When a
         // merge-source node is fully deleted (not itself a merge boundary),
@@ -1473,6 +1516,7 @@ internal data class CrdtTree(
             splitSize = splitSize,
             mergedNodes = toBeMergedNodes,
             splitRecreatedIDs = splitRecreatedIDs,
+            strandedNodes = stranded,
             preEditFromIdx = fromIndex,
         )
     }

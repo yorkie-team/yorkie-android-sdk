@@ -186,6 +186,21 @@ internal data class TreeOperationResult(
      */
     val splitRecreatedIDs: List<Pair<CrdtTreeNodeID, CrdtTreeNodeID>> = emptyList(),
     /**
+     * Nodes the merge step's cycle guard tombstoned in place instead of
+     * moving -- a forged `mergedFrom` lineage can aim the merge
+     * destination at a child this merge moves, or at a node inside one,
+     * which would otherwise close a parent cycle in the index tree and
+     * spin [dev.yorkie.util.IndexTreeNode.updateAncestorSize] forever.
+     * Disjoint from [removedNodes] (the merge had collected these to
+     * move, not delete), but the range this edit consumed includes them,
+     * so [dev.yorkie.document.operation.TreeEditOperation] counts their
+     * [dev.yorkie.util.IndexTreeNode.paddedSize] toward the removed size it
+     * reconciles pending tree-undo offsets against (alongside [removedNodes]).
+     * Empty for an edit with no such guard hit. Port yorkie-js-sdk
+     * `4d714068` (#1478).
+     */
+    val strandedNodes: List<CrdtTreeNode> = emptyList(),
+    /**
      * Visible-index position [CrdtTree.edit] resolved [range]'s `from` side
      * to, captured after boundary text-node splits but before any deletion --
      * a CRDT value fixed before the edit mutates the tree, never the
@@ -194,7 +209,7 @@ internal data class TreeOperationResult(
      * the forward (non-undo) op's `[preEditFromIdx, preEditFromIdx +
      * removedSize]` range for history reconciliation, mirroring JS
      * `tree_edit_operation.ts`'s `preEditFromIdx` (`normalizePos`). Port
-     * yorkie-js-sdk `a74b2513` (#1455).
+     * yorkie-js-sdk `a74b2513`/`4d714068` (#1455/#1478).
      */
     val preEditFromIdx: Int = 0,
 )

@@ -206,6 +206,24 @@ class MockYorkieService(
     val permissionDeniedPushPullKeys = mutableSetOf<String>()
 
     /**
+     * Document keys whose [pushPullChanges] fails with the given [YorkieException.Code]
+     * (either [YorkieException.Code.ErrDocumentSizeExceedsLimit] or
+     * [YorkieException.Code.ErrChangeTooLarge], #1462) at [Code.RESOURCE_EXHAUSTED] -- a live
+     * map, not a one-shot, same shape as [permissionDeniedPushPullKeys]: the test removes a key
+     * once it wants the next push-pull to succeed again (e.g. after discarding the offending
+     * local changes via `Client.resyncAsync`), so the park/clear transition can be observed.
+     */
+    val writeRejectedPushPullKeys = mutableMapOf<String, YorkieException.Code>()
+
+    /**
+     * Document keys whose [pushPullChanges] fails with [Code.RESOURCE_EXHAUSTED] but NO Yorkie
+     * code metadata at all -- models a transport-level quota unrelated to #1462's two codes,
+     * which `handleConnectException` must keep retrying. A live set, same shape as
+     * [permissionDeniedPushPullKeys].
+     */
+    val bareResourceExhaustedPushPullKeys = mutableSetOf<String>()
+
+    /**
      * Document keys whose [pushPullChanges] response is a PULL that is also an ack: the
      * request's own checkpoint echoed back (as [ackOnlyPushPullKeys]) plus one remote change
      * setting a fresh `pull<N>` key — harmless to re-apply any number of times, unlike the
@@ -433,10 +451,22 @@ class MockYorkieService(
         return ResponseMessage.Success(detachDocumentResponse { }, emptyMap(), emptyMap())
     }
 
+    /**
+     * Number of [pushPullChanges] calls seen per document key -- lets a test assert a parked
+     * attachment (#1462) stops being re-sent every `syncLoopDuration` tick, while an unrelated
+     * document keeps ticking normally.
+     */
+    // M7 (team-review, RTCOLLABPLATFORM-789): ConcurrentHashMap -- the sync loop's
+    // document-keyed ticks and a test's concurrent read of this map (polling for a
+    // call count) run on different dispatchers; a plain mutableMapOf is not safe for
+    // that, even read-mostly.
+    val pushPullChangesCallCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
     override suspend fun pushPullChanges(
         request: PushPullChangesRequest,
         headers: Headers,
     ): ResponseMessage<PushPullChangesResponse> {
+        pushPullChangesCallCounts.merge(request.changePack.documentKey, 1, Int::plus)
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
                 ConnectException(
@@ -473,6 +503,34 @@ class MockYorkieService(
                 every {
                     unpackedDetails(ErrorInfo::class)
                 } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        writeRejectedPushPullKeys[request.changePack.documentKey]?.let { rejectedCode ->
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", rejectedCode.codeString)
+                .putMetadata("reason", "the change the client pushed is too large")
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.RESOURCE_EXHAUSTED
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in bareResourceExhaustedPushPullKeys) {
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.RESOURCE_EXHAUSTED
+                every { unpackedDetails(ErrorInfo::class) } returns emptyList()
             }
             return ResponseMessage.Failure(
                 cause = connectException,

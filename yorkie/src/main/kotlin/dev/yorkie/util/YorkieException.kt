@@ -169,6 +169,13 @@ public open class YorkieException(
         // discarding its un-pushed local changes and re-anchoring it under a fresh
         // attach. Ported verbatim from yorkie-js-sdk `error.ts` (`61ca06c9`, #1463).
         ErrRefused("ErrRefused"),
+
+        // ErrChangeTooLarge is returned when a single change (not the whole document)
+        // exceeds the server's size limit. Unlike ErrDocumentSizeExceedsLimit, retrying
+        // the same push can never succeed, so both codes stop the sync loop's retries
+        // for the affected document instead of resending every tick. Ported verbatim
+        // from yorkie-js-sdk `error.ts` (`29a81fe0`, #1462).
+        ErrChangeTooLarge("ErrChangeTooLarge"),
     }
 }
 

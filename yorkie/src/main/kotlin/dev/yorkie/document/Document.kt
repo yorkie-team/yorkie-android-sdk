@@ -2592,6 +2592,45 @@ public class Document(
         }
 
         /**
+         * `WriteRejected` means a push was answered with a code the server will never
+         * reconsider for the SAME change -- [YorkieException.Code.ErrDocumentSizeExceedsLimit]
+         * or [YorkieException.Code.ErrChangeTooLarge] -- so the sync loop parks this
+         * document instead of resending it every tick. Push and pull share one RPC, so
+         * parking also stops PULLS on this document, realtime or polling, until it
+         * un-parks -- new remote changes do not arrive either. A bare
+         * `Client.syncAsync(document)` call does NOT recover it: the oversized change is
+         * still the head of the queue, so the explicit sync re-fails the same way and this
+         * event republishes. Local edits keep queuing behind the rejected one meanwhile.
+         * The actual recovery is `Client.resyncAsync(document, discardLocalChanges =
+         * true)`, which discards the queue (the oversized change with it) and re-anchors;
+         * any push-pull that then succeeds un-parks the attachment. Published next to
+         * [SyncStatusChanged]'s `SyncFailed` for the same failure, not instead of it.
+         * Mirrors [AuthError]'s shape. Ported from yorkie-js-sdk `write-rejected`
+         * (`29a81fe0`, #1462).
+         */
+        public class WriteRejected(
+            public val code: YorkieException.Code,
+            public val reason: String,
+            public val method: AuthError.AuthErrorMethod,
+        ) : Event {
+            override fun equals(other: Any?): Boolean {
+                if (this === other) return true
+                if (other !is WriteRejected) return false
+                return code == other.code && reason == other.reason && method == other.method
+            }
+
+            override fun hashCode(): Int {
+                var result = code.hashCode()
+                result = 31 * result + reason.hashCode()
+                result = 31 * result + method.hashCode()
+                return result
+            }
+
+            override fun toString(): String =
+                "WriteRejected(code=$code, reason=$reason, method=$method)"
+        }
+
+        /**
          * `EpochMismatch` indicates the document was compacted on the server
          * and this client must detach and reattach to recover.
          */

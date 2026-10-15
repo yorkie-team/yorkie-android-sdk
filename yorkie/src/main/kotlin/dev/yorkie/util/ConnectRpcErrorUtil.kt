@@ -3,8 +3,10 @@ package dev.yorkie.util
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.google.rpc.ErrorInfo
+import dev.yorkie.util.YorkieException.Code.ErrChangeTooLarge
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrClientNotFound
+import dev.yorkie.util.YorkieException.Code.ErrDocumentSizeExceedsLimit
 import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
 import dev.yorkie.util.YorkieException.Code.ErrTooManyAttachments
 import dev.yorkie.util.YorkieException.Code.ErrTooManySubscribers
@@ -22,6 +24,20 @@ internal suspend fun handleConnectException(
 ): Boolean {
     val errorCode = exception?.code ?: return false
 
+    // `errorCodeOf` is read FIRST, ahead of the generic RESOURCE_EXHAUSTED retry below:
+    // a push answered with ErrDocumentSizeExceedsLimit or ErrChangeTooLarge carries that
+    // gRPC status, but retrying can never succeed -- the server will refuse the exact
+    // same change every time. A RESOURCE_EXHAUSTED that carries no Yorkie code at all
+    // (e.g. a transport-level quota) is still retried below, unaffected. Ported
+    // verbatim from yorkie-js-sdk `unretryableWriteCodes` (`29a81fe0`, #1462).
+    val yorkieErrorCode = errorCodeOf(exception)
+
+    if (yorkieErrorCode == ErrDocumentSizeExceedsLimit.codeString ||
+        yorkieErrorCode == ErrChangeTooLarge.codeString
+    ) {
+        return false
+    }
+
     if (errorCode == Code.CANCELED ||
         errorCode == Code.UNKNOWN ||
         errorCode == Code.RESOURCE_EXHAUSTED ||
@@ -29,8 +45,6 @@ internal suspend fun handleConnectException(
     ) {
         return true
     }
-
-    val yorkieErrorCode = errorCodeOf(exception)
 
     if (yorkieErrorCode == ErrTooManySubscribers.codeString) {
         return true

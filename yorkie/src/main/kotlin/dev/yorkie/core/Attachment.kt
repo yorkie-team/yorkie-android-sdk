@@ -93,6 +93,30 @@ internal class Attachment<R : Attachable>(
     var pushDenied: Boolean = false
 
     /**
+     * `true` once a push for this attachment's document was answered with a code the
+     * server will never reconsider for the SAME changes --
+     * [dev.yorkie.util.YorkieException.Code.ErrDocumentSizeExceedsLimit] or
+     * [dev.yorkie.util.YorkieException.Code.ErrChangeTooLarge] -- so [needSync] parks
+     * the document instead of re-sending it every sync-loop tick. Cleared only by a
+     * subsequent SUCCESSFUL push-pull on this attachment (an explicit
+     * `Client.syncAsync(document)` is the way back in, same as a resync). Confined to
+     * the client dispatcher's sync loop / `syncInternal`; no `@Volatile` needed. Ported
+     * from yorkie-js-sdk `isWriteRejected`/`markWriteRejected`/`clearWriteRejected`
+     * (`29a81fe0`, #1462).
+     */
+    private var writeRejected: Boolean = false
+
+    fun markWriteRejected() {
+        writeRejected = true
+    }
+
+    fun clearWriteRejected() {
+        writeRejected = false
+    }
+
+    fun isWriteRejected(): Boolean = writeRejected
+
+    /**
      * The [SessionLockHandle] leased for this attachment's document while a [Client.Options.docStore]
      * is configured, or null otherwise. Held for the attachment's lifetime and released exactly once
      * — from `Client.detachInternal`, the single teardown choke point — so a re-attach does not stack
@@ -227,6 +251,17 @@ internal class Attachment<R : Attachable>(
     fun needSync(heartbeatInterval: Long, documentPollInterval: Long): Boolean {
         // For Document: check if realtime sync is needed
         if (resource is Document) {
+            // A document parked by a write-rejection (#1462) is skipped BEFORE either
+            // the Polling early-return or the realtime/fallback check below -- a parked
+            // document must not re-send through Polling's fixed-interval path, nor
+            // fall back to pulling on watch silence; both would still hammer the
+            // server with the same refused change. The only way back in is a
+            // successful push-pull on this attachment (clearWriteRejected) or an
+            // explicit `Client.syncAsync(document)`, which bypasses the sync loop
+            // entirely and calls `syncInternal` directly.
+            if (isWriteRejected()) {
+                return false
+            }
             // Polling has no watch stream, so it pushes and pulls on a fixed
             // interval regardless of local changes. Mirrors JS SDK PR #1243.
             if (syncMode == Client.SyncMode.Polling) {

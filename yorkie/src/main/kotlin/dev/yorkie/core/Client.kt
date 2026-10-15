@@ -49,6 +49,7 @@ import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
+import dev.yorkie.document.Document.Event.WriteRejected
 import dev.yorkie.document.RestoreResult
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.json.JsonObject
@@ -66,9 +67,11 @@ import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrAlreadyAttached
+import dev.yorkie.util.YorkieException.Code.ErrChangeTooLarge
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
+import dev.yorkie.util.YorkieException.Code.ErrDocumentSizeExceedsLimit
 import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
 import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrInvalidServerSeq
@@ -1141,8 +1144,34 @@ public class Client(
                         } else if (!isPushDenied && result.isSuccess && attachment.pushDenied) {
                             attachment.pushDenied = false
                         }
+
+                        // #1462: a push answered with ErrDocumentSizeExceedsLimit or
+                        // ErrChangeTooLarge will never succeed by resending the SAME
+                        // changes -- park the attachment (`Attachment.needSync` then
+                        // skips it every tick, before even resetting
+                        // `changeEventReceived`) instead of hammering the server every
+                        // `syncLoopDuration`. The mark is set here, where the (possibly
+                        // retried) per-tick outcome is visible; the matching clear
+                        // lives in `syncInternal`'s success path, next to
+                        // `SyncStatusChanged.Synced`, so it also covers an explicit
+                        // `Client.syncAsync(document)` resync that bypasses this loop
+                        // entirely.
+                        val writeRejectedCode = connectException?.let(::errorCodeOf)
+                        if (writeRejectedCode == ErrDocumentSizeExceedsLimit.codeString ||
+                            writeRejectedCode == ErrChangeTooLarge.codeString
+                        ) {
+                            attachment.markWriteRejected()
+                        }
                     }
-                    if (result.isFailure && !isRetryAble) {
+                    // A parked attachment's own failure does not flip this bookkeeping
+                    // flag false on every tick -- it is already being skipped by
+                    // `needSync`, not retried, so there is nothing for this flag to
+                    // report about it (JS stops its queue; Android's loop keeps
+                    // ticking for every OTHER attachment regardless either way --
+                    // see this flag's own doc comment).
+                    val isParkedDocument = attachment.resource is Document &&
+                        attachment.isWriteRejected()
+                    if (result.isFailure && !isRetryAble && !isParkedDocument) {
                         conditions[ClientCondition.SYNC_LOOP] = false
                     }
                 }
@@ -1154,6 +1183,13 @@ public class Client(
     /**
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
+     *
+     * A document parked by [Document.Event.WriteRejected] (an oversized change the server
+     * will never accept) is NOT recovered by calling this: push and pull share one RPC, so
+     * the parked document neither pushes nor pulls, and resending here just re-fails on
+     * the same change and republishes [Document.Event.WriteRejected]. Recovery is
+     * [resyncAsync] with `discardLocalChanges = true`, which discards the offending
+     * change and re-anchors the document.
      */
     public fun syncAsync(resource: Attachable? = null): Deferred<OperationResult> {
         return scope.async {
@@ -1328,6 +1364,12 @@ public class Client(
                         if (attachment.persistsToStore) {
                             persistAfterSync(attachment, movedRoot)
                         }
+                        // A successful push-pull is the way back in from a #1462 park
+                        // (or an explicit `Client.syncAsync(document)`, which also
+                        // reaches here): clear it BEFORE publishing Synced so a
+                        // listener reacting to Synced never observes a still-parked
+                        // attachment.
+                        attachment.clearWriteRejected()
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,
                         )
@@ -1476,6 +1518,34 @@ public class Client(
                                 method = EpochMismatch.EpochMismatchMethod.PushPull,
                             ),
                         )
+                    }
+
+                    // A push the server will never reconsider for the SAME changes --
+                    // published next to SyncFailed above, not instead of it, so an app
+                    // can distinguish "this push failed" from "this push failed AND
+                    // will keep failing until something changes". Parking the
+                    // attachment itself happens in `runSyncLoop`, which is the only
+                    // caller that also sees the (possibly retried) outcome across
+                    // sync-loop ticks. Ported from yorkie-js-sdk `write-rejected`
+                    // (`29a81fe0`, #1462).
+                    if (it is ConnectException) {
+                        val writeRejectedCode = errorCodeOf(it).let { code ->
+                            when (code) {
+                                ErrDocumentSizeExceedsLimit.codeString ->
+                                    ErrDocumentSizeExceedsLimit
+                                ErrChangeTooLarge.codeString -> ErrChangeTooLarge
+                                else -> null
+                            }
+                        }
+                        if (writeRejectedCode != null) {
+                            resource.publish(
+                                event = WriteRejected(
+                                    code = writeRejectedCode,
+                                    reason = it.message ?: it.toString(),
+                                    method = PushPull,
+                                ),
+                            )
+                        }
                     }
                 }
 

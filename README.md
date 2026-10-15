@@ -168,6 +168,69 @@ per-session client id. An app that identified itself among `presences` via
 `Status.Activated.clientId` / `Client.requireClientId()` must switch to
 `Status.Activated.actorId` / `Client.requireActorId()`.
 
+#### Send presence as a patch when the server advertises presence-patch (0.7.25)
+
+From 0.7.25 a presence update is sent as a patch carrying only the changed top-level keys,
+not the whole presence, once the server has advertised support for it and this client has a
+full presence on record as the base to fold the patch into — the server folds the patch into
+a full `PUT` before storing, so a peer's pull is unchanged either way. This release requires
+Yorkie server 0.7.25 or later to send patches; against an older server this SDK always sends
+the full presence, exactly as before. **Do not roll the server back below 0.7.25 once
+yorkie-android-sdk clients are connected**: a presence patch stored by an older server is
+served as an unspecified change, and every client fails the pulls that include it. A rolling
+upgrade heals on its own — once every server node advertises the capability again, the next
+presence update (or an automatic heal this SDK sends when a reply stops advertising the
+capability mid-session) re-establishes a full-`PUT` base and patches resume.
+
+| Participant | Minimum version |
+|-------------|-----------------|
+| Yorkie server (to send patches; older servers keep receiving full Puts) | 0.7.25 |
+| yorkie-android-sdk peers | none |
+| yorkie-js-sdk peers | 0.7.25 |
+| yorkie-ios-sdk peers | 0.7.25 |
+| yorkie-android-sdk (this SDK) | this release |
+
+#### Other 0.7.25 behaviour changes
+
+- **Watch stream heartbeats, on by default.** This SDK now asks the server for a
+  heartbeat on every Watch stream it opens (`Client.Options.watchHeartbeatInterval`,
+  default 20 seconds), and reconnects a stream that goes silent for three times the
+  advertised interval (`YorkieException.Code.ErrWatchStreamIdle`) instead of waiting out
+  the old fixed timeout. Set `watchHeartbeatInterval` to `Duration.ZERO` (or any
+  non-positive value) to ask for no heartbeats and keep the previous fixed-timeout
+  behaviour. Requires Yorkie server 0.7.25 to actually send the heartbeats this SDK
+  asks for; against an older server the stream falls back to the old 5-minute fixed
+  timeout, exactly as before.
+
+  | Participant | Minimum version |
+  |-------------|-----------------|
+  | Yorkie server (to send heartbeats; older servers keep the 5-minute timeout) | 0.7.25 |
+  | yorkie-android-sdk peers | none |
+
+- **`Document.Event.AuthError(method = PushPull)` now also fires on
+  `ErrPermissionDenied`**, not only on an auth-webhook rejection — deduped per denial
+  episode and cleared the moment a push-pull on the same attachment succeeds again. No
+  server minimum; this is purely a local event-surfacing change.
+- **`Client.resyncAsync(document, discardLocalChanges = true)`** discards a document's
+  un-pushed local changes and re-anchors it under a fresh attach. Between the discard
+  and the re-anchor, every `Document.updateAsync`/`undoAsync`/`redoAsync` call on that
+  document — including one already running and only resuming during the window — is
+  refused with `YorkieException.Code.ErrRefused`, and `DocumentHistory.canUndo()`/
+  `canRedo()` report `false`. No server minimum.
+- **Write-rejected parking.** A push the server answers with
+  `ErrDocumentSizeExceedsLimit` or `ErrChangeTooLarge` will never be accepted as-is, so
+  the sync loop now parks that document (`Document.Event.WriteRejected`) instead of
+  resending the same oversized change every tick; pulls on that document also stop
+  until it un-parks. Recover with `Client.resyncAsync(document, discardLocalChanges =
+  true)` (discards the oversized change and re-anchors) — a bare `Client.syncAsync
+  (document)` re-fails the same way, since the rejected change is still the head of the
+  queue. No server minimum.
+- **Pre-attach ticket re-issue.** A document written to before it is ever attached (so
+  its operations still carry the placeholder actor) now has those tickets re-issued
+  under the client's resolved actor as part of `Client.attachDocument`, including for a
+  client activated under a generated (not explicitly configured) key. No server
+  minimum.
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting patches and the contribution workflow.

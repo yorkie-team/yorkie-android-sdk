@@ -938,14 +938,30 @@ public class Client(
         callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
     }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
 
+    // Test-only observability for the Watch heartbeat round trip (`c1a03877`/#1483,
+    // `c69e6bda`/#1472): nothing in the public API surfaces the server's advertised
+    // `WatchInitialization.heartbeat_interval_ms` or a raw `WatchHeartbeat` frame's arrival --
+    // both are consumed purely to drive the idle-reconnect clock internally -- so an
+    // instrumented test that needs to `Assume` on a real server's advertised interval, or
+    // assert a heartbeat actually arrived, has no other seam. `isDocument` distinguishes the
+    // document stream from the channel stream; both hooks are null (no-op, zero overhead) in
+    // production.
+    @VisibleForTesting
+    internal var onWatchStreamInitAdvertisedHeartbeatIntervalMs: (
+        (isDocument: Boolean, intervalMs: Long) -> Unit
+    )? =
+        null
+
+    @VisibleForTesting
+    internal var onWatchHeartbeatReceived: ((isDocument: Boolean) -> Unit)? = null
+
     // M6 (team-review, RTCOLLABPLATFORM-789): the idle-reconnect path's own failure
     // cause (`ErrWatchStreamIdle` once a positive heartbeat interval armed the clock,
     // a plain `TimeoutException` otherwise) is swallowed into a log call
     // (`sendWatchAttachmentResourceStreamException`) with nothing else test-observable
-    // to distinguish the two.
+    // to distinguish the two -- same reasoning as the hooks above.
     @VisibleForTesting
     internal var onWatchStreamIdleCause: ((isDocument: Boolean, cause: Throwable) -> Unit)? = null
-
 
     @VisibleForTesting
     internal val conditions: MutableMap<ClientCondition, Boolean> = mutableMapOf(
@@ -1685,11 +1701,16 @@ public class Client(
                         if (response.hasHeartbeat()) {
                             // No payload: the silence clock reset above is this frame's
                             // entire purpose (#1472).
+                            onWatchHeartbeatReceived?.invoke(true)
                             shouldContinue = true
                             continue
                         }
                         if (response.hasInitialization()) {
                             val heartbeatIntervalMs = response.initialization.heartbeatIntervalMs
+                            onWatchStreamInitAdvertisedHeartbeatIntervalMs?.invoke(
+                                true,
+                                heartbeatIntervalMs,
+                            )
                             if (heartbeatIntervalMs > 0) {
                                 receiveTimeout = watchIdleTimeoutMs(heartbeatIntervalMs)
                                     .milliseconds
@@ -1941,11 +1962,16 @@ public class Client(
                             // Channels never engage the document-only pull-fallback clock
                             // (#351), so there is no silence clock to reset here -- the
                             // frame's only job is to keep this receive from timing out.
+                            onWatchHeartbeatReceived?.invoke(false)
                             shouldContinue = true
                             continue
                         }
                         if (response.hasInitialization()) {
                             val heartbeatIntervalMs = response.initialization.heartbeatIntervalMs
+                            onWatchStreamInitAdvertisedHeartbeatIntervalMs?.invoke(
+                                false,
+                                heartbeatIntervalMs,
+                            )
                             if (heartbeatIntervalMs > 0) {
                                 receiveTimeout = watchIdleTimeoutMs(heartbeatIntervalMs)
                                     .milliseconds

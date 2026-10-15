@@ -2,6 +2,7 @@ package dev.yorkie.api
 
 import dev.yorkie.api.v1.watchHeartbeat
 import dev.yorkie.api.v1.watchInitialization
+import dev.yorkie.api.v1.watchRequest
 import dev.yorkie.api.v1.watchResponse
 import dev.yorkie.core.watchIdleTimeoutMs
 import kotlin.test.Test
@@ -44,5 +45,19 @@ class WatchFrameConverterTest {
         assertTrue(response.hasHeartbeat())
         assertFalse(response.hasInitialization())
         assertFalse(response.hasEvent())
+    }
+
+    /**
+     * An older-client request shape -- one built before `c1a03877`/#1483 added
+     * `heartbeat_interval_ms` -- never sets the field at all, so it decodes to proto3's default
+     * `0` exactly like a request that deliberately asked for none; the server cannot tell the
+     * two apart, which is by design (#1483's own commit message: "0 ... is also what an SDK
+     * older than the heartbeat leaves here").
+     */
+    @Test
+    fun `a WatchRequest without heartbeat_interval_ms decodes to 0`() {
+        val request = watchRequest { }
+
+        assertEquals(0L, request.heartbeatIntervalMs)
     }
 }

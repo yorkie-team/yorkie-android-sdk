@@ -93,6 +93,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlin.coroutines.coroutineContext
+import kotlin.math.ceil
 import kotlin.math.pow
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -1718,6 +1719,10 @@ public class Client(
                         // watch only — the channel watch below carries no
                         // stable actor, JS `client.ts` createChannelWatchStream).
                         actorId = requireActorId()
+                        // Asks the server for a heartbeat on this stream so the idle
+                        // watchdog above can arm (`c1a03877`/#1483); the server's settled
+                        // value, not this request, is what `receiveTimeout` is keyed to.
+                        heartbeatIntervalMs = toHeartbeatIntervalMs(options.watchHeartbeatInterval)
                     },
                 )
 
@@ -1963,6 +1968,9 @@ public class Client(
                                 this.channelKey = channelKey
                             }
                         }
+                        // Asks the server for a heartbeat on this stream, same as the
+                        // document watch above (`c1a03877`/#1483).
+                        heartbeatIntervalMs = toHeartbeatIntervalMs(options.watchHeartbeatInterval)
                     },
                 )
                 streamJob.join()
@@ -3851,6 +3859,26 @@ public class Client(
          * has no Android analog (no page-unload event) and is not ported.
          */
         public val sessionLock: SessionLock = NoopSessionLock,
+        /**
+         * `watchHeartbeatInterval` is the interval at which the client asks the server to send
+         * a heartbeat on an idle Watch stream, so that a half-open stream is noticed and
+         * reconnected (`watchIdleTimeoutMs`, `c69e6bda`/#1472). It is a request, not a setting:
+         * the server clamps it to its own bounds and the client times a silent stream out at
+         * three times the interval the server actually settles on and advertises back on the
+         * init frame. A non-positive value asks for no heartbeats, which also leaves the stream
+         * without an idle timeout. The default value is `20000`(ms).
+         *
+         * Unlike [channelHeartbeatInterval], which is how often the client sends a channel
+         * refresh to keep a channel session alive, this is how often the server writes to the
+         * client's own Watch stream.
+         *
+         * **Note:** [Options] is a `data class` without `@JvmOverloads`, so adding this trailing
+         * parameter keeps Kotlin source compatibility but changes the generated constructor and
+         * `copy` signatures for Java callers.
+         *
+         * Ported from JS `client.ts`'s `watchHeartbeatInterval` option (`c1a03877`/#1483).
+         */
+        public val watchHeartbeatInterval: Duration = 20_000.milliseconds,
     ) {
         @Deprecated(
             "Renamed to channelHeartbeatInterval",
@@ -3927,4 +3955,36 @@ internal fun watchIdleTimeoutMs(heartbeatIntervalMs: Long): Long {
     // conforming server advertises anything near this; clamping the input to the cap
     // divided by 3 up front makes the multiply itself incapable of overflowing.
     return (minOf(heartbeatIntervalMs, 28_800_000L) * 3).coerceIn(1_000L, 86_400_000L)
+}
+
+/**
+ * The largest value this client will ever ask for on
+ * [Client.Options.watchHeartbeatInterval] -- `2^53 - 1`, the largest integer a JS/TS `number`
+ * (and so the JS/iOS SDKs' own cap) represents exactly. Sending the raw millisecond count past
+ * this would still fit an `int64` on the wire but would no longer round-trip through a JS peer
+ * reading the same field, so the cap is shared across SDKs rather than the wire type's own
+ * range.
+ */
+private const val MAX_HEARTBEAT_INTERVAL_MS = 9_007_199_254_740_991L
+
+/**
+ * Converts [Client.Options.watchHeartbeatInterval] to the `WatchRequest.heartbeat_interval_ms`
+ * wire value sent on both the document and the channel Watch request. A non-positive [interval]
+ * asks for no heartbeats (`0`); a positive sub-millisecond remainder rounds UP rather than
+ * truncating, since [Duration.inWholeMilliseconds] truncates and a truncated-to-zero tiny
+ * interval would silently opt the stream out instead of letting the server clamp it to its own
+ * minimum; [Duration.INFINITE] (and anything at or past [MAX_HEARTBEAT_INTERVAL_MS]) saturates
+ * at that cap so the request can never fail to serialize. Pure and top-level so it is directly
+ * unit-testable without a [Client] instance. Ported from yorkie-js-sdk `toHeartbeatIntervalMs`
+ * (`c1a03877`, #1483).
+ */
+internal fun toHeartbeatIntervalMs(interval: Duration): Long {
+    if (interval <= Duration.ZERO) {
+        return 0
+    }
+    val milliseconds = ceil(interval.toDouble(DurationUnit.MILLISECONDS))
+    if (milliseconds.isInfinite() || milliseconds >= MAX_HEARTBEAT_INTERVAL_MS.toDouble()) {
+        return MAX_HEARTBEAT_INTERVAL_MS
+    }
+    return milliseconds.toLong()
 }

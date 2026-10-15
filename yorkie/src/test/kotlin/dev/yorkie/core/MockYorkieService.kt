@@ -175,6 +175,14 @@ class MockYorkieService(
     var lastChannelWatchActorId: String? = null
 
     /**
+     * The `heartbeat_interval_ms` most recently sent on a document/channel [WatchRequest]
+     * (`c1a03877`/#1483), for assertions -- the client's OWN request, distinct from
+     * [documentWatchHeartbeatIntervalMsOverride] below, which is the server's reply.
+     */
+    var lastDocumentWatchHeartbeatIntervalMs: Long? = null
+    var lastChannelWatchHeartbeatIntervalMs: Long? = null
+
+    /**
      * Number of [watch] calls that opened a NEW document stream -- a reconnect (idle timeout
      * or otherwise) opens a fresh one, so this lets a test assert whether a reconnect happened
      * without inspecting `Client`'s own internals (#1472).
@@ -722,8 +730,10 @@ class MockYorkieService(
                     }
                     if (isDocumentWatch) {
                         lastDocumentWatchActorId = input.actorId
+                        lastDocumentWatchHeartbeatIntervalMs = input.heartbeatIntervalMs
                     } else {
                         lastChannelWatchActorId = input.actorId
+                        lastChannelWatchHeartbeatIntervalMs = input.heartbeatIntervalMs
                     }
                     CoroutineScope(Dispatchers.Default).launch {
                         if (responseChannel.isClosedForSend) return@launch

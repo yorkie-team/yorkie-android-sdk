@@ -15,6 +15,17 @@ internal class Attachment<R : Attachable>(
      * when the session expires (ErrSessionNotFound recovery).
      */
     var resourceId: String = "",
+    /**
+     * Read by `Client.syncInternal`'s response guard (the client dispatcher, inside
+     * `document.mutex`) and written by the synchronous, non-suspend
+     * [Client.changeSyncMode] (any thread the caller calls it from) -- `@Volatile` so a
+     * guard that reads this after a pull's RPC await always sees the latest write (JS SDK
+     * `f9d7b298`/#1453: ports the field-level plain-vars-off-dispatcher fix the Attachment
+     * side of that commit needed; Android's guard already re-reads this live after the
+     * await, so the counter JS added there, `pendingPullPauses`, is not ported -- see the
+     * comment on `syncInternal`'s guard).
+     */
+    @Volatile
     var syncMode: Client.SyncMode? = null,
     /**
      * Declares that this attachment will not produce or consume tombstones.
@@ -44,6 +55,12 @@ internal class Attachment<R : Attachable>(
      */
     private val watchFallbackDelay: Long = Long.MAX_VALUE,
 ) {
+    /**
+     * Read by the sync loop (client dispatcher) and written both there and by the watch
+     * loop's stream-connect/event handlers (a different coroutine) -- `@Volatile` for the
+     * same cross-dispatcher visibility reason as [syncMode] (JS SDK `f9d7b298`/#1453).
+     */
+    @Volatile
     var changeEventReceived: Boolean? = syncMode?.let { false }
     var cancelled: Boolean = false
 

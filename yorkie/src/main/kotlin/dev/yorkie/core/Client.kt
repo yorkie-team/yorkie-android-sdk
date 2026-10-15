@@ -1234,6 +1234,30 @@ public class Client(
                         // redelivers forever. So while a request was sent PushOnly, or the
                         // attachment is CURRENTLY PushOnly/SyncOff, nothing of the reply but the
                         // push ack is taken, regardless of what the reply carries.
+                        //
+                        // This is also where a pull already in flight when the caller
+                        // switches to PushOnly/SyncOff gets dropped (JS SDK
+                        // `f9d7b298`/#1453): `currentSyncMode` is re-read HERE, after the
+                        // RPC await, not captured before it -- so a `changeSyncMode` call
+                        // racing this very await is already visible by the time this line
+                        // runs, structurally closing JS's window (there, `changeSyncMode`
+                        // waits behind the sync on a task queue, so an in-flight pull's
+                        // guard could still see the OLD mode when the queue had not yet run
+                        // the switch; JS counts that with `Attachment.pendingPullPauses`).
+                        // Android's `changeSyncMode` is synchronous -- it writes
+                        // `attachment.syncMode` directly, no queue to wait behind -- so the
+                        // counter is deliberately NOT ported here; porting it would only
+                        // re-introduce a drop this guard does not need. The one window that
+                        // does remain is narrower and un-closed by either SDK: once
+                        // `dropsRemoteState` is false, `resource.applyChangePack`
+                        // (`Document.kt`) itself hops to the document's own dispatcher to
+                        // apply the pack, so a `changeSyncMode(PushOnly)` landing in that
+                        // short gap -- between this read and the apply actually running on
+                        // the document dispatcher -- is not honoured for that one pack. See
+                        // generator/024-style overlapping-invocation tests for the pattern;
+                        // closing this would mean serializing `changeSyncMode` behind the
+                        // sync the way JS's task queue does, trading a narrower window for a
+                        // real one.
                         val currentSyncMode = attachments[documentKey]?.syncMode
                         val hasRemoteState =
                             responsePack.hasChanges || responsePack.hasSnapshot

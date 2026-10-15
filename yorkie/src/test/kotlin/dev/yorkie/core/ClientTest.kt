@@ -74,6 +74,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -1741,6 +1742,86 @@ class ClientTest {
             client.detachDocument(document).await()
             client.deactivateAsync().await()
             client.close()
+        }
+    }
+
+    // --- #1453/f9d7b298: a pull already in flight is dropped on switch to push-only -----
+
+    @Test
+    fun `drops a pull already in flight when switching to RealtimePushOnly`() = runTest {
+        assertDropsInFlightPullOnModeSwitch(RealtimePushOnly)
+    }
+
+    @Test
+    fun `drops a pull already in flight when switching to RealtimeSyncOff`() = runTest {
+        assertDropsInFlightPullOnModeSwitch(Client.SyncMode.RealtimeSyncOff)
+    }
+
+    /**
+     * Ports JS SDK `client_test.ts` `f9d7b298`/#1453's `it.for([RealtimePushOnly, SyncOff])`
+     * case. JS's `changeSyncMode` runs on a task queue behind a sync that may already be
+     * pulling, so a switch requested while a pull is in flight could still see the OLD mode
+     * when the response lands; `pendingPullPauses` closes that window there. Android's
+     * [Client.changeSyncMode] is synchronous -- no queue to wait behind -- and
+     * `syncInternal`'s guard re-reads the attachment's CURRENT mode (`currentSyncMode`, not
+     * the mode the request was sent in) after the RPC await, so the window cannot occur here;
+     * `pendingPullPauses` is deliberately NOT ported (D1). This pins that: hold a realtime
+     * pull once the mock has "answered" and before the client reads the live mode, switch to
+     * [pauseMode] while it is held, release it, and confirm the held pull's content is
+     * dropped while the loop still catches up unassisted once switched back to
+     * [Client.SyncMode.Realtime].
+     */
+    private suspend fun assertDropsInFlightPullOnModeSwitch(pauseMode: Client.SyncMode) {
+        withMockedBase64 {
+            // The sync loop runs on the client's own real (non-virtualizable) dispatcher,
+            // so this needs real delays -- `runBlocking` inside `runTest`, same pattern as
+            // the other `inFlightPushPullHook` test above (`C`).
+            runBlocking {
+                val (client, mockYorkieService, document) = newPushAckClient(
+                    "in-flight-pull-$pauseMode-doc",
+                    Client.SyncMode.Realtime,
+                )
+                mockYorkieService.pullWithAckPushPullKeys += document.getKey()
+
+                val enteredHold = CompletableDeferred<Unit>()
+                val releaseHold = CompletableDeferred<Unit>()
+                mockYorkieService.inFlightPushPullHook = {
+                    enteredHold.complete(Unit)
+                    releaseHold.await()
+                }
+
+                // 01. The realtime sync loop (driven by the watch stream connecting) starts
+                // pulling; hold it once the mock has built its answer and before the client
+                // reads the live sync mode to decide whether to apply it.
+                withTimeout(2_000) { enteredHold.await() }
+
+                // 02. While that pull is in flight, ask to stop receiving (an IME
+                // composition, for example). No task queue here: the attachment's mode is
+                // updated before the held reply is released.
+                client.changeSyncMode(document, pauseMode)
+                releaseHold.complete(Unit)
+
+                // 03. The held pull's change must never be applied.
+                delay(300)
+                assertNull(
+                    document.getRoot().getOrNull("pull1"),
+                    "a pull already in flight when switching to $pauseMode must be dropped",
+                )
+
+                // 04. Back in realtime, the sync loop catches up on its own --
+                // `changeSyncMode` sets `changeEventReceived` directly, no re-arm counter
+                // needed (D1).
+                client.changeSyncMode(document, Client.SyncMode.Realtime)
+                withTimeout(2_000) {
+                    while (document.getRoot().getOrNull("pull2") == null) {
+                        delay(20)
+                    }
+                }
+
+                client.detachDocument(document).await()
+                client.deactivateAsync().await()
+                client.close()
+            }
         }
     }
 

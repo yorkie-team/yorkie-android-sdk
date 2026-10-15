@@ -139,11 +139,27 @@ message WatchResponse {
   oneof body {
     WatchInitialization initialization = 1;
     WatchEvent event = 2;
+    // heartbeat is sent at the server's advertised interval
+    // (WatchInitialization.heartbeat_interval_ms) to prove a quiet stream is
+    // still alive; it carries no payload. Ported from yorkie-js-sdk
+    // `c69e6bda` (#1472).
+    WatchHeartbeat heartbeat = 3;
   }
 }
 
 message WatchInitialization {
   repeated ResourceInit resource_inits = 1;
+  // heartbeat_interval_ms is the interval, in milliseconds, at which the
+  // server will send WatchHeartbeat frames on this stream, or 0 if the
+  // server advertises none (an older server, or a client that asked for
+  // none — see WatchRequest.heartbeat_interval_ms, #1483). Ported from
+  // yorkie-js-sdk `c69e6bda` (#1472).
+  int64 heartbeat_interval_ms = 2;
+}
+
+// WatchHeartbeat is an empty heartbeat frame sent on a Watch stream to prove
+// liveness between real events. Ported from yorkie-js-sdk `c69e6bda` (#1472).
+message WatchHeartbeat {
 }
 
 message ResourceInit {

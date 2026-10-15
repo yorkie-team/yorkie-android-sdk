@@ -102,6 +102,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
@@ -172,6 +173,39 @@ class MockYorkieService(
     /** The `actor_id` most recently sent on a document/channel [WatchRequest], for assertions. */
     var lastDocumentWatchActorId: String? = null
     var lastChannelWatchActorId: String? = null
+
+    /**
+     * Number of [watch] calls that opened a NEW document stream -- a reconnect (idle timeout
+     * or otherwise) opens a fresh one, so this lets a test assert whether a reconnect happened
+     * without inspecting `Client`'s own internals (#1472).
+     */
+    var documentWatchConnectCount = 0
+
+    /**
+     * Overrides [WatchInitialization.heartbeat_interval_ms] on the NEXT document watch
+     * connection's init frame (every reconnect re-reads this; null omits the field, proto3's
+     * default 0 — an older server, or one that advertises none, #1472).
+     */
+    var documentWatchHeartbeatIntervalMsOverride: Long? = null
+
+    /**
+     * When set, invoked with this connection's response channel right after the init frame
+     * (and the existing 50ms settle delay) INSTEAD of the default CHANGED/WATCHED/UNWATCHED
+     * script or [SILENT_WATCH_DOCUMENT_KEY]'s plain silence -- gives a test full control over
+     * what follows init: periodic [WatchHeartbeat] frames, deliberate silence, or a mix,
+     * without inventing a new document-key constant per scenario (#1472, `WatchIdleTest`).
+     */
+    var documentWatchFramePusher: (suspend (SendChannel<WatchResponse>) -> Unit)? = null
+
+    /**
+     * Channel-stream twin of [documentWatchConnectCount]/[documentWatchHeartbeatIntervalMsOverride]/
+     * [documentWatchFramePusher] (M6, team-review RTCOLLABPLATFORM-789): a channel watch (e.g.
+     * [dev.yorkie.core.Client.attachChannel]) reconnects on its own idle/heartbeat path, same as a
+     * document watch, but had no equivalent seam to test it with.
+     */
+    var channelWatchConnectCount = 0
+    var channelWatchHeartbeatIntervalMsOverride: Long? = null
+    var channelWatchFramePusher: (suspend (SendChannel<WatchResponse>) -> Unit)? = null
 
     /**
      * Document keys whose [pushPullChanges] response is an ACK-ONLY pure push-ack: empty
@@ -706,6 +740,7 @@ class MockYorkieService(
                 val documentId = input.resourcesList
                     .firstOrNull { it.resourceCase == ResourceDescriptor.ResourceCase.DOCUMENT }
                     ?.document?.documentId ?: return
+                documentWatchConnectCount += 1
 
                 responseChannel.trySend(
                     watchResponse {
@@ -723,6 +758,9 @@ class MockYorkieService(
                                     }
                                 },
                             )
+                            documentWatchHeartbeatIntervalMsOverride?.let {
+                                heartbeatIntervalMs = it
+                            }
                         }
                     },
                 )
@@ -731,6 +769,10 @@ class MockYorkieService(
                     responseChannel.close(
                         ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!),
                     )
+                    return
+                }
+                documentWatchFramePusher?.let { pusher ->
+                    pusher(responseChannel)
                     return
                 }
                 if (documentId == SILENT_WATCH_DOCUMENT_KEY) {
@@ -784,6 +826,7 @@ class MockYorkieService(
             }
 
             private suspend fun handleChannelWatch() {
+                channelWatchConnectCount += 1
                 responseChannel.trySend(
                     watchResponse {
                         initialization = watchInitialization {
@@ -792,10 +835,17 @@ class MockYorkieService(
                                     channelInit = channelInit {}
                                 },
                             )
+                            channelWatchHeartbeatIntervalMsOverride?.let {
+                                heartbeatIntervalMs = it
+                            }
                         }
                     },
                 )
                 delay(50)
+                channelWatchFramePusher?.let { pusher ->
+                    pusher(responseChannel)
+                    return
+                }
                 repeat(3) {
                     responseChannel.trySend(
                         watchResponse {

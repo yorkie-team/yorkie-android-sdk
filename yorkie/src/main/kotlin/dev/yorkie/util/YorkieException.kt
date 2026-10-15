@@ -176,6 +176,13 @@ public open class YorkieException(
         // for the affected document instead of resending every tick. Ported verbatim
         // from yorkie-js-sdk `error.ts` (`29a81fe0`, #1462).
         ErrChangeTooLarge("ErrChangeTooLarge"),
+
+        // ErrWatchStreamIdle is returned when a Watch stream has gone silent longer
+        // than the server's advertised heartbeat interval allows (see
+        // `watchIdleTimeoutMs`, `Client.kt`) -- raised internally to abort the read loop;
+        // the outer watch loop then reconnects the same as it does for any other stream
+        // failure. Ported verbatim from yorkie-js-sdk `error.ts` (`c69e6bda`, #1472).
+        ErrWatchStreamIdle("ErrWatchStreamIdle"),
     }
 }
 

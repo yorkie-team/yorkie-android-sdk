@@ -78,6 +78,7 @@ import dev.yorkie.util.YorkieException.Code.ErrInvalidServerSeq
 import dev.yorkie.util.YorkieException.Code.ErrRefused
 import dev.yorkie.util.YorkieException.Code.ErrSessionNotFound
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
+import dev.yorkie.util.YorkieException.Code.ErrWatchStreamIdle
 import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.errorCodeOf
@@ -115,7 +116,6 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.onClosed
 import kotlinx.coroutines.channels.onFailure
-import kotlinx.coroutines.channels.onSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -937,6 +937,15 @@ public class Client(
         callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
     }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
 
+    // M6 (team-review, RTCOLLABPLATFORM-789): the idle-reconnect path's own failure
+    // cause (`ErrWatchStreamIdle` once a positive heartbeat interval armed the clock,
+    // a plain `TimeoutException` otherwise) is swallowed into a log call
+    // (`sendWatchAttachmentResourceStreamException`) with nothing else test-observable
+    // to distinguish the two.
+    @VisibleForTesting
+    internal var onWatchStreamIdleCause: ((isDocument: Boolean, cause: Throwable) -> Unit)? = null
+
+
     @VisibleForTesting
     internal val conditions: MutableMap<ClientCondition, Boolean> = mutableMapOf(
         ClientCondition.SYNC_LOOP to false,
@@ -1604,52 +1613,95 @@ public class Client(
                     }
                 } ?: continue
 
+                // D5 (#1472): re-armed to `streamTimeout` for every fresh connection, then
+                // narrowed once the init frame advertises a positive heartbeat interval
+                // (`idleArmed`); an older server, or one that advertises none, leaves this
+                // at `streamTimeout` and the failure below stays a plain `TimeoutException`
+                // -- today's behaviour, unchanged.
+                var receiveTimeout = streamTimeout
+                var idleArmed = false
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val responseChannel = stream.responseChannel()
                     while (!stream.isReceiveClosed() &&
                         !responseChannel.isClosedForReceive && shouldContinue
                     ) {
-                        withTimeoutOrNull(streamTimeout) {
-                            val receiveResult = responseChannel.receiveCatching()
-                            receiveResult.onSuccess {
-                                // Every frame of any kind proves the watch stream is alive —
-                                // resets this attachment's silence clock, disengaging pull
-                                // fallback if it had engaged (#351 phase 1).
-                                attachment.markWatchResponseReceived()
-                                handleWatchDocumentResponse(
-                                    documentKey = documentKey,
-                                    response = it,
+                        // D5: ONLY the receive itself sits inside the timeout -- handling a
+                        // response can suspend (`Document.publishEvent` is an unbuffered-flow
+                        // emit a stalled collector can park on indefinitely), and that
+                        // suspension must never be misread as the STREAM going silent.
+                        // Statement-level parity with JS is not enough here: JS has no such
+                        // suspend point (js-sync-block-becomes-suspend-window).
+                        val receiveResult = withTimeoutOrNull(receiveTimeout) {
+                            responseChannel.receiveCatching()
+                        }
+                        if (receiveResult == null) {
+                            val idleCause = if (idleArmed) {
+                                YorkieException(
+                                    ErrWatchStreamIdle,
+                                    "watch stream idle past " +
+                                        "${receiveTimeout.inWholeMilliseconds}ms",
                                 )
-                                shouldContinue = true
-                            }.onFailure {
-                                if (receiveResult.isClosed) {
-                                    stream.safeClose()
-                                    return@onFailure
-                                }
-                                shouldContinue = handleWatchDocumentStreamFailure(
-                                    document = document,
-                                    stream = stream,
-                                    cause = it,
-                                    cancelled = attachment.cancelled,
-                                )
-                            }.onClosed {
-                                handleWatchDocumentStreamFailure(
-                                    document = document,
-                                    stream = stream,
-                                    cause = it
-                                        ?: ClosedReceiveChannelException("Channel was closed"),
-                                    cancelled = attachment.cancelled,
-                                )
+                            } else {
+                                TimeoutException("channel timed out")
                             }
-                        } ?: run {
+                            onWatchStreamIdleCause?.invoke(true, idleCause)
                             handleWatchDocumentStreamFailure(
                                 document = document,
                                 stream = stream,
-                                cause = TimeoutException("channel timed out"),
+                                cause = idleCause,
                                 cancelled = attachment.cancelled,
                             )
                             shouldContinue = true
+                            continue
                         }
+                        receiveResult.onFailure {
+                            if (receiveResult.isClosed) {
+                                stream.safeClose()
+                                return@onFailure
+                            }
+                            shouldContinue = handleWatchDocumentStreamFailure(
+                                document = document,
+                                stream = stream,
+                                cause = it,
+                                cancelled = attachment.cancelled,
+                            )
+                        }.onClosed {
+                            handleWatchDocumentStreamFailure(
+                                document = document,
+                                stream = stream,
+                                cause = it
+                                    ?: ClosedReceiveChannelException("Channel was closed"),
+                                cancelled = attachment.cancelled,
+                            )
+                        }
+                        val response = receiveResult.getOrNull() ?: continue
+                        // Every frame of any kind proves the watch stream is alive — resets
+                        // this attachment's silence clock, disengaging pull fallback if it
+                        // had engaged (#351 phase 1). Done BEFORE the handler below (which
+                        // can suspend) so the clock reflects this frame's arrival, not
+                        // whenever the handler eventually finished with it.
+                        attachment.markWatchResponseReceived()
+                        if (response.hasHeartbeat()) {
+                            // No payload: the silence clock reset above is this frame's
+                            // entire purpose (#1472).
+                            shouldContinue = true
+                            continue
+                        }
+                        if (response.hasInitialization()) {
+                            val heartbeatIntervalMs = response.initialization.heartbeatIntervalMs
+                            if (heartbeatIntervalMs > 0) {
+                                receiveTimeout = watchIdleTimeoutMs(heartbeatIntervalMs)
+                                    .milliseconds
+                                idleArmed = true
+                            } else {
+                                receiveTimeout = streamTimeout
+                                idleArmed = false
+                            }
+                        }
+                        // Outside the receive timeout (D5): a slow handler suspension is
+                        // never attributed to the stream's own silence clock.
+                        handleWatchDocumentResponse(documentKey = documentKey, response = response)
+                        shouldContinue = true
                     }
                 }
                 stream.sendAndClose(
@@ -1830,42 +1882,77 @@ public class Client(
                         latestStream = it
                     }
                 } ?: continue
+                // D5 (#1472): same restructure as the document watch job above -- see its
+                // comments for the rationale.
+                var receiveTimeout = streamTimeout
+                var idleArmed = false
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val responseChannel = stream.responseChannel()
                     while (!stream.isReceiveClosed() &&
                         !responseChannel.isClosedForReceive && shouldContinue
                     ) {
-                        withTimeoutOrNull(streamTimeout) {
-                            val receiveResult = responseChannel.receiveCatching()
-                            receiveResult.onSuccess {
-                                handleWatchChannelResponse(channel = channel, response = it)
-                                shouldContinue = true
-                            }.onFailure {
-                                if (receiveResult.isClosed) {
-                                    stream.safeClose()
-                                    return@onFailure
-                                }
-                                shouldContinue = handleWatchChannelStreamFailure(
-                                    stream = stream,
-                                    cause = it,
-                                    cancelled = attachment.cancelled,
+                        val receiveResult = withTimeoutOrNull(receiveTimeout) {
+                            responseChannel.receiveCatching()
+                        }
+                        if (receiveResult == null) {
+                            val idleCause = if (idleArmed) {
+                                YorkieException(
+                                    ErrWatchStreamIdle,
+                                    "watch stream idle past " +
+                                        "${receiveTimeout.inWholeMilliseconds}ms",
                                 )
-                            }.onClosed {
-                                handleWatchChannelStreamFailure(
-                                    stream = stream,
-                                    cause = it
-                                        ?: ClosedReceiveChannelException("Channel was closed"),
-                                    cancelled = attachment.cancelled,
-                                )
+                            } else {
+                                TimeoutException("channel timed out")
                             }
-                        } ?: run {
+                            onWatchStreamIdleCause?.invoke(false, idleCause)
                             handleWatchChannelStreamFailure(
                                 stream = stream,
-                                cause = TimeoutException("channel timed out"),
+                                cause = idleCause,
                                 cancelled = attachment.cancelled,
                             )
                             shouldContinue = true
+                            continue
                         }
+                        receiveResult.onFailure {
+                            if (receiveResult.isClosed) {
+                                stream.safeClose()
+                                return@onFailure
+                            }
+                            shouldContinue = handleWatchChannelStreamFailure(
+                                stream = stream,
+                                cause = it,
+                                cancelled = attachment.cancelled,
+                            )
+                        }.onClosed {
+                            handleWatchChannelStreamFailure(
+                                stream = stream,
+                                cause = it
+                                    ?: ClosedReceiveChannelException("Channel was closed"),
+                                cancelled = attachment.cancelled,
+                            )
+                        }
+                        val response = receiveResult.getOrNull() ?: continue
+                        if (response.hasHeartbeat()) {
+                            // Channels never engage the document-only pull-fallback clock
+                            // (#351), so there is no silence clock to reset here -- the
+                            // frame's only job is to keep this receive from timing out.
+                            shouldContinue = true
+                            continue
+                        }
+                        if (response.hasInitialization()) {
+                            val heartbeatIntervalMs = response.initialization.heartbeatIntervalMs
+                            if (heartbeatIntervalMs > 0) {
+                                receiveTimeout = watchIdleTimeoutMs(heartbeatIntervalMs)
+                                    .milliseconds
+                                idleArmed = true
+                            } else {
+                                receiveTimeout = streamTimeout
+                                idleArmed = false
+                            }
+                        }
+                        // Outside the receive timeout (D5): see the document watch job.
+                        handleWatchChannelResponse(channel = channel, response = response)
+                        shouldContinue = true
                     }
                 }
                 stream.sendAndClose(
@@ -3816,4 +3903,28 @@ public class Client(
         // before it is stamped into document changes.
         private val ActorIdRegex = Regex("[0-9a-f]{24}")
     }
+}
+
+/**
+ * How long (ms) a Watch stream may stay silent before it is treated as idle and reconnected,
+ * given the server's advertised [heartbeatIntervalMs] (`WatchInitialization.heartbeat_interval_ms`,
+ * read once per stream connection, after its init frame). `<= 0` means the server advertises no
+ * heartbeat at all -- `0` here keeps today's fixed `streamTimeout` behaviour (an older server, or
+ * one this client asked to send none, #1483). Otherwise three missed heartbeats, clamped to
+ * [1 second, 24 hours] the same way a single dropped frame does not misreport idle but an
+ * actually-dead stream is not left waiting a full day. Pure and top-level so it is directly
+ * unit-testable without a [Client] instance. Ported verbatim from yorkie-js-sdk
+ * `watchIdleTimeout` (`c69e6bda`, #1472).
+ */
+internal fun watchIdleTimeoutMs(heartbeatIntervalMs: Long): Long {
+    if (heartbeatIntervalMs <= 0) {
+        return 0
+    }
+    // CJ-LOW-1 (round 4 fix): clamp BEFORE multiplying by 3 -- for an advertised
+    // interval past Long.MAX_VALUE / 3 (~3.07e18), the raw multiply wraps negative and
+    // coerceIn pins the result to the 1s floor instead of the intended 24h cap (JS
+    // multiplies in doubles, which does not overflow, and clamps the same way). No
+    // conforming server advertises anything near this; clamping the input to the cap
+    // divided by 3 up front makes the multiply itself incapable of overflowing.
+    return (minOf(heartbeatIntervalMs, 28_800_000L) * 3).coerceIn(1_000L, 86_400_000L)
 }

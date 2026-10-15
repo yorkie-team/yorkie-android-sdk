@@ -40,6 +40,13 @@ internal class Attachment<R : Attachable>(
      */
     val disablePresence: Boolean = false,
     /**
+     * The schema key this document was attached with, or null for an unschema'd attach.
+     * Documents only. Captured at attach time so `Client.resyncAsync` can carry it into
+     * the re-attach its resync performs (D4: JS's own resync drops the schema; Android
+     * keeps it, a deliberate, recorded divergence).
+     */
+    val schemaKey: String? = null,
+    /**
      * Clock used for all liveness/throttle timing. Defaults to the real wall clock;
      * tests inject a fake `var now` to drive [needSync] deterministically without
      * real delays, since the client runs its sync loop on a real (non-virtualizable)
@@ -63,6 +70,27 @@ internal class Attachment<R : Attachable>(
     @Volatile
     var changeEventReceived: Boolean? = syncMode?.let { false }
     var cancelled: Boolean = false
+
+    /**
+     * Set while `Client.resyncAsync` is resyncing this attachment's document (D3): the
+     * sync loop skips an attachment with this set (checked before `needSync`), and
+     * `syncInternal`'s document branch re-checks attachment IDENTITY (not this flag)
+     * right after acquiring the document's mutex, because a resync replaces the
+     * `Attachment` object outright rather than clearing this on the old one. `@Volatile`
+     * for the same cross-dispatcher reason as [syncMode].
+     */
+    @Volatile
+    var resyncing: Boolean = false
+
+    /**
+     * True once this attachment has published `Document.Event.AuthError(PushPull)` for
+     * the CURRENT run of denied pushes (D2); cleared on the next successful push-pull.
+     * Dedupes the publish to once per denial episode instead of once per sync-loop tick
+     * (every `Client.Options.syncLoopDuration`) -- the loop itself keeps ticking so the
+     * client self-heals the moment the webhook relents. Confined to the client
+     * dispatcher's sync loop; no [Volatile] needed.
+     */
+    var pushDenied: Boolean = false
 
     /**
      * The [SessionLockHandle] leased for this attachment's document while a [Client.Options.docStore]

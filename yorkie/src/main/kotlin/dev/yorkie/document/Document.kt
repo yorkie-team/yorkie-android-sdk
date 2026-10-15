@@ -287,13 +287,125 @@ public class Document(
             .orEmpty()
 
     /**
+     * Gates new local writes while `Client.resyncAsync` discards this document's
+     * un-pushed queue and re-anchors it under a fresh attach (JS SDK `document.ts`,
+     * `61ca06c9`/#1463, D3). Set by [discardLocalChanges] (unconditionally, even for an
+     * empty queue -- round-4 fix for CJ-MED-1: an empty queue still has an updater that
+     * may be suspended PAST [ensureMintableAtEntry] and resume mid-resync), cleared by
+     * [restoreLocalChanges] (a refused detach rolls the resync back) and
+     * [resetForReanchor] (a successful resync's reanchor). `@Volatile`: written from this
+     * document's own [dispatcher] by those three functions, read by [isMintable] /
+     * [ensureMintableAtEntry] from whichever dispatcher an updater or undo/redo call
+     * happens to run on.
+     */
+    @Volatile
+    private var mintingSuspended = false
+
+    /**
+     * Bumped by every [discardLocalChanges], [restoreLocalChanges] and
+     * [resetForReanchor] call. [mintingSuspended] alone only blocks an updater/undo/redo
+     * pass that enters AFTER a discard already set it; it does not catch a pass already
+     * past its entry check when a resync starts (it straddles the WHOLE discard ->
+     * resetForReanchor window) and resumes once [resetForReanchor] has already cleared
+     * the flag -- that pass would otherwise mint a change carrying the OLD attachment's
+     * clientSeq into the freshly re-anchored one (CJ-MED-1, round 4 fix).
+     * [ensureMintableAtEntry] captures this at entry; [ensureMintableBeforeAppend]
+     * compares it again immediately before the append and refuses on any mismatch, not
+     * just on [mintingSuspended]. `@Volatile` for the same reason as [mintingSuspended]
+     * -- written only from [dispatcher], read from whichever dispatcher a suspended
+     * pass resumes on.
+     */
+    @Volatile
+    private var mintGeneration = 0
+
+    /**
+     * True unless a resync has suspended minting on this document (see
+     * [mintingSuspended]) -- i.e. no resync is currently between its discard and its
+     * re-anchor. [DocumentHistory.canUndo]/[DocumentHistory.canRedo] gate on this in
+     * addition to their own stack checks, and [updateAsync]/undo-redo refuse with
+     * [YorkieException.Code.ErrRefused] via [ensureMintableAtEntry] while it is false.
+     */
+    public fun isMintable(): Boolean = !mintingSuspended
+
+    /**
+     * Throws [YorkieException.Code.ErrRefused] while [isMintable] is false -- called at
+     * [updateAsync]'s and undo/redo's ENTRY, so a pass suspended behind a resync never
+     * starts running against a document about to be torn down -- and returns the
+     * [mintGeneration] snapshot at that moment, to be re-checked by
+     * [ensureMintableBeforeAppend] right before the pass appends its change. A new
+     * `ErrRefused` window opens on EVERY [updateAsync]/`undoAsync`/`redoAsync` call once
+     * any caller in the process has opted into `Client.resyncAsync` -- see that
+     * function's own KDoc for exactly when the window opens and closes.
+     */
+    private fun ensureMintableAtEntry(): Int {
+        if (mintingSuspended) {
+            throw YorkieException(
+                YorkieException.Code.ErrRefused,
+                "document($key) refused to mint: a resync is discarding its local changes",
+            )
+        }
+        return mintGeneration
+    }
+
+    /**
+     * Re-checks immediately before appending to [localChanges], because the
+     * updater/undo-redo pass is itself a suspend lambda: a pass already past
+     * [ensureMintableAtEntry] can still resume AFTER [discardLocalChanges] or even
+     * [resetForReanchor] has run while it was suspended. Refuses on [mintingSuspended]
+     * OR on [mintGeneration] having moved since [generationAtEntry] was captured --
+     * the generation check is what catches a pass that straddled a WHOLE resync
+     * (CJ-MED-1), since [mintingSuspended] alone is already false again by then.
+     */
+    private fun ensureMintableBeforeAppend(generationAtEntry: Int) {
+        if (mintingSuspended || mintGeneration != generationAtEntry) {
+            throw YorkieException(
+                YorkieException.Code.ErrRefused,
+                "document($key) refused to mint: a resync is discarding its local changes",
+            )
+        }
+    }
+
+    /**
+     * Suspends minting (see [isMintable]) and drains [localChanges] without touching
+     * [checkPoint]'s clientSeq -- the discarded changes' clientSeq slots stay claimed, so
+     * a later [resetForReanchor] + re-attach starts the server relationship over at
+     * [CheckPoint.InitialCheckPoint] rather than resuming a sequence with a hole in it
+     * (JS SDK `document.ts` `discardLocalChanges`, `61ca06c9`/#1463). Always suspends
+     * minting and bumps [mintGeneration], even for an empty queue (round-4 fix for
+     * CJ-MED-1 -- an empty queue can still have an updater suspended past its entry
+     * check). `internal`: only `Client.resyncAsync` calls this.
+     */
+    internal suspend fun discardLocalChanges(): List<Change> = withContext(dispatcher) {
+        val discarded = localChanges.toList()
+        mintingSuspended = true
+        mintGeneration++
+        localChanges.clear()
+        discarded
+    }
+
+    /**
+     * Reverses [discardLocalChanges]: restores [changes] to the front of [localChanges],
+     * bumps [mintGeneration] again and clears [mintingSuspended]. Called when a resync's
+     * detach is itself refused (JS SDK `document.ts` `restoreLocalChanges`), so the
+     * caller can keep using the document as though the resync never started -- any
+     * updater/undo-redo pass still suspended from BEFORE the discard is refused rather
+     * than minting against a base the restore may have already changed under it.
+     */
+    internal suspend fun restoreLocalChanges(changes: List<Change>): Unit =
+        withContext(dispatcher) {
+            localChanges.addAll(0, changes)
+            mintingSuspended = false
+            mintGeneration++
+        }
+
+    /**
      * Provides undo/redo operations for local user changes in this document.
      * The resulting document changes are synchronized normally.
      */
     public val history: DocumentHistory = object : DocumentHistory {
-        override fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating
+        override fun canUndo(): Boolean = internalHistory.hasUndo() && !isUpdating && isMintable()
 
-        override fun canRedo(): Boolean = internalHistory.hasRedo() && !isUpdating
+        override fun canRedo(): Boolean = internalHistory.hasRedo() && !isUpdating && isMintable()
 
         override fun undoAsync(): Deferred<OperationResult> = executeUndoRedo(isUndo = true)
 
@@ -305,28 +417,41 @@ public class Document(
      */
     public interface DocumentHistory {
         /**
-         * Returns true if there are operations that can be undone.
+         * Returns true if there are operations that can be undone. Also false while a
+         * `Client.resyncAsync` call on this document is between its discard and its
+         * re-anchor, even if the undo stack itself is non-empty.
          */
         fun canUndo(): Boolean
 
         /**
-         * Returns true if there are operations that can be redone.
+         * Returns true if there are operations that can be redone. Also false while a
+         * `Client.resyncAsync` call on this document is between its discard and its
+         * re-anchor, even if the redo stack itself is non-empty.
          */
         fun canRedo(): Boolean
 
         /**
-         * Undoes the last local operation.
+         * Undoes the last local operation. Throws [YorkieException.Code.ErrRefused] while
+         * a `Client.resyncAsync` call on this document is between its discard and its
+         * re-anchor -- a new failure mode reachable once any caller opts into resync.
          */
         fun undoAsync(): Deferred<OperationResult>
 
         /**
-         * Redoes the last undone operation.
+         * Redoes the last undone operation. Throws [YorkieException.Code.ErrRefused] while
+         * a `Client.resyncAsync` call on this document is between its discard and its
+         * re-anchor -- a new failure mode reachable once any caller opts into resync.
          */
         fun redoAsync(): Deferred<OperationResult>
     }
 
     /**
      * Executes the given [updater] to update this document.
+     *
+     * Throws [YorkieException.Code.ErrRefused] while a `Client.resyncAsync` call on this
+     * document is between its discard and its re-anchor -- a new failure mode reachable
+     * once any caller opts into resync, including when [updater] itself was already
+     * running before the resync started and only resumes afterward.
      *
      * @param skipHistory Skips recording this change on the undo/redo history
      * stacks when true. The change still mutates the document, emits events,
@@ -362,6 +487,10 @@ public class Document(
                 status != ResourceStatus.Removed,
                 YorkieException(ErrDocumentRemoved, "document($key) is removed"),
             )
+            // Refuses before the updater runs at all if a resync has suspended minting
+            // (D3) -- see ensureMintableAtEntry's doc for why the ENTRY check alone is
+            // not enough; the captured generation is re-checked at the append below.
+            val mintGenerationAtEntry = ensureMintableAtEntry()
 
             val clone = ensureClone()
             val context = ChangeContext(
@@ -452,6 +581,26 @@ public class Document(
 
             if (!context.hasChange) {
                 return@async result
+            }
+            // The updater is a suspend lambda (above): a pass already past the entry
+            // check can still resume here AFTER discardLocalChanges() ran while it was
+            // suspended -- or even after a WHOLE resync finished (resetForReanchor
+            // already cleared mintingSuspended by then, CJ-MED-1), which is what the
+            // generation half of this check catches. Checked here, BEFORE the root
+            // pass, so a late refusal never mutates the root at all: previously this
+            // ran only after change.execute() below, leaving a refused change's
+            // operations already applied to the root with no way to undo them, and the
+            // lamport unburned. Burn the lamport and this actor's version-vector entry
+            // the same way the root-pass catch below does, clientSeq unchanged -- this
+            // change is never appended to localChanges on this path.
+            try {
+                ensureMintableBeforeAppend(mintGenerationAtEntry)
+            } catch (e: YorkieException) {
+                this@Document.clone = null
+                if (!context.isPresenceOnlyChange()) {
+                    changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+                }
+                throw e
             }
             val change = context.toChange()
             val localResult = try {
@@ -584,9 +733,17 @@ public class Document(
             // live against a CONCURRENT updateAsync (this flag was never
             // set before, so that guard never actually fired -- backlog
             // 019). Shares the same inFlight COUNT as updateAsync.
+            // Refuses before executeUndoRedoInternal runs at all if a resync has
+            // suspended minting (D3); the outer catch below clears the clone on ANY
+            // throw from executeUndoRedoInternal, including ensureMintableBeforeAppend's
+            // second check right before that function's own append (no clone was
+            // created at THIS entry check yet, so nothing to drop here). The captured
+            // generation is threaded through so that second check also catches a pass
+            // that straddled a WHOLE resync (CJ-MED-1), not just an in-progress discard.
+            val mintGenerationAtEntry = ensureMintableAtEntry()
             inFlight.incrementAndGet()
             try {
-                executeUndoRedoInternal(isUndo)
+                executeUndoRedoInternal(isUndo, mintGenerationAtEntry)
             } catch (err: Throwable) {
                 // Change.execute applies operations one at a time and does
                 // not roll back, so an undo/redo that throws partway leaves
@@ -610,7 +767,10 @@ public class Document(
      * Pops the next history entry for [isUndo] and applies it to the clone
      * and the root.
      */
-    private suspend fun executeUndoRedoInternal(isUndo: Boolean): OperationResult {
+    private suspend fun executeUndoRedoInternal(
+        isUndo: Boolean,
+        mintGenerationAtEntry: Int,
+    ): OperationResult {
         val ops = if (isUndo) {
             internalHistory.popUndo()
         } else {
@@ -844,6 +1004,27 @@ public class Document(
         }
 
         val change = context.toChange().apply { isUndoRedo = true }
+        // Same late-refusal check as updateAsync's: this pass is itself a suspend
+        // function and can resume after discardLocalChanges() ran while it was
+        // suspended, or after a WHOLE resync finished (CJ-MED-1, caught by the
+        // generation half). Checked here, BEFORE the clone pass, so a refused
+        // undo/redo touches neither the clone nor the root tree and pushes nothing
+        // onto the history stacks below -- previously this ran only after both
+        // passes executed and the reverse ops were already pushed, so a refusal
+        // left the trees mutated and the opposite stack carrying an entry for a
+        // change that was never minted. Burn the lamport the same way the root-pass
+        // catch below does, and detach the split/reissue handlers registered above
+        // so a refused entry's hooks do not outlive it.
+        try {
+            ensureMintableBeforeAppend(mintGenerationAtEntry)
+        } catch (e: YorkieException) {
+            splitOps.forEach { it.onSplitTicketConsumed(null) }
+            reissueOps.forEach { it.onContentIDsReissued(null) }
+            if (!context.isPresenceOnlyChange()) {
+                changeID = context.getNextId().copy(clientSeq = changeID.clientSeq)
+            }
+            throw e
+        }
         val undoRedoResult = try {
             // Execute on clone (validation). Never touches the root, so a
             // throw here needs no lamport burn -- it propagates to
@@ -2131,6 +2312,15 @@ public class Document(
         // alone. mintedOperations is NEVER cleared (context §3.2): whatever
         // this document already minted stays minted even across a reanchor.
         absorbedRemote = false
+        // Lifts a resync's mint suspension (D3): a successful resync calls this right
+        // before re-attaching, so the fresh attach starts mintable again. A refused
+        // detach instead rolls back via restoreLocalChanges, which clears the same flag.
+        // mintGeneration is bumped too (CJ-MED-1, round 4 fix): a pass that captured its
+        // generation BEFORE the discard and resumes only now, after the whole resync
+        // already finished, must still be refused -- mintingSuspended alone is already
+        // false again right here.
+        mintingSuspended = false
+        mintGeneration++
         clearHistory()
     }
 
@@ -2380,7 +2570,15 @@ public class Document(
         ) : Event
 
         /**
-         * `AuthError` means that an authentication error occurred.
+         * `AuthError` means that an authentication error occurred. Published for
+         * [AuthErrorMethod.Watch]/[AuthErrorMethod.Broadcast] on `ErrUnauthenticated`, and
+         * -- new as of this document's push-pull path -- for [AuthErrorMethod.PushPull] on
+         * `ErrPermissionDenied` (an authorization webhook denial, distinct from an
+         * unauthenticated token): published once per denial EPISODE, not once per
+         * sync-loop tick, and only `shouldRefreshToken`-free (this path never asks for a
+         * token refresh, since the token itself was accepted). An episode ends only on the
+         * next push-pull that SUCCEEDS on this attachment; a different failure (e.g. a
+         * transient `RESOURCE_EXHAUSTED`) in between does not clear it or re-publish.
          */
         public data class AuthError(
             val reason: String,
@@ -2432,6 +2630,12 @@ public class Document(
             // the store-backed attach path (`Client.kt`) when the log cannot
             // back the persisted header.
             LogDiscontinuity("log-discontinuity"),
+
+            // WriteDenied is raised when `Client.resyncAsync` discards this document's
+            // un-pushed local changes after the server refused to accept them (JS SDK
+            // `client.ts` `61ca06c9`/#1463). Ported verbatim from JS's
+            // `local-changes-dropped` reason `write-denied`.
+            WriteDenied("write-denied"),
         }
 
         /**

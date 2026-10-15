@@ -163,6 +163,12 @@ public open class YorkieException(
         // that condition so it is diagnosable instead of surfacing as whatever the
         // failing operation happened to throw.
         ErrChangeApplyFailed("ErrChangeApplyFailed"),
+
+        // ErrRefused is returned when a write (update/undo/redo) is attempted while
+        // Client.resyncAsync has suspended minting on this document -- between
+        // discarding its un-pushed local changes and re-anchoring it under a fresh
+        // attach. Ported verbatim from yorkie-js-sdk `error.ts` (`61ca06c9`, #1463).
+        ErrRefused("ErrRefused"),
     }
 }
 

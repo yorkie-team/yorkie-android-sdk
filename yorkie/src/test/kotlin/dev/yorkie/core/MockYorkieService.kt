@@ -198,6 +198,14 @@ class MockYorkieService(
     val ackOnlyVersionVectorOverride = mutableMapOf<String, VersionVector>()
 
     /**
+     * Document keys whose [pushPullChanges] fails with [YorkieException.Code.ErrPermissionDenied]
+     * (an authorization webhook denying a PushPull, D2) -- a live set, not a one-shot: the test
+     * removes a key once it wants the next push-pull to succeed again (the webhook "relenting"),
+     * so `Client`'s auth-error dedupe can be observed clearing on that transition too.
+     */
+    val permissionDeniedPushPullKeys = mutableSetOf<String>()
+
+    /**
      * Document keys whose [pushPullChanges] response is a PULL that is also an ack: the
      * request's own checkpoint echoed back (as [ackOnlyPushPullKeys]) plus one remote change
      * setting a fresh `pull<N>` key — harmless to re-apply any number of times, unlike the
@@ -393,6 +401,11 @@ class MockYorkieService(
                     )
                 }
                 documentId = forcedDocumentId ?: changePack.documentKey
+                // Echoes the request's disablePresence back, same as the real server
+                // persisting and returning it (resyncAsync's re-attach, D4, is the first
+                // caller that round-trips this instead of only ever reading the request
+                // param it itself just passed down).
+                disablePresence = request.disablePresence
             },
             emptyMap(),
             emptyMap(),
@@ -440,6 +453,23 @@ class MockYorkieService(
 
             val connectException = mockk<ConnectException>(relaxed = true) {
                 every { code } returns customError[EPOCH_MISMATCH_DOCUMENT_KEY]!!
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in permissionDeniedPushPullKeys) {
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPermissionDenied.codeString)
+                .putMetadata("reason", "write denied by webhook")
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.PERMISSION_DENIED
                 every {
                     unpackedDetails(ErrorInfo::class)
                 } returns listOf(errorInfo)

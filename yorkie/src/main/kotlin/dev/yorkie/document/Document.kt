@@ -9,6 +9,7 @@ import dev.yorkie.api.toByteString
 import dev.yorkie.api.toChangeID
 import dev.yorkie.api.toChanges
 import dev.yorkie.api.toPBChanges
+import dev.yorkie.api.toPersistedChanges
 import dev.yorkie.api.toSnapshot
 import dev.yorkie.api.v1.changePack
 import dev.yorkie.core.Attachable
@@ -285,6 +286,319 @@ public class Document(
         get() = allPresences.value[changeID.actor]
             .takeIf { status == ResourceStatus.Attached }
             .orEmpty()
+
+    /**
+     * Whether the server pack this document last applied advertised the
+     * `presence-patch` capability (`ChangePack.capabilities` field 9).
+     * Absence means unsupported, so an older server during a rolling
+     * upgrade -- which advertises nothing -- reports this false. Learned by
+     * [learnPresenceCapability], the first statement of both apply paths
+     * ([applyChangePack], [acknowledgePushedChanges]), strictly before
+     * either suspends (D3, memory js-sync-block-becomes-suspend-window), so
+     * a capability flip a pack reports is visible before anything else in
+     * that apply can read it. Ported from JS `b50f8900` #1477.
+     */
+    private var presencePatchable = false
+
+    /**
+     * Whether the server is holding a base for this actor's presence to
+     * fold a patch into -- a full Put recorded since the last thing that
+     * left it without one. [canPatchPresence] requires both this and
+     * [presencePatchable]. Cleared by committing a [PresenceChange.Clear]
+     * ([trackPresenceBase]) and by every restore rebuild site
+     * ([resetPresenceStateForRestore]); set by committing a
+     * [PresenceChange.Put].
+     */
+    private var presenceBaseSent = false
+
+    /**
+     * Whether the most recently committed local presence change was a
+     * [PresenceChange.Patch]. [learnPresenceCapability]'s caller derives
+     * `needsHeal` from this (`!presencePatchable && presencePatchSent`): an
+     * old server does not reject a patch, it stores it as an empty
+     * presence, so once a patch has been recorded, a server that stops
+     * advertising the capability leaves peers holding an empty presence
+     * until a full Put lands.
+     */
+    private var presencePatchSent = false
+
+    /**
+     * Whether the next local presence change may be recorded as a
+     * [PresenceChange.Patch] instead of a full [PresenceChange.Put]: both
+     * the server's advertised capability and a base to fold onto are
+     * required. Read ONLY at commit time
+     * ([resolvePresenceChangeForCommit], D2), NEVER at [DocPresence]
+     * construction -- the updater is a suspend lambda and the capability
+     * can flip mid-update (memory js-sync-block-becomes-suspend-window).
+     * Ported from JS `b50f8900` #1477 `canPatchPresence`.
+     */
+    private fun canPatchPresence(): Boolean = presencePatchable && presenceBaseSent
+
+    /**
+     * Test-only mirror of JS `isPresencePatchableForTest`: whether the next
+     * local presence change would be recorded as a [PresenceChange.Patch].
+     */
+    @VisibleForTesting
+    internal fun isPresencePatchableForTest(): Boolean = canPatchPresence()
+
+    /**
+     * Whether the server would keep [presence] as a patch base -- mirrors
+     * the server's own accounting (Go `presenceSize`, `server/packs/presence_patch.go`,
+     * `MaxPresenceBaseSize` = 4 KiB, `PresenceEntryOverhead` = 64 bytes per entry): the
+     * UTF-8 bytes of each key, plus the UTF-8 bytes of its value exactly as it goes on the
+     * wire (CJ-MED-2, round 4 fix -- `PresenceConverter.toPBPresence` is a bare
+     * `data.putAll`, never JSON-quoted; the quoting happens only in the JS SDK's own
+     * converter, which has no Android counterpart), plus the fixed per-entry overhead,
+     * summed across every entry -- not just the touched ones, since the FULL presence is
+     * what the server would hold as the next base. Stops counting the moment the running
+     * sum passes the limit, so an oversized presence does not pay for encoding every
+     * value. Ported from JS `b50f8900` #1477 `isCacheablePresence` (JS itself quotes via
+     * `JSON.stringify`, matching ITS OWN wire format; Android's wire format never does).
+     */
+    private fun isCacheablePresence(presence: Map<String, String>): Boolean {
+        var size = 0
+        for ((key, value) in presence) {
+            size += key.toByteArray(Charsets.UTF_8).size +
+                value.toByteArray(Charsets.UTF_8).size +
+                PRESENCE_ENTRY_OVERHEAD
+            if (size > MAX_PRESENCE_BASE_SIZE) {
+                return false
+            }
+        }
+        return true
+    }
+
+    /**
+     * D2 (spec 040): resolves [context]'s provisional [PresenceChange.Put]
+     * into what actually gets queued -- a [PresenceChange.Patch] carrying
+     * only [ChangeContext.presencePatchKeys] when [canPatchPresence] and the
+     * full presence is still [isCacheablePresence], otherwise the Put
+     * unchanged. A [PresenceChange.Clear] or no presence change at all
+     * passes [change] through untouched (returns the SAME reference, never
+     * a [Change.copy] -- undo/redo's [Change.isUndoRedo] flag lives outside
+     * [Change]'s constructor params and would not survive a copy, but
+     * presence undo/redo is not implemented, so a [Change] from that path
+     * never carries a presence change and always takes this branch). MUST
+     * run in the SAME non-suspending block as [ensureMintableBeforeAppend]
+     * and the append to [localChanges] at both call sites ([updateAsync],
+     * undo/redo's `executeUndoRedoInternal`), immediately followed by
+     * [trackPresenceBase] -- a capability flip mid-updater (the updater is
+     * a suspend lambda) can then never land between this decision and the
+     * append it gates (memory js-sync-block-becomes-suspend-window). Never
+     * evaluated at [DocPresence] construction. Ported from JS `b50f8900`
+     * #1477 (`Channel.set`'s own Put-vs-Patch branch, restructured around
+     * Android's suspend-lambda updater). [ChangeContext.presenceBaseless] (CJ-MED-1,
+     * round 4 fix) short-circuits this to the Put branch: a `clear()` earlier in the SAME
+     * update leaves the server with no base a later `put()`'s Patch could fold onto, even
+     * though [patchKeys] is non-empty by the time this runs.
+     */
+    private fun resolvePresenceChangeForCommit(change: Change, context: ChangeContext): Change {
+        val presenceChange = change.presenceChange
+        if (presenceChange !is PresenceChange.Put) {
+            return change
+        }
+        val patchKeys = context.presencePatchKeys
+        return if (
+            canPatchPresence() &&
+            !context.presenceBaseless &&
+            patchKeys.isNotEmpty() &&
+            isCacheablePresence(presenceChange.presence)
+        ) {
+            change.copy(
+                presenceChange = PresenceChange.Patch(
+                    presence = patchKeys.associateWith { presenceChange.presence.getValue(it) },
+                    full = presenceChange.presence,
+                ),
+            )
+        } else {
+            change
+        }
+    }
+
+    /**
+     * Records what [change]'s presence change -- if any -- did to the base
+     * the server holds for this actor's presence, so the next commit's
+     * [canPatchPresence] reads it. A no-op when [change] carries no
+     * presence change (every document-only change, and every undo/redo
+     * entry -- presence undo/redo has no API). Ported from JS `b50f8900`
+     * #1477 `trackPresenceBase`.
+     */
+    private fun trackPresenceBase(change: Change) {
+        when (change.presenceChange ?: return) {
+            is PresenceChange.Put -> {
+                presenceBaseSent = true
+                presencePatchSent = false
+            }
+
+            is PresenceChange.Patch -> presencePatchSent = true
+
+            is PresenceChange.Clear -> {
+                presenceBaseSent = false
+                presencePatchSent = false
+            }
+        }
+    }
+
+    /**
+     * Learns whether the server that returned [pack] advertised the
+     * `presence-patch` capability. MUST be the very first statement of its
+     * two call sites ([applyChangePack], [acknowledgePushedChanges]),
+     * strictly before either suspends. Deliberately does NOT return/capture
+     * `needsHeal`: that is computed state-derived at each caller's tail
+     * instead (`!presencePatchable && presencePatchSent`), so a pack whose
+     * apply throws partway still re-fires the heal on redelivery rather
+     * than losing it to an early snapshot (D3, memory
+     * js-sync-block-becomes-suspend-window). Ported from JS `b50f8900`
+     * #1477 `learnPresenceCapability` (split from `needsHeal` for the
+     * suspend-window reason above).
+     */
+    private fun learnPresenceCapability(pack: ChangePack) {
+        presencePatchable = pack.hasCapability(ChangePack.PRESENCE_PATCH_CAPABILITY)
+    }
+
+    /**
+     * State-derived `needsHeal`: true exactly when the server no longer
+     * advertises the capability but the last thing this document committed
+     * locally was a Patch an old server would have stored as empty.
+     */
+    private fun needsPresenceHeal(): Boolean = !presencePatchable && presencePatchSent
+
+    /**
+     * Re-sends the whole presence as a full Put after [needsPresenceHeal]
+     * -- a capability drop may have left the server storing an outstanding
+     * patch as an empty presence. Skipped on a removed document or while
+     * minting is suspended ([isMintable], D3): a re-anchor/resync re-sends
+     * the presence as a Put of its own, and a removed document has no peers
+     * left to tell. A heal failure is logged and swallowed -- it must never
+     * fail a pack apply that otherwise succeeded. `put()`s the actor's own
+     * currently-held presence back onto itself, which [resolvePresenceChangeForCommit]
+     * then commits as a Put: [canPatchPresence] is false at this point by
+     * construction (`!presencePatchable` is exactly why the heal fired), so
+     * there is no risk of healing with a Patch. Ported from JS `b50f8900`
+     * #1477 `healPresenceBase`.
+     */
+    private suspend fun healPresenceBase() {
+        if (status == ResourceStatus.Removed || !isMintable()) {
+            return
+        }
+        val presence = _presences.value[changeID.actor].orEmpty()
+        try {
+            updateAsync { _, p -> p.put(presence) }.await().getOrThrow()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logError("Document.healPresenceBase", e) {
+                "\"$key\" failed to heal the presence base"
+            }
+        }
+    }
+
+    /**
+     * Returns this document's presence-patch base state to what a document
+     * rehydrated from offline persistence (or a reanchor) may assume: the
+     * capability is unknown again -- it is learned from a returned pack,
+     * and none has landed in this session/attachment -- and the base is
+     * gone with it. [presencePatchSent] over-approximates to "the rebuilt
+     * [localChanges] holds ANY presence change" rather than JS's narrower
+     * "holds a pending Patch specifically": D1 (spec 040) already rewrites
+     * every persisted Patch to a Put before it is ever stored, so a queue
+     * decoded from persistence never literally contains a Patch, and a
+     * tighter check would silently never fire. The cost of the broader
+     * check is one redundant full Put against an old server. Called from
+     * all four rebuild sites: `restoreFrom`, `restoreAppendedChanges`,
+     * `resetForReanchor` and the companion `fromBytes`. Ported from JS
+     * `b50f8900` #1477 `resetPresenceStateForRestore`.
+     */
+    private fun resetPresenceStateForRestore() {
+        presencePatchable = false
+        presenceBaseSent = false
+        presencePatchSent = localChanges.any { it.hasPresenceChange }
+    }
+
+    /**
+     * Drops the assumption that the server holds a base for this actor's presence --
+     * the next local presence change has to be a full [PresenceChange.Put]. Ported from
+     * JS `b50f8900` #1477 `resetPresenceBase`.
+     */
+    private fun resetPresenceBase() {
+        presenceBaseSent = false
+    }
+
+    /**
+     * Whether a [PresenceChange.Patch] is still queued in [localChanges] to be pushed --
+     * it reaches the server verbatim, so a server without the capability would store it
+     * as an empty presence and leave a presence to heal. Ported from JS `b50f8900` #1477
+     * `hasPendingPresencePatch`.
+     */
+    private fun hasPendingPresencePatch(): Boolean =
+        localChanges.any { it.presenceChange is PresenceChange.Patch }
+
+    /**
+     * Rewrites the earliest pending [PresenceChange.Patch] in [localChanges] into a full
+     * [PresenceChange.Put] of the presence it already carries
+     * ([PresenceChange.Patch.full]), leaving every later patch queued alone -- the server
+     * folds patches in clientSeq order, so a put in front of them is the base they need.
+     * Answers `ErrPresenceBaseUnavailable`: the server held no base to fold the rejected
+     * pack's patch into and stored nothing from it, so the whole pack is resent. A patch
+     * without a [PresenceChange.Patch.full] cannot be rewritten (only a wire-decoded patch
+     * lacks one, and that is applied immediately, never queued here) and is skipped in
+     * favor of the next one. MUST be called only from [restorePresencePatchesAndRebuildPack]
+     * so the rewrite and the pack rebuild it feeds happen in the SAME non-suspending
+     * [dispatcher] hop (D4, spec 040). Ported from JS `b50f8900` #1477
+     * `restorePresencePatches`.
+     */
+    private fun restorePresencePatches() {
+        resetPresenceBase()
+        for ((index, change) in localChanges.withIndex()) {
+            val patch = change.presenceChange as? PresenceChange.Patch ?: continue
+            val full = patch.full ?: continue
+            localChanges[index] = change.copy(presenceChange = PresenceChange.Put(full))
+            presenceBaseSent = true
+            break
+        }
+        presencePatchSent = hasPendingPresencePatch()
+    }
+
+    /**
+     * Rewrites the earliest pending presence patch into a full put and rebuilds
+     * [ChangePack] to resend after `ErrPresenceBaseUnavailable` (D4, spec 040) -- both
+     * inside the SAME `withContext(dispatcher)` block as [createChangePack], so a
+     * persist-append of the same clientSeq cannot race the in-memory rewrite (D1's
+     * persist-side mapping already keeps a stored Patch from ever existing; this closes
+     * the in-memory window too). Called by [dev.yorkie.core.Client]'s retry wrapper at
+     * the four push sites (sync/attach/detach/remove), ahead of
+     * `handleConnectException`/`deactivateInternal`. Ported from JS `b50f8900` #1477
+     * `Document.restorePresencePatches` + `Client.pushWithPresenceBase`'s rebuild.
+     */
+    internal suspend fun restorePresencePatchesAndRebuildPack(
+        forceRemove: Boolean = false,
+        mintGenerationAtEntry: Int = mintGeneration,
+    ): ChangePack = withContext(dispatcher) {
+        // M9 (team-review, RTCOLLABPLATFORM-789): the ORIGINAL pack this retries sending
+        // was built from [Client.createChangePack] before the failed push; if a
+        // `Client.resyncAsync` discard -> re-anchor ran in between (mintGeneration moved),
+        // localChanges now belongs to a fresh attachment this stale retry knows nothing
+        // about. Resend nothing rather than mutate/resend content under a torn-down and
+        // re-anchored document -- mirrors [ensureMintableBeforeAppend]'s own generation
+        // check, not just [isMintable] (which would already be true again by the time a
+        // resync finishes).
+        if (mintGenerationAtEntry != mintGeneration) {
+            return@withContext ChangePack(
+                key,
+                checkPoint,
+                emptyList(),
+                null,
+                forceRemove || status == ResourceStatus.Removed,
+                changeID.versionVector,
+                epoch,
+            )
+        }
+        restorePresencePatches()
+        buildChangePack(forceRemove)
+    }
+
+    /** Non-suspending snapshot of [mintGeneration] for [Client]'s own retry wrapper. */
+    internal fun currentMintGeneration(): Int = mintGeneration
 
     /**
      * Gates new local writes while `Client.resyncAsync` discards this document's
@@ -649,8 +963,12 @@ public class Document(
             val newPresences = localResult.newPresences
             val reverseOps = localResult.reverseOps
 
-            localChanges += change
-            if (change.hasOperations) {
+            // D2 (spec 040): resolved + tracked in this SAME non-suspending block,
+            // immediately before the append -- see resolvePresenceChangeForCommit's doc.
+            val committedChange = resolvePresenceChangeForCommit(change, context)
+            trackPresenceBase(committedChange)
+            localChanges += committedChange
+            if (committedChange.hasOperations) {
                 mintedOperations = true
             }
             onLocalChange?.invoke()
@@ -670,7 +988,7 @@ public class Document(
                 // are pushed. Not run for a skipHistory write: that write is
                 // treated like a remote change and must not retarget pending
                 // entries, per the skipHistory contract on this function.
-                for (op in change.operations) {
+                for (op in committedChange.operations) {
                     if (op is ArraySetOperation) {
                         internalHistory.reconcileCreatedAt(op.createdAt, op.value.createdAt)
                     }
@@ -683,7 +1001,7 @@ public class Document(
                 // executeUndoRedoInternal does for an undo/redo one, before
                 // this change's own reverse ops are pushed below. Port
                 // yorkie-js-sdk `b173c093` (#1426).
-                for (op in change.operations) {
+                for (op in committedChange.operations) {
                     if (op is TreeEditOperation) {
                         op.getSplitRecreatedIDs().forEach { (prevID, currID) ->
                             internalHistory.reconcileTreeNodeID(op.parentCreatedAt, prevID, currID)
@@ -699,10 +1017,10 @@ public class Document(
                 }
             }
 
-            if (change.hasOperations) {
-                eventStream.emit(Event.LocalChange(change.toChangeInfo(operationInfos)))
+            if (committedChange.hasOperations) {
+                eventStream.emit(Event.LocalChange(committedChange.toChangeInfo(operationInfos)))
             }
-            if (change.hasPresenceChange) {
+            if (committedChange.hasPresenceChange) {
                 val presence =
                     newPresences?.get(actorID) ?: _presences.value[actorID] ?: return@async result
                 newPresences?.let {
@@ -1142,8 +1460,15 @@ public class Document(
             return Result.success(Unit)
         }
 
-        localChanges += change
-        if (change.hasOperations) {
+        // D2 (spec 040): same hook as updateAsync's, for symmetry -- presence
+        // undo/redo has no API (see the HistoryOperation.Presence branch above), so
+        // `change.presenceChange` is always null here and this resolves to a no-op
+        // (resolvePresenceChangeForCommit returns `change` unchanged; trackPresenceBase
+        // returns immediately).
+        val committedChange = resolvePresenceChangeForCommit(change, context)
+        trackPresenceBase(committedChange)
+        localChanges += committedChange
+        if (committedChange.hasOperations) {
             mintedOperations = true
         }
         onLocalChange?.invoke()
@@ -1160,7 +1485,7 @@ public class Document(
         // reached the peer -- an editor watching only Document.events would
         // never learn the undo ran. Port yorkie-js-sdk `790422ce` (#1421).
         if (undoRedoResult.executedOperations.isNotEmpty()) {
-            eventStream.emit(Event.LocalChange(change.toChangeInfo(opInfos)))
+            eventStream.emit(Event.LocalChange(committedChange.toChangeInfo(opInfos)))
         }
 
         return Result.success(Unit)
@@ -1299,6 +1624,9 @@ public class Document(
      * (`4251ab7e`, #1403).
      */
     internal suspend fun applyChangePack(pack: ChangePack): Unit = withContext(dispatcher) {
+        // D3 (spec 040): the very first statement, strictly before the try block's own
+        // suspensions (applySnapshot/applyChanges) -- see learnPresenceCapability's doc.
+        learnPresenceCapability(pack)
         try {
             if (pack.hasSnapshot) {
                 applySnapshot(
@@ -1341,6 +1669,12 @@ public class Document(
         if (pack.isRemoved) {
             applyStatus(ResourceStatus.Removed)
         }
+
+        // Deferred to the tail (D3, spec 040) so a heal mints against the state this
+        // pack left behind, not mid-application.
+        if (needsPresenceHeal()) {
+            healPresenceBase()
+        }
     }
 
     /**
@@ -1358,6 +1692,11 @@ public class Document(
      */
     internal suspend fun acknowledgePushedChanges(pack: ChangePack): Unit =
         withContext(dispatcher) {
+            // D3 (spec 040): the capabilities on this pack describe the server that took
+            // the push, not the remote state PushOnly/SyncOff is skipping -- so they are
+            // metadata learned the same as applyChangePack's, and a push whose reply
+            // dropped the capability is exactly the case that needs the tail heal below.
+            learnPresenceCapability(pack)
             removePushedLocalChanges(pack.checkPoint.clientSeq)
             checkPoint = checkPoint.forward(
                 CheckPoint(checkPoint.serverSeq, pack.checkPoint.clientSeq),
@@ -1366,6 +1705,12 @@ public class Document(
 
             if (pack.isRemoved) {
                 applyStatus(ResourceStatus.Removed)
+            }
+
+            // Minted last, so the heal Put is queued behind the ack that just dropped
+            // the pushed changes rather than in front of it.
+            if (needsPresenceHeal()) {
+                healPresenceBase()
             }
         }
 
@@ -1504,6 +1849,21 @@ public class Document(
                                 Others.Unwatched(PresenceInfo(actorID, presence))
                             }.takeIf { actorID in onlineClients.value }
                                 ?.also { removeOnlineClient(actorID) }
+                        }
+
+                        is PresenceChange.Patch -> {
+                            // The event carries the POST-MERGE presence, never the
+                            // raw patch keys: `this.clone` was just updated above via
+                            // `change.execute`, whose own Patch arm already merged
+                            // (full when locally produced, else onto the held
+                            // presence via Presences.plus). Ported from JS
+                            // `b50f8900` #1477.
+                            val merged = this.clone?.presences?.get(actorID).orEmpty()
+                            if (actorID in _presences.value) {
+                                createPresenceChangedEvent(actorID, merged)
+                            } else {
+                                Others.Watched(PresenceInfo(actorID, merged))
+                            }
                         }
                     }
                 }
@@ -1743,12 +2103,14 @@ public class Document(
     }
 
     /**
-     * Create [ChangePack] of [localChanges] to send to the remote server.
+     * Builds [ChangePack] of [localChanges] to send to the remote server. MUST be called
+     * only from within a [dispatcher] hop -- [createChangePack] and
+     * [restorePresencePatchesAndRebuildPack] are its two (suspending) entry points.
      */
-    internal suspend fun createChangePack(forceRemove: Boolean = false) = withContext(dispatcher) {
+    private fun buildChangePack(forceRemove: Boolean): ChangePack {
         val localChanges = localChanges.toList()
         val checkPoint = checkPoint.increaseClientSeq(localChanges.size)
-        ChangePack(
+        return ChangePack(
             key,
             checkPoint,
             localChanges,
@@ -1757,6 +2119,13 @@ public class Document(
             changeID.versionVector,
             epoch,
         )
+    }
+
+    /**
+     * Create [ChangePack] of [localChanges] to send to the remote server.
+     */
+    internal suspend fun createChangePack(forceRemove: Boolean = false) = withContext(dispatcher) {
+        buildChangePack(forceRemove)
     }
 
     /**
@@ -1963,8 +2332,13 @@ public class Document(
         // as a changes container (iOS a77ff589da precedent): Android has no
         // struct layer like JS's toStruct, but already round-trips Change
         // through protobuf. The envelope is local-only and never crosses SDKs.
+        // toPersistedChanges() applies the D1 Patch -> Put(full) mapping (spec 040)
+        // before encoding, the same one `toStoredChangeBytes` applies for the
+        // append-log -- a pending Patch must never reach EITHER persisted form.
         val pendingChangesBlob =
-            changePack { changes.addAll(localChanges.toList().toPBChanges()) }.toByteArray()
+            changePack {
+                changes.addAll(localChanges.toList().toPersistedChanges().toPBChanges())
+            }.toByteArray()
         // Appended after pending changes so a four-blob legacy envelope still
         // decodes: fromBytes treats a missing epoch blob as 0.
         val epochBlob = epoch.toString().toByteArray(Charsets.UTF_8)
@@ -2056,6 +2430,9 @@ public class Document(
         mintedOperations = true
         // Reverse-ops reference the pre-restore root/changeID.
         clearHistory()
+        // One of the four presence-patch rebuild sites (spec 040 D1): the server that
+        // answers next may never have seen this presence.
+        resetPresenceStateForRestore()
         return RestoreResult.Restored
     }
 
@@ -2233,6 +2610,10 @@ public class Document(
         // restoreFromBytes applies.
         clone = null
         clearHistory()
+        // One of the four presence-patch rebuild sites (spec 040 D1). Run after the
+        // queue is rebuilt above, so a Patch replayed with it is seen by
+        // resetPresenceStateForRestore's "holds any presence change" check.
+        resetPresenceStateForRestore()
     }
 
     /**
@@ -2322,6 +2703,10 @@ public class Document(
         mintingSuspended = false
         mintGeneration++
         clearHistory()
+        // One of the four presence-patch rebuild sites (spec 040 D1); localChanges is
+        // already cleared above, so this resolves to all-false, matching a brand-new
+        // document's initial state.
+        resetPresenceStateForRestore()
     }
 
     override fun publish(event: ResourceEvent) {
@@ -2764,6 +3149,11 @@ public class Document(
         // The epoch blob is `epoch.toString()`: an optional minus and ASCII digits, nothing else.
         private val EpochRegex = Regex("""-?\d+""")
 
+        // isCacheablePresence's limits (JS `MaxPresenceBaseSize`/`PresenceEntryOverhead`,
+        // `b50f8900` #1477): the server's own patch-base accounting.
+        private const val MAX_PRESENCE_BASE_SIZE = 4 * 1024
+        private const val PRESENCE_ENTRY_OVERHEAD = 64
+
         /**
          * Rebuilds a [Document] from a byte envelope produced by [toBytes].
          * The envelope carries at least four blobs (snapshot, checkpoint,
@@ -2842,6 +3232,10 @@ public class Document(
                     // minted, regardless of what this fresh checkpoint reads.
                     doc.absorbedRemote = true
                     doc.mintedOperations = true
+                    // One of the four presence-patch rebuild sites (spec 040 D1): run
+                    // after localChanges is populated above, so a pending presence
+                    // change the envelope carried is seen.
+                    doc.resetPresenceStateForRestore()
                 }
             } catch (e: CancellationException) {
                 doc.close()

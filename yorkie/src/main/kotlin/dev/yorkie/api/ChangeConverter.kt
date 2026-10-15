@@ -9,6 +9,7 @@ import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.checkYorkieError
@@ -89,6 +90,7 @@ internal fun PBChangePack.toChangePack(): ChangePack {
         isRemoved = isRemoved,
         versionVector = versionVector.toVersionVector(),
         epoch = epoch,
+        capabilities = capabilitiesList,
     )
 }
 
@@ -102,6 +104,9 @@ internal fun ChangePack.toPBChangePack(): PBChangePack {
         isRemoved = changePack.isRemoved
         versionVector = changePack.versionVector.toPBVersionVector()
         epoch = changePack.epoch
+        // `capabilities` is deliberately NOT written here: only the server
+        // advertises wire features (D5, JS `b50f8900` #1477); a client never
+        // sends its own.
     }
 }
 
@@ -116,13 +121,40 @@ internal fun ChangeID.toByteString(): ByteString = toPBChangeID().toByteString()
 internal fun ByteString.toChangeID(): ChangeID = PBChangeID.parseFrom(this).toChangeID()
 
 /**
+ * Persist-side-only mapping (D1, spec 040): a pending [PresenceChange.Patch] is rewritten to
+ * [PresenceChange.Put] of its [PresenceChange.Patch.full] copy before either persisted encoder
+ * below ([toStoredChangeBytes] and [dev.yorkie.document.Document]'s `buildEnvelopeBytes`)
+ * serializes it. `full` is always non-null here: only a LOCALLY-produced Patch is ever queued
+ * in `localChanges` (the only place either persist path reads from) -- one decoded off the
+ * wire has `full == null` and is applied immediately, never queued. [toPBChange] itself stays
+ * wire-faithful (still emits `CHANGE_TYPE_PATCH` for a live push) -- only these two persist
+ * paths rewrite. Determination vs JS (keeps `full` in its JSON struct) and iOS (adds a
+ * `536_000_002` unknown-field marker): Android reuses the wire-level Put encoding both persist
+ * paths already have, at the cost of over-approximating `presencePatchSent` after any restore
+ * (a redundant full Put against an old server) -- see [dev.yorkie.document.Document]'s
+ * `resetPresenceStateForRestore`.
+ */
+internal fun Change.toPersistedChange(): Change {
+    val presenceChange = presenceChange
+    return if (presenceChange is PresenceChange.Patch) {
+        copy(presenceChange = PresenceChange.Put(presenceChange.full ?: presenceChange.presence))
+    } else {
+        this
+    }
+}
+
+internal fun List<Change>.toPersistedChanges(): List<Change> = map { it.toPersistedChange() }
+
+/**
  * Encodes this [Change] into the bytes a [dev.yorkie.core.StoredChange] carries. Android has
  * no `ChangeStruct`/`toStruct` layer like JS, so a stored change is simply
- * `change.toPBChange().toByteArray()` — matching how [dev.yorkie.document.Document.toBytes]
- * already carries pending changes, and iOS's own serialized `PbChange`. This store is
- * local-only and never crosses SDKs, so the encoding choice is Android-internal.
+ * `change.toPersistedChange().toPBChange().toByteArray()` — matching how
+ * [dev.yorkie.document.Document.toBytes] already carries pending changes, and iOS's own
+ * serialized `PbChange`. This store is local-only and never crosses SDKs, so the encoding
+ * choice is Android-internal.
  */
-internal fun Change.toStoredChangeBytes(): ByteArray = toPBChange().toByteArray()
+internal fun Change.toStoredChangeBytes(): ByteArray =
+    toPersistedChange().toPBChange().toByteArray()
 
 /**
  * Decodes a [Change] from the bytes produced by [toStoredChangeBytes]. A malformed payload

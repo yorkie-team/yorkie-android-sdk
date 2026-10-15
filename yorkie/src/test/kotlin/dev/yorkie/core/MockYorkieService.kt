@@ -83,6 +83,7 @@ import dev.yorkie.api.v1.watchInitialization
 import dev.yorkie.api.v1.watchResponse
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
+import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.SetOperation
@@ -157,6 +158,22 @@ class MockYorkieService(
 
     /** Replaces the watch-init `clientIds` list (e.g. `emptyList()` to omit the subscriber). */
     var watchInitClientIdsOverride: List<String>? = null
+
+    /**
+     * Document keys whose [attachDocument]/[pushPullChanges]/[detachDocument]/
+     * [removeDocument] call fails ONCE with
+     * [YorkieException.Code.ErrPresenceBaseUnavailable] (D4, spec 040) -- consumed after
+     * firing, so `Client`'s own retry wrapper resends once and succeeds.
+     */
+    val presenceBaseUnavailableOnceKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose [attachDocument]/[pushPullChanges]/[detachDocument]/
+     * [removeDocument] SUCCESS response advertises the `presence-patch` capability
+     * (`ChangePack.capabilities`, spec 040) -- opt-in, so every other existing test's
+     * default response is unchanged.
+     */
+    val presencePatchCapableKeys = mutableSetOf<String>()
 
     /**
      * Forces [attachDocument]'s response `document_id` for this document key — simulates a
@@ -431,6 +448,23 @@ class MockYorkieService(
                 trailers = emptyMap(),
             )
         }
+        if (request.changePack.documentKey in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         val forcedDocumentId = attachDocumentIdOverride[request.changePack.documentKey]
         val forceSeqReset = request.changePack.documentKey in attachServerSeqResetKeys
         val resetCheckpoint = if (forceSeqReset) {
@@ -459,6 +493,9 @@ class MockYorkieService(
                             ),
                         ).toPBChange(),
                     )
+                    if (request.changePack.documentKey in presencePatchCapableKeys) {
+                        capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                    }
                 }
                 documentId = forcedDocumentId ?: changePack.documentKey
                 // Echoes the request's disablePresence back, same as the real server
@@ -483,6 +520,23 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.changePack.documentKey in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         if (request.changePack.documentKey in detachRemovedKeys) {
             return ResponseMessage.Success(
                 detachDocumentResponse { changePack = changePack { isRemoved = true } },
@@ -490,7 +544,17 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
-        return ResponseMessage.Success(detachDocumentResponse { }, emptyMap(), emptyMap())
+        return ResponseMessage.Success(
+            detachDocumentResponse {
+                if (request.changePack.documentKey in presencePatchCapableKeys) {
+                    changePack = changePack {
+                        capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                    }
+                }
+            },
+            emptyMap(),
+            emptyMap(),
+        )
     }
 
     /**
@@ -580,6 +644,23 @@ class MockYorkieService(
                 trailers = emptyMap(),
             )
         }
+        if (request.changePack.documentKey in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         inFlightPushPullHook?.let { hook ->
             inFlightPushPullHook = null
             hook()
@@ -592,6 +673,9 @@ class MockYorkieService(
                     changePack = changePack {
                         checkpoint = request.changePack.checkpoint
                         this.versionVector = versionVector.toPBVersionVector()
+                        if (request.changePack.documentKey in presencePatchCapableKeys) {
+                            capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                        }
                     }
                 },
                 emptyMap(),
@@ -1001,6 +1085,23 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.documentId in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.documentId)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         return ResponseMessage.Success(
             removeDocumentResponse {
                 changePack = changePack {
@@ -1011,6 +1112,9 @@ class MockYorkieService(
                         },
                     )
                     isRemoved = true
+                    if (request.documentId in presencePatchCapableKeys) {
+                        capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                    }
                 }
             },
             emptyMap(),

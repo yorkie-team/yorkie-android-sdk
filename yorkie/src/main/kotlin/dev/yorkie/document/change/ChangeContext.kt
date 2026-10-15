@@ -20,6 +20,33 @@ internal class ChangeContext(
     val message: String? = null,
 ) {
     var presenceChange: PresenceChange? = null
+
+    /**
+     * Keys touched by [dev.yorkie.document.presence.DocPresence.put] in this
+     * context, accumulated across multiple calls within the same update
+     * (presence_patch JS case 3: two `put()`s in one updater contribute a
+     * single [PresenceChange.Patch] carrying both keys' latest values, not
+     * two separate diffs). `Document`'s commit-time Put-vs-Patch decision
+     * (D2, spec 040) reads this only when [presenceChange] is a
+     * [PresenceChange.Put] it may rewrite into a [PresenceChange.Patch];
+     * `DocPresence` is the only writer. Cleared by `clear()` since a cleared
+     * presence has no keys left to patch.
+     */
+    var presencePatchKeys: MutableSet<String> = mutableSetOf()
+
+    /**
+     * Whether this context has already recorded a [PresenceChange.Clear] -- a cleared
+     * presence has no base left for a later [dev.yorkie.document.presence.DocPresence.put]
+     * in the SAME update to fold a patch onto (CJ-MED-1, round 4 fix): the server still
+     * holds whatever base it had before this update started, so a Patch recorded after a
+     * `clear()` would fold onto THAT stale base and leave every peer holding keys this
+     * update meant to drop. Once raised, [Document]'s commit-time decision
+     * ([Document.resolvePresenceChangeForCommit], D2) must not rewrite the provisional
+     * [PresenceChange.Put] into a [PresenceChange.Patch] for the rest of this context, even
+     * though a later `put()` re-populates [presencePatchKeys]. Mirrors JS `b50f8900`
+     * #1477 `Channel.baseless` (`DocPresence` is the only writer, set by `clear()`).
+     */
+    var presenceBaseless: Boolean = false
     private val operations: MutableList<Operation> = mutableListOf()
     private var delimiter: UInt = TimeTicket.INITIAL_DELIMITER
 

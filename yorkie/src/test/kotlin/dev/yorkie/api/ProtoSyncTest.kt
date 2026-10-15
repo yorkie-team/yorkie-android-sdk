@@ -28,7 +28,7 @@ import org.junit.Test
 
 /**
  * Pins (JS SDK `d3ffe946` #1406): the dormant proto
- * fields this commit's hunks add -- `ChangePack.capabilities`, `restore_mode`
+ * fields this commit's hunks add -- `restore_mode`
  * on `Set`/`Add`/`ArraySet`, and `revived_at` on every `JSONElement` body --
  * decode to the SAME domain object a payload without them produces, and
  * re-encoding a decoded domain object never writes any of them back ("the
@@ -38,6 +38,11 @@ import org.junit.Test
  * adds them, so there is no pre-port behaviour to revert and re-trip; merely
  * compiling this file against the regenerated bindings is the proof the
  * fields exist with the Go-synced numbers and types.
+ *
+ * `ChangePack.capabilities` graduated out of dormancy in spec 040 (JS
+ * `b50f8900` #1477): it is now decoded (`ChangeConverterTest` carries the
+ * live decode-contract tests). The encode-never-writes half of its pin stays
+ * here, since D5 keeps that true regardless of decode.
  */
 class ProtoSyncTest {
 
@@ -51,18 +56,13 @@ class ProtoSyncTest {
     }
 
     // --- ChangePack.capabilities (field 9) ---
+    // Decode is live as of spec 040 (JS `b50f8900` #1477) -- the full
+    // decode-contract tests (with/without the field, `hasCapability`) live in
+    // `ChangeConverterTest`. Only the encode-never-writes half is pinned here.
 
     private fun buildChangePack(withCapabilities: Boolean) = changePack {
         documentKey = "doc"
         if (withCapabilities) capabilities.addAll(listOf("restore-element"))
-    }
-
-    @Test
-    fun `a pack carrying capabilities decodes to the same ChangePack as one without`() {
-        val decoded = buildChangePack(withCapabilities = true).toChangePack()
-        val decodedWithout = buildChangePack(withCapabilities = false).toChangePack()
-
-        assertEquals(decodedWithout, decoded)
     }
 
     @Test

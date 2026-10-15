@@ -87,6 +87,13 @@ public data class Change internal constructor(
             when (presenceChange) {
                 is PresenceChange.Put -> presences + (id.actor to presenceChange.presence)
                 is PresenceChange.Clear -> presences - id.actor
+                // `full` is set when this Patch was produced locally (the whole
+                // merged presence is already known); null when decoded off the
+                // wire, in which case `Presences.plus` merges the changed keys
+                // onto whatever this actor's presence already held. Ported from
+                // JS `b50f8900` #1477.
+                is PresenceChange.Patch ->
+                    presences + (id.actor to (presenceChange.full ?: presenceChange.presence))
             }
         }
         val allOpInfos = mutableListOf<OperationInfo>()

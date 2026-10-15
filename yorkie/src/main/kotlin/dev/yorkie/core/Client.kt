@@ -5,6 +5,7 @@ import androidx.annotation.VisibleForTesting
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
+import com.connectrpc.ResponseMessage
 import com.connectrpc.ServerOnlyStreamInterface
 import com.connectrpc.extensions.GoogleJavaLiteProtobufStrategy
 import com.connectrpc.getOrElse
@@ -13,6 +14,7 @@ import com.connectrpc.impl.ProtocolClient
 import com.connectrpc.okhttp.ConnectOkHttpClient
 import com.connectrpc.protocols.NetworkProtocol
 import com.google.protobuf.ByteString
+import dev.yorkie.api.PBChangePack
 import dev.yorkie.api.fromSchemaRules
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
@@ -75,6 +77,7 @@ import dev.yorkie.util.YorkieException.Code.ErrDocumentSizeExceedsLimit
 import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
 import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrInvalidServerSeq
+import dev.yorkie.util.YorkieException.Code.ErrPresenceBaseUnavailable
 import dev.yorkie.util.YorkieException.Code.ErrRefused
 import dev.yorkie.util.YorkieException.Code.ErrSessionNotFound
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
@@ -1260,6 +1263,37 @@ public class Client(
         }
     }
 
+    /**
+     * Sends the pack [document] currently holds via [send]; on
+     * `ErrPresenceBaseUnavailable` ONLY -- the server held no base to fold a presence
+     * patch into and stored nothing from the pack -- rewrites the earliest pending patch
+     * into a full put and rebuilds the pack
+     * ([Document.restorePresencePatchesAndRebuildPack], one non-suspending [dispatcher]
+     * hop), then resends exactly once more. Any other failure is returned unchanged, with
+     * exactly one RPC call, for the caller's existing `getOrThrow`/`getOrElse` to handle
+     * (sits ahead of `handleConnectException`/`deactivateInternal` at all four push sites
+     * -- sync, attach, detach, remove -- D4, spec 040). Ported from JS `b50f8900` #1477
+     * `Client.pushWithPresenceBase`.
+     */
+    private suspend fun <T> sendWithPresenceBaseRetry(
+        document: Document,
+        forceRemove: Boolean = false,
+        send: suspend (PBChangePack) -> ResponseMessage<T>,
+    ): ResponseMessage<T> {
+        val mintGenerationAtEntry = document.currentMintGeneration()
+        val response = send(document.createChangePack(forceRemove).toPBChangePack())
+        val failureCause = (response as? ResponseMessage.Failure)?.cause
+        if (failureCause !is ConnectException ||
+            errorCodeOf(failureCause) != ErrPresenceBaseUnavailable.codeString
+        ) {
+            return response
+        }
+        return send(
+            document.restorePresencePatchesAndRebuildPack(forceRemove, mintGenerationAtEntry)
+                .toPBChangePack(),
+        )
+    }
+
     private suspend fun syncInternal(
         attachment: Attachment<out Attachable>,
         syncMode: SyncMode?,
@@ -1307,17 +1341,18 @@ public class Client(
                         // flight (changeSyncMode), and it is the mode the request
                         // was sent in that decided whether anything was pulled.
                         val requestPushOnly = syncMode == SyncMode.RealtimePushOnly
-                        val request = pushPullChangesRequest {
-                            clientId = requireClientId()
-                            changePack = resource.createChangePack().toPBChangePack()
-                            documentId = attachment.resourceId
-                            pushOnly = requestPushOnly
-                            disableGc = attachment.disableGC
-                        }
-                        val response = service.pushPullChanges(
-                            request,
-                            documentKey.attachmentBasedRequestHeader,
-                        ).getOrThrow()
+                        val response = sendWithPresenceBaseRetry(resource) { pack ->
+                            service.pushPullChanges(
+                                pushPullChangesRequest {
+                                    clientId = requireClientId()
+                                    changePack = pack
+                                    documentId = attachment.resourceId
+                                    pushOnly = requestPushOnly
+                                    disableGc = attachment.disableGC
+                                },
+                                documentKey.attachmentBasedRequestHeader,
+                            )
+                        }.getOrThrow()
                         val responsePack = response.changePack.toChangePack()
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
                         // PushPull, drop the response's remote state (changes OR a snapshot) when
@@ -2385,19 +2420,20 @@ public class Client(
                             }
 
                             // (5) RPC — presents the restored checkpoint + epoch, if any.
-                            val request = attachDocumentRequest {
-                                clientId = requireClientId()
-                                changePack = document.createChangePack().toPBChangePack()
-                                schema?.let {
-                                    schemaKey = it
-                                }
-                                disableGc = disableGC
-                                this.disablePresence = resolvedDisablePresence
-                            }
-                            val response = service.attachDocument(
-                                request = request,
-                                headers = documentKey.attachmentBasedRequestHeader,
-                            ).getOrThrow()
+                            val response = sendWithPresenceBaseRetry(document) { pack ->
+                                service.attachDocument(
+                                    request = attachDocumentRequest {
+                                        clientId = requireClientId()
+                                        changePack = pack
+                                        schema?.let {
+                                            schemaKey = it
+                                        }
+                                        disableGc = disableGC
+                                        this.disablePresence = resolvedDisablePresence
+                                    },
+                                    headers = documentKey.attachmentBasedRequestHeader,
+                                )
+                            }.getOrThrow()
 
                             val maxSize = response.maxSizePerDocument
                             if (maxSize > 0) {
@@ -2732,15 +2768,16 @@ public class Client(
                     }
                 }
 
-                val request = detachDocumentRequest {
-                    clientId = requireClientId()
-                    changePack = document.createChangePack().toPBChangePack()
-                    documentId = attachment.resourceId
-                }
-                val response = service.detachDocument(
-                    request,
-                    documentKey.attachmentBasedRequestHeader,
-                ).getOrElse {
+                val response = sendWithPresenceBaseRetry(document) { pack ->
+                    service.detachDocument(
+                        detachDocumentRequest {
+                            clientId = requireClientId()
+                            changePack = pack
+                            documentId = attachment.resourceId
+                        },
+                        documentKey.attachmentBasedRequestHeader,
+                    )
+                }.getOrElse {
                     handleConnectException(it) { exception ->
                         if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
                             shouldRefreshToken = true
@@ -3302,15 +3339,16 @@ public class Client(
                         "document($documentKey) is not attached",
                     )
 
-                val request = removeDocumentRequest {
-                    clientId = requireClientId()
-                    changePack = document.createChangePack(forceRemove = true).toPBChangePack()
-                    documentId = attachment.resourceId
-                }
-                val response = service.removeDocument(
-                    request,
-                    documentKey.attachmentBasedRequestHeader,
-                ).getOrElse {
+                val response = sendWithPresenceBaseRetry(document, forceRemove = true) { pack ->
+                    service.removeDocument(
+                        removeDocumentRequest {
+                            clientId = requireClientId()
+                            changePack = pack
+                            documentId = attachment.resourceId
+                        },
+                        documentKey.attachmentBasedRequestHeader,
+                    )
+                }.getOrElse {
                     ensureActive()
                     return@async Result.failure(it)
                 }

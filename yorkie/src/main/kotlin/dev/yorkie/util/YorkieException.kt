@@ -183,6 +183,15 @@ public open class YorkieException(
         // the outer watch loop then reconnects the same as it does for any other stream
         // failure. Ported verbatim from yorkie-js-sdk `error.ts` (`c69e6bda`, #1472).
         ErrWatchStreamIdle("ErrWatchStreamIdle"),
+
+        // ErrPresenceBaseUnavailable is returned when the server held no base to fold a
+        // presence patch into -- evicted, restarted, or moved to another shard -- and
+        // stored nothing from the rejected pack. `Client`'s retry wrapper at the four
+        // push sites (sync/attach/detach/remove) answers this ONE code by rewriting the
+        // earliest pending patch into a full put and resending once; every other code
+        // propagates unchanged. Ported verbatim from yorkie-js-sdk `error.ts`
+        // (`b50f8900`, #1477).
+        ErrPresenceBaseUnavailable("ErrPresenceBaseUnavailable"),
     }
 }
 

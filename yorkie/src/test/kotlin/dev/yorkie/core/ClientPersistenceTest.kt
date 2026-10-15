@@ -18,6 +18,7 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
 import dev.yorkie.helper.oneWayDeliver
@@ -326,6 +327,94 @@ class ClientPersistenceTest {
         client.detachDocument(document).await()
         client.deactivateAsync().await()
         client.close()
+    }
+
+    // --- presence-patch (spec 040 D1) -------------------------------------
+
+    @Test
+    fun `D1a a pending patch persists as Put of full in the toBytes envelope`() = runTest {
+        val docKey = "d1-envelope-doc"
+        val bytes = buildEnvelope(
+            docKey,
+            edit = { d ->
+                d.updateAsync { _, p -> p.put(mapOf("name" to "a")) }.await()
+                d.applyChangePack(
+                    ChangePack(
+                        d.getKey(),
+                        CheckPoint(0, 1u),
+                        emptyList(),
+                        null,
+                        false,
+                        INITIAL_VERSION_VECTOR,
+                        capabilities = listOf(ChangePack.PRESENCE_PATCH_CAPABILITY),
+                    ),
+                )
+                // Still pending (never acked) when toBytes() below captures the envelope.
+                d.updateAsync { _, p -> p.put(mapOf("cursor" to "1,1")) }.await()
+            },
+        )
+
+        val restored = Document.fromBytes(docKey, bytes)
+        val presenceChange = restored.createChangePack().changes.single().presenceChange
+        assertIs<PresenceChange.Put>(presenceChange)
+        assertEquals(mapOf("name" to "a", "cursor" to "1,1"), presenceChange.presence)
+    }
+
+    @Test
+    fun `D1b a pending patch persists as Put of full in an appended log entry`() = runTest {
+        val source = Document(TEST_KEY)
+        val actor = source.changeID.actor
+        val baseSnapshot = source.toBytes()
+        source.updateAsync { _, p -> p.put(mapOf("name" to "a")) }.await()
+        source.applyChangePack(
+            ChangePack(
+                source.getKey(),
+                CheckPoint(0, 1u),
+                emptyList(),
+                null,
+                false,
+                INITIAL_VERSION_VECTOR,
+                capabilities = listOf(ChangePack.PRESENCE_PATCH_CAPABILITY),
+            ),
+        )
+        source.updateAsync { _, p -> p.put(mapOf("cursor" to "1,1")) }.await()
+        val storedBytes = source.pendingChanges().single().toStoredChangeBytes()
+
+        val decoded = storedBytes.toStoredChange()
+        val presenceChange = decoded.presenceChange
+        assertIs<PresenceChange.Put>(presenceChange)
+        assertEquals(mapOf("name" to "a", "cursor" to "1,1"), presenceChange.presence)
+
+        // Replayed through restoreAppendedChanges (the real append-log restore path) the
+        // same way: decodes and applies as a Put, never a Patch (D1 never leaves a
+        // literal Patch in persisted bytes for any restore site to see).
+        val replayed = Document.fromBytes(TEST_KEY, baseSnapshot)
+        // Pre-establish capability+base on the REPLAY TARGET itself -- a brand-new
+        // Document already defaults to false/false, which would make the assertion
+        // below pass even if restoreAppendedChanges's own reset call were missing.
+        replayed.updateAsync { _, p -> p.put(mapOf("x" to "y")) }.await()
+        replayed.applyChangePack(
+            ChangePack(
+                replayed.getKey(),
+                CheckPoint(0, 1u),
+                emptyList(),
+                null,
+                false,
+                INITIAL_VERSION_VECTOR,
+                capabilities = listOf(ChangePack.PRESENCE_PATCH_CAPABILITY),
+            ),
+        )
+        assertTrue(replayed.isPresencePatchableForTest())
+
+        replayed.restoreAppendedChanges(listOf(decoded))
+        // Change.execute's Put arm reuses Presences.plus (merges onto whatever the actor
+        // already held), so the pre-establish step's "x" key survives alongside the
+        // replayed content rather than being replaced by it.
+        assertEquals(
+            mapOf("x" to "y", "name" to "a", "cursor" to "1,1"),
+            replayed.allPresences.value[actor],
+        )
+        assertFalse(replayed.isPresencePatchableForTest())
     }
 
     @Test

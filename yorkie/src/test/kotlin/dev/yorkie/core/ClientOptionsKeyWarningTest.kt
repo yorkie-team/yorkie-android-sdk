@@ -21,11 +21,19 @@ import org.junit.Test
  * [Client.Options.key]'s own default-value expression directly instead — the exact code path
  * `Client`'s constructor reads to decide whether to warn.
  *
- * Two Android-only cases pin Android-specific decisions: a re-passed key that
- * happens to equal a previously generated one is indistinguishable from a defaulted key and warns
- * falsely (accepted — the cost is one extra warning, never a correctness break), and two `Client`
- * instances warn independently of each other (the generated-key weak set is membership-only, never
- * consumed/cleared by a warning).
+ * Two Android-only cases pin Android-specific decisions: two `Client` instances built
+ * from their OWN freshly-generated keys warn independently of each other (the
+ * generated-key weak set is membership-only per distinct string), and (D3,
+ * `ed25355e`/#1449/yorkie#2111, spec 038_sync-js-sdk-v0725-pre-attach-reissue) a
+ * client built with a key string equal to a PREVIOUSLY generated one now stays
+ * SILENT the second time: [Client]'s `init {}` consumes a generated key from
+ * [generatedClientKeys] the first time it is used (so a `Client.Options.keyGenerated`-
+ * equivalent read is correct for the one instance that actually got the default), which
+ * also means a re-passed key is no longer mistaken for still-generated on its second use.
+ * Before D3, this same scenario warned a SECOND time too (the accepted false positive the
+ * generator-recorded weak set alone could not resolve) — the pre-attach re-issue feature
+ * needed a real distinction here (a shared key is exactly where a re-issue would be
+ * unsound), so the warning's false positive is fixed as a side effect of fixing that.
  */
 class ClientOptionsKeyWarningTest {
 
@@ -89,23 +97,31 @@ class ClientOptionsKeyWarningTest {
         assertTrue(recordingLogger.errorMessages.single().contains(options.key))
     }
 
+    // D3 (`ed25355e`/#1449/yorkie#2111, spec 038_sync-js-sdk-v0725-pre-attach-reissue):
+    // BEFORE this change, a second Client built from a previously-generated key string
+    // warned a SECOND time too (the generated-key weak set has no "consumed" state,
+    // only membership) -- renamed from `a re-passed key equal to a previously generated
+    // one still warns falsely` to reflect the fixed behavior: the first Client's `init{}`
+    // now consumes the key from the set, so a second Client reusing that exact string
+    // reads as an explicit key and stays silent. A real app re-passing a generated key
+    // across two Client instances is exactly the shared-key case a pre-attach re-issue
+    // must not fire for (another session of the key may already hold the same lamports).
     @Test
-    fun `a re-passed key equal to a previously generated one still warns falsely`() {
+    fun `a re-passed key equal to a previously generated one is treated as explicit`() {
         val firstOptions = Client.Options(docStore = MemoryDocStore())
         val recycledKey = firstOptions.key
         Client(host = "0.0.0.0", options = firstOptions)
         assertEquals(1, recordingLogger.errorMessages.size)
 
-        // The accepted false positive: the explicit key equals a string that was previously
-        // generated, so it is still a member of the generated-key set; detection is
-        // set-membership, not "was `key` passed as a named argument" — the Options data class has
-        // no way to tell those apart. Still just a warning, never a thrown error or a dropped key.
+        // D3 consume-once: the key is no longer a member of generatedClientKeys after
+        // the first Client's constructor read it, so this second Client -- despite
+        // reusing the exact same string -- is treated as an explicit key and stays
+        // silent, never a correctness break (it just no longer warns, or re-issues).
         Client(
             host = "0.0.0.0",
             options = Client.Options(key = recycledKey, docStore = MemoryDocStore()),
         )
-        assertEquals(2, recordingLogger.errorMessages.size)
-        recordingLogger.errorMessages.forEach { assertTrue(it.contains("stable clientKey")) }
+        assertEquals(1, recordingLogger.errorMessages.size, "the second Client must stay silent")
     }
 
     @Test

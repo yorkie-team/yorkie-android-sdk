@@ -83,6 +83,7 @@ import dev.yorkie.api.v1.watchInitialization
 import dev.yorkie.api.v1.watchResponse
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
+import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.operation.SetOperation
@@ -102,6 +103,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
@@ -158,6 +160,22 @@ class MockYorkieService(
     var watchInitClientIdsOverride: List<String>? = null
 
     /**
+     * Document keys whose [attachDocument]/[pushPullChanges]/[detachDocument]/
+     * [removeDocument] call fails ONCE with
+     * [YorkieException.Code.ErrPresenceBaseUnavailable] (D4, spec 040) -- consumed after
+     * firing, so `Client`'s own retry wrapper resends once and succeeds.
+     */
+    val presenceBaseUnavailableOnceKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose [attachDocument]/[pushPullChanges]/[detachDocument]/
+     * [removeDocument] SUCCESS response advertises the `presence-patch` capability
+     * (`ChangePack.capabilities`, spec 040) -- opt-in, so every other existing test's
+     * default response is unchanged.
+     */
+    val presencePatchCapableKeys = mutableSetOf<String>()
+
+    /**
      * Forces [attachDocument]'s response `document_id` for this document key — simulates a
      * server-assigned id differing from a persisted one (tier-3 purge probe).
      */
@@ -172,6 +190,47 @@ class MockYorkieService(
     /** The `actor_id` most recently sent on a document/channel [WatchRequest], for assertions. */
     var lastDocumentWatchActorId: String? = null
     var lastChannelWatchActorId: String? = null
+
+    /**
+     * The `heartbeat_interval_ms` most recently sent on a document/channel [WatchRequest]
+     * (`c1a03877`/#1483), for assertions -- the client's OWN request, distinct from
+     * [documentWatchHeartbeatIntervalMsOverride] below, which is the server's reply.
+     */
+    var lastDocumentWatchHeartbeatIntervalMs: Long? = null
+    var lastChannelWatchHeartbeatIntervalMs: Long? = null
+
+    /**
+     * Number of [watch] calls that opened a NEW document stream -- a reconnect (idle timeout
+     * or otherwise) opens a fresh one, so this lets a test assert whether a reconnect happened
+     * without inspecting `Client`'s own internals (#1472).
+     */
+    var documentWatchConnectCount = 0
+
+    /**
+     * Overrides [WatchInitialization.heartbeat_interval_ms] on the NEXT document watch
+     * connection's init frame (every reconnect re-reads this; null omits the field, proto3's
+     * default 0 — an older server, or one that advertises none, #1472).
+     */
+    var documentWatchHeartbeatIntervalMsOverride: Long? = null
+
+    /**
+     * When set, invoked with this connection's response channel right after the init frame
+     * (and the existing 50ms settle delay) INSTEAD of the default CHANGED/WATCHED/UNWATCHED
+     * script or [SILENT_WATCH_DOCUMENT_KEY]'s plain silence -- gives a test full control over
+     * what follows init: periodic [WatchHeartbeat] frames, deliberate silence, or a mix,
+     * without inventing a new document-key constant per scenario (#1472, `WatchIdleTest`).
+     */
+    var documentWatchFramePusher: (suspend (SendChannel<WatchResponse>) -> Unit)? = null
+
+    /**
+     * Channel-stream twin of [documentWatchConnectCount]/[documentWatchHeartbeatIntervalMsOverride]/
+     * [documentWatchFramePusher] (M6, team-review RTCOLLABPLATFORM-789): a channel watch (e.g.
+     * [dev.yorkie.core.Client.attachChannel]) reconnects on its own idle/heartbeat path, same as a
+     * document watch, but had no equivalent seam to test it with.
+     */
+    var channelWatchConnectCount = 0
+    var channelWatchHeartbeatIntervalMsOverride: Long? = null
+    var channelWatchFramePusher: (suspend (SendChannel<WatchResponse>) -> Unit)? = null
 
     /**
      * Document keys whose [pushPullChanges] response is an ACK-ONLY pure push-ack: empty
@@ -196,6 +255,32 @@ class MockYorkieService(
      * not every tick re-arming it.
      */
     val ackOnlyVersionVectorOverride = mutableMapOf<String, VersionVector>()
+
+    /**
+     * Document keys whose [pushPullChanges] fails with [YorkieException.Code.ErrPermissionDenied]
+     * (an authorization webhook denying a PushPull, D2) -- a live set, not a one-shot: the test
+     * removes a key once it wants the next push-pull to succeed again (the webhook "relenting"),
+     * so `Client`'s auth-error dedupe can be observed clearing on that transition too.
+     */
+    val permissionDeniedPushPullKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose [pushPullChanges] fails with the given [YorkieException.Code]
+     * (either [YorkieException.Code.ErrDocumentSizeExceedsLimit] or
+     * [YorkieException.Code.ErrChangeTooLarge], #1462) at [Code.RESOURCE_EXHAUSTED] -- a live
+     * map, not a one-shot, same shape as [permissionDeniedPushPullKeys]: the test removes a key
+     * once it wants the next push-pull to succeed again (e.g. after discarding the offending
+     * local changes via `Client.resyncAsync`), so the park/clear transition can be observed.
+     */
+    val writeRejectedPushPullKeys = mutableMapOf<String, YorkieException.Code>()
+
+    /**
+     * Document keys whose [pushPullChanges] fails with [Code.RESOURCE_EXHAUSTED] but NO Yorkie
+     * code metadata at all -- models a transport-level quota unrelated to #1462's two codes,
+     * which `handleConnectException` must keep retrying. A live set, same shape as
+     * [permissionDeniedPushPullKeys].
+     */
+    val bareResourceExhaustedPushPullKeys = mutableSetOf<String>()
 
     /**
      * Document keys whose [pushPullChanges] response is a PULL that is also an ack: the
@@ -363,6 +448,23 @@ class MockYorkieService(
                 trailers = emptyMap(),
             )
         }
+        if (request.changePack.documentKey in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         val forcedDocumentId = attachDocumentIdOverride[request.changePack.documentKey]
         val forceSeqReset = request.changePack.documentKey in attachServerSeqResetKeys
         val resetCheckpoint = if (forceSeqReset) {
@@ -391,8 +493,16 @@ class MockYorkieService(
                             ),
                         ).toPBChange(),
                     )
+                    if (request.changePack.documentKey in presencePatchCapableKeys) {
+                        capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                    }
                 }
                 documentId = forcedDocumentId ?: changePack.documentKey
+                // Echoes the request's disablePresence back, same as the real server
+                // persisting and returning it (resyncAsync's re-attach, D4, is the first
+                // caller that round-trips this instead of only ever reading the request
+                // param it itself just passed down).
+                disablePresence = request.disablePresence
             },
             emptyMap(),
             emptyMap(),
@@ -410,6 +520,23 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.changePack.documentKey in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         if (request.changePack.documentKey in detachRemovedKeys) {
             return ResponseMessage.Success(
                 detachDocumentResponse { changePack = changePack { isRemoved = true } },
@@ -417,13 +544,35 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
-        return ResponseMessage.Success(detachDocumentResponse { }, emptyMap(), emptyMap())
+        return ResponseMessage.Success(
+            detachDocumentResponse {
+                if (request.changePack.documentKey in presencePatchCapableKeys) {
+                    changePack = changePack {
+                        capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                    }
+                }
+            },
+            emptyMap(),
+            emptyMap(),
+        )
     }
+
+    /**
+     * Number of [pushPullChanges] calls seen per document key -- lets a test assert a parked
+     * attachment (#1462) stops being re-sent every `syncLoopDuration` tick, while an unrelated
+     * document keeps ticking normally.
+     */
+    // M7 (team-review, RTCOLLABPLATFORM-789): ConcurrentHashMap -- the sync loop's
+    // document-keyed ticks and a test's concurrent read of this map (polling for a
+    // call count) run on different dispatchers; a plain mutableMapOf is not safe for
+    // that, even read-mostly.
+    val pushPullChangesCallCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     override suspend fun pushPullChanges(
         request: PushPullChangesRequest,
         headers: Headers,
     ): ResponseMessage<PushPullChangesResponse> {
+        pushPullChangesCallCounts.merge(request.changePack.documentKey, 1, Int::plus)
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
                 ConnectException(
@@ -450,6 +599,68 @@ class MockYorkieService(
                 trailers = emptyMap(),
             )
         }
+        if (request.changePack.documentKey in permissionDeniedPushPullKeys) {
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPermissionDenied.codeString)
+                .putMetadata("reason", "write denied by webhook")
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.PERMISSION_DENIED
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        writeRejectedPushPullKeys[request.changePack.documentKey]?.let { rejectedCode ->
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", rejectedCode.codeString)
+                .putMetadata("reason", "the change the client pushed is too large")
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.RESOURCE_EXHAUSTED
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in bareResourceExhaustedPushPullKeys) {
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.RESOURCE_EXHAUSTED
+                every { unpackedDetails(ErrorInfo::class) } returns emptyList()
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.changePack.documentKey)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         inFlightPushPullHook?.let { hook ->
             inFlightPushPullHook = null
             hook()
@@ -462,6 +673,9 @@ class MockYorkieService(
                     changePack = changePack {
                         checkpoint = request.changePack.checkpoint
                         this.versionVector = versionVector.toPBVersionVector()
+                        if (request.changePack.documentKey in presencePatchCapableKeys) {
+                            capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                        }
                     }
                 },
                 emptyMap(),
@@ -600,8 +814,10 @@ class MockYorkieService(
                     }
                     if (isDocumentWatch) {
                         lastDocumentWatchActorId = input.actorId
+                        lastDocumentWatchHeartbeatIntervalMs = input.heartbeatIntervalMs
                     } else {
                         lastChannelWatchActorId = input.actorId
+                        lastChannelWatchHeartbeatIntervalMs = input.heartbeatIntervalMs
                     }
                     CoroutineScope(Dispatchers.Default).launch {
                         if (responseChannel.isClosedForSend) return@launch
@@ -618,6 +834,7 @@ class MockYorkieService(
                 val documentId = input.resourcesList
                     .firstOrNull { it.resourceCase == ResourceDescriptor.ResourceCase.DOCUMENT }
                     ?.document?.documentId ?: return
+                documentWatchConnectCount += 1
 
                 responseChannel.trySend(
                     watchResponse {
@@ -635,6 +852,9 @@ class MockYorkieService(
                                     }
                                 },
                             )
+                            documentWatchHeartbeatIntervalMsOverride?.let {
+                                heartbeatIntervalMs = it
+                            }
                         }
                     },
                 )
@@ -643,6 +863,10 @@ class MockYorkieService(
                     responseChannel.close(
                         ConnectException(customError[WATCH_SYNC_ERROR_DOCUMENT_KEY]!!),
                     )
+                    return
+                }
+                documentWatchFramePusher?.let { pusher ->
+                    pusher(responseChannel)
                     return
                 }
                 if (documentId == SILENT_WATCH_DOCUMENT_KEY) {
@@ -696,6 +920,7 @@ class MockYorkieService(
             }
 
             private suspend fun handleChannelWatch() {
+                channelWatchConnectCount += 1
                 responseChannel.trySend(
                     watchResponse {
                         initialization = watchInitialization {
@@ -704,10 +929,17 @@ class MockYorkieService(
                                     channelInit = channelInit {}
                                 },
                             )
+                            channelWatchHeartbeatIntervalMsOverride?.let {
+                                heartbeatIntervalMs = it
+                            }
                         }
                     },
                 )
                 delay(50)
+                channelWatchFramePusher?.let { pusher ->
+                    pusher(responseChannel)
+                    return
+                }
                 repeat(3) {
                     responseChannel.trySend(
                         watchResponse {
@@ -853,6 +1085,23 @@ class MockYorkieService(
                 emptyMap(),
             )
         }
+        if (request.documentId in presenceBaseUnavailableOnceKeys) {
+            presenceBaseUnavailableOnceKeys.remove(request.documentId)
+            val errorInfo = ErrorInfo.newBuilder()
+                .putMetadata("code", YorkieException.Code.ErrPresenceBaseUnavailable.codeString)
+                .build()
+            val connectException = mockk<ConnectException>(relaxed = true) {
+                every { code } returns Code.FAILED_PRECONDITION
+                every {
+                    unpackedDetails(ErrorInfo::class)
+                } returns listOf(errorInfo)
+            }
+            return ResponseMessage.Failure(
+                cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
         return ResponseMessage.Success(
             removeDocumentResponse {
                 changePack = changePack {
@@ -863,6 +1112,9 @@ class MockYorkieService(
                         },
                     )
                     isRemoved = true
+                    if (request.documentId in presencePatchCapableKeys) {
+                        capabilities.add(ChangePack.PRESENCE_PATCH_CAPABILITY)
+                    }
                 }
             },
             emptyMap(),

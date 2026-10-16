@@ -23,6 +23,15 @@ internal fun PresenceChange.toPBPresenceChange(): PBPresenceChange {
             is PresenceChange.Clear -> {
                 type = PBPresenceChangeType.CHANGE_TYPE_CLEAR
             }
+
+            is PresenceChange.Patch -> {
+                // `full` and `removed_keys` are never sent: the receiver either
+                // merges the changed keys onto its held presence (a peer) or
+                // never reads this change at all (the server folds it into a
+                // stored PUT). Ported from JS `b50f8900` #1477.
+                type = PBPresenceChangeType.CHANGE_TYPE_PATCH
+                presence = change.presence.toPBPresence()
+            }
         }
     }
 }
@@ -39,6 +48,12 @@ internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     return when (type) {
         PBPresenceChangeType.CHANGE_TYPE_PUT -> PresenceChange.Put(presence.toPresence())
         PBPresenceChangeType.CHANGE_TYPE_CLEAR -> PresenceChange.Clear
+        // `removed_keys` is ignored on decode (Android never sends it; a PATCH
+        // always carries only set keys from this SDK). `full` is null here --
+        // it is populated only when the change is produced locally, never when
+        // decoded off the wire.
+        PBPresenceChangeType.CHANGE_TYPE_PATCH ->
+            PresenceChange.Patch(presence.toPresence(), full = null)
         else -> throw YorkieException(ErrUnimplemented, "Unimplemented type: $type")
     }
 }

@@ -3,9 +3,11 @@ package dev.yorkie.document
 import dev.yorkie.core.ResourceStatus
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.VersionVector
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -104,5 +106,47 @@ class DocumentAcknowledgePushedChangesTest {
         )
 
         assertEquals(ResourceStatus.Removed, document.getStatus())
+    }
+
+    // --- presence-patch (spec 040) ---------------------------------------
+
+    @Test
+    fun `JS15 heals on a push ack whose remote state is dropped`() = runTest {
+        val document = Document("d")
+        document.updateAsync { _, p -> p.put(mapOf("name" to "a")) }.await()
+        document.applyChangePack(
+            ChangePack(
+                document.getKey(),
+                CheckPoint(0, 1u),
+                emptyList(),
+                null,
+                false,
+                VersionVector(),
+                capabilities = listOf(ChangePack.PRESENCE_PATCH_CAPABILITY),
+            ),
+        )
+        document.updateAsync { _, p -> p.put(mapOf("cursor" to "1,1")) }.await()
+        assertIs<PresenceChange.Patch>(
+            document.createChangePack().changes.single().presenceChange,
+        )
+
+        // PushOnly/SyncOff take only the push ack from the reply. The capability is
+        // metadata about the server that took the push, not the remote state being
+        // skipped, so the heal must happen on THIS path too (not just applyChangePack's).
+        val pending = document.createChangePack().changes
+        document.acknowledgePushedChanges(
+            ChangePack(
+                document.getKey(),
+                CheckPoint(0, pending.last().id.clientSeq),
+                emptyList(),
+                null,
+                false,
+                VersionVector(),
+            ),
+        )
+
+        val healed = document.createChangePack().changes.single().presenceChange
+        assertIs<PresenceChange.Put>(healed)
+        assertEquals(mapOf("name" to "a", "cursor" to "1,1"), healed.presence)
     }
 }

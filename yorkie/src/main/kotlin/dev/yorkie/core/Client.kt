@@ -5,6 +5,7 @@ import androidx.annotation.VisibleForTesting
 import com.connectrpc.Code
 import com.connectrpc.ConnectException
 import com.connectrpc.ProtocolClientConfig
+import com.connectrpc.ResponseMessage
 import com.connectrpc.ServerOnlyStreamInterface
 import com.connectrpc.extensions.GoogleJavaLiteProtobufStrategy
 import com.connectrpc.getOrElse
@@ -13,6 +14,7 @@ import com.connectrpc.impl.ProtocolClient
 import com.connectrpc.okhttp.ConnectOkHttpClient
 import com.connectrpc.protocols.NetworkProtocol
 import com.google.protobuf.ByteString
+import dev.yorkie.api.PBChangePack
 import dev.yorkie.api.fromSchemaRules
 import dev.yorkie.api.toChangePack
 import dev.yorkie.api.toPBChangePack
@@ -49,6 +51,7 @@ import dev.yorkie.document.Document.Event.PresenceChanged.MyPresence.Initialized
 import dev.yorkie.document.Document.Event.PresenceChanged.Others
 import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
+import dev.yorkie.document.Document.Event.WriteRejected
 import dev.yorkie.document.RestoreResult
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.json.JsonObject
@@ -66,13 +69,19 @@ import dev.yorkie.util.OperationResult
 import dev.yorkie.util.SUCCESS
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrAlreadyAttached
+import dev.yorkie.util.YorkieException.Code.ErrChangeTooLarge
 import dev.yorkie.util.YorkieException.Code.ErrClientNotActivated
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotDetached
+import dev.yorkie.util.YorkieException.Code.ErrDocumentSizeExceedsLimit
 import dev.yorkie.util.YorkieException.Code.ErrEpochMismatch
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 import dev.yorkie.util.YorkieException.Code.ErrInvalidServerSeq
+import dev.yorkie.util.YorkieException.Code.ErrPresenceBaseUnavailable
+import dev.yorkie.util.YorkieException.Code.ErrRefused
 import dev.yorkie.util.YorkieException.Code.ErrSessionNotFound
 import dev.yorkie.util.YorkieException.Code.ErrUnauthenticated
+import dev.yorkie.util.YorkieException.Code.ErrWatchStreamIdle
 import dev.yorkie.util.checkYorkieError
 import dev.yorkie.util.createSingleThreadDispatcher
 import dev.yorkie.util.errorCodeOf
@@ -87,6 +96,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlin.coroutines.coroutineContext
+import kotlin.math.ceil
 import kotlin.math.pow
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -110,7 +120,6 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.onClosed
 import kotlinx.coroutines.channels.onFailure
-import kotlinx.coroutines.channels.onSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -289,6 +298,25 @@ public class Client(
     // enqueueWrite yet. Entries remove themselves on completion, like persistQueues.
     private val persistTriggers = ConcurrentHashMap<String, Job>()
 
+    // True only for the FIRST Client built from a given generated key string (D3,
+    // spec 038_sync-js-sdk-v0725-pre-attach-reissue): the consume-once `remove` just
+    // below means a second `Client(Options(key = prev.options.key))` reusing that
+    // same string finds it already gone from [generatedClientKeys], so it reads as an
+    // explicit key -- exactly the shared-key case where a pre-attach re-issue would be
+    // unsound (another session of the same key may already hold the same lamports).
+    // Read once here, before the docStore warning below (which must see the SAME
+    // generated-or-not verdict this field freezes, not a second, already-consumed
+    // membership check).
+    private val keyGenerated: Boolean
+
+    // Per-document-key claim: once a document of this client has minted operations
+    // under an actor (reissued-to or synced-under), a second never-synced document of
+    // the SAME key is declined a re-issue of its own (context §3.2's "claim"). Written
+    // from attachDocument (client dispatcher) and from a keepalive detachDocument
+    // running on GlobalScope + Dispatchers.IO -- hence a concurrent map, not a plain
+    // one confined to the client dispatcher like [attachingDocs].
+    private val reissueClaims = ConcurrentHashMap<String, String>()
+
     init {
         // A store with no caller-supplied key cannot survive a restart, by construction: the
         // generated key (see [generateClientKey]) is per-instance, and it scopes both the store
@@ -300,7 +328,18 @@ public class Client(
         // (`3b9c668c`/#1402); `Options.key` has no "was it supplied?" bit of its own (a
         // generator-recorded weak set stands in for JS's `opts.key` optionality), so this reads
         // [generatedClientKeys] instead of an `opts.key` presence check.
-        if (options.docStore != null && options.key in generatedClientKeys) {
+        val wasGenerated = options.key in generatedClientKeys
+        // D3 consume-once: a generated key is per-instance ONLY the first time it is
+        // used to build a Client. Removing it here (not merely reading it) means a
+        // caller who re-passes a previously generated key string to build a SECOND
+        // Client (e.g. simulating "another session of the same key") gets an explicit
+        // key the second time -- generatedClientKeys no longer contains it to say
+        // otherwise. Port yorkie-js-sdk `client.ts`'s `keyGenerated` (`ed25355e`,
+        // #1449, yorkie#2111), adapted for Android's weak-set stand-in for JS's
+        // `opts.key` optionality (see [generateClientKey]'s own KDoc).
+        generatedClientKeys.remove(options.key)
+        keyGenerated = wasGenerated
+        if (options.docStore != null && wasGenerated) {
             logError(
                 "PS",
                 "c:\"${options.key}\" offline persistence needs a stable clientKey: `docStore` " +
@@ -311,6 +350,27 @@ public class Client(
                     "user id or a device id).",
             )
         }
+    }
+
+    /**
+     * Whether a never-synced document of [key] may re-issue its tickets to [actor]
+     * on this attach (D3 + context §3.2's claim): the client's key must have been
+     * generated (an explicit key keeps the initial actor, since another session of
+     * the key may already hold the same lamports), AND no document of this SAME key
+     * has already minted operations under a DIFFERENT actor on this client.
+     */
+    private fun claimReissue(actor: String, key: String): Boolean {
+        return keyGenerated && reissueClaims[key] != actor
+    }
+
+    /**
+     * Records that [key] has minted operations under [actor] on this client, so a
+     * later never-synced document of the same key is declined a re-issue
+     * ([claimReissue]). Never released -- the claim is for the LIFETIME of this
+     * client instance, matching yorkie-js-sdk's own "taken once, never freed" claim.
+     */
+    private fun markReissueClaim(actor: String, key: String) {
+        reissueClaims[key] = actor
     }
 
     /**
@@ -918,6 +978,31 @@ public class Client(
         callTimeoutMillis.takeIf { it > 0 } ?: (connectTimeoutMillis + readTimeoutMillis)
     }.takeIf { it > 0 }?.milliseconds ?: 5.minutes
 
+    // Test-only observability for the Watch heartbeat round trip (`c1a03877`/#1483,
+    // `c69e6bda`/#1472): nothing in the public API surfaces the server's advertised
+    // `WatchInitialization.heartbeat_interval_ms` or a raw `WatchHeartbeat` frame's arrival --
+    // both are consumed purely to drive the idle-reconnect clock internally -- so an
+    // instrumented test that needs to `Assume` on a real server's advertised interval, or
+    // assert a heartbeat actually arrived, has no other seam. `isDocument` distinguishes the
+    // document stream from the channel stream; both hooks are null (no-op, zero overhead) in
+    // production.
+    @VisibleForTesting
+    internal var onWatchStreamInitAdvertisedHeartbeatIntervalMs: (
+        (isDocument: Boolean, intervalMs: Long) -> Unit
+    )? =
+        null
+
+    @VisibleForTesting
+    internal var onWatchHeartbeatReceived: ((isDocument: Boolean) -> Unit)? = null
+
+    // M6 (team-review, RTCOLLABPLATFORM-789): the idle-reconnect path's own failure
+    // cause (`ErrWatchStreamIdle` once a positive heartbeat interval armed the clock,
+    // a plain `TimeoutException` otherwise) is swallowed into a log call
+    // (`sendWatchAttachmentResourceStreamException`) with nothing else test-observable
+    // to distinguish the two -- same reasoning as the hooks above.
+    @VisibleForTesting
+    internal var onWatchStreamIdleCause: ((isDocument: Boolean, cause: Throwable) -> Unit)? = null
+
     @VisibleForTesting
     internal val conditions: MutableMap<ClientCondition, Boolean> = mutableMapOf(
         ClientCondition.SYNC_LOOP to false,
@@ -1064,6 +1149,13 @@ public class Client(
                         break
                     }
 
+                    // D3: skip an attachment `resyncAsync` is tearing down/re-anchoring
+                    // -- checked before `needSync` so a resync in progress is never
+                    // read as "needs sync" in the first place.
+                    if (attachment.resyncing) {
+                        continue
+                    }
+
                     val heartbeatInterval = options.channelHeartbeatInterval.inWholeMilliseconds
                     val pollInterval = options.documentPollInterval.inWholeMilliseconds
                     if (!attachment.needSync(heartbeatInterval, pollInterval)) {
@@ -1081,18 +1173,71 @@ public class Client(
                         conditions[ClientCondition.SYNC_LOOP] = false
                         return@launch
                     }
+                    val connectException = result.exceptionOrNull() as? ConnectException
                     val isRetryAble = handleConnectException(
-                        result.exceptionOrNull() as? ConnectException,
-                    ) { connectException ->
+                        connectException,
+                    ) { exception ->
                         if (attachment.resource is Document) {
                             handleDocumentAuthenticationError(
-                                exception = connectException,
+                                exception = exception,
                                 document = attachment.resource,
                                 method = PushPull,
                             )
                         }
                     }
-                    if (result.isFailure && !isRetryAble) {
+                    // D2: `handleConnectException` does not recognize ErrPermissionDenied
+                    // (it is not retryable, but it also does not run the error callback
+                    // above) -- publish AuthError(PushPull) here instead, deduped per
+                    // denial EPISODE via `Attachment.pushDenied` rather than once per
+                    // tick, and clear it the moment a push-pull on this attachment
+                    // succeeds again. The loop keeps ticking either way (`conditions`
+                    // below is bookkeeping only, see its own doc comment -- it never
+                    // actually stops this loop), so the client self-heals the moment
+                    // the webhook relents, unlike JS, which stops its task queue here.
+                    if (attachment.resource is Document) {
+                        val isPushDenied = connectException != null &&
+                            errorCodeOf(connectException) ==
+                            YorkieException.Code.ErrPermissionDenied.codeString
+                        if (isPushDenied && !attachment.pushDenied) {
+                            attachment.pushDenied = true
+                            attachment.resource.publish(
+                                AuthError(
+                                    reason = connectException?.let(::errorMetadataOf)
+                                        ?.get("reason") ?: "AuthError",
+                                    method = PushPull,
+                                ),
+                            )
+                        } else if (!isPushDenied && result.isSuccess && attachment.pushDenied) {
+                            attachment.pushDenied = false
+                        }
+
+                        // #1462: a push answered with ErrDocumentSizeExceedsLimit or
+                        // ErrChangeTooLarge will never succeed by resending the SAME
+                        // changes -- park the attachment (`Attachment.needSync` then
+                        // skips it every tick, before even resetting
+                        // `changeEventReceived`) instead of hammering the server every
+                        // `syncLoopDuration`. The mark is set here, where the (possibly
+                        // retried) per-tick outcome is visible; the matching clear
+                        // lives in `syncInternal`'s success path, next to
+                        // `SyncStatusChanged.Synced`, so it also covers an explicit
+                        // `Client.syncAsync(document)` resync that bypasses this loop
+                        // entirely.
+                        val writeRejectedCode = connectException?.let(::errorCodeOf)
+                        if (writeRejectedCode == ErrDocumentSizeExceedsLimit.codeString ||
+                            writeRejectedCode == ErrChangeTooLarge.codeString
+                        ) {
+                            attachment.markWriteRejected()
+                        }
+                    }
+                    // A parked attachment's own failure does not flip this bookkeeping
+                    // flag false on every tick -- it is already being skipped by
+                    // `needSync`, not retried, so there is nothing for this flag to
+                    // report about it (JS stops its queue; Android's loop keeps
+                    // ticking for every OTHER attachment regardless either way --
+                    // see this flag's own doc comment).
+                    val isParkedDocument = attachment.resource is Document &&
+                        attachment.isWriteRejected()
+                    if (result.isFailure && !isRetryAble && !isParkedDocument) {
                         conditions[ClientCondition.SYNC_LOOP] = false
                     }
                 }
@@ -1104,6 +1249,13 @@ public class Client(
     /**
      * Pushes local changes of the attached documents to the server and
      * receives changes of the remote replica from the server then apply them to local documents.
+     *
+     * A document parked by [Document.Event.WriteRejected] (an oversized change the server
+     * will never accept) is NOT recovered by calling this: push and pull share one RPC, so
+     * the parked document neither pushes nor pulls, and resending here just re-fails on
+     * the same change and republishes [Document.Event.WriteRejected]. Recovery is
+     * [resyncAsync] with `discardLocalChanges = true`, which discards the offending
+     * change and re-anchors the document.
      */
     public fun syncAsync(resource: Attachable? = null): Deferred<OperationResult> {
         return scope.async {
@@ -1148,6 +1300,37 @@ public class Client(
         }
     }
 
+    /**
+     * Sends the pack [document] currently holds via [send]; on
+     * `ErrPresenceBaseUnavailable` ONLY -- the server held no base to fold a presence
+     * patch into and stored nothing from the pack -- rewrites the earliest pending patch
+     * into a full put and rebuilds the pack
+     * ([Document.restorePresencePatchesAndRebuildPack], one non-suspending [dispatcher]
+     * hop), then resends exactly once more. Any other failure is returned unchanged, with
+     * exactly one RPC call, for the caller's existing `getOrThrow`/`getOrElse` to handle
+     * (sits ahead of `handleConnectException`/`deactivateInternal` at all four push sites
+     * -- sync, attach, detach, remove -- D4, spec 040). Ported from JS `b50f8900` #1477
+     * `Client.pushWithPresenceBase`.
+     */
+    private suspend fun <T> sendWithPresenceBaseRetry(
+        document: Document,
+        forceRemove: Boolean = false,
+        send: suspend (PBChangePack) -> ResponseMessage<T>,
+    ): ResponseMessage<T> {
+        val mintGenerationAtEntry = document.currentMintGeneration()
+        val response = send(document.createChangePack(forceRemove).toPBChangePack())
+        val failureCause = (response as? ResponseMessage.Failure)?.cause
+        if (failureCause !is ConnectException ||
+            errorCodeOf(failureCause) != ErrPresenceBaseUnavailable.codeString
+        ) {
+            return response
+        }
+        return send(
+            document.restorePresencePatchesAndRebuildPack(forceRemove, mintGenerationAtEntry)
+                .toPBChangePack(),
+        )
+    }
+
     private suspend fun syncInternal(
         attachment: Attachment<out Attachable>,
         syncMode: SyncMode?,
@@ -1159,6 +1342,17 @@ public class Client(
                 if (resource is Document) {
                     resource.mutex.withLock {
                         val documentKey = resource.getKey()
+
+                        // Stale-attachment guard (D3): `resyncAsync` replaces this
+                        // key's `Attachment` object outright (detach then re-attach)
+                        // rather than clearing a flag on the old one, and its own
+                        // wait-out step (S1) only HOLDS this same mutex briefly before
+                        // releasing it -- a sync that was already queued behind that
+                        // hold can resume here holding a now-superseded `attachment`.
+                        // Mirrors the channel branch's existing guard below.
+                        if (attachments[documentKey] !== attachment) {
+                            return@runCatching
+                        }
 
                         // Reset the poll timer up front so a Polling document
                         // syncs once per interval, not on every sync-loop tick.
@@ -1184,17 +1378,18 @@ public class Client(
                         // flight (changeSyncMode), and it is the mode the request
                         // was sent in that decided whether anything was pulled.
                         val requestPushOnly = syncMode == SyncMode.RealtimePushOnly
-                        val request = pushPullChangesRequest {
-                            clientId = requireClientId()
-                            changePack = resource.createChangePack().toPBChangePack()
-                            documentId = attachment.resourceId
-                            pushOnly = requestPushOnly
-                            disableGc = attachment.disableGC
-                        }
-                        val response = service.pushPullChanges(
-                            request,
-                            documentKey.attachmentBasedRequestHeader,
-                        ).getOrThrow()
+                        val response = sendWithPresenceBaseRetry(resource) { pack ->
+                            service.pushPullChanges(
+                                pushPullChangesRequest {
+                                    clientId = requireClientId()
+                                    changePack = pack
+                                    documentId = attachment.resourceId
+                                    pushOnly = requestPushOnly
+                                    disableGc = attachment.disableGC
+                                },
+                                documentKey.attachmentBasedRequestHeader,
+                            )
+                        }.getOrThrow()
                         val responsePack = response.changePack.toChangePack()
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
                         // PushPull, drop the response's remote state (changes OR a snapshot) when
@@ -1220,6 +1415,30 @@ public class Client(
                         // redelivers forever. So while a request was sent PushOnly, or the
                         // attachment is CURRENTLY PushOnly/SyncOff, nothing of the reply but the
                         // push ack is taken, regardless of what the reply carries.
+                        //
+                        // This is also where a pull already in flight when the caller
+                        // switches to PushOnly/SyncOff gets dropped (JS SDK
+                        // `f9d7b298`/#1453): `currentSyncMode` is re-read HERE, after the
+                        // RPC await, not captured before it -- so a `changeSyncMode` call
+                        // racing this very await is already visible by the time this line
+                        // runs, structurally closing JS's window (there, `changeSyncMode`
+                        // waits behind the sync on a task queue, so an in-flight pull's
+                        // guard could still see the OLD mode when the queue had not yet run
+                        // the switch; JS counts that with `Attachment.pendingPullPauses`).
+                        // Android's `changeSyncMode` is synchronous -- it writes
+                        // `attachment.syncMode` directly, no queue to wait behind -- so the
+                        // counter is deliberately NOT ported here; porting it would only
+                        // re-introduce a drop this guard does not need. The one window that
+                        // does remain is narrower and un-closed by either SDK: once
+                        // `dropsRemoteState` is false, `resource.applyChangePack`
+                        // (`Document.kt`) itself hops to the document's own dispatcher to
+                        // apply the pack, so a `changeSyncMode(PushOnly)` landing in that
+                        // short gap -- between this read and the apply actually running on
+                        // the document dispatcher -- is not honoured for that one pack. See
+                        // generator/024-style overlapping-invocation tests for the pattern;
+                        // closing this would mean serializing `changeSyncMode` behind the
+                        // sync the way JS's task queue does, trading a narrower window for a
+                        // real one.
                         val currentSyncMode = attachments[documentKey]?.syncMode
                         val hasRemoteState =
                             responsePack.hasChanges || responsePack.hasSnapshot
@@ -1243,6 +1462,12 @@ public class Client(
                         if (attachment.persistsToStore) {
                             persistAfterSync(attachment, movedRoot)
                         }
+                        // A successful push-pull is the way back in from a #1462 park
+                        // (or an explicit `Client.syncAsync(document)`, which also
+                        // reaches here): clear it BEFORE publishing Synced so a
+                        // listener reacting to Synced never observes a still-parked
+                        // attachment.
+                        attachment.clearWriteRejected()
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,
                         )
@@ -1392,6 +1617,34 @@ public class Client(
                             ),
                         )
                     }
+
+                    // A push the server will never reconsider for the SAME changes --
+                    // published next to SyncFailed above, not instead of it, so an app
+                    // can distinguish "this push failed" from "this push failed AND
+                    // will keep failing until something changes". Parking the
+                    // attachment itself happens in `runSyncLoop`, which is the only
+                    // caller that also sees the (possibly retried) outcome across
+                    // sync-loop ticks. Ported from yorkie-js-sdk `write-rejected`
+                    // (`29a81fe0`, #1462).
+                    if (it is ConnectException) {
+                        val writeRejectedCode = errorCodeOf(it).let { code ->
+                            when (code) {
+                                ErrDocumentSizeExceedsLimit.codeString ->
+                                    ErrDocumentSizeExceedsLimit
+                                ErrChangeTooLarge.codeString -> ErrChangeTooLarge
+                                else -> null
+                            }
+                        }
+                        if (writeRejectedCode != null) {
+                            resource.publish(
+                                event = WriteRejected(
+                                    code = writeRejectedCode,
+                                    reason = it.message ?: it.toString(),
+                                    method = PushPull,
+                                ),
+                            )
+                        }
+                    }
                 }
 
                 (it as? ConnectException)?.let { exception ->
@@ -1449,52 +1702,100 @@ public class Client(
                     }
                 } ?: continue
 
+                // D5 (#1472): re-armed to `streamTimeout` for every fresh connection, then
+                // narrowed once the init frame advertises a positive heartbeat interval
+                // (`idleArmed`); an older server, or one that advertises none, leaves this
+                // at `streamTimeout` and the failure below stays a plain `TimeoutException`
+                // -- today's behaviour, unchanged.
+                var receiveTimeout = streamTimeout
+                var idleArmed = false
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val responseChannel = stream.responseChannel()
                     while (!stream.isReceiveClosed() &&
                         !responseChannel.isClosedForReceive && shouldContinue
                     ) {
-                        withTimeoutOrNull(streamTimeout) {
-                            val receiveResult = responseChannel.receiveCatching()
-                            receiveResult.onSuccess {
-                                // Every frame of any kind proves the watch stream is alive —
-                                // resets this attachment's silence clock, disengaging pull
-                                // fallback if it had engaged (#351 phase 1).
-                                attachment.markWatchResponseReceived()
-                                handleWatchDocumentResponse(
-                                    documentKey = documentKey,
-                                    response = it,
+                        // D5: ONLY the receive itself sits inside the timeout -- handling a
+                        // response can suspend (`Document.publishEvent` is an unbuffered-flow
+                        // emit a stalled collector can park on indefinitely), and that
+                        // suspension must never be misread as the STREAM going silent.
+                        // Statement-level parity with JS is not enough here: JS has no such
+                        // suspend point (js-sync-block-becomes-suspend-window).
+                        val receiveResult = withTimeoutOrNull(receiveTimeout) {
+                            responseChannel.receiveCatching()
+                        }
+                        if (receiveResult == null) {
+                            val idleCause = if (idleArmed) {
+                                YorkieException(
+                                    ErrWatchStreamIdle,
+                                    "watch stream idle past " +
+                                        "${receiveTimeout.inWholeMilliseconds}ms",
                                 )
-                                shouldContinue = true
-                            }.onFailure {
-                                if (receiveResult.isClosed) {
-                                    stream.safeClose()
-                                    return@onFailure
-                                }
-                                shouldContinue = handleWatchDocumentStreamFailure(
-                                    document = document,
-                                    stream = stream,
-                                    cause = it,
-                                    cancelled = attachment.cancelled,
-                                )
-                            }.onClosed {
-                                handleWatchDocumentStreamFailure(
-                                    document = document,
-                                    stream = stream,
-                                    cause = it
-                                        ?: ClosedReceiveChannelException("Channel was closed"),
-                                    cancelled = attachment.cancelled,
-                                )
+                            } else {
+                                TimeoutException("channel timed out")
                             }
-                        } ?: run {
+                            onWatchStreamIdleCause?.invoke(true, idleCause)
                             handleWatchDocumentStreamFailure(
                                 document = document,
                                 stream = stream,
-                                cause = TimeoutException("channel timed out"),
+                                cause = idleCause,
                                 cancelled = attachment.cancelled,
                             )
                             shouldContinue = true
+                            continue
                         }
+                        receiveResult.onFailure {
+                            if (receiveResult.isClosed) {
+                                stream.safeClose()
+                                return@onFailure
+                            }
+                            shouldContinue = handleWatchDocumentStreamFailure(
+                                document = document,
+                                stream = stream,
+                                cause = it,
+                                cancelled = attachment.cancelled,
+                            )
+                        }.onClosed {
+                            handleWatchDocumentStreamFailure(
+                                document = document,
+                                stream = stream,
+                                cause = it
+                                    ?: ClosedReceiveChannelException("Channel was closed"),
+                                cancelled = attachment.cancelled,
+                            )
+                        }
+                        val response = receiveResult.getOrNull() ?: continue
+                        // Every frame of any kind proves the watch stream is alive — resets
+                        // this attachment's silence clock, disengaging pull fallback if it
+                        // had engaged (#351 phase 1). Done BEFORE the handler below (which
+                        // can suspend) so the clock reflects this frame's arrival, not
+                        // whenever the handler eventually finished with it.
+                        attachment.markWatchResponseReceived()
+                        if (response.hasHeartbeat()) {
+                            // No payload: the silence clock reset above is this frame's
+                            // entire purpose (#1472).
+                            onWatchHeartbeatReceived?.invoke(true)
+                            shouldContinue = true
+                            continue
+                        }
+                        if (response.hasInitialization()) {
+                            val heartbeatIntervalMs = response.initialization.heartbeatIntervalMs
+                            onWatchStreamInitAdvertisedHeartbeatIntervalMs?.invoke(
+                                true,
+                                heartbeatIntervalMs,
+                            )
+                            if (heartbeatIntervalMs > 0) {
+                                receiveTimeout = watchIdleTimeoutMs(heartbeatIntervalMs)
+                                    .milliseconds
+                                idleArmed = true
+                            } else {
+                                receiveTimeout = streamTimeout
+                                idleArmed = false
+                            }
+                        }
+                        // Outside the receive timeout (D5): a slow handler suspension is
+                        // never attributed to the stream's own silence clock.
+                        handleWatchDocumentResponse(documentKey = documentKey, response = response)
+                        shouldContinue = true
                     }
                 }
                 stream.sendAndClose(
@@ -1511,6 +1812,10 @@ public class Client(
                         // watch only — the channel watch below carries no
                         // stable actor, JS `client.ts` createChannelWatchStream).
                         actorId = requireActorId()
+                        // Asks the server for a heartbeat on this stream so the idle
+                        // watchdog above can arm (`c1a03877`/#1483); the server's settled
+                        // value, not this request, is what `receiveTimeout` is keyed to.
+                        heartbeatIntervalMs = toHeartbeatIntervalMs(options.watchHeartbeatInterval)
                     },
                 )
 
@@ -1675,42 +1980,82 @@ public class Client(
                         latestStream = it
                     }
                 } ?: continue
+                // D5 (#1472): same restructure as the document watch job above -- see its
+                // comments for the rationale.
+                var receiveTimeout = streamTimeout
+                var idleArmed = false
                 val streamJob = launch(start = CoroutineStart.UNDISPATCHED) {
                     val responseChannel = stream.responseChannel()
                     while (!stream.isReceiveClosed() &&
                         !responseChannel.isClosedForReceive && shouldContinue
                     ) {
-                        withTimeoutOrNull(streamTimeout) {
-                            val receiveResult = responseChannel.receiveCatching()
-                            receiveResult.onSuccess {
-                                handleWatchChannelResponse(channel = channel, response = it)
-                                shouldContinue = true
-                            }.onFailure {
-                                if (receiveResult.isClosed) {
-                                    stream.safeClose()
-                                    return@onFailure
-                                }
-                                shouldContinue = handleWatchChannelStreamFailure(
-                                    stream = stream,
-                                    cause = it,
-                                    cancelled = attachment.cancelled,
+                        val receiveResult = withTimeoutOrNull(receiveTimeout) {
+                            responseChannel.receiveCatching()
+                        }
+                        if (receiveResult == null) {
+                            val idleCause = if (idleArmed) {
+                                YorkieException(
+                                    ErrWatchStreamIdle,
+                                    "watch stream idle past " +
+                                        "${receiveTimeout.inWholeMilliseconds}ms",
                                 )
-                            }.onClosed {
-                                handleWatchChannelStreamFailure(
-                                    stream = stream,
-                                    cause = it
-                                        ?: ClosedReceiveChannelException("Channel was closed"),
-                                    cancelled = attachment.cancelled,
-                                )
+                            } else {
+                                TimeoutException("channel timed out")
                             }
-                        } ?: run {
+                            onWatchStreamIdleCause?.invoke(false, idleCause)
                             handleWatchChannelStreamFailure(
                                 stream = stream,
-                                cause = TimeoutException("channel timed out"),
+                                cause = idleCause,
                                 cancelled = attachment.cancelled,
                             )
                             shouldContinue = true
+                            continue
                         }
+                        receiveResult.onFailure {
+                            if (receiveResult.isClosed) {
+                                stream.safeClose()
+                                return@onFailure
+                            }
+                            shouldContinue = handleWatchChannelStreamFailure(
+                                stream = stream,
+                                cause = it,
+                                cancelled = attachment.cancelled,
+                            )
+                        }.onClosed {
+                            handleWatchChannelStreamFailure(
+                                stream = stream,
+                                cause = it
+                                    ?: ClosedReceiveChannelException("Channel was closed"),
+                                cancelled = attachment.cancelled,
+                            )
+                        }
+                        val response = receiveResult.getOrNull() ?: continue
+                        if (response.hasHeartbeat()) {
+                            // Channels never engage the document-only pull-fallback clock
+                            // (#351), so there is no silence clock to reset here -- the
+                            // frame's only job is to keep this receive from timing out.
+                            onWatchHeartbeatReceived?.invoke(false)
+                            shouldContinue = true
+                            continue
+                        }
+                        if (response.hasInitialization()) {
+                            val heartbeatIntervalMs = response.initialization.heartbeatIntervalMs
+                            onWatchStreamInitAdvertisedHeartbeatIntervalMs?.invoke(
+                                false,
+                                heartbeatIntervalMs,
+                            )
+                            if (heartbeatIntervalMs > 0) {
+                                receiveTimeout = watchIdleTimeoutMs(heartbeatIntervalMs)
+                                    .milliseconds
+                                idleArmed = true
+                            } else {
+                                receiveTimeout = streamTimeout
+                                idleArmed = false
+                            }
+                        }
+                        // Outside the receive timeout (D5): see the document watch job.
+                        handleWatchChannelResponse(channel = channel, response = response)
+                        shouldContinue = true
                     }
                 }
                 stream.sendAndClose(
@@ -1721,6 +2066,9 @@ public class Client(
                                 this.channelKey = channelKey
                             }
                         }
+                        // Asks the server for a heartbeat on this stream, same as the
+                        // document watch above (`c1a03877`/#1483).
+                        heartbeatIntervalMs = toHeartbeatIntervalMs(options.watchHeartbeatInterval)
                     },
                 )
                 streamJob.join()
@@ -1969,8 +2317,25 @@ public class Client(
                     try {
                         // Actor-before-elements: setActor rewrites localChanges/changeID
                         // only, never root elements, so it must run before restoreFromBytes
-                        // — whose actor guard compares against this value.
-                        document.setActor(requireActorId())
+                        // — whose actor guard compares against this value. The re-issue
+                        // overload falls back to this same plain rename whenever the
+                        // document has already synced, so this call is safe on every
+                        // attach, not only a never-synced one. Claim BEFORE the session
+                        // lock / restoreFromBytes / RPC below. This is NOT because nothing
+                        // above suspends -- setActor itself does -- but because
+                        // `attachingDocs` already rejects a concurrent attach of this SAME
+                        // key before this function is ever entered (line ~2246), so no
+                        // second never-synced document of this key can be racing the claim
+                        // regardless of where setActor's own suspension point falls
+                        // (context §5.3, spec 038_sync-js-sdk-v0725-pre-attach-reissue).
+                        val actorId = requireActorId()
+                        val reissued = document.setActor(
+                            actorId,
+                            reissue = claimReissue(actorId, documentKey),
+                        )
+                        if (reissued || document.hasMintedOperations()) {
+                            markReissueClaim(actorId, documentKey)
+                        }
 
                         // (1) Lease — store path only; contention fails fast (does not
                         // suspend waiting for the lock to free up). ErrDocumentOpenElsewhere
@@ -2092,19 +2457,20 @@ public class Client(
                             }
 
                             // (5) RPC — presents the restored checkpoint + epoch, if any.
-                            val request = attachDocumentRequest {
-                                clientId = requireClientId()
-                                changePack = document.createChangePack().toPBChangePack()
-                                schema?.let {
-                                    schemaKey = it
-                                }
-                                disableGc = disableGC
-                                this.disablePresence = resolvedDisablePresence
-                            }
-                            val response = service.attachDocument(
-                                request = request,
-                                headers = documentKey.attachmentBasedRequestHeader,
-                            ).getOrThrow()
+                            val response = sendWithPresenceBaseRetry(document) { pack ->
+                                service.attachDocument(
+                                    request = attachDocumentRequest {
+                                        clientId = requireClientId()
+                                        changePack = pack
+                                        schema?.let {
+                                            schemaKey = it
+                                        }
+                                        disableGc = disableGC
+                                        this.disablePresence = resolvedDisablePresence
+                                    },
+                                    headers = documentKey.attachmentBasedRequestHeader,
+                                )
+                            }.getOrThrow()
 
                             val maxSize = response.maxSizePerDocument
                             if (maxSize > 0) {
@@ -2241,6 +2607,10 @@ public class Client(
                             syncMode = syncMode,
                             disableGC = disableGC,
                             disablePresence = response.disablePresence,
+                            // D4: captured here (NOT read back off the response -- the
+                            // server does not echo it) so `resyncAsync` can carry it into
+                            // the re-attach its own resync performs.
+                            schemaKey = schema,
                             watchFallbackDelay = options.watchFallbackDelay.inWholeMilliseconds,
                         )
                         // The lease and the persist gate now belong to the attachment;
@@ -2370,6 +2740,37 @@ public class Client(
         document: Document,
         keepalive: Boolean = false,
     ): Deferred<OperationResult> {
+        // CJ-LOW-2 (round 4 fix): refuse up front, before any RPC, rather than letting a
+        // detach race a resync's own S4 detach -- the two were previously allowed to
+        // interleave freely, so a caller's detach could return success while the
+        // document ends up re-attached underneath it (resyncAsync's own re-attach wins).
+        attachments[document.getKey()]?.let { attachment ->
+            checkYorkieError(
+                !attachment.resyncing,
+                YorkieException(
+                    ErrInvalidArgument,
+                    "document(${document.getKey()}) is resyncing; retry after it finishes",
+                ),
+            )
+        }
+        return detachDocumentDeferred(
+            document,
+            keepalive = keepalive,
+            skipPresenceClear = false,
+        )
+    }
+
+    /**
+     * Shared by the public [detachDocument] ([skipPresenceClear] = false) and
+     * [resyncAsync]'s S4 ([skipPresenceClear] = true, D3) so a resync's detach can skip
+     * the presence clear without widening [detachDocument]'s own public signature.
+     */
+    @OptIn(DelicateCoroutinesApi::class)
+    private fun detachDocumentDeferred(
+        document: Document,
+        keepalive: Boolean,
+        skipPresenceClear: Boolean,
+    ): Deferred<OperationResult> {
         checkYorkieError(
             isActive,
             YorkieException(ErrClientNotActivated, "client is not active"),
@@ -2384,19 +2785,36 @@ public class Client(
 
         val task = suspend suspend@{
             document.mutex.withLock {
-                document.updateAsync { _, presence ->
-                    presence.clear()
-                }.await()
-
-                val request = detachDocumentRequest {
-                    clientId = requireClientId()
-                    changePack = document.createChangePack().toPBChangePack()
-                    documentId = attachment.resourceId
+                // D3: skip the presence clear outright when asked to, or when a
+                // concurrent resync has already suspended minting on this document
+                // (`!document.isMintable()` -- a detach whose presence clear would
+                // itself be refused). Otherwise tolerate ONLY a concurrent discard
+                // racing this exact clear (TOCTOU: `isMintable()` above and the
+                // updater actually running are not atomic) -- never
+                // CancellationException (lesson generator/022: mirror the
+                // exclusion, never swallow a cancellation here).
+                if (!skipPresenceClear && document.isMintable()) {
+                    try {
+                        document.updateAsync { _, presence ->
+                            presence.clear()
+                        }.await()
+                    } catch (e: YorkieException) {
+                        if (e.code != ErrRefused) {
+                            throw e
+                        }
+                    }
                 }
-                val response = service.detachDocument(
-                    request,
-                    documentKey.attachmentBasedRequestHeader,
-                ).getOrElse {
+
+                val response = sendWithPresenceBaseRetry(document) { pack ->
+                    service.detachDocument(
+                        detachDocumentRequest {
+                            clientId = requireClientId()
+                            changePack = pack
+                            documentId = attachment.resourceId
+                        },
+                        documentKey.attachmentBasedRequestHeader,
+                    )
+                }.getOrElse {
                     handleConnectException(it) { exception ->
                         if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
                             shouldRefreshToken = true
@@ -2436,6 +2854,226 @@ public class Client(
         } else {
             scope.async {
                 task()
+            }
+        }
+    }
+
+    /**
+     * Recovers [document] in place after the server has refused to accept its local
+     * writes (D3; JS SDK `client.ts` `resync`, `61ca06c9`/#1463): discards its un-pushed
+     * local changes, detaches without clearing presence, then re-attaches it under the
+     * SAME sync mode, `disableGC`, presence, and schema it had -- the same [Document]
+     * instance, never swapped for a new one. Restarts the sync loop if it had stopped.
+     *
+     * [discardLocalChanges] is required `true` (`ErrInvalidArgument` otherwise, matching
+     * iOS): resyncing without discarding would simply re-send the same refused changes
+     * forever.
+     *
+     * **Failure contract** -- not uniform; some paths throw out of the returned
+     * [Deferred]'s `await()`, others resolve it with `Result.failure`:
+     * - `discardLocalChanges == false`, [document] not attached, or a resync/detach
+     *   already in progress on it -- THROWS before anything is touched.
+     * - The detach RPC itself fails (refused, or an RPC/client error) -- resolves with
+     *   `Result.failure`; the discarded queue is restored and minting re-opened, so
+     *   [document] ends exactly as it was before this call, still under its ORIGINAL
+     *   attach (never left Detached).
+     * - The re-attach after an otherwise-successful detach fails -- THROWS. By this
+     *   point the queue is already discarded and
+     *   [Document.Event.LocalChangesDropped] (reason
+     *   [Document.Event.Reason.WriteDenied]) has already been published; [document] is
+     *   left Detached, neither re-attached nor rolled back, and a caller must attach it
+     *   again itself.
+     *
+     * On success the returned [Deferred] resolves with the changes that were
+     * discarded, matching the list [Document.Event.LocalChangesDropped] carries, so a
+     * caller can show the user what was lost.
+     *
+     * While a resync is in progress, [document] refuses `updateAsync`/undo/redo with
+     * [YorkieException.Code.ErrRefused] ([Document.isMintable]/`canUndo`/`canRedo`
+     * reflect this too), from the moment the queue is discarded until the resync either
+     * rolls back or re-anchors -- including a pass already suspended mid-call BEFORE
+     * this resync started and resumed only after it finished (a generation check, not
+     * just a flag, so straddling the whole call is refused too). Only one resync or
+     * detach may run on [document] at a time: an overlapping [resyncAsync] or
+     * [detachDocument] call is refused immediately with `ErrInvalidArgument`, before
+     * anything is discarded.
+     *
+     * Cancellation is safe end-to-end. Cancelling the returned [Deferred] before the
+     * queue is discarded leaves [document] untouched -- still Attached, queue intact,
+     * no resync left marked in progress. Cancelling it at or after that point (including
+     * while the detach RPC is in flight) lets the discard/detach/re-attach run to
+     * completion uninterrupted rather than abandoning it partway: the cancelled
+     * caller's own `await()` still throws `CancellationException`, but [document]
+     * itself always finishes in one of the states this KDoc describes above, never
+     * stuck between them.
+     */
+    public fun resyncAsync(
+        document: Document,
+        discardLocalChanges: Boolean,
+        initialPresence: P? = null,
+    ): Deferred<Result<List<Document.Event.DroppedChange>>> {
+        return scope.async {
+            checkYorkieError(
+                discardLocalChanges,
+                YorkieException(
+                    YorkieException.Code.ErrInvalidArgument,
+                    "resyncAsync requires discardLocalChanges = true",
+                ),
+            )
+
+            val documentKey = document.getKey()
+            val attachment = attachments[documentKey]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "document($documentKey) is not attached",
+                )
+
+            // CJ-LOW-2 (round 4 fix): refuse an overlapping resync up front, before
+            // anything is touched, rather than discarding the queue and only THEN
+            // failing (the previous behaviour let two resyncs -- or a resync and a
+            // detach -- interleave freely).
+            checkYorkieError(
+                !attachment.resyncing,
+                YorkieException(
+                    ErrInvalidArgument,
+                    "document($documentKey) is already resyncing",
+                ),
+            )
+
+            // Captured BEFORE any teardown below, in one go, same as JS: the sync mode,
+            // disableGC and disablePresence this attachment was created with, the schema
+            // it was attached under (D4 -- JS drops this, Android keeps it), and the
+            // document's own presence (read now, while status is still Attached and S4's
+            // detach has not cleared it -- resetForReanchor wipes ALL presence state, so
+            // this is the only point it can still be read).
+            val capturedSyncMode = attachment.syncMode ?: SyncMode.Realtime
+            val capturedDisableGC = attachment.disableGC
+            val capturedDisablePresence = attachment.disablePresence
+            val capturedSchemaKey = attachment.schemaKey
+            val capturedPresence = initialPresence ?: document.myPresence
+
+            // CJ-MED-2 (round 4 fix): `attachment.resyncing` must never be left `true`
+            // by a cancellation or an exception -- this `finally` is the single place
+            // that guarantees that, covering every exit below (early return, throw, or
+            // normal completion). `attachment` is this call's own OLD Attachment
+            // instance; once S4 below replaces the map entry, clearing this flag on the
+            // stale object is a harmless no-op, so unconditionally resetting it here on
+            // every exit is simpler and strictly safer than threading a "did we commit"
+            // flag through each branch.
+            try {
+                // S1: wait out a sync already in flight. `resyncing` is set FIRST so the
+                // loop skips this attachment from here on (checked before needSync); the
+                // lock/unlock that follows waits for an in-flight syncInternal (which
+                // took this same mutex before this flag could have been read) to finish
+                // its critical section, then releases immediately -- the mutex must NOT
+                // be held across the detach+attach below (works only because
+                // detachInternal swaps the per-key mutex: attachDocument's own withLock
+                // later gets a FRESH one). Cancelling here is safe: nothing has been
+                // discarded yet, so the `finally` below leaves `document` untouched.
+                attachment.resyncing = true
+                document.mutex.withLock { }
+
+                // S2: tear down persistence UNCONDITIONALLY, before attempting the
+                // discard/detach below -- not gated on the detach's own outcome, so a
+                // refused detach still leaves persistence off for the rest of this
+                // session (as JS; iOS flags this upstream too). detachInternal (called
+                // from detachDocumentDeferred's S4, only on a SUCCESSFUL detach) repeats
+                // a subset of this; harmless, every step here is idempotent. Still
+                // cancellable: nothing has been discarded yet either.
+                val wasPersisting = attachment.persistsToStore
+                document.onLocalChange = null
+                attachment.persistsToStore = false
+                if (wasPersisting) {
+                    drainPersist(storeKey(documentKey))
+                }
+                persistStates.remove(storeKey(documentKey))
+                // CJ-LOW-3 (round 4 fix): bounded the same way drainPersist is -- an
+                // unbounded `removeFromStore` here chained behind a hung store write
+                // used to block the discard/detach below indefinitely even though
+                // drainPersist itself had already given up at 5s. A timeout here does
+                // not lose anything: removeFromStore's own write is still enqueued and
+                // will eventually land, this call simply stops waiting for it.
+                if (withTimeoutOrNull(5_000) { removeFromStore(documentKey) } == null) {
+                    logDebug(
+                        "PS",
+                        "resync($documentKey): removeFromStore did not finish within " +
+                            "5s; proceeding without waiting for it",
+                    )
+                }
+
+                // From here on this resync has committed to discarding the queue --
+                // wrapped in NonCancellable (CJ-MED-2, round 4 fix) so a cancellation
+                // racing the discard/detach/re-attach cannot interrupt it partway: the
+                // previous code let a cancel during the detach RPC's `.await()` be
+                // caught by `runCatching` as a false "detach failed", roll back as if
+                // the detach never happened, while the ACTUAL detach (a sibling
+                // `scope.async`, unaffected by this coroutine's own cancellation) went
+                // on to complete in the background and detach the document for real --
+                // leaving a "rolled-back" state restored onto a Detached document.
+                // Running this section to completion regardless of this Deferred's own
+                // cancellation removes that race entirely: the caller's `await()` still
+                // throws `CancellationException`, but `document` itself always ends up
+                // either still Attached with everything restored, or fully resynced.
+                return@async withContext(NonCancellable) {
+                    // S3: discard the un-pushed queue. Always suspends minting
+                    // (Document.isMintable), even for an empty queue (CJ-MED-1).
+                    val discardedChanges = document.discardLocalChanges()
+
+                    // S4: detach without clearing presence. A refusal here (RPC
+                    // failure, or the attachment having gone missing/the client
+                    // inactive) rolls everything back: restore the queue and clear
+                    // `resyncing`.
+                    val detachResult = runCatching {
+                        detachDocumentDeferred(
+                            document,
+                            keepalive = false,
+                            skipPresenceClear = true,
+                        ).await()
+                    }.getOrElse { Result.failure(it) }
+                    if (detachResult.isFailure) {
+                        document.restoreLocalChanges(discardedChanges)
+                        attachment.resyncing = false
+                        return@withContext Result.failure(
+                            detachResult.exceptionOrNull()
+                                ?: YorkieException(ErrRefused, "resync detach failed"),
+                        )
+                    }
+
+                    // S5: report the loss BEFORE re-attaching, so it is reported even
+                    // if the re-attach below itself fails.
+                    emitLocalChangesDropped(
+                        document,
+                        Document.Event.Reason.WriteDenied,
+                        discardedChanges,
+                    )
+
+                    // S6: reanchor and re-attach under the captured options -- the
+                    // detach above already left `attachments` without this key and
+                    // `document` Detached, so this is an ordinary attach, not a special
+                    // re-attach path.
+                    document.resetForReanchor()
+                    attachDocument(
+                        document = document,
+                        initialPresence = capturedPresence,
+                        syncMode = capturedSyncMode,
+                        schema = capturedSchemaKey,
+                        disableGC = capturedDisableGC,
+                        disablePresence = capturedDisablePresence,
+                    ).await().getOrThrow()
+
+                    // S7: the loop never actually stops on Android (`conditions` is
+                    // bookkeeping only -- see runSyncLoop's own doc comment), but a
+                    // prior non-retryable failure on this or another attachment may
+                    // have left the flag at false; reset it so an observer reading it
+                    // sees the loop as running again.
+                    if (conditions[ClientCondition.SYNC_LOOP] == false) {
+                        conditions[ClientCondition.SYNC_LOOP] = true
+                    }
+
+                    Result.success(discardedChanges.map { it.toDroppedChange() })
+                }
+            } finally {
+                attachment.resyncing = false
             }
         }
     }
@@ -2578,6 +3216,29 @@ public class Client(
 
     private suspend fun detachInternal(key: String, drain: Boolean = true) {
         val attachment = attachments[key] ?: return
+        // Claim BEFORE the first suspension below (drainPersist): a document
+        // that minted operations while attached takes the claim under the
+        // CLIENT's actor (JS `this.actorID ?? this.id`) -- `applyStatus`
+        // resets neither the document's actor nor its flags on detach on
+        // Android (context §3.1), so a later never-synced document of the
+        // same key must still be declined even though this one no longer
+        // looks "detached-and-never-synced" to its own neverSynced check.
+        // The keepalive detach path runs on GlobalScope + Dispatchers.IO
+        // (NonCancellable), off this client's own dispatcher -- reissueClaims
+        // is a ConcurrentHashMap for exactly that reason.
+        if ((attachment.resource as? Document)?.hasMintedOperations() == true) {
+            // Non-throwing fallback (mirrors JS `this.actorID ?? this.id`): the
+            // keepalive detach path runs on GlobalScope off this client's own
+            // dispatcher and can reach here AFTER deactivateInternal has already
+            // flipped status away from Activated -- requireClientId() would throw
+            // ErrClientNotActivated here, uncaught, on a cleanup path that must
+            // not fail. Android has no stored id once Deactivated (unlike JS's
+            // `this.id`), so the claim is skipped entirely rather than guessed.
+            val reissueActor = actorId ?: (status.value as? Status.Activated)?.clientId
+            if (reissueActor != null) {
+                markReissueClaim(reissueActor, key)
+            }
+        }
         attachment.cancelWatchJob()
         // MEDIUM-1: drain this attachment's persist chain (bounded to 5s) BEFORE
         // clearing the local-change hook below — a write already registered in
@@ -2715,15 +3376,16 @@ public class Client(
                         "document($documentKey) is not attached",
                     )
 
-                val request = removeDocumentRequest {
-                    clientId = requireClientId()
-                    changePack = document.createChangePack(forceRemove = true).toPBChangePack()
-                    documentId = attachment.resourceId
-                }
-                val response = service.removeDocument(
-                    request,
-                    documentKey.attachmentBasedRequestHeader,
-                ).getOrElse {
+                val response = sendWithPresenceBaseRetry(document, forceRemove = true) { pack ->
+                    service.removeDocument(
+                        removeDocumentRequest {
+                            clientId = requireClientId()
+                            changePack = pack
+                            documentId = attachment.resourceId
+                        },
+                        documentKey.attachmentBasedRequestHeader,
+                    )
+                }.getOrElse {
                     ensureActive()
                     return@async Result.failure(it)
                 }
@@ -3298,6 +3960,26 @@ public class Client(
          * has no Android analog (no page-unload event) and is not ported.
          */
         public val sessionLock: SessionLock = NoopSessionLock,
+        /**
+         * `watchHeartbeatInterval` is the interval at which the client asks the server to send
+         * a heartbeat on an idle Watch stream, so that a half-open stream is noticed and
+         * reconnected (`watchIdleTimeoutMs`, `c69e6bda`/#1472). It is a request, not a setting:
+         * the server clamps it to its own bounds and the client times a silent stream out at
+         * three times the interval the server actually settles on and advertises back on the
+         * init frame. A non-positive value asks for no heartbeats, which also leaves the stream
+         * without an idle timeout. The default value is `20000`(ms).
+         *
+         * Unlike [channelHeartbeatInterval], which is how often the client sends a channel
+         * refresh to keep a channel session alive, this is how often the server writes to the
+         * client's own Watch stream.
+         *
+         * **Note:** [Options] is a `data class` without `@JvmOverloads`, so adding this trailing
+         * parameter keeps Kotlin source compatibility but changes the generated constructor and
+         * `copy` signatures for Java callers.
+         *
+         * Ported from JS `client.ts`'s `watchHeartbeatInterval` option (`c1a03877`/#1483).
+         */
+        public val watchHeartbeatInterval: Duration = 20_000.milliseconds,
     ) {
         @Deprecated(
             "Renamed to channelHeartbeatInterval",
@@ -3350,4 +4032,60 @@ public class Client(
         // before it is stamped into document changes.
         private val ActorIdRegex = Regex("[0-9a-f]{24}")
     }
+}
+
+/**
+ * How long (ms) a Watch stream may stay silent before it is treated as idle and reconnected,
+ * given the server's advertised [heartbeatIntervalMs] (`WatchInitialization.heartbeat_interval_ms`,
+ * read once per stream connection, after its init frame). `<= 0` means the server advertises no
+ * heartbeat at all -- `0` here keeps today's fixed `streamTimeout` behaviour (an older server, or
+ * one this client asked to send none, #1483). Otherwise three missed heartbeats, clamped to
+ * [1 second, 24 hours] the same way a single dropped frame does not misreport idle but an
+ * actually-dead stream is not left waiting a full day. Pure and top-level so it is directly
+ * unit-testable without a [Client] instance. Ported verbatim from yorkie-js-sdk
+ * `watchIdleTimeout` (`c69e6bda`, #1472).
+ */
+internal fun watchIdleTimeoutMs(heartbeatIntervalMs: Long): Long {
+    if (heartbeatIntervalMs <= 0) {
+        return 0
+    }
+    // CJ-LOW-1 (round 4 fix): clamp BEFORE multiplying by 3 -- for an advertised
+    // interval past Long.MAX_VALUE / 3 (~3.07e18), the raw multiply wraps negative and
+    // coerceIn pins the result to the 1s floor instead of the intended 24h cap (JS
+    // multiplies in doubles, which does not overflow, and clamps the same way). No
+    // conforming server advertises anything near this; clamping the input to the cap
+    // divided by 3 up front makes the multiply itself incapable of overflowing.
+    return (minOf(heartbeatIntervalMs, 28_800_000L) * 3).coerceIn(1_000L, 86_400_000L)
+}
+
+/**
+ * The largest value this client will ever ask for on
+ * [Client.Options.watchHeartbeatInterval] -- `2^53 - 1`, the largest integer a JS/TS `number`
+ * (and so the JS/iOS SDKs' own cap) represents exactly. Sending the raw millisecond count past
+ * this would still fit an `int64` on the wire but would no longer round-trip through a JS peer
+ * reading the same field, so the cap is shared across SDKs rather than the wire type's own
+ * range.
+ */
+private const val MAX_HEARTBEAT_INTERVAL_MS = 9_007_199_254_740_991L
+
+/**
+ * Converts [Client.Options.watchHeartbeatInterval] to the `WatchRequest.heartbeat_interval_ms`
+ * wire value sent on both the document and the channel Watch request. A non-positive [interval]
+ * asks for no heartbeats (`0`); a positive sub-millisecond remainder rounds UP rather than
+ * truncating, since [Duration.inWholeMilliseconds] truncates and a truncated-to-zero tiny
+ * interval would silently opt the stream out instead of letting the server clamp it to its own
+ * minimum; [Duration.INFINITE] (and anything at or past [MAX_HEARTBEAT_INTERVAL_MS]) saturates
+ * at that cap so the request can never fail to serialize. Pure and top-level so it is directly
+ * unit-testable without a [Client] instance. Ported from yorkie-js-sdk `toHeartbeatIntervalMs`
+ * (`c1a03877`, #1483).
+ */
+internal fun toHeartbeatIntervalMs(interval: Duration): Long {
+    if (interval <= Duration.ZERO) {
+        return 0
+    }
+    val milliseconds = ceil(interval.toDouble(DurationUnit.MILLISECONDS))
+    if (milliseconds.isInfinite() || milliseconds >= MAX_HEARTBEAT_INTERVAL_MS.toDouble()) {
+        return MAX_HEARTBEAT_INTERVAL_MS
+    }
+    return milliseconds.toLong()
 }

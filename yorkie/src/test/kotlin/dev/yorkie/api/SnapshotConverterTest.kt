@@ -2,6 +2,7 @@ package dev.yorkie.api
 
 import android.util.Base64
 import dev.yorkie.api.v1.JSONElementKt.tree
+import dev.yorkie.api.v1.copy
 import dev.yorkie.api.v1.nodeAttr
 import dev.yorkie.api.v1.textNode
 import dev.yorkie.api.v1.textNodeID
@@ -13,6 +14,8 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.CrdtTreeNodeID
 import dev.yorkie.document.crdt.RgaTreeSplit
+import dev.yorkie.document.crdt.RgaTreeSplitNodeID
+import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.issueTime
@@ -23,6 +26,7 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -221,6 +225,121 @@ class SnapshotConverterTest {
 
         assertEquals(ErrInvalidArgument, exception.code)
         assertEquals("invalid tree node depth: 2", exception.errorMessage)
+    }
+
+    // Port yorkie-js-sdk `snapshot_converter_test.ts` "should round-trip the
+    // insertion links of split text nodes" (`ed25355e`, #1449, yorkie#2111).
+    // Also the Android-only insPrevId round-trip through snapshotToBytes:
+    // `toByteString()`/`toPBText()` is exactly the path `buildEnvelopeBytes`
+    // (`Document.kt:1573`) and a Text nested in a pushed Object/Array value
+    // both funnel through.
+    @Test
+    fun `should round-trip the insertion links of split text nodes`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "abcdef")
+        }.await()
+        document.updateAsync { root, _ ->
+            (root["text"] as JsonText).edit(2, 4, "x")
+        }.await()
+
+        fun linksOf(text: CrdtText) = text.rgaTreeSplit.map { it.id to it.insertionPrev?.id }
+
+        val before = linksOf(document.getRootObject()["text"] as CrdtText)
+        assertTrue(before.any { (_, prev) -> prev != null }, "a split must leave an insertion link")
+
+        val restored = (document.getRootObject()["text"] as CrdtText).toByteString()
+            .let { PBJsonElement.parseFrom(it).toCrdtElement() as CrdtText }
+
+        assertEquals(before, linksOf(restored))
+    }
+
+    @Test
+    fun `should only emit an insertion link a decoder can resolve`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "abcdef")
+        }.await()
+        document.updateAsync { root, _ ->
+            (root["text"] as JsonText).edit(2, 4, "x")
+        }.await()
+        document.updateAsync { root, _ ->
+            (root["text"] as JsonText).edit(1, 2, "yz")
+        }.await()
+
+        val pbText = (document.getRootObject()["text"] as CrdtText).toPBText().text
+        val emitted = mutableSetOf<RgaTreeSplitNodeID>()
+        var linked = 0
+        pbText.nodesList.forEach { node ->
+            if (node.hasInsPrevId()) {
+                linked++
+                assertTrue(
+                    node.insPrevId.toRgaTreeSplitNodeID() in emitted,
+                    "forward or dangling insPrevId: ${node.insPrevId}",
+                )
+            }
+            emitted += node.id.toRgaTreeSplitNodeID()
+        }
+        assertTrue(linked > 0, "at least one split must carry an insertion link")
+    }
+
+    @Test
+    fun `should drop an insertion link that names no decoded node`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "abcdef")
+        }.await()
+        document.updateAsync { root, _ ->
+            (root["text"] as JsonText).edit(2, 4, "x")
+        }.await()
+
+        val original = (document.getRootObject()["text"] as CrdtText).toPBText()
+        val nodes = original.text.nodesList
+        // Point the first node at the last one: a link no decoder can have
+        // resolved by the time the first node is read.
+        val forged = original.copy {
+            text = text.copy {
+                this.nodes.clear()
+                this.nodes.addAll(
+                    nodes.mapIndexed { index, node ->
+                        if (index == 0) node.copy { insPrevId = nodes.last().id } else node
+                    },
+                )
+            }
+        }
+
+        val decoded = forged.toCrdtElement() as CrdtText
+        assertEquals(null, decoded.rgaTreeSplit.first().insertionPrev)
+    }
+
+    @Test
+    fun `should drop an insertion link that names another insertion`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ ->
+            root.setNewText("text").edit(0, 0, "abc")
+        }.await()
+        document.updateAsync { root, _ ->
+            (root["text"] as JsonText).edit(3, 3, "def")
+        }.await()
+
+        val original = (document.getRootObject()["text"] as CrdtText).toPBText()
+        val nodes = original.text.nodesList
+        assertEquals(2, nodes.size)
+        // The second insertion decodes after the first, so this link
+        // resolves by exact id -- only the same-insertion check rejects it.
+        val forged = original.copy {
+            text = text.copy {
+                this.nodes.clear()
+                this.nodes.addAll(
+                    nodes.mapIndexed { index, node ->
+                        if (index == 1) node.copy { insPrevId = nodes.first().id } else node
+                    },
+                )
+            }
+        }
+
+        val decoded = forged.toCrdtElement() as CrdtText
+        assertEquals(null, decoded.rgaTreeSplit.last().insertionPrev)
     }
 
     @Test

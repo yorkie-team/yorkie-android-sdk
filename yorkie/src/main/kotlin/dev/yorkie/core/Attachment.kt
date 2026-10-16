@@ -15,6 +15,17 @@ internal class Attachment<R : Attachable>(
      * when the session expires (ErrSessionNotFound recovery).
      */
     var resourceId: String = "",
+    /**
+     * Read by `Client.syncInternal`'s response guard (the client dispatcher, inside
+     * `document.mutex`) and written by the synchronous, non-suspend
+     * [Client.changeSyncMode] (any thread the caller calls it from) -- `@Volatile` so a
+     * guard that reads this after a pull's RPC await always sees the latest write (JS SDK
+     * `f9d7b298`/#1453: ports the field-level plain-vars-off-dispatcher fix the Attachment
+     * side of that commit needed; Android's guard already re-reads this live after the
+     * await, so the counter JS added there, `pendingPullPauses`, is not ported -- see the
+     * comment on `syncInternal`'s guard).
+     */
+    @Volatile
     var syncMode: Client.SyncMode? = null,
     /**
      * Declares that this attachment will not produce or consume tombstones.
@@ -28,6 +39,13 @@ internal class Attachment<R : Attachable>(
      * contract is set on the attach request, not on PushPullChanges.
      */
     val disablePresence: Boolean = false,
+    /**
+     * The schema key this document was attached with, or null for an unschema'd attach.
+     * Documents only. Captured at attach time so `Client.resyncAsync` can carry it into
+     * the re-attach its resync performs (D4: JS's own resync drops the schema; Android
+     * keeps it, a deliberate, recorded divergence).
+     */
+    val schemaKey: String? = null,
     /**
      * Clock used for all liveness/throttle timing. Defaults to the real wall clock;
      * tests inject a fake `var now` to drive [needSync] deterministically without
@@ -44,8 +62,59 @@ internal class Attachment<R : Attachable>(
      */
     private val watchFallbackDelay: Long = Long.MAX_VALUE,
 ) {
+    /**
+     * Read by the sync loop (client dispatcher) and written both there and by the watch
+     * loop's stream-connect/event handlers (a different coroutine) -- `@Volatile` for the
+     * same cross-dispatcher visibility reason as [syncMode] (JS SDK `f9d7b298`/#1453).
+     */
+    @Volatile
     var changeEventReceived: Boolean? = syncMode?.let { false }
     var cancelled: Boolean = false
+
+    /**
+     * Set while `Client.resyncAsync` is resyncing this attachment's document (D3): the
+     * sync loop skips an attachment with this set (checked before `needSync`), and
+     * `syncInternal`'s document branch re-checks attachment IDENTITY (not this flag)
+     * right after acquiring the document's mutex, because a resync replaces the
+     * `Attachment` object outright rather than clearing this on the old one. `@Volatile`
+     * for the same cross-dispatcher reason as [syncMode].
+     */
+    @Volatile
+    var resyncing: Boolean = false
+
+    /**
+     * True once this attachment has published `Document.Event.AuthError(PushPull)` for
+     * the CURRENT run of denied pushes (D2); cleared on the next successful push-pull.
+     * Dedupes the publish to once per denial episode instead of once per sync-loop tick
+     * (every `Client.Options.syncLoopDuration`) -- the loop itself keeps ticking so the
+     * client self-heals the moment the webhook relents. Confined to the client
+     * dispatcher's sync loop; no [Volatile] needed.
+     */
+    var pushDenied: Boolean = false
+
+    /**
+     * `true` once a push for this attachment's document was answered with a code the
+     * server will never reconsider for the SAME changes --
+     * [dev.yorkie.util.YorkieException.Code.ErrDocumentSizeExceedsLimit] or
+     * [dev.yorkie.util.YorkieException.Code.ErrChangeTooLarge] -- so [needSync] parks
+     * the document instead of re-sending it every sync-loop tick. Cleared only by a
+     * subsequent SUCCESSFUL push-pull on this attachment (an explicit
+     * `Client.syncAsync(document)` is the way back in, same as a resync). Confined to
+     * the client dispatcher's sync loop / `syncInternal`; no `@Volatile` needed. Ported
+     * from yorkie-js-sdk `isWriteRejected`/`markWriteRejected`/`clearWriteRejected`
+     * (`29a81fe0`, #1462).
+     */
+    private var writeRejected: Boolean = false
+
+    fun markWriteRejected() {
+        writeRejected = true
+    }
+
+    fun clearWriteRejected() {
+        writeRejected = false
+    }
+
+    fun isWriteRejected(): Boolean = writeRejected
 
     /**
      * The [SessionLockHandle] leased for this attachment's document while a [Client.Options.docStore]
@@ -182,6 +251,17 @@ internal class Attachment<R : Attachable>(
     fun needSync(heartbeatInterval: Long, documentPollInterval: Long): Boolean {
         // For Document: check if realtime sync is needed
         if (resource is Document) {
+            // A document parked by a write-rejection (#1462) is skipped BEFORE either
+            // the Polling early-return or the realtime/fallback check below -- a parked
+            // document must not re-send through Polling's fixed-interval path, nor
+            // fall back to pulling on watch silence; both would still hammer the
+            // server with the same refused change. The only way back in is a
+            // successful push-pull on this attachment (clearWriteRejected) or an
+            // explicit `Client.syncAsync(document)`, which bypasses the sync loop
+            // entirely and calls `syncInternal` directly.
+            if (isWriteRejected()) {
+                return false
+            }
             // Polling has no watch stream, so it pushes and pulls on a fixed
             // interval regardless of local changes. Mirrors JS SDK PR #1243.
             if (syncMode == Client.SyncMode.Polling) {

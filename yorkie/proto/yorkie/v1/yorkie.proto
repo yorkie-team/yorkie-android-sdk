@@ -118,6 +118,14 @@ message WatchRequest {
   // watched/unwatched events match the presence CRDT keying. Old SDKs omit it
   // and the server falls back to client_id (the session id).
   string actor_id = 3;
+  // heartbeat_interval_ms is the interval, in milliseconds, at which this
+  // stream asks the server to send a WatchHeartbeat while it is idle. 0, which
+  // is also what an SDK older than the heartbeat leaves here, asks for none:
+  // such a stream gets no WatchHeartbeat bodies at all, so the heartbeat can
+  // never reach a client that would not recognize it. The server clamps the
+  // request to its own bounds and reports the value it settled on in
+  // WatchInitialization.heartbeat_interval_ms.
+  int64 heartbeat_interval_ms = 4;
 }
 
 message ResourceDescriptor {
@@ -139,11 +147,27 @@ message WatchResponse {
   oneof body {
     WatchInitialization initialization = 1;
     WatchEvent event = 2;
+    // heartbeat is sent at the server's advertised interval
+    // (WatchInitialization.heartbeat_interval_ms) to prove a quiet stream is
+    // still alive; it carries no payload. Ported from yorkie-js-sdk
+    // `c69e6bda` (#1472).
+    WatchHeartbeat heartbeat = 3;
   }
 }
 
 message WatchInitialization {
   repeated ResourceInit resource_inits = 1;
+  // heartbeat_interval_ms is the interval, in milliseconds, at which the
+  // server will send WatchHeartbeat frames on this stream, or 0 if the
+  // server advertises none (an older server, or a client that asked for
+  // none — see WatchRequest.heartbeat_interval_ms, #1483). Ported from
+  // yorkie-js-sdk `c69e6bda` (#1472).
+  int64 heartbeat_interval_ms = 2;
+}
+
+// WatchHeartbeat is an empty heartbeat frame sent on a Watch stream to prove
+// liveness between real events. Ported from yorkie-js-sdk `c69e6bda` (#1472).
+message WatchHeartbeat {
 }
 
 message ResourceInit {

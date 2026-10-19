@@ -18,6 +18,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -320,39 +321,37 @@ class DocumentCloneResetTest {
 
     @Test
     fun `keeps the clone when undo is refused during an update`() = runTest {
+        // `isUpdating` is now REALLY set around the updater (D2, backlog
+        // 019, spec 038_sync-js-sdk-v0725-pre-attach-reissue), so a genuine
+        // nested undoAsync() call while an updateAsync() updater is still
+        // suspended -- not a reflection-driven field set -- now reaches
+        // executeUndoRedo's refusal branch, the way JS's own test drives it.
         val doc = Document("d")
         doc.updateAsync { root, _ -> root["k"] = 1 }.await()
         assertNotNull(doc.clone)
 
-        // `isUpdating` is read by executeUndoRedo's refusal check but is
-        // never set true anywhere in Document.kt (confirmed: no assignment
-        // exists in the file, pre-dating this commit and unrelated to
-        // #1394) -- so nesting an undoAsync() call inside an in-flight
-        // updateAsync() call, the way JS's test does, does not reach the
-        // refusal branch on Android today. Reflection (the established
-        // idiom in this test suite, see GcContainmentTest.rootOf) drives
-        // the precondition directly, so this test exercises what this
-        // commit actually changed: that the refusal's early return -- kept
-        // OUTSIDE the new try/catch -- still returns failure without
-        // touching the clone.
-        setIsUpdating(doc, true)
-        try {
-            val result = doc.history.undoAsync().await()
-            assertTrue(result.isFailure)
-            assertEquals(
-                "Undo is not allowed during an update",
-                result.exceptionOrNull()?.message,
-            )
-        } finally {
-            setIsUpdating(doc, false)
+        val updaterEntered = CompletableDeferred<Unit>()
+        val releaseUpdater = CompletableDeferred<Unit>()
+        val inFlight = doc.updateAsync { root, _ ->
+            root["k"] = 2
+            updaterEntered.complete(Unit)
+            releaseUpdater.await()
         }
+        updaterEntered.await()
 
+        val result = doc.history.undoAsync().await()
+        assertTrue(result.isFailure)
+        assertEquals(
+            "Undo is not allowed during an update",
+            result.exceptionOrNull()?.message,
+        )
+        // The refusal's early return is OUTSIDE executeUndoRedo's own
+        // try/catch, so it must not have touched the clone the in-flight
+        // updater is still holding a proxy over.
         assertNotNull(doc.clone)
-    }
 
-    private fun setIsUpdating(document: Document, value: Boolean) {
-        val field = Document::class.java.getDeclaredField("isUpdating")
-        field.isAccessible = true
-        field.setBoolean(document, value)
+        releaseUpdater.complete(Unit)
+        inFlight.await()
+        assertNotNull(doc.clone)
     }
 }

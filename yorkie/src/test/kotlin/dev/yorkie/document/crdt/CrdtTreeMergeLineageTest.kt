@@ -395,4 +395,154 @@ class CrdtTreeMergeLineageTest {
 
         assertNull(f.p3.mergedInto)
     }
+
+    // --- #1478 (yorkie-js-sdk `4d714068`): a crafted mergedFrom lineage
+    // aiming the merge destination at a moved child, or at a node inside
+    // one. Ported as `tree_merge_lineage_test.ts`'s cycle-guard cases. ---
+
+    private class CycleFixture(
+        val tree: CrdtTree,
+        val p1: CrdtTreeNode,
+        val x: CrdtTreeNode,
+        val p2: CrdtTreeNode,
+        val b: CrdtTreeNode,
+        val i: CrdtTreeNode,
+    )
+
+    /**
+     * Builds `<r><p1>x</p1><p2><b><i></i></b></p2></r>`: p1 holds a text
+     * child so a position at its end is not its own leftmost sentinel,
+     * which keeps [CrdtTree.findNodesAndSplitText]'s §9.3 merged-away-anchor
+     * redirect from firing before the merge loop's own cycle guard gets a
+     * chance to run (that redirect only fires at a leftmost position); p2
+     * holds a nested element `b` -> `i` for a merge destination to land
+     * inside once p1 is forged below.
+     */
+    private fun buildCycleFixture(issue: () -> TimeTicket): CycleFixture {
+        fun element(type: String) = CrdtTreeElement(CrdtTreeNodeID(issue(), 0), type)
+        fun text(value: String) = CrdtTreeText(CrdtTreeNodeID(issue(), 0), value)
+
+        val tree = CrdtTree(element("r"), issue())
+
+        val p1 = element("p")
+        tree.edit(tree.findPos(0) to tree.findPos(0), listOf(p1), 0, issue(), issue)
+        val x = text("x")
+        tree.edit(tree.findPos(1) to tree.findPos(1), listOf(x), 0, issue(), issue)
+
+        val p2 = element("p")
+        tree.edit(tree.findPos(3) to tree.findPos(3), listOf(p2), 0, issue(), issue)
+        val b = element("b")
+        tree.edit(tree.findPos(4) to tree.findPos(4), listOf(b), 0, issue(), issue)
+        val i = element("i")
+        tree.edit(tree.findPos(5) to tree.findPos(5), listOf(i), 0, issue(), issue)
+
+        assertEquals("<r><p>x</p><p><b><i></i></b></p></r>", tree.toXml())
+        return CycleFixture(tree, p1, x, p2, b, i)
+    }
+
+    /**
+     * Positive control: the node the merge is about to move (`b`) IS the
+     * resolved destination itself (`node === dest`). Without the guard,
+     * `dest.moveChild(node)` would reparent `b` under itself, an immediate
+     * one-node cycle. `@Test(timeout)` pins this as a bounded-time check
+     * (RED hangs, GREEN returns): a hang cannot be asserted on directly.
+     */
+    @Test(timeout = 5_000)
+    fun `a merge guards against a destination that is the very node it is moving`() {
+        val issue = ticketer()
+        val f = buildCycleFixture(issue)
+
+        // Forge: p1 (what the merge's fromParent would normally resolve to
+        // trivially, since a live node is its own resolveMergeTarget) is
+        // pre-tombstoned by an unrelated prior edit and carries a crafted
+        // mergedInto naming p2's own child `b` -- the node this same merge
+        // is about to move. A real merge never produces this; it is the
+        // crafted-lineage shape #1478 guards against.
+        f.p1.remove(issue())
+        f.p1.mergedInto = f.b.id
+
+        val fromPos = CrdtTreePos(f.p1.id, f.x.id)
+        val toPos = CrdtTreePos(f.p2.id, f.p2.id)
+
+        val result = f.tree.edit(fromPos to toPos, null, 0, issue(), issue)
+
+        assertEquals(listOf(f.i, f.b), result.strandedNodes)
+        assertTrue(f.b.isRemoved)
+        assertTrue(f.i.isRemoved)
+        assertSame(
+            f.p2,
+            f.b.parent,
+            "a stranded child is tombstoned where it sat, never moved",
+        )
+        val strandedGcIds = result.gcPairs.map { it.child }.toSet()
+        assertTrue(f.i in strandedGcIds && f.b in strandedGcIds)
+    }
+
+    /**
+     * The destination is not the moved node itself but a node INSIDE it
+     * (`node.isAncestorOf(dest)`). Same guard, different predicate: `b` is
+     * stranded because its own subtree holds the forged destination `i`.
+     */
+    @Test(timeout = 5_000)
+    fun `a merge guards against a destination inside the very node it is moving`() {
+        val issue = ticketer()
+        val f = buildCycleFixture(issue)
+
+        f.p1.remove(issue())
+        f.p1.mergedInto = f.i.id
+
+        val fromPos = CrdtTreePos(f.p1.id, f.x.id)
+        val toPos = CrdtTreePos(f.p2.id, f.p2.id)
+
+        val result = f.tree.edit(fromPos to toPos, null, 0, issue(), issue)
+
+        assertEquals(listOf(f.i, f.b), result.strandedNodes)
+        assertTrue(f.b.isRemoved)
+        assertTrue(f.i.isRemoved)
+        assertSame(f.p2, f.b.parent)
+        val strandedGcIds = result.gcPairs.map { it.child }.toSet()
+        assertTrue(f.i in strandedGcIds && f.b in strandedGcIds)
+    }
+
+    /**
+     * P5 asymmetric-purge convergence probe (constitution C9 / memory
+     * "parity-port review blind spot": parity QA alone cannot catch a bug
+     * shared with JS). Not in the JS suite. Two replicas apply the SAME
+     * crafted-lineage edit, but purge/GC at different times (one collects
+     * the stranded pair right away, the other defers it) -- the guard's
+     * result (what got stranded, where) must not depend on when GC runs.
+     */
+    @Test
+    fun `peers that purge the stranded pair at different times still converge`() {
+        val issueA = ticketer()
+        val fA = buildCycleFixture(issueA)
+        fA.p1.remove(issueA())
+        fA.p1.mergedInto = fA.i.id
+        val resultA = fA.tree.edit(
+            CrdtTreePos(fA.p1.id, fA.x.id) to CrdtTreePos(fA.p2.id, fA.p2.id),
+            null,
+            0,
+            issueA(),
+            issueA,
+        )
+        // Replica A purges (drops the tombstones) immediately.
+        resultA.gcPairs.forEach { it.parent.deleteChild(it.child) }
+
+        val issueB = ticketer()
+        val fB = buildCycleFixture(issueB)
+        fB.p1.remove(issueB())
+        fB.p1.mergedInto = fB.i.id
+        val resultB = fB.tree.edit(
+            CrdtTreePos(fB.p1.id, fB.x.id) to CrdtTreePos(fB.p2.id, fB.p2.id),
+            null,
+            0,
+            issueB(),
+            issueB,
+        )
+        // Replica B defers the purge (never runs it in this test) -- it
+        // still agrees on the tombstoned shape before any GC runs.
+
+        assertEquals(fA.tree.toXml(), fB.tree.toXml())
+        assertEquals(resultA.strandedNodes.map { it.id }, resultB.strandedNodes.map { it.id })
+    }
 }

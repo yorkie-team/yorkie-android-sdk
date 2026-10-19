@@ -166,6 +166,42 @@ class ConnectRpcErrorUtilTest {
         )
     }
 
+    // --- #1462 (29a81fe0): a push the server will never reconsider -------------------
+
+    @Test
+    fun `reports ErrDocumentSizeExceedsLimit as not retryable ahead of ResourceExhausted`() =
+        runTest {
+            val connectException =
+                produceConnectException(YorkieException.Code.ErrDocumentSizeExceedsLimit.codeString)
+            every { connectException.code } returns Code.RESOURCE_EXHAUSTED
+            assertEquals(
+                expected = false,
+                actual = handleConnectException(exception = connectException, handleError = null),
+            )
+        }
+
+    @Test
+    fun `reports ErrChangeTooLarge as not retryable ahead of ResourceExhausted`() = runTest {
+        val connectException =
+            produceConnectException(YorkieException.Code.ErrChangeTooLarge.codeString)
+        every { connectException.code } returns Code.RESOURCE_EXHAUSTED
+        assertEquals(
+            expected = false,
+            actual = handleConnectException(exception = connectException, handleError = null),
+        )
+    }
+
+    @Test
+    fun `still retries a ResourceExhausted error that carries no Yorkie code`() = runTest {
+        val connectException = mockk<ConnectException>(relaxed = true) {
+            every { code } returns Code.RESOURCE_EXHAUSTED
+        }
+        assertEquals(
+            expected = true,
+            actual = handleConnectException(exception = connectException, handleError = null),
+        )
+    }
+
     private fun produceConnectException(yorkieErrorCode: String): ConnectException {
         // Create ErrorInfo with unauthenticated error code
         val errorInfo = ErrorInfo.newBuilder()

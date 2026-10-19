@@ -24,6 +24,11 @@ internal data class ChangePack(
     // attach/sync request presents the client's last-known epoch so the
     // server can detect a stale-epoch mismatch after a force compaction.
     val epoch: Long = 0,
+    // capabilities is the wire-feature negotiation channel (`ChangePack.capabilities`,
+    // field 9). The server sets it on every pack it returns; this SDK never writes
+    // it back (D5, ported from JS `b50f8900` #1477) -- a client only reads what the
+    // server advertises.
+    val capabilities: List<String> = emptyList(),
 ) {
 
     /**
@@ -37,4 +42,19 @@ internal data class ChangePack(
      */
     val hasSnapshot
         get() = snapshot?.isNotEmpty() == true
+
+    /**
+     * Returns whether the server advertised the wire feature named [name] on
+     * this pack.
+     */
+    fun hasCapability(name: String): Boolean = name in capabilities
+
+    companion object {
+        /**
+         * The capability name the server advertises on a [ChangePack] to mean
+         * it folds a `CHANGE_TYPE_PATCH` presence change into a stored PUT
+         * (JS `presence/change.ts` `PresencePatchCapability`).
+         */
+        const val PRESENCE_PATCH_CAPABILITY = "presence-patch"
+    }
 }

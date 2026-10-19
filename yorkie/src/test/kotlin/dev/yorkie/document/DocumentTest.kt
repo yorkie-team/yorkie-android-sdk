@@ -2,6 +2,10 @@ package dev.yorkie.document
 
 import com.google.gson.JsonParser
 import dev.yorkie.assertJsonContentEquals
+import dev.yorkie.document.change.Change
+import dev.yorkie.document.change.ChangeID
+import dev.yorkie.document.change.ChangePack
+import dev.yorkie.document.change.CheckPoint
 import dev.yorkie.document.json.JsonArray
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.json.JsonTree
@@ -9,6 +13,7 @@ import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.OperationInfo.RemoveOpInfo
 import dev.yorkie.document.operation.OperationInfo.SetOpInfo
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket.Companion.MAX_LAMPORT
 import dev.yorkie.document.time.VersionVector
@@ -19,10 +24,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -435,5 +443,122 @@ class DocumentTest {
             1,
             purgedFromLive,
         )
+    }
+
+    // --- presence-patch (spec 040): JS17 + Android-only fold probe ------------
+
+    private val actorB = "000000000000000000000b02"
+
+    /** Polls [block] on a real dispatcher until non-null: the `events` publish this test
+     * awaits runs on the document's OWN single-thread dispatcher, asynchronous relative to
+     * `runTest`'s virtual one (same technique as `ClientPersistenceTest.awaitCondition`). */
+    private suspend fun <T> awaitCondition(timeoutMs: Long = 2_000, block: () -> T?): T {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            block()?.let { return it }
+            check(
+                System.currentTimeMillis() < deadline,
+            ) { "condition not met within ${timeoutMs}ms" }
+            withContext(Dispatchers.Default) { delay(20) }
+        }
+    }
+
+    @Test
+    fun `JS17 folds a wire-decoded patch onto the held presence and the event carries the merge`() =
+        runTest {
+            target.setOnlineClients(setOf(actorB))
+            val events = mutableListOf<Document.Event>()
+            val collectJob = launch(UnconfinedTestDispatcher()) {
+                target.events.collect(events::add)
+            }
+
+            // Establishes actorB's held presence via a remote Put.
+            target.applyChangePack(
+                ChangePack(
+                    target.getKey(),
+                    CheckPoint(1, 0u),
+                    listOf(
+                        Change(
+                            ChangeID(1u, 1, actorB, VersionVector()),
+                            emptyList(),
+                            PresenceChange.Put(mapOf("name" to "a")),
+                        ),
+                    ),
+                    null,
+                    false,
+                    VersionVector(),
+                ),
+            )
+            assertEquals(mapOf("name" to "a"), target.allPresences.value[actorB])
+
+            // A PATCH decoded off the wire never carries `full` -- it merges onto the
+            // presence already held for that actor (Presences.plus), not the raw keys alone.
+            target.applyChangePack(
+                ChangePack(
+                    target.getKey(),
+                    CheckPoint(2, 0u),
+                    listOf(
+                        Change(
+                            ChangeID(2u, 2, actorB, VersionVector()),
+                            emptyList(),
+                            PresenceChange.Patch(mapOf("cursor" to "1,2"), full = null),
+                        ),
+                    ),
+                    null,
+                    false,
+                    VersionVector(),
+                ),
+            )
+
+            val merged = mapOf("name" to "a", "cursor" to "1,2")
+            assertEquals(merged, target.allPresences.value[actorB])
+
+            val changedEvent = awaitCondition {
+                events.filterIsInstance<Document.Event.PresenceChanged.Others.PresenceChanged>()
+                    .firstOrNull { it.changed.actorID == actorB }
+            }
+            assertEquals(merged, changedEvent.changed.presence)
+
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `Android fold a wire-decoded patch onto an actor with no prior held presence`() = runTest {
+        target.setOnlineClients(setOf(actorB))
+        val events = mutableListOf<Document.Event>()
+        val collectJob = launch(UnconfinedTestDispatcher()) {
+            target.events.collect(events::add)
+        }
+
+        // The FIRST thing ever received for actorB is a PATCH (no prior Put) -- an
+        // echo/ahead-of-this-SDK peer the server never folded (C9, memory
+        // parity-port-review-blind-spot). Must fold onto an EMPTY held presence rather
+        // than throw or drop the change.
+        target.applyChangePack(
+            ChangePack(
+                target.getKey(),
+                CheckPoint(1, 0u),
+                listOf(
+                    Change(
+                        ChangeID(1u, 1, actorB, VersionVector()),
+                        emptyList(),
+                        PresenceChange.Patch(mapOf("cursor" to "0,0"), full = null),
+                    ),
+                ),
+                null,
+                false,
+                VersionVector(),
+            ),
+        )
+
+        assertEquals(mapOf("cursor" to "0,0"), target.allPresences.value[actorB])
+
+        val watchedEvent = awaitCondition {
+            events.filterIsInstance<Document.Event.PresenceChanged.Others.Watched>()
+                .firstOrNull { it.changed.actorID == actorB }
+        }
+        assertEquals(mapOf("cursor" to "0,0"), watchedEvent.changed.presence)
+
+        collectJob.cancel()
     }
 }

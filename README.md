@@ -185,10 +185,13 @@ capability mid-session) re-establishes a full-`PUT` base and patches resume.
 | Participant | Minimum version |
 |-------------|-----------------|
 | Yorkie server (to send patches; older servers keep receiving full Puts) | 0.7.25 |
-| yorkie-android-sdk peers | none |
-| yorkie-js-sdk peers | 0.7.25 |
-| yorkie-ios-sdk peers | 0.7.25 |
+| yorkie-android-sdk peers | this release (an older build fails a pull that carries a stored patch, the rollback case above) |
+| yorkie-js-sdk peers | 0.7.25 (same rollback case) |
+| yorkie-ios-sdk peers | 0.7.25 (same rollback case) |
 | yorkie-android-sdk (this SDK) | this release |
+
+With every server node on 0.7.25 no peer version matters: the server stores a full `PUT`, so
+older peers of every SDK keep pulling as before. The peer rows only describe the rollback case.
 
 #### Other 0.7.25 behaviour changes
 
@@ -208,9 +211,12 @@ capability mid-session) re-establishes a full-`PUT` base and patches resume.
   | yorkie-android-sdk peers | none |
 
 - **`Document.Event.AuthError(method = PushPull)` now also fires on
-  `ErrPermissionDenied`**, not only on an auth-webhook rejection — deduped per denial
-  episode and cleared the moment a push-pull on the same attachment succeeds again. No
-  server minimum; this is purely a local event-surfacing change.
+  `ErrPermissionDenied`**, once per denial episode, and the denied document is parked the
+  same way a write-rejected one is: the sync loop stops re-sending the denied change (and
+  stops pulling on that document) until an explicit `Client.syncAsync(document)` succeeds
+  or `Client.resyncAsync(document, discardLocalChanges = true)` re-anchors it. Call one of
+  them from your `AuthError` handler once the webhook is expected to accept writes again.
+  No server minimum.
 - **`Client.resyncAsync(document, discardLocalChanges = true)`** discards a document's
   un-pushed local changes and re-anchors it under a fresh attach. Between the discard
   and the re-anchor, every `Document.updateAsync`/`undoAsync`/`redoAsync` call on that

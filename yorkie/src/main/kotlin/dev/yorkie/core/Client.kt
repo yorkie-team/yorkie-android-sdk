@@ -1335,6 +1335,10 @@ public class Client(
                                 "document($documentKey) is resyncing; retry after it finishes",
                             ),
                         )
+
+                        // Reset the poll timer up front so a Polling document
+                        // syncs once per interval, not on every sync-loop tick.
+                        // Done before the RPC so a failed push-pull does not
                         // retry every 50ms and drain battery / hammer the
                         // server during outages. #1243.
                         // Also reset for Realtime: gives the watch-silence pull
@@ -1446,6 +1450,7 @@ public class Client(
                         // listener reacting to Synced never observes a still-parked
                         // attachment.
                         attachment.clearWriteRejected()
+                        attachment.pushDenied = false
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,
                         )
@@ -1914,6 +1919,18 @@ public class Client(
             sendWatchAttachmentResourceStreamException(tag = "Client.Watch", t = it)
         }
 
+        // An idle stream (#1472) is a transport this client gave up on, not an answer the
+        // server sent: keep the loop flag as it is and reconnect after the ordinary
+        // reconnectStreamDelay, as JS does. Before this the idle cause fell through to the
+        // non-retryable branch below, which flipped WATCH_LOOP false and reconnected with no
+        // delay -- tolerable every 5 minutes, not every 60 seconds (review on
+        // RTCOLLABPLATFORM-789).
+        if (isWatchStreamIdle(cause) && !cancelled) {
+            coroutineContext.ensureActive()
+            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+            return true
+        }
+
         if (handleDocumentAuthenticationError(
                 exception = cause,
                 document = document,
@@ -2118,6 +2135,14 @@ public class Client(
             sendWatchAttachmentResourceStreamException(tag = "Client.Watch", t = it)
         }
 
+        // Same idle-stream rule as the document handler above: reconnect after the
+        // ordinary delay, loop flag untouched.
+        if (isWatchStreamIdle(cause) && !cancelled) {
+            coroutineContext.ensureActive()
+            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+            return true
+        }
+
         val handleAuthenticationError =
             handleConnectException(cause as? ConnectException) { connectException ->
                 if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
@@ -2134,6 +2159,10 @@ public class Client(
             return false
         }
     }
+
+    /** The receive loops raise this when the server heartbeat went silent past the idle clamp (#1472). */
+    private fun isWatchStreamIdle(cause: Throwable?): Boolean =
+        (cause as? YorkieException)?.code == ErrWatchStreamIdle
 
     private fun sendWatchAttachmentResourceStreamException(tag: String, t: Throwable) {
         when (t) {

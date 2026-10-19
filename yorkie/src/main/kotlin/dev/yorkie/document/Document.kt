@@ -72,7 +72,6 @@ import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -90,8 +89,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -132,11 +133,13 @@ public class Document(
      * has finished, even when they finish out of order. A boolean flag that
      * the FIRST-to-finish pass cleared unconditionally let a re-issue run
      * while a second, still-suspended pass was in flight, reverting the
-     * actor underneath it (cross-judge MEDIUM-1, round 3).
+     * actor underneath it (cross-judge MEDIUM-1, round 3). A [MutableStateFlow]
+     * rather than a plain atomic so the pre-attach re-issue in [setActor] can
+     * suspend until the count reaches zero instead of refusing.
      */
-    private val inFlight = AtomicInteger(0)
+    private val inFlight = MutableStateFlow(0)
     private val isUpdating: Boolean
-        get() = inFlight.get() > 0
+        get() = inFlight.value > 0
 
     @Volatile
     private var maxSizeLimit = 0
@@ -825,7 +828,7 @@ public class Document(
             // calls each increment/decrement their own pass, so isUpdating
             // only goes false once EVERY in-flight pass has finished, even if
             // they finish out of order (cross-judge MEDIUM-1, round 3).
-            inFlight.incrementAndGet()
+            inFlight.update { it + 1 }
             val result = try {
                 runCatching {
                     val proxy = JsonObject(context, clone.root.rootObject)
@@ -838,7 +841,7 @@ public class Document(
                     ensureActive()
                 }
             } finally {
-                inFlight.decrementAndGet()
+                inFlight.update { it - 1 }
             }
             if (result.isFailure) {
                 return@async result
@@ -1059,7 +1062,7 @@ public class Document(
             // generation is threaded through so that second check also catches a pass
             // that straddled a WHOLE resync (CJ-MED-1), not just an in-progress discard.
             val mintGenerationAtEntry = ensureMintableAtEntry()
-            inFlight.incrementAndGet()
+            inFlight.update { it + 1 }
             try {
                 executeUndoRedoInternal(isUndo, mintGenerationAtEntry)
             } catch (err: Throwable) {
@@ -1076,7 +1079,7 @@ public class Document(
                 this@Document.clone = null
                 throw err
             } finally {
-                inFlight.decrementAndGet()
+                inFlight.update { it - 1 }
             }
         }
     }
@@ -2181,18 +2184,25 @@ public class Document(
      * [hasMintedOperations], to decide whether this attach takes the
      * per-client pre-attach-reissue claim.
      *
-     * The whole check + rebuild + replay + swap runs in ONE [withContext]
-     * hop with NO inner suspension -- [reissueOperations] (a wire-format
-     * walk) and [Change.execute] are both non-suspending -- so no other
-     * coroutine on this document's [dispatcher] can ever observe a partially
-     * rebuilt state. D2 (backlog 019): a re-issue requested while an
-     * [updateAsync]/undo/redo is in flight on this SAME dispatcher refuses
-     * instead of letting a resumed updater mint old-actor operations against
-     * a root already swapped to the new actor; the document is left
-     * completely untouched (nothing is assigned below until the rebuild has
-     * fully succeeded, so a throw anywhere in the rebuild also leaves the
-     * document untouched). Ports yorkie-js-sdk `document.ts`'s
-     * `reissueActor` (`ed25355e`, #1449, yorkie#2111).
+     * The rebuild + replay + swap runs with NO inner suspension --
+     * [reissueOperations] (a wire-format walk) and [Change.execute] are both
+     * non-suspending -- so no other coroutine on this document's [dispatcher]
+     * can ever observe a partially rebuilt state. D2 (backlog 019): a re-issue
+     * requested while an [updateAsync]/undo/redo is in flight on this SAME
+     * dispatcher WAITS for every in-flight pass to finish (the updater is a
+     * suspend lambda; JS and iOS updaters are synchronous, so they can never
+     * be mid-update here -- an Android-only failure mode would otherwise leak
+     * out of `Client.attachDocument`, review on RTCOLLABPLATFORM-789) instead
+     * of letting a resumed updater mint old-actor operations against a root
+     * already swapped to the new actor. The wait re-checks the count after
+     * every wake-up: a pass that started between the count reaching zero and
+     * this coroutine resuming is waited out too, and once the loop exits on
+     * this dispatcher nothing below suspends, so no pass can start before the
+     * swap. The change an awaited pass appends is re-issued with the rest.
+     * The document is left completely untouched on a throw (nothing is
+     * assigned below until the rebuild has fully succeeded). Ports
+     * yorkie-js-sdk `document.ts`'s `reissueActor` (`ed25355e`, #1449,
+     * yorkie#2111).
      */
     internal suspend fun setActor(actor: String, reissue: Boolean): Boolean =
         withContext(dispatcher) {
@@ -2201,11 +2211,8 @@ public class Document(
                 setActor(actor)
                 return@withContext false
             }
-            if (isUpdating) {
-                throw YorkieException(
-                    ErrInvalidArgument,
-                    "cannot re-issue document($key) actor while an update is in flight",
-                )
+            while (isUpdating) {
+                inFlight.first { it == 0 }
             }
 
             // ---- Build aside: nothing below assigns to `this` until every

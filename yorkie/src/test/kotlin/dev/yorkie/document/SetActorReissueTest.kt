@@ -29,7 +29,6 @@ import dev.yorkie.document.operation.TreeStyleOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
-import dev.yorkie.util.YorkieException
 import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
@@ -38,7 +37,11 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -505,11 +508,15 @@ class SetActorReissueTest {
     }
 
     // D2 (backlog 019): a re-issue requested while updateAsync's updater is
-    // suspended on this SAME document dispatcher must refuse instead of
-    // letting the resumed updater mint old-actor operations against a root
-    // already swapped to the new actor.
+    // suspended on this SAME document dispatcher must not let the resumed
+    // updater mint old-actor operations against a root already swapped to the
+    // new actor. It used to REFUSE (ErrInvalidArgument, an Android-only
+    // attachDocument failure JS/iOS callers never see because their updaters
+    // are synchronous); it now WAITS for the pass to finish and re-issues the
+    // change that pass appended along with the rest (review on
+    // RTCOLLABPLATFORM-789).
     @Test
-    fun `refuses a re-issue while an update is in flight`() = runTest {
+    fun `waits for an in-flight update before re-issuing`() = runTest {
         val document = Document("")
         document.updateAsync { root, _ -> root.setNewObject("obj") }.await()
         assertTrue(document.neverSynced)
@@ -523,22 +530,22 @@ class SetActorReissueTest {
         }
         updaterEntered.await()
 
-        val error = assertFailsWith<YorkieException> {
-            document.setActor(ACTOR_A, reissue = true)
-        }
-        assertEquals(YorkieException.Code.ErrInvalidArgument, error.code)
+        val reissue = async { document.setActor(ACTOR_A, reissue = true) }
+        // Parked behind the suspended updater: nothing is swapped while it is in flight.
+        withContext(Dispatchers.Default) { delay(200) }
+        assertFalse(reissue.isCompleted, "the re-issue must wait for the in-flight update")
         assertEquals(ActorID.INITIAL_ACTOR_ID, document.changeID.actor)
 
         releaseUpdater.complete(Unit)
         inFlight.await()
 
-        // The in-flight update completed normally, untouched by the refusal: obj2 is
-        // present, and -- since the reissue that would have rewritten it was refused --
-        // it still carries the INITIAL actor on its createdAt ticket, not the one the
-        // refused setActor(ACTOR_A, ...) call would have stamped.
-        assertEquals(ActorID.INITIAL_ACTOR_ID, document.changeID.actor)
+        assertTrue(reissue.await(), "the re-issue runs once the update has finished")
+        assertEquals(ACTOR_A, document.changeID.actor)
+        // The change the awaited update appended was re-issued with the rest: obj2's
+        // createdAt carries the new actor, and no ticket is left under the initial one.
         val obj2 = document.getRootObject()["obj2"]
-        assertEquals(ActorID.INITIAL_ACTOR_ID, obj2.createdAt.actorID)
+        assertEquals(ACTOR_A, obj2.createdAt.actorID)
+        assertEquals(setOf(ACTOR_A), documentActors(document))
     }
 
     // Cross-judge MEDIUM-1 (round 3, probe CJ-6b): the D2 in-flight guard
@@ -550,9 +557,9 @@ class SetActorReissueTest {
     // resumes and mints its own operation under the OLD actor against a
     // root already swapped to the new one, reverting `changeID.actor`. A
     // count only goes to zero once BOTH passes have cleared, so the re-issue
-    // stays refused until A finishes too.
+    // keeps waiting until A finishes too.
     @Test
-    fun `refuses a re-issue while an overlapping update is still in flight`() = runTest {
+    fun `waits for an overlapping update that is still in flight before re-issuing`() = runTest {
         val document = Document("")
         document.updateAsync { root, _ -> root.setNewObject("obj") }.await()
 
@@ -568,18 +575,19 @@ class SetActorReissueTest {
         // B starts and completes entirely while A is still suspended above.
         document.updateAsync { root, _ -> root.setNewObject("b") }.await()
 
-        val error = assertFailsWith<YorkieException> {
-            document.setActor(ACTOR_A, reissue = true)
-        }
-        assertEquals(YorkieException.Code.ErrInvalidArgument, error.code)
+        val reissue = async { document.setActor(ACTOR_A, reissue = true) }
+        withContext(Dispatchers.Default) { delay(200) }
+        assertFalse(reissue.isCompleted, "B finishing must not release the re-issue")
         assertEquals(ActorID.INITIAL_ACTOR_ID, document.changeID.actor)
 
         releaseA.complete(Unit)
         deferredA.await()
 
-        // A's resume must not have reverted the actor or left a stray ticket.
-        assertEquals(ActorID.INITIAL_ACTOR_ID, document.changeID.actor)
-        assertFalse((ACTOR_A in documentActors(document)))
+        assertTrue(reissue.await())
+        // A's resume minted under the OLD actor before the swap, and the swap then
+        // re-issued it: every ticket ends up under the new actor, none stray.
+        assertEquals(ACTOR_A, document.changeID.actor)
+        assertEquals(setOf(ACTOR_A), documentActors(document))
     }
 
     // LOW-3 fold-in (cross-judge CJ-7): the presence VALUE is re-keyed to the

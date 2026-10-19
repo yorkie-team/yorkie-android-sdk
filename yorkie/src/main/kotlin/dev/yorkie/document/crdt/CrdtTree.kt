@@ -1009,7 +1009,12 @@ internal data class CrdtTree(
         } else {
             emptyList()
         }
-        val removedNodesSize = rootLevelRemoved.sumOf { it.paddedSize }
+        // `removedNodesSize` is measured at the END of this edit (just before the result is
+        // built), not here: a merge boundary in `rootLevelRemoved` still holds the children
+        // step 03 is about to move into the merge target, so measuring now would count that
+        // live content as removed (review on RTCOLLABPLATFORM-789: `<p>ab</p><p>cd</p>`,
+        // edit(3, 5) reported 4 instead of 2). JS sums `removedNodes` after `tree.edit`
+        // returns, when the merged element contributes only its two tags.
 
         // 02. Delete: delete the nodes that are marked as removed. Widened to
         // GCPair<*> (was GCPair<CrdtTreeNode>): drainPendingGcPairs() (below)
@@ -1493,6 +1498,15 @@ internal data class CrdtTree(
         // Appended only now that spansComplete is decided -- see
         // contentAttrPairs' own declaration above.
         gcPairs.addAll(contentAttrPairs)
+
+        // Measured only now, after step 03 moved a merge boundary's children out of it and
+        // the stranded subtrees were tombstoned (which drained their size out of the removed
+        // source they stay under): what is left is exactly the visible span this edit
+        // consumed, as JS `tree_edit_operation.ts` sums it after `tree.edit` returns. A
+        // tombstone keeps its own size (`remove` only adjusts its ancestors), so a plain
+        // delete measures the same here as before step 02. Always computed, even on a remote
+        // application that skipped the `removedNodes` deep copy (M1, team review).
+        val removedNodesSize = rootLevelRemoved.sumOf { it.paddedSize }
 
         // Count merged boundaries before their children were moved (above), so
         // the undo can regenerate them via split instead of re-inserting the

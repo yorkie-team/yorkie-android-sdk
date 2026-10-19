@@ -4,6 +4,7 @@ import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.operation.TreeEditOperation
 import dev.yorkie.helper.crossSync
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
@@ -133,4 +134,80 @@ class TreeHistoryMigratedBoundaryTest {
             )
             assertEquals(a.xml(), b.xml(), "replicas diverged after undo")
         }
+
+    // Review on RTCOLLABPLATFORM-789 (High): `removedNodesSize` was measured before the
+    // merge moved the boundary paragraph's children out of it, so a Backspace at the start
+    // of a paragraph reported the merged paragraph's whole former content as removed --
+    // `<p>ab</p><p>cd</p>`, edit(3, 5) gave (3, 7) where JS gives (3, 5). Pins the JS value
+    // through `normalizePos()` on the local change, for a merge whose source still holds
+    // its children at measurement time.
+    @Test
+    fun `a merge reports the range it consumed, not the merged paragraph's content`() = runTest {
+        val a = Document("tree-merge-consumed-range").apply { setActor(actor1) }
+        a.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "ab" } }
+                    element("p") { text { "cd" } }
+                },
+            )
+        }.await()
+        // Backspace at the start of the second paragraph: the range covers `</p><p>`.
+        a.updateAsync { root, _ -> root.tree().edit(3, 5) }.await()
+        assertEquals("<doc><p>abcd</p></doc>", a.xml())
+
+        val merge = a.pendingChanges().last().operations.single() as TreeEditOperation
+        assertEquals(3 to 5, merge.normalizePos(), "JS lastFromIdx/lastToIdx")
+    }
+
+    // The same measurement, observed through the undo stack it feeds: `a` holds an
+    // offset-based pending undo (a pure split of the THIRD paragraph) while `b`
+    // concurrently merges the second paragraph into the first. Reconciled from the correct
+    // (3, 5) the pending offset shifts left by the two tags the merge removed; from the
+    // overcounted (3, 7) it shifts by two more, and the undo then merges the wrong pieces.
+    @Test
+    fun `an undo past a remote merge is reconciled by the range the merge consumed`() = runTest {
+        val a = Document("tree-merge-undo-reconcile").apply { setActor(actor1) }
+        val b = Document("tree-merge-undo-reconcile").apply { setActor(actor2) }
+        a.updateAsync { root, _ ->
+            root.setNewTree(
+                "t",
+                element("doc") {
+                    element("p") { text { "ab" } }
+                    element("p") { text { "cd" } }
+                    element("p") {
+                        element("t") { text { "mnop" } }
+                    }
+                },
+            )
+        }.await()
+        crossSync(a, b, overWire = true)
+
+        // a: pure split of the third paragraph's <t> ("mn"|"op"), the offset-based
+        // pending undo entry Document.reconcileHistoryEdits shifts on a later remote
+        // edit (same shape as the first case above).
+        a.updateAsync { root, _ ->
+            root.tree().editByPath(listOf(2, 0, 2), listOf(2, 0, 2), splitLevel = 1)
+        }.await()
+        assertEquals(
+            "<doc><p>ab</p><p>cd</p><p><t>mn</t><t>op</t></p></doc>",
+            a.xml(),
+        )
+
+        // b, concurrently: Backspace at the start of the second paragraph.
+        b.updateAsync { root, _ -> root.tree().edit(3, 5) }.await()
+        crossSync(a, b, overWire = true)
+        assertEquals(a.xml(), b.xml(), "replicas diverged")
+        assertEquals("<doc><p>abcd</p><p><t>mn</t><t>op</t></p></doc>", a.xml())
+
+        a.history.undoAsync().await()
+        crossSync(a, b, overWire = true)
+        assertEquals(
+            "<doc><p>abcd</p><p><t>mnop</t></p></doc>",
+            a.xml(),
+            "the undo must merge mn+op back, two positions left of where it was pushed",
+        )
+        assertEquals(a.xml(), b.xml(), "replicas diverged after undo")
+    }
 }

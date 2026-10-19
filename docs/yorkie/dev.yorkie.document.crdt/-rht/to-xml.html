@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.21            </div>
+0.7.24            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -66,7 +66,7 @@
   <div class="cover ">
     <h1 class="cover"><span>to</span><wbr></wbr><span><span>Xml</span></span></h1>
   </div>
-  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="to-xml.html"><span class="token function">toXml</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><p class="paragraph">Converts the given <a href="index.html">Rht</a> to XML String.</p></div></div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="to-xml.html"><span class="token function">toXml</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><p class="paragraph">Converts the given <a href="index.html">Rht</a> to XML String.</p><p class="paragraph">The value is rendered through <span data-unresolved-link="dev.yorkie.document.crdt//logicalValue/#kotlin.String/PointingToDeclaration/">logicalValue</span> first, same as JS <code class="lang-kotlin">toXML</code> reads it back through <code class="lang-kotlin">parseAttrValue</code>: a JSON-encoded string (what a JS peer stores for a <code class="lang-kotlin">string</code> attribute) unwraps to its bare form, while an object/number/boolean/malformed value stays exactly as stored. Both the key and the (now-unwrapped) value are peer-chosen, so each is escaped before interpolation: unescaped, a <code class="lang-kotlin">&quot;</code> closes the attribute and a <code class="lang-kotlin">&lt;</code> opens an element, letting a peer forge markup into every reader's rendered tree (port JS <code class="lang-kotlin">document/crdt/tree.ts</code> <code class="lang-kotlin">escapeXMLAttr</code>, <code class="lang-kotlin">6932da6a</code>, #1447) -- the XML half of the forging <a href="to-json.html">toJson</a> already closes for the JSON encoding via <span data-unresolved-link="dev.yorkie.document.json//escapeString/#kotlin.String/PointingToDeclaration/">escapeString</span>.</p></div></div>
 </div>
       <div class="footer">
         <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span

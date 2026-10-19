@@ -219,6 +219,10 @@ $dokka.location:dev.yorkie.document.crdt/RhtNode/isRemoved/#/PointingToDeclarati
 $dokka.location:dev.yorkie.document.crdt/RhtNode/key/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/key.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/removedAt/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/removed-at.html
 $dokka.location:dev.yorkie.document.crdt/RhtNode/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-node/value.html
+$dokka.location:dev.yorkie.document.crdt/RhtRemoval///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-removal/index.html
+$dokka.location:dev.yorkie.document.crdt/RhtRemoval/RhtRemoval/#kotlin.collections.List[dev.yorkie.document.crdt.RhtNode]#dev.yorkie.util.DataSize/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-removal/-rht-removal.html
+$dokka.location:dev.yorkie.document.crdt/RhtRemoval/gcNodes/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-removal/gc-nodes.html
+$dokka.location:dev.yorkie.document.crdt/RhtRemoval/valueDropped/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-removal/value-dropped.html
 $dokka.location:dev.yorkie.document.crdt/RhtWrite///PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/index.html
 $dokka.location:dev.yorkie.document.crdt/RhtWrite/RhtWrite/#dev.yorkie.document.crdt.RhtNode?#dev.yorkie.document.crdt.RhtNode?#dev.yorkie.document.crdt.RhtNode?/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/-rht-write.html
 $dokka.location:dev.yorkie.document.crdt/RhtWrite/installed/#/PointingToDeclaration/yorkie/dev.yorkie.document.crdt/-rht-write/installed.html
@@ -801,9 +805,10 @@ $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged.Synced///Po
 $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-sync-status-changed/index.html
 $dokka.location:dev.yorkie.document/Document.Event///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/index.html
 $dokka.location:dev.yorkie.document/Document.Options///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/index.html
-$dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean#kotlin.Boolean/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
+$dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean#kotlin.Boolean#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
 $dokka.location:dev.yorkie.document/Document.Options/disableGC/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/disable-g-c.html
 $dokka.location:dev.yorkie.document/Document.Options/disablePresence/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/disable-presence.html
+$dokka.location:dev.yorkie.document/Document.Options/maxUndoDepth/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/max-undo-depth.html
 $dokka.location:dev.yorkie.document/Document///PointingToDeclaration/yorkie/dev.yorkie.document/-document/index.html
 $dokka.location:dev.yorkie.document/Document/Document/#kotlin.String#dev.yorkie.document.Document.Options/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-document.html
 $dokka.location:dev.yorkie.document/Document/applyStatus/#dev.yorkie.core.ResourceStatus/PointingToDeclaration/yorkie/dev.yorkie.document/-document/apply-status.html
@@ -900,6 +905,13 @@ $dokka.location:dev.yorkie.util//errorMetadataOf/#com.connectrpc.ConnectExceptio
 $dokka.location:dev.yorkie.util//subDataSize/#dev.yorkie.util.DataSize#dev.yorkie.util.DataSize/PointingToDeclaration/yorkie/dev.yorkie.util/sub-data-size.html
 $dokka.location:dev.yorkie.util//totalDataSize/#dev.yorkie.util.DataSize/PointingToDeclaration/yorkie/dev.yorkie.util/total-data-size.html
 $dokka.location:dev.yorkie.util//totalDocSize/#dev.yorkie.util.DocSize?/PointingToDeclaration/yorkie/dev.yorkie.util/total-doc-size.html
+$dokka.location:dev.yorkie.util/ChangeApplyError///PointingToDeclaration/yorkie/dev.yorkie.util/-change-apply-error/index.html
+$dokka.location:dev.yorkie.util/ChangeApplyError/ChangeApplyError/#kotlin.String?#kotlin.String#kotlin.Int?#kotlin.String?#kotlin.Throwable?/PointingToDeclaration/yorkie/dev.yorkie.util/-change-apply-error/-change-apply-error.html
+$dokka.location:dev.yorkie.util/ChangeApplyError/changeID/#/PointingToDeclaration/yorkie/dev.yorkie.util/-change-apply-error/change-i-d.html
+$dokka.location:dev.yorkie.util/ChangeApplyError/docKey/#/PointingToDeclaration/yorkie/dev.yorkie.util/-change-apply-error/doc-key.html
+$dokka.location:dev.yorkie.util/ChangeApplyError/opIndex/#/PointingToDeclaration/yorkie/dev.yorkie.util/-change-apply-error/op-index.html
+$dokka.location:dev.yorkie.util/ChangeApplyError/operation/#/PointingToDeclaration/yorkie/dev.yorkie.util/-change-apply-error/operation.html
+$dokka.location:dev.yorkie.util/ChangeApplyError/withDocKey/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-change-apply-error/with-doc-key.html
 $dokka.location:dev.yorkie.util/DataSize///PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/index.html
 $dokka.location:dev.yorkie.util/DataSize/DataSize/#kotlin.Int#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/-data-size.html
 $dokka.location:dev.yorkie.util/DataSize/data/#/PointingToDeclaration/yorkie/dev.yorkie.util/-data-size/data.html
@@ -977,6 +989,7 @@ $dokka.location:dev.yorkie.util/TreePos/TreePos/#TypeParam(bounds=[dev.yorkie.ut
 $dokka.location:dev.yorkie.util/TreePos/node/#/PointingToDeclaration/yorkie/dev.yorkie.util/-tree-pos/node.html
 $dokka.location:dev.yorkie.util/TreePos/offset/#/PointingToDeclaration/yorkie/dev.yorkie.util/-tree-pos/offset.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrAlreadyAttached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-already-attached/index.html
+$dokka.location:dev.yorkie.util/YorkieException.Code.ErrChangeApplyFailed///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-change-apply-failed/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrClientNotActivated///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-client-not-activated/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrClientNotFound///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-client-not-found/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrDocumentNotAttached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-document-not-attached/index.html
@@ -1005,7 +1018,13 @@ $dokka.location:dev.yorkie.util/YorkieException.Code/values/#/PointingToDeclarat
 $dokka.location:dev.yorkie.util/YorkieException///PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/index.html
 $dokka.location:dev.yorkie.util/YorkieException/YorkieException/#dev.yorkie.util.YorkieException.Code#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/-yorkie-exception.html
 $dokka.location:dev.yorkie.util/YorkieException/code/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/code.html
+$dokka.location:dev.yorkie.util/YorkieException/component1/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/component1.html
+$dokka.location:dev.yorkie.util/YorkieException/component2/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/component2.html
+$dokka.location:dev.yorkie.util/YorkieException/copy/#dev.yorkie.util.YorkieException.Code#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/copy.html
+$dokka.location:dev.yorkie.util/YorkieException/equals/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/equals.html
 $dokka.location:dev.yorkie.util/YorkieException/errorMessage/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/error-message.html
+$dokka.location:dev.yorkie.util/YorkieException/hashCode/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/hash-code.html
+$dokka.location:dev.yorkie.util/YorkieException/toString/#/PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/to-string.html
 com.google.protobuf
 dev.yorkie.api
 dev.yorkie.core

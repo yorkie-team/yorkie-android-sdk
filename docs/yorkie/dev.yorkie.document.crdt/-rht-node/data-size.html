@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.21            </div>
+0.7.24            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -66,7 +66,7 @@
   <div class="cover ">
     <h1 class="cover"><span>data</span><wbr></wbr><span><span>Size</span></span></h1>
   </div>
-  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">val </span><a href="data-size.html">dataSize</a><span class="token operator">: </span><a href="../../dev.yorkie.util/-data-size/index.html">DataSize</a></div></div></div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">val </span><a href="data-size.html">dataSize</a><span class="token operator">: </span><a href="../../dev.yorkie.util/-data-size/index.html">DataSize</a></div><p class="paragraph">A tombstone charges its key only (#1392). The value it still carries is dead weight — nothing reads it, <a href="../-rht/has.html">Rht.has</a>/<a href="../-rht/to-json.html">Rht.toJson</a>/<a href="../-rht/to-xml.html">Rht.toXml</a> all gate on <a href="is-removed.html">isRemoved</a> — and charging it made the running <code class="lang-kotlin">docSize</code> disagree with a rebuild of the same document, which replays the same removals. The value is left on the node rather than cleared so that what this SDK stores and serializes for a tombstone is byte-for-byte what it was, and what a peer sends us is kept verbatim: the convergence fix belongs in the accounting, not the wire format.</p></div></div>
 </div>
       <div class="footer">
         <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span

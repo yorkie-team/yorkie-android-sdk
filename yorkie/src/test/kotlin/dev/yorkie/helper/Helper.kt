@@ -17,6 +17,7 @@ import dev.yorkie.util.Logger
 import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * `maxVectorOf` creates a VersionVector with the maximum lamport value for the given actors.
@@ -311,8 +312,10 @@ suspend fun crossSyncOverWire(d1: Document, d2: Document) {
 class RecordingLogger : Logger {
     override val minimumPriority: Int = Log.DEBUG
 
-    val debugMessages = mutableListOf<String>()
-    val errorMessages = mutableListOf<String>()
+    // Copy-on-write: Client's persist writes log from Dispatchers.IO while a test polls these
+    // lists from its own thread.
+    val debugMessages = CopyOnWriteArrayList<String>()
+    val errorMessages = CopyOnWriteArrayList<String>()
 
     override fun d(
         tag: String,

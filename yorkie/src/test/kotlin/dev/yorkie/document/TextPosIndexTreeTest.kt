@@ -31,22 +31,30 @@ private const val GC_STEPS = 40
 private const val TYPING_EDIT_COUNT = 40_000
 private const val REMOTE_EDIT_COUNT = 20_000
 
-// Sized to actually catch a regression, not just to avoid flaking: the
-// measured baselines are typing ~1,043ms / remote ~103ms in a full
-// `yorkie:testDebugUnitTest` run (JaCoCo instrumentation + CPU contention
-// from Gradle's other parallel test-worker forks, the same reason documented
-// in `TreeStyleReachedSetScanTest`'s KDoc), and a reintroduced O(n) chain walk
-// (the thing `cab55005` replaced with the O(1) `treeByIndex.indexOf` read)
-// adds roughly 3s to typing and 2s to remote on top of that baseline. The
-// prior bounds (15s / 5s) were wider than baseline + the chain-walk cost
-// combined, so a regression of exactly that shape would never trip them.
-// These bounds (~3x baseline, confirmed stable across three full-suite runs)
-// still clear the chain-walk-cost margin by roughly 2x. They are a coarse
-// smoke check only -- `treeByIndex sums to the same length` and this class's
-// other chain-walk-vs-index-tree equivalence tests are the real guard against
-// the chain walk coming back; these two just bound how long it may take.
-private const val TYPING_BOUND_MS = 3_500L
-private const val REMOTE_BOUND_MS = 1_000L
+// Measured as a ratio between two windows of the same run, not as an absolute
+// wall-clock bound. The earlier absolute bounds (3,500ms typing / 1,000ms
+// remote, ~3x the baselines measured on one machine) tripped on a loaded CI
+// runner with nothing regressed, while bounds wide enough for any runner (the
+// 15s / 5s before them) would never catch what these tests exist for: a
+// reintroduced O(n) chain walk per edit (what `cab55005` replaced with the
+// O(1) `treeByIndex.indexOf` read). That regression's cost grows with the
+// text length, so it shows up as the LAST window of a long run costing
+// several times the FIRST -- with the windows below, roughly 3x for typing
+// and 3.5x for remote apply (extra cost ~ i per edit, summed over each
+// window, on top of the measured linear baseline), against ~1x for a linear
+// path. A slower machine slows both windows alike, and the JIT warm-up that
+// is not covered by the unmeasured lead-in only inflates the FIRST window,
+// which lowers the ratio -- the safe direction. The fixed slack absorbs the
+// millisecond noise of a short window; it is far below any regression.
+// These remain a coarse smoke check: `treeByIndex sums to the same length`
+// and this class's other chain-walk-vs-index-tree equivalence tests are the
+// real guard against the chain walk coming back.
+private const val TYPING_WARMUP = 2_000
+private const val TYPING_WINDOW = 10_000
+private const val REMOTE_WARMUP = 2_000
+private const val REMOTE_WINDOW = 5_000
+private const val LINEAR_RATIO_BOUND = 2.0
+private const val RATIO_SLACK_MS = 100L
 
 /**
  * Pins `RgaTreeSplit.posToIndex` (and the `treeByIndex` sum it reads) against
@@ -311,71 +319,87 @@ class TextPosIndexTreeTest {
     // text") with the exact scenario `cab55005`'s own commit message
     // benchmarks: typing is measured directly in wall-clock time instead of
     // counting `prev` hops (no hop-instrumentation point exists on the JVM
-    // port, since Android never had the chain walk to instrument).
+    // port, since Android never had the chain walk to instrument). Linear
+    // means a window of edits late in the run costs about what the same-sized
+    // window early in the run did.
     @Test
-    fun `types 40,000 single-character edits within a tight bound of the 1,043 ms baseline`() =
-        runTest {
-            val document = Document("text-pos-index-tree-typing-cost")
-            document.updateAsync { root, _ -> root.setNewText("t") }.await()
-
-            val elapsed = measureTimeMillis {
-                repeat(TYPING_EDIT_COUNT) { i ->
+    fun `types 40,000 single-character edits in time linear in the text length`() = runTest {
+        val document = Document("text-pos-index-tree-typing-cost")
+        document.updateAsync { root, _ -> root.setNewText("t") }.await()
+        val type: suspend (IntRange) -> Long = { range ->
+            measureTimeMillis {
+                for (i in range) {
                     document.updateAsync { root, _ ->
-                        root.getAs<JsonText>(
-                            "t",
-                        ).edit(i, i, "a")
+                        root.getAs<JsonText>("t").edit(i, i, "a")
                     }.await()
                 }
             }
-
-            assertEquals(
-                TYPING_EDIT_COUNT,
-                document.getRoot().getAs<JsonText>("t").toString().length,
-            )
-            assertTrue(
-                elapsed < TYPING_BOUND_MS,
-                "typing $TYPING_EDIT_COUNT single-character edits took ${elapsed}ms," +
-                    " expected under ${TYPING_BOUND_MS}ms (measured baseline ~1,043ms)",
-            )
         }
 
+        type(0 until TYPING_WARMUP)
+        val first = type(TYPING_WARMUP until TYPING_WARMUP + TYPING_WINDOW)
+        type(TYPING_WARMUP + TYPING_WINDOW until TYPING_EDIT_COUNT - TYPING_WINDOW)
+        val last = type(TYPING_EDIT_COUNT - TYPING_WINDOW until TYPING_EDIT_COUNT)
+
+        assertEquals(
+            TYPING_EDIT_COUNT,
+            document.getRoot().getAs<JsonText>("t").toString().length,
+        )
+        assertTrue(
+            last <= first * LINEAR_RATIO_BOUND + RATIO_SLACK_MS,
+            "typing the last $TYPING_WINDOW of $TYPING_EDIT_COUNT edits took ${last}ms" +
+                " against ${first}ms for $TYPING_WINDOW edits early in the run:" +
+                " the per-edit cost grows with the text length",
+        )
+    }
+
     // Replaces JS case 3 ("should cost the same to normalize at any document
-    // length") with `cab55005`'s own commit-message benchmark shape:
-    // applying a whole remote history in one batch, measured directly in
-    // wall-clock time around only the apply call (construction of the
-    // sender's local edits is excluded from the bound -- it is unrelated
-    // setup cost, not the path `cab55005` sped up).
+    // length") with `cab55005`'s own commit-message benchmark shape: applying
+    // a remote history, measured in wall-clock time around only the apply
+    // calls (construction of the sender's local edits is excluded -- it is
+    // unrelated setup cost, not the path `cab55005` sped up). The history is
+    // applied in slices so a late slice can be compared with an early one.
     @Test
-    fun `applies 20,000 remote edits within a tight bound of the 103 ms baseline`() = runTest {
+    fun `applies 20,000 remote edits in time linear in the text length`() = runTest {
         val sender = Document("text-pos-index-tree-remote-cost")
         sender.updateAsync { root, _ -> root.setNewText("t") }.await()
         repeat(REMOTE_EDIT_COUNT) { i ->
             sender.updateAsync { root, _ -> root.getAs<JsonText>("t").edit(i, i, "a") }.await()
         }
-        val pack = sender.createChangePack()
+        val changes = sender.createChangePack().changes
 
         val receiver = Document("text-pos-index-tree-remote-cost")
-        val elapsed = measureTimeMillis {
-            receiver.applyChangePack(
-                ChangePack(
-                    sender.getKey(),
-                    CheckPoint.InitialCheckPoint,
-                    pack.changes,
-                    null,
-                    false,
-                    VersionVector(),
-                ),
-            )
+        val apply: suspend (IntRange) -> Long = { range ->
+            measureTimeMillis {
+                receiver.applyChangePack(
+                    ChangePack(
+                        sender.getKey(),
+                        CheckPoint.InitialCheckPoint,
+                        changes.slice(range),
+                        null,
+                        false,
+                        VersionVector(),
+                    ),
+                )
+            }
         }
+
+        // `changes[0]` is the setNewText change, so the slices run one past the edit count.
+        val total = changes.size
+        apply(0 until REMOTE_WARMUP)
+        val first = apply(REMOTE_WARMUP until REMOTE_WARMUP + REMOTE_WINDOW)
+        apply(REMOTE_WARMUP + REMOTE_WINDOW until total - REMOTE_WINDOW)
+        val last = apply(total - REMOTE_WINDOW until total)
 
         assertEquals(
             REMOTE_EDIT_COUNT,
             receiver.getRoot().getAs<JsonText>("t").toString().length,
         )
         assertTrue(
-            elapsed < REMOTE_BOUND_MS,
-            "applying $REMOTE_EDIT_COUNT remote single-character edits took ${elapsed}ms," +
-                " expected under ${REMOTE_BOUND_MS}ms (measured baseline ~103ms)",
+            last <= first * LINEAR_RATIO_BOUND + RATIO_SLACK_MS,
+            "applying the last $REMOTE_WINDOW of $REMOTE_EDIT_COUNT remote edits took ${last}ms" +
+                " against ${first}ms for $REMOTE_WINDOW edits early in the history:" +
+                " the per-edit cost grows with the text length",
         )
     }
 }

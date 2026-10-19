@@ -18,11 +18,14 @@ import dev.yorkie.document.json.JsonTree
 import dev.yorkie.document.json.TreeBuilder.element
 import dev.yorkie.document.json.TreeBuilder.text
 import dev.yorkie.document.operation.SetOperation
+import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
+import dev.yorkie.helper.RecordingLogger
 import dev.yorkie.helper.oneWayDeliver
 import dev.yorkie.presence.Channel
 import dev.yorkie.util.ChangeApplyError
+import dev.yorkie.util.Logger
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentOpenElsewhere
@@ -83,6 +86,9 @@ class ClientPersistenceTest {
     @After
     fun tearDown() {
         unmockkStatic(Base64::class)
+        // U7/U8 install a RecordingLogger on Logger's process-wide singleton; reinstall a fresh
+        // instance so captured state does not leak into another test class (see Helper.kt).
+        Logger.init(RecordingLogger())
     }
 
     private fun newClient(
@@ -327,6 +333,94 @@ class ClientPersistenceTest {
         client.detachDocument(document).await()
         client.deactivateAsync().await()
         client.close()
+    }
+
+    // --- presence-patch (spec 040 D1) -------------------------------------
+
+    @Test
+    fun `D1a a pending patch persists as Put of full in the toBytes envelope`() = runTest {
+        val docKey = "d1-envelope-doc"
+        val bytes = buildEnvelope(
+            docKey,
+            edit = { d ->
+                d.updateAsync { _, p -> p.put(mapOf("name" to "a")) }.await()
+                d.applyChangePack(
+                    ChangePack(
+                        d.getKey(),
+                        CheckPoint(0, 1u),
+                        emptyList(),
+                        null,
+                        false,
+                        INITIAL_VERSION_VECTOR,
+                        capabilities = listOf(ChangePack.PRESENCE_PATCH_CAPABILITY),
+                    ),
+                )
+                // Still pending (never acked) when toBytes() below captures the envelope.
+                d.updateAsync { _, p -> p.put(mapOf("cursor" to "1,1")) }.await()
+            },
+        )
+
+        val restored = Document.fromBytes(docKey, bytes)
+        val presenceChange = restored.createChangePack().changes.single().presenceChange
+        assertIs<PresenceChange.Put>(presenceChange)
+        assertEquals(mapOf("name" to "a", "cursor" to "1,1"), presenceChange.presence)
+    }
+
+    @Test
+    fun `D1b a pending patch persists as Put of full in an appended log entry`() = runTest {
+        val source = Document(TEST_KEY)
+        val actor = source.changeID.actor
+        val baseSnapshot = source.toBytes()
+        source.updateAsync { _, p -> p.put(mapOf("name" to "a")) }.await()
+        source.applyChangePack(
+            ChangePack(
+                source.getKey(),
+                CheckPoint(0, 1u),
+                emptyList(),
+                null,
+                false,
+                INITIAL_VERSION_VECTOR,
+                capabilities = listOf(ChangePack.PRESENCE_PATCH_CAPABILITY),
+            ),
+        )
+        source.updateAsync { _, p -> p.put(mapOf("cursor" to "1,1")) }.await()
+        val storedBytes = source.pendingChanges().single().toStoredChangeBytes()
+
+        val decoded = storedBytes.toStoredChange()
+        val presenceChange = decoded.presenceChange
+        assertIs<PresenceChange.Put>(presenceChange)
+        assertEquals(mapOf("name" to "a", "cursor" to "1,1"), presenceChange.presence)
+
+        // Replayed through restoreAppendedChanges (the real append-log restore path) the
+        // same way: decodes and applies as a Put, never a Patch (D1 never leaves a
+        // literal Patch in persisted bytes for any restore site to see).
+        val replayed = Document.fromBytes(TEST_KEY, baseSnapshot)
+        // Pre-establish capability+base on the REPLAY TARGET itself -- a brand-new
+        // Document already defaults to false/false, which would make the assertion
+        // below pass even if restoreAppendedChanges's own reset call were missing.
+        replayed.updateAsync { _, p -> p.put(mapOf("x" to "y")) }.await()
+        replayed.applyChangePack(
+            ChangePack(
+                replayed.getKey(),
+                CheckPoint(0, 1u),
+                emptyList(),
+                null,
+                false,
+                INITIAL_VERSION_VECTOR,
+                capabilities = listOf(ChangePack.PRESENCE_PATCH_CAPABILITY),
+            ),
+        )
+        assertTrue(replayed.isPresencePatchableForTest())
+
+        replayed.restoreAppendedChanges(listOf(decoded))
+        // Change.execute's Put arm reuses Presences.plus (merges onto whatever the actor
+        // already held), so the pre-establish step's "x" key survives alongside the
+        // replayed content rather than being replaced by it.
+        assertEquals(
+            mapOf("x" to "y", "name" to "a", "cursor" to "1,1"),
+            replayed.allPresences.value[actor],
+        )
+        assertFalse(replayed.isPresencePatchableForTest())
     }
 
     @Test
@@ -1056,12 +1150,17 @@ class ClientPersistenceTest {
         document.updateAsync { root, _ -> root["r0"] = bigValue }.await()
         document.updateAsync { root, _ -> root["r1"] = bigValue }.await()
 
+        // The attach-time base entry ALSO has an empty log, so an empty-log poll alone is met
+        // before the appends even land (seen on a loaded CI runner); the compacted base is the
+        // one that carries r1.
         val stored = awaitCondition {
-            store.load(storeKeyFor("compaction-doc"))?.takeIf { it.changes.isEmpty() }
+            store.load(storeKeyFor("compaction-doc"))?.takeIf {
+                it.changes.isEmpty() &&
+                    Document.fromBytes("compaction-doc", it.snapshot).toJson().contains("r1")
+            }
         }
         assertEquals(baseline + 1, store.saveSnapshotCount)
         assertTrue(stored.changes.isEmpty())
-        assertTrue(Document.fromBytes("compaction-doc", stored.snapshot).toJson().contains("r1"))
 
         client.detachDocument(document).await()
         client.deactivateAsync().await()
@@ -1153,14 +1252,30 @@ class ClientPersistenceTest {
         override suspend fun remove(docKey: String) = inner.remove(docKey)
     }
 
+    /**
+     * Polls until the client has logged its [count]th "poisoned for repair" failure. The store's
+     * own `saveAttempts` is incremented BEFORE its write throws, and the client marks the key
+     * poisoned only after the throw unwinds back into its persist job on `Dispatchers.IO`; an edit
+     * made in that window still reads an un-poisoned key and appends instead of repairing (the
+     * log line is emitted right after the flag is set, so it is the observable that follows the
+     * poison, not the one that precedes it). Seen on a loaded CI runner as U7's repair never
+     * landing.
+     */
+    private suspend fun awaitPoisoned(logger: RecordingLogger, count: Int) {
+        awaitCondition {
+            logger.errorMessages.count { "poisoned for repair" in it }.takeIf { it >= count }
+        }
+    }
+
     @Test
     fun `U7 a failed base snapshot poisons and the next edit repairs with a snapshot`() = runTest {
+        val logger = RecordingLogger().also(Logger::init)
         val store = FlakySaveStore(failCount = 1)
         val client = newClient(MockYorkieService(), docStore = store)
         client.activateAsync().await()
         val document = Document("repair-after-fail-doc")
         client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
-        awaitCondition { if (store.saveAttempts >= 1) true else null }
+        awaitPoisoned(logger, 1)
 
         document.updateAsync { root, _ -> root["k"] = 1 }.await()
 
@@ -1182,15 +1297,16 @@ class ClientPersistenceTest {
     @Test
     fun `U8 a repair snapshot that also fails re-poisons until the third attempt succeeds`() =
         runTest {
+            val logger = RecordingLogger().also(Logger::init)
             val store = FlakySaveStore(failCount = 2)
             val client = newClient(MockYorkieService(), docStore = store)
             client.activateAsync().await()
             val document = Document("re-poison-doc")
             client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
-            awaitCondition { if (store.saveAttempts >= 1) true else null }
+            awaitPoisoned(logger, 1)
 
             document.updateAsync { root, _ -> root["k1"] = 1 }.await()
-            awaitCondition { if (store.saveAttempts >= 2) true else null }
+            awaitPoisoned(logger, 2)
 
             document.updateAsync { root, _ -> root["k2"] = 2 }.await()
 

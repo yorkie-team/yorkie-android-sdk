@@ -2,7 +2,9 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
+import java.lang.reflect.InvocationTargetException
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -92,5 +94,35 @@ class RgaTreeSplitTest {
             result.gcPairs.map { it.child.value.content },
             "gcPairs must still exclude it, to avoid double-toggling its existing registration",
         )
+    }
+
+    // Port yorkie-js-sdk `rga_tree_split.ts` splitNode guard (`ed25355e`,
+    // #1449, yorkie#2111): JS's `substring`/`truncate` silently clamp a
+    // negative offset to 0, duplicating content; Android instead used to
+    // reach `TextValue.subSequence`'s `substring(negative, len)`, throwing
+    // `StringIndexOutOfBoundsException` deep inside after already starting
+    // the split. splitNode is a private implementation detail with no
+    // reachable public caller that can pass a negative offset (every caller
+    // derives it from a floor-matched node, which is always <= the target),
+    // so this reaches it directly via reflection to pin the guard itself.
+    @Test
+    fun `splitNode rejects a negative offset before any mutation`() {
+        val range = RgaTreeSplitPosRange(target.indexToPos(0), target.indexToPos(0))
+        target.edit(range, TimeTicket.InitialTimeTicket, TextValue("ABCD"), versionVector = null)
+        val node = target.single()
+        val method = RgaTreeSplit::class.java.getDeclaredMethod(
+            "splitNode",
+            RgaTreeSplitNode::class.java,
+            Int::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        val before = target.toString()
+
+        val cause = runCatching { method.invoke(target, node, -1) }.exceptionOrNull()
+        assertTrue(
+            cause is InvocationTargetException && cause.cause is IllegalArgumentException,
+            "a negative offset must throw IllegalArgumentException, not mutate silently",
+        )
+        assertEquals(before, target.toString(), "a rejected split must leave the tree untouched")
     }
 }

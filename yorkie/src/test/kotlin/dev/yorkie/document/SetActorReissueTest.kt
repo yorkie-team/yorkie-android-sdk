@@ -590,6 +590,75 @@ class SetActorReissueTest {
         assertEquals(setOf(ACTOR_A), documentActors(document))
     }
 
+    // Review round 3 (RTCOLLABPLATFORM-789): the wait must run BEFORE the "nothing to
+    // re-issue" early return. An attach while the document's FIRST update is still
+    // suspended sees an empty queue; a rename that ran right then was undone when the
+    // updater resumed -- its ChangeContext held the OLD changeID, so its append switched
+    // the actor back to the initial one for the rest of the session.
+    @Test
+    fun `waits for the first update of an empty document before re-issuing`() = runTest {
+        val document = Document("")
+        assertTrue(document.neverSynced)
+
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val first = document.updateAsync { root, _ ->
+            root.setNewObject("obj")
+            entered.complete(Unit)
+            release.await()
+        }
+        entered.await()
+
+        val reissue = async { document.setActor(ACTOR_A, reissue = true) }
+        withContext(Dispatchers.Default) { delay(200) }
+        assertFalse(reissue.isCompleted, "an empty queue must not skip the wait")
+        assertEquals(ActorID.INITIAL_ACTOR_ID, document.changeID.actor)
+
+        release.complete(Unit)
+        first.await()
+
+        assertTrue(reissue.await(), "the awaited update's change is re-issued")
+        assertEquals(ACTOR_A, document.changeID.actor)
+        assertEquals(setOf(ACTOR_A), documentActors(document))
+
+        // The actor must not flip back on the next change either.
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        assertEquals(ACTOR_A, document.changeID.actor)
+        assertEquals(setOf(ACTOR_A), documentActors(document))
+    }
+
+    // Explicit-key variant: no re-issue, but the plain rename must wait the same way, or
+    // the resumed updater's append flips the actor back.
+    @Test
+    fun `waits for the first update of an empty document before an explicit-key rename`() =
+        runTest {
+            val document = Document("")
+
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val first = document.updateAsync { root, _ ->
+                root.setNewObject("obj")
+                entered.complete(Unit)
+                release.await()
+            }
+            entered.await()
+
+            val rename = async { document.setActor(ACTOR_A, reissue = false) }
+            withContext(Dispatchers.Default) { delay(200) }
+            assertFalse(rename.isCompleted, "the plain rename must wait too")
+
+            release.complete(Unit)
+            first.await()
+
+            assertFalse(rename.await(), "an explicit key never re-issues")
+            assertEquals(ACTOR_A, document.changeID.actor)
+            assertEquals(ACTOR_A, document.pendingChanges().single().id.actor)
+
+            document.updateAsync { root, _ -> root["k"] = 1 }.await()
+            assertEquals(ACTOR_A, document.changeID.actor)
+            assertTrue(document.pendingChanges().all { it.id.actor == ACTOR_A })
+        }
+
     // LOW-3 fold-in (cross-judge CJ-7): the presence VALUE is re-keyed to the
     // new actor and gone under the old one after a reissue.
     @Test

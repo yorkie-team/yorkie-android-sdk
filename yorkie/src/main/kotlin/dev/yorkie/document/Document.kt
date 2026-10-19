@@ -2206,13 +2206,22 @@ public class Document(
      */
     internal suspend fun setActor(actor: String, reissue: Boolean): Boolean =
         withContext(dispatcher) {
+            // BEFORE the early return below, so the plain rename waits too: an attach
+            // while the document's FIRST pre-attach update is still suspended sees an
+            // empty queue, and a rename that ran right then would be undone when that
+            // updater resumed -- its ChangeContext was built from the OLD changeID, so
+            // its append (`changeID = context.getNextId()`) switches the actor back to
+            // the initial one for the rest of the session, the duplicate-createdAt
+            // divergence #1449 exists to prevent (review on RTCOLLABPLATFORM-789,
+            // round 3). The awaited pass's change is then in the queue, and the
+            // re-issue (or the plain rename, for an explicit key) covers it.
+            while (isUpdating) {
+                inFlight.first { it == 0 }
+            }
             val prevActor = changeID.actor
             if (!reissue || actor == prevActor || localChanges.isEmpty() || !neverSynced) {
                 setActor(actor)
                 return@withContext false
-            }
-            while (isUpdating) {
-                inFlight.first { it == 0 }
             }
 
             // ---- Build aside: nothing below assigns to `this` until every

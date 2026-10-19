@@ -74,10 +74,12 @@ internal class Attachment<R : Attachable>(
     /**
      * Set while `Client.resyncAsync` is resyncing this attachment's document (D3): the
      * sync loop skips an attachment with this set (checked before `needSync`), and
-     * `syncInternal`'s document branch re-checks attachment IDENTITY (not this flag)
-     * right after acquiring the document's mutex, because a resync replaces the
-     * `Attachment` object outright rather than clearing this on the old one. `@Volatile`
-     * for the same cross-dispatcher reason as [syncMode].
+     * `syncInternal`'s document branch refuses with `ErrRefused` while it is set -- an
+     * explicit `syncAsync(document)` must not push the queue the resync is about to
+     * discard -- and ALSO re-checks attachment IDENTITY right after acquiring the
+     * document's mutex, because a resync replaces the `Attachment` object outright rather
+     * than clearing this on the old one. `@Volatile` for the same cross-dispatcher reason
+     * as [syncMode].
      */
     @Volatile
     var resyncing: Boolean = false

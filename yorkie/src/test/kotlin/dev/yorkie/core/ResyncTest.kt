@@ -577,6 +577,47 @@ class ResyncTest {
     fun `a slow store removal does not block S2's wait past its 5s bound`() = runTest {
         val store = SlowRemoveStore(delayMs = 7_000)
         val (client, _, document) = newResyncClientWithStore("resync-slow-remove-doc", store)
+    // Review on RTCOLLABPLATFORM-789 (Medium): S1 of resyncAsync releases the document mutex
+    // right after waiting out an in-flight sync, and S2 can take seconds (persist drain,
+    // store removal). An explicit syncAsync(document) in that window used to go straight
+    // through syncInternal -- its stale-attachment identity check still passed -- and could
+    // push the very queue S3 then discarded, so LocalChangesDropped reported changes the
+    // server had stored. syncInternal now refuses while the attachment is resyncing. The
+    // slow store removal below holds S2 open long enough to land a sync inside the window.
+    @Test
+    fun `an explicit sync during a resync is refused and pushes nothing`() = runTest {
+        runBlocking {
+            val store = SlowRemoveStore(delayMs = 1_500)
+            val (client, service, document) =
+                newResyncClientWithStore("resync-refuses-explicit-sync-doc", store)
+            document.updateAsync { root, _ -> root["a"] = 1 }.await()
+            val callsBefore = service.pushPullChangesCallCounts[document.getKey()] ?: 0
+
+            val resync = client.resyncAsync(document, discardLocalChanges = true)
+            waitUntilResync { client.attachmentFor(document.getKey()).resyncing }
+
+            val sync = client.syncAsync(document).await()
+            assertTrue(sync.isFailure, "a sync during the resync window must be refused")
+            assertEquals(
+                YorkieException.Code.ErrRefused,
+                (sync.exceptionOrNull() as YorkieException).code,
+            )
+            assertEquals(
+                callsBefore,
+                service.pushPullChangesCallCounts[document.getKey()] ?: 0,
+                "the refused sync must not have pushed the queue the resync discards",
+            )
+
+            resync.await().getOrThrow()
+            assertFalse(document.hasLocalChanges())
+            assertTrue(document.isMintable())
+
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+    }
+
         document.updateAsync { root, _ -> root["a"] = 1 }.await()
 
         val start = System.currentTimeMillis()

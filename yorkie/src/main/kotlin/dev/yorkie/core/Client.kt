@@ -1320,6 +1320,21 @@ public class Client(
                         // Reset the poll timer up front so a Polling document
                         // syncs once per interval, not on every sync-loop tick.
                         // Done before the RPC so a failed push-pull does not
+                        // Resync-in-progress guard: S1 of `resyncAsync` sets this flag and
+                        // then only waits out the sync holding this mutex; from there until
+                        // S4 swaps the Attachment the identity check above still passes, so
+                        // an explicit `syncAsync(document)` (the sync loop already skips a
+                        // resyncing attachment) could push the very queue S3 is about to
+                        // discard -- and `LocalChangesDropped` would then report changes the
+                        // server stored (review on RTCOLLABPLATFORM-789). Refuse instead;
+                        // JS serializes the two through `enqueueTask`.
+                        checkYorkieError(
+                            !attachment.resyncing,
+                            YorkieException(
+                                ErrRefused,
+                                "document($documentKey) is resyncing; retry after it finishes",
+                            ),
+                        )
                         // retry every 50ms and drain battery / hammer the
                         // server during outages. #1243.
                         // Also reset for Realtime: gives the watch-silence pull

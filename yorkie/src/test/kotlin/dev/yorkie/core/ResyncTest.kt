@@ -247,9 +247,8 @@ class ResyncTest {
                 }
 
                 // M8 (team-review, RTCOLLABPLATFORM-789): poll-based instead of a fixed
-                // 400/200/400ms window -- several 50ms sync-loop ticks all see the SAME
-                // denial episode, so this just waits for the first publish rather than
-                // guessing how many ticks that takes under CI jitter.
+                // window -- waits for the first publish rather than guessing how many
+                // ticks that takes under CI jitter.
                 waitUntilResync { authErrors.isNotEmpty() }
                 assertEquals(
                     1,
@@ -261,18 +260,28 @@ class ResyncTest {
                     authErrors.single().method,
                 )
 
-                // The webhook relents: the next push-pull succeeds, and a LATER denial is a
-                // new episode that publishes again. Poll for an ACTUAL successful
-                // push-pull (the call count ticking up) before re-denying, rather than
-                // guessing a 200ms clearance window.
-                val callsBeforeRelent =
-                    service.pushPullChangesCallCounts[document.getKey()] ?: 0
+                // Review on RTCOLLABPLATFORM-789: the denied document is PARKED, like a
+                // write-rejected one -- the denied change is not re-sent on the following
+                // ticks (each re-send was a PushPull RPC and a server-side webhook call).
+                // Negative assertion over a quiet window of ~6 sync-loop ticks.
+                val callsAtDenial = service.pushPullChangesCallCounts[document.getKey()] ?: 0
+                delay(300)
+                assertEquals(
+                    callsAtDenial,
+                    service.pushPullChangesCallCounts[document.getKey()] ?: 0,
+                    "a denied document must be parked, not re-sent every tick",
+                )
+                assertTrue(client.attachmentFor(document.getKey()).pushDenied)
+
+                // The webhook relents. The way back in is an explicit sync, whose success
+                // un-parks the attachment; a LATER denial is a new episode that publishes
+                // again (it needs a new local change, since the park stopped the loop from
+                // pushing on its own).
                 service.permissionDeniedPushPullKeys -= document.getKey()
-                waitUntilResync {
-                    (service.pushPullChangesCallCounts[document.getKey()] ?: 0) >
-                        callsBeforeRelent
-                }
+                assertTrue(client.syncAsync(document).await().isSuccess)
+                assertFalse(client.attachmentFor(document.getKey()).pushDenied)
                 service.permissionDeniedPushPullKeys += document.getKey()
+                document.updateAsync { root, _ -> root["b"] = 2 }.await()
                 waitUntilResync { authErrors.size >= 2 }
 
                 assertEquals(2, authErrors.size, "a new denial episode publishes once more")
@@ -568,15 +577,6 @@ class ResyncTest {
             client.close()
         }
 
-    // Slow test (~5-6s wall time), same style as ClientPersistenceTest's T26: a hung store
-    // removal must not block S2's OWN wait past its 5s bound (CJ-LOW-3). This does not
-    // assert on the full resyncAsync().await() completion time: detachDocumentDeferred's
-    // own (pre-existing, unbounded, out of this fix's scope) removeFromStore call still
-    // chains behind the same per-key write queue at S4 -- see SlowRemoveStore's own doc.
-    @Test
-    fun `a slow store removal does not block S2's wait past its 5s bound`() = runTest {
-        val store = SlowRemoveStore(delayMs = 7_000)
-        val (client, _, document) = newResyncClientWithStore("resync-slow-remove-doc", store)
     // Review on RTCOLLABPLATFORM-789 (Medium): S1 of resyncAsync releases the document mutex
     // right after waiting out an in-flight sync, and S2 can take seconds (persist drain,
     // store removal). An explicit syncAsync(document) in that window used to go straight
@@ -618,6 +618,15 @@ class ResyncTest {
         }
     }
 
+    // Slow test (~5-6s wall time), same style as ClientPersistenceTest's T26: a hung store
+    // removal must not block S2's OWN wait past its 5s bound (CJ-LOW-3). This does not
+    // assert on the full resyncAsync().await() completion time: detachDocumentDeferred's
+    // own (pre-existing, unbounded, out of this fix's scope) removeFromStore call still
+    // chains behind the same per-key write queue at S4 -- see SlowRemoveStore's own doc.
+    @Test
+    fun `a slow store removal does not block S2's wait past its 5s bound`() = runTest {
+        val store = SlowRemoveStore(delayMs = 7_000)
+        val (client, _, document) = newResyncClientWithStore("resync-slow-remove-doc", store)
         document.updateAsync { root, _ -> root["a"] = 1 }.await()
 
         val start = System.currentTimeMillis()

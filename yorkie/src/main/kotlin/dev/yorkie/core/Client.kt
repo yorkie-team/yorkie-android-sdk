@@ -1150,13 +1150,19 @@ public class Client(
                     }
                     // D2: `handleConnectException` does not recognize ErrPermissionDenied
                     // (it is not retryable, but it also does not run the error callback
-                    // above) -- publish AuthError(PushPull) here instead, deduped per
-                    // denial EPISODE via `Attachment.pushDenied` rather than once per
-                    // tick, and clear it the moment a push-pull on this attachment
-                    // succeeds again. The loop keeps ticking either way (`conditions`
-                    // below is bookkeeping only, see its own doc comment -- it never
-                    // actually stops this loop), so the client self-heals the moment
-                    // the webhook relents, unlike JS, which stops its task queue here.
+                    // above) -- publish AuthError(PushPull) here instead, once per
+                    // denial EPISODE, and PARK the attachment (`Attachment.pushDenied`,
+                    // read by `needSync` like the write-rejected mark below): the denied
+                    // change stays queued, so without the park `needSync` would be true
+                    // on every 50ms tick and the loop would re-send it -- about 20
+                    // PushPull RPCs and auth-webhook calls per second per denied
+                    // document, plus a `SyncFailed` each (review on RTCOLLABPLATFORM-789).
+                    // JS stops its task queue here and `resync` restarts it; Android keeps
+                    // the loop ticking for every OTHER attachment and takes this one back
+                    // in the same two ways a write rejection has: an explicit
+                    // `Client.syncAsync(document)` whose push-pull succeeds (the clear
+                    // lives in `syncInternal`'s success path), or `Client.resyncAsync`,
+                    // which replaces the Attachment outright.
                     if (attachment.resource is Document) {
                         val isPushDenied = connectException != null &&
                             errorCodeOf(connectException) ==
@@ -1170,8 +1176,6 @@ public class Client(
                                     method = PushPull,
                                 ),
                             )
-                        } else if (!isPushDenied && result.isSuccess && attachment.pushDenied) {
-                            attachment.pushDenied = false
                         }
 
                         // #1462: a push answered with ErrDocumentSizeExceedsLimit or
@@ -1199,7 +1203,7 @@ public class Client(
                     // ticking for every OTHER attachment regardless either way --
                     // see this flag's own doc comment).
                     val isParkedDocument = attachment.resource is Document &&
-                        attachment.isWriteRejected()
+                        (attachment.isWriteRejected() || attachment.pushDenied)
                     if (result.isFailure && !isRetryAble && !isParkedDocument) {
                         conditions[ClientCondition.SYNC_LOOP] = false
                     }
@@ -1316,10 +1320,6 @@ public class Client(
                         if (attachments[documentKey] !== attachment) {
                             return@runCatching
                         }
-
-                        // Reset the poll timer up front so a Polling document
-                        // syncs once per interval, not on every sync-loop tick.
-                        // Done before the RPC so a failed push-pull does not
                         // Resync-in-progress guard: S1 of `resyncAsync` sets this flag and
                         // then only waits out the sync holding this mutex; from there until
                         // S4 swaps the Attachment the identity check above still passes, so

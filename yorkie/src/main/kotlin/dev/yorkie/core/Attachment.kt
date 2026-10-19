@@ -85,13 +85,18 @@ internal class Attachment<R : Attachable>(
     var resyncing: Boolean = false
 
     /**
-     * True once this attachment has published `Document.Event.AuthError(PushPull)` for
-     * the CURRENT run of denied pushes (D2); cleared on the next successful push-pull.
-     * Dedupes the publish to once per denial episode instead of once per sync-loop tick
-     * (every `Client.Options.syncLoopDuration`) -- the loop itself keeps ticking so the
-     * client self-heals the moment the webhook relents. Confined to the client
-     * dispatcher's sync loop; no [Volatile] needed.
+     * `true` once a push for this attachment's document was answered with
+     * [dev.yorkie.util.YorkieException.Code.ErrPermissionDenied]: `Document.Event.AuthError
+     * (PushPull)` is published once for the episode and [needSync] parks the document, the
+     * same way a write rejection does, instead of re-sending the denied change (and its
+     * server-side auth-webhook call) on every sync-loop tick. Cleared by the next SUCCESSFUL
+     * push-pull on this attachment, which only an explicit `Client.syncAsync(document)` can
+     * start while parked; a `Client.resyncAsync` replaces the attachment outright. Mirrors
+     * JS, which stops its task queue on the denial and lets `resync` restart it. Written on
+     * the client dispatcher's sync loop, cleared from `syncInternal`; `@Volatile` for the
+     * same cross-dispatcher reason as [syncMode].
      */
+    @Volatile
     var pushDenied: Boolean = false
 
     /**
@@ -260,8 +265,10 @@ internal class Attachment<R : Attachable>(
             // server with the same refused change. The only way back in is a
             // successful push-pull on this attachment (clearWriteRejected) or an
             // explicit `Client.syncAsync(document)`, which bypasses the sync loop
-            // entirely and calls `syncInternal` directly.
-            if (isWriteRejected()) {
+            // entirely and calls `syncInternal` directly. A push the server DENIED
+            // (ErrPermissionDenied) parks the same way: resending it every tick is a
+            // webhook call per tick for an answer that will not change on its own.
+            if (isWriteRejected() || pushDenied) {
                 return false
             }
             // Polling has no watch stream, so it pushes and pulls on a fixed

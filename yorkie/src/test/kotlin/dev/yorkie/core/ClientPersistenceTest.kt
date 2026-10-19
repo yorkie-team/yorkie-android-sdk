@@ -21,9 +21,11 @@ import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
+import dev.yorkie.helper.RecordingLogger
 import dev.yorkie.helper.oneWayDeliver
 import dev.yorkie.presence.Channel
 import dev.yorkie.util.ChangeApplyError
+import dev.yorkie.util.Logger
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentOpenElsewhere
@@ -83,6 +85,9 @@ class ClientPersistenceTest {
     @After
     fun tearDown() {
         unmockkStatic(Base64::class)
+        // U7/U8 install a RecordingLogger on Logger's process-wide singleton; reinstall a fresh
+        // instance so captured state does not leak into another test class (see Helper.kt).
+        Logger.init(RecordingLogger())
     }
 
     private fun newClient(
@@ -1241,14 +1246,30 @@ class ClientPersistenceTest {
         override suspend fun remove(docKey: String) = inner.remove(docKey)
     }
 
+    /**
+     * Polls until the client has logged its [count]th "poisoned for repair" failure. The store's
+     * own `saveAttempts` is incremented BEFORE its write throws, and the client marks the key
+     * poisoned only after the throw unwinds back into its persist job on `Dispatchers.IO`; an edit
+     * made in that window still reads an un-poisoned key and appends instead of repairing (the
+     * log line is emitted right after the flag is set, so it is the observable that follows the
+     * poison, not the one that precedes it). Seen on a loaded CI runner as U7's repair never
+     * landing.
+     */
+    private suspend fun awaitPoisoned(logger: RecordingLogger, count: Int) {
+        awaitCondition {
+            logger.errorMessages.count { "poisoned for repair" in it }.takeIf { it >= count }
+        }
+    }
+
     @Test
     fun `U7 a failed base snapshot poisons and the next edit repairs with a snapshot`() = runTest {
+        val logger = RecordingLogger().also(Logger::init)
         val store = FlakySaveStore(failCount = 1)
         val client = newClient(MockYorkieService(), docStore = store)
         client.activateAsync().await()
         val document = Document("repair-after-fail-doc")
         client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
-        awaitCondition { if (store.saveAttempts >= 1) true else null }
+        awaitPoisoned(logger, 1)
 
         document.updateAsync { root, _ -> root["k"] = 1 }.await()
 
@@ -1270,15 +1291,16 @@ class ClientPersistenceTest {
     @Test
     fun `U8 a repair snapshot that also fails re-poisons until the third attempt succeeds`() =
         runTest {
+            val logger = RecordingLogger().also(Logger::init)
             val store = FlakySaveStore(failCount = 2)
             val client = newClient(MockYorkieService(), docStore = store)
             client.activateAsync().await()
             val document = Document("re-poison-doc")
             client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
-            awaitCondition { if (store.saveAttempts >= 1) true else null }
+            awaitPoisoned(logger, 1)
 
             document.updateAsync { root, _ -> root["k1"] = 1 }.await()
-            awaitCondition { if (store.saveAttempts >= 2) true else null }
+            awaitPoisoned(logger, 2)
 
             document.updateAsync { root, _ -> root["k2"] = 2 }.await()
 

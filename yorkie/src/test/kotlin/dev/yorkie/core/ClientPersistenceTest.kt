@@ -1149,12 +1149,17 @@ class ClientPersistenceTest {
         document.updateAsync { root, _ -> root["r0"] = bigValue }.await()
         document.updateAsync { root, _ -> root["r1"] = bigValue }.await()
 
+        // The attach-time base entry ALSO has an empty log, so an empty-log poll alone is met
+        // before the appends even land (seen on a loaded CI runner); the compacted base is the
+        // one that carries r1.
         val stored = awaitCondition {
-            store.load(storeKeyFor("compaction-doc"))?.takeIf { it.changes.isEmpty() }
+            store.load(storeKeyFor("compaction-doc"))?.takeIf {
+                it.changes.isEmpty() &&
+                    Document.fromBytes("compaction-doc", it.snapshot).toJson().contains("r1")
+            }
         }
         assertEquals(baseline + 1, store.saveSnapshotCount)
         assertTrue(stored.changes.isEmpty())
-        assertTrue(Document.fromBytes("compaction-doc", stored.snapshot).toJson().contains("r1"))
 
         client.detachDocument(document).await()
         client.deactivateAsync().await()

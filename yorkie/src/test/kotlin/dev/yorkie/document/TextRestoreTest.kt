@@ -4,6 +4,7 @@ import dev.yorkie.document.crdt.CrdtText
 import dev.yorkie.document.crdt.RgaTreeSplitNodeID
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.helper.crossSync
 import dev.yorkie.helper.maxVectorOf
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -15,7 +16,12 @@ import org.junit.Test
 
 /**
  * Ports the identity-preserving undo/redo cases in `document_test.ts` (JS SDK
- * 5d5cac63, #1293) as JVM unit tests (AC6, AC7, AC11).
+ * 5d5cac63, #1293) as JVM unit tests. Also carries the two
+ * `text_restore_after_gc_test.ts` cases JS `cab55005` (#1442) added:
+ * convergence when only the undoing replica purged the deleted run, with and
+ * without its left neighbour also purged -- pinned green at the baseline,
+ * since `cab55005` only changed `Text.normalizePos`'s cost, not this
+ * restore/retombstone ladder.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class TextRestoreTest {
@@ -226,4 +232,78 @@ class TextRestoreTest {
         document.history.redoAsync().await()
         assertEquals("hello world", document.getRoot().getAs<JsonText>("text").toString())
     }
+
+    // JS `text_restore_after_gc_test.ts` cases added by `cab55005` (#1442):
+    // which pieces survive a GC pass is per-replica state, so where a
+    // restore anchors must not depend on it. Here only the undoing replica
+    // (d1) has purged, so its restore rebuilds the run through the anchor
+    // ladder, while the peer (d2) still holds the tombstones and revives
+    // them in place; in the `purgeLeft` case the text left of the run is
+    // ALSO purged on d1, so no piece of any neighbour survives there and the
+    // first recreated fragment falls back to the operation's own position.
+    // Pinned green at the baseline: Android's restore/retombstone ladder
+    // is unchanged by `cab55005` (a Text position-lookup change only).
+    private suspend fun runUndoingReplicaPurgedConvergence(
+        purgeLeft: Boolean,
+    ): Pair<Document, Document> {
+        val actor1 = "000000000000000000000001"
+        val actor2 = "000000000000000000000002"
+        val d1 = Document("text-restore-after-gc-peer")
+        val d2 = Document("text-restore-after-gc-peer")
+        d1.setActor(actor1)
+        d2.setActor(actor2)
+        d1.updateAsync { root, _ -> root.setNewText("t") }.await()
+
+        val s = "hello my name is"
+        for (i in s.indices) {
+            val c = s[i].toString()
+            d1.updateAsync { root, _ -> root.getAs<JsonText>("t").edit(i, i, c) }.await()
+        }
+        crossSync(d1, d2)
+        d1.clearHistory()
+
+        if (purgeLeft) {
+            d2.updateAsync { root, _ ->
+                root.getAs<JsonText>(
+                    "t",
+                ).edit(0, 6, "")
+            }.await() // "hello "
+            crossSync(d1, d2)
+        }
+        val from = if (purgeLeft) 0 else 6
+        d1.updateAsync { root, _ ->
+            root.getAs<JsonText>(
+                "t",
+            ).edit(from, from + 7, "")
+        }.await() // "my name"
+        crossSync(d1, d2)
+
+        assertTrue(
+            d1.garbageCollect(maxVectorOf(listOf(actor1, actor2))) > 0,
+            "expected the undoing replica to actually purge the deleted run",
+        )
+        d1.history.undoAsync().await()
+        crossSync(d1, d2)
+        return d1 to d2
+    }
+
+    @Test
+    fun `converges when only the undoing replica purged the run its neighbours survive`() =
+        runTest {
+            val (d1, d2) = runUndoingReplicaPurgedConvergence(purgeLeft = false)
+            val want = "hello my name is"
+            assertEquals(want, d1.getRoot().getAs<JsonText>("t").toString())
+            assertEquals(want, d2.getRoot().getAs<JsonText>("t").toString())
+            assertEquals(d1.toJson(), d2.toJson())
+        }
+
+    @Test
+    fun `converges when only the undoing replica purged the run its left neighbour too`() =
+        runTest {
+            val (d1, d2) = runUndoingReplicaPurgedConvergence(purgeLeft = true)
+            val want = "my name is"
+            assertEquals(want, d1.getRoot().getAs<JsonText>("t").toString())
+            assertEquals(want, d2.getRoot().getAs<JsonText>("t").toString())
+            assertEquals(d1.toJson(), d2.toJson())
+        }
 }

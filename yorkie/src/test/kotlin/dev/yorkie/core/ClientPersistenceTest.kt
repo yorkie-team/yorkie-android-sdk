@@ -10,25 +10,37 @@ import dev.yorkie.core.MockYorkieService.Companion.TEST_ACTOR_ID
 import dev.yorkie.core.MockYorkieService.Companion.TEST_KEY
 import dev.yorkie.core.MockYorkieService.Companion.TEST_STABLE_ACTOR_ID
 import dev.yorkie.document.Document
+import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.change.CheckPoint
+import dev.yorkie.document.json.JsonText
+import dev.yorkie.document.json.JsonTree
+import dev.yorkie.document.json.TreeBuilder.element
+import dev.yorkie.document.json.TreeBuilder.text
+import dev.yorkie.document.operation.SetOperation
 import dev.yorkie.document.time.ActorID
 import dev.yorkie.document.time.VersionVector.Companion.INITIAL_VERSION_VECTOR
+import dev.yorkie.helper.oneWayDeliver
 import dev.yorkie.presence.Channel
+import dev.yorkie.util.ChangeApplyError
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrDocumentNotAttached
 import dev.yorkie.util.YorkieException.Code.ErrDocumentOpenElsewhere
 import io.mockk.every
+import io.mockk.mockkConstructor
 import io.mockk.mockkStatic
+import io.mockk.unmockkConstructor
 import io.mockk.unmockkStatic
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +50,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
@@ -1655,9 +1668,18 @@ class ClientPersistenceTest {
         assertEquals(Document.Event.Reason.LogDiscontinuity, dropped.reason)
 
         // The next edit is pushable — no ErrInvalidClientSeq wedge, no re-anchor needed.
+        // 8d965dd2 (#1395): MODIFIED from `document.checkPoint.clientSeq + 1u`. That
+        // compared against the DOCUMENT's own post-repair checkpoint, which the repair
+        // deliberately leaves at the snapshot's (0) rather than the server's -- so it was
+        // satisfied by minting clientSeq 1, a sequence the header's acked checkpoint (1,
+        // `CheckPoint(0, 1u)` above) says the server ALREADY holds. advanceClientSeqTo
+        // carries that acked checkpoint across the repair, so the next mint must be
+        // measured against it instead: the server validates continuity from the position
+        // it holds, so the next change is that position plus one.
+        val ackedCheckpointClientSeq = 1u
         document.updateAsync { root, _ -> root["after"] = true }.await()
         assertEquals(
-            document.checkPoint.clientSeq + 1u,
+            ackedCheckpointClientSeq + 1u,
             document.pendingChanges().last().id.clientSeq,
         )
 
@@ -1699,6 +1721,9 @@ class ClientPersistenceTest {
             store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 2 && it.meta != null }
         }
         assertTrue(document.changeID.clientSeq > document.checkPoint.clientSeq)
+        // Captured before close(): the ack-only sync's acked checkpoint (e1 only -- e2
+        // was minted inside the hook, after the push pack was already built).
+        val ackedCheckpointClientSeq = document.checkPoint.clientSeq
 
         // Simulate losing the newest entry (e.g. a crash right after the first append
         // landed but before the second): a fresh store carrying only changes[0].
@@ -1720,12 +1745,189 @@ class ClientPersistenceTest {
             disablePresence = true,
         ).await()
         assertEquals(Document.Event.Reason.LogDiscontinuity, droppedDeferred.await().reason)
+        // 8d965dd2 (#1395): MODIFIED from `restored.checkPoint.clientSeq + 1u`, the same
+        // way as the `U14 ...` tests above -- the repair now carries the acked checkpoint
+        // forward via advanceClientSeqTo, so it is what the next mint must be measured against, not
+        // `restored`'s own (deliberately stale, snapshot-level) checkpoint.
         restored.updateAsync { root, _ -> root["after"] = 1 }.await()
         assertEquals(
-            restored.checkPoint.clientSeq + 1u,
+            ackedCheckpointClientSeq + 1u,
             restored.pendingChanges().last().id.clientSeq,
         )
         client2.close()
+    }
+
+    @Test
+    fun `does not reuse clientSeqs the discarded header said were acked`() = runTest {
+        // Port of JS offline_persist_sync_test.ts's case of the same name (8d965dd2, #1395).
+        // The repair undoes the header by re-restoring from the snapshot bytes. That is right
+        // for the checkpoint and the epoch and wrong for the counter: the header's checkpoint
+        // names sequences the server has already taken, and the snapshot's counter sits below
+        // it. Minting them again gets them skipped as duplicates on push, and the next ack --
+        // whose clientSeq covers them -- drops them from the pending queue as pushed. The
+        // edits are gone with no event, which is the one outcome the repair exists to avoid.
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "no-reuse-doc"
+        val document = Document(docKey)
+        client.attachDocument(
+            document,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        awaitCondition { store.load(storeKeyFor(docKey))?.snapshot }
+
+        // Three edits, all minted against the attach-time base (clientSeq 0) -- the base
+        // written at attach knows nothing about them.
+        document.updateAsync { root, _ -> root["c0"] = 0 }.await()
+        document.updateAsync { root, _ -> root["c1"] = 1 }.await()
+        document.updateAsync { root, _ -> root["c2"] = 2 }.await()
+        awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 3 }
+        }
+        // Ack everything: a healthy pure ack writes meta only, leaving the snapshot (still the
+        // attach-time base) and the log untouched.
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+        val header = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 3 && it.meta != null }
+        }
+
+        val acked: UInt
+        Document.fromBytes(docKey, header.snapshot).let { probe ->
+            try {
+                assertTrue(
+                    probe.changeID.clientSeq == 0u,
+                    "the snapshot must predate every edit for this to test anything",
+                )
+                probe.restoreMetaFromBytes(header.meta!!)
+                acked = probe.checkPoint.clientSeq
+            } finally {
+                probe.close()
+            }
+        }
+        assertTrue(
+            acked > 0u,
+            "the acked checkpoint must lead the snapshot's own counter for this to test anything",
+        )
+
+        // Lose the whole log: the header now claims a position nothing backs.
+        val lossyStore = MemoryDocStore()
+        lossyStore.saveSnapshot(storeKeyFor(docKey), header.snapshot)
+        lossyStore.saveMeta(storeKeyFor(docKey), header.meta!!)
+        client.close()
+
+        val client2 = newClient(MockYorkieService(), docStore = lossyStore)
+        client2.activateAsync().await()
+        val restored = Document(docKey)
+        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            restored.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
+        }
+        client2.attachDocument(
+            restored,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        assertEquals(Document.Event.Reason.LogDiscontinuity, droppedDeferred.await().reason)
+        // The header is undone where it describes content...
+        assertEquals(0u, restored.checkPoint.clientSeq)
+        // ...and carried where it describes sequences already spent: a new edit must not reuse
+        // a clientSeq the server has already taken.
+        restored.updateAsync { root, _ -> root["after"] = 0 }.await()
+        assertEquals(acked + 1u, restored.pendingChanges().last().id.clientSeq)
+        client2.close()
+    }
+
+    @Test
+    fun `persists the repaired counter so a second reload does not reuse it`() = runTest {
+        // Port of JS offline_persist_sync_test.ts's case of the same name (8d965dd2, #1395).
+        // The repair is only worth anything if it survives the reload after it: writing the
+        // ORIGINAL snapshot bytes back would rebase onto an envelope whose changeID still holds
+        // the pre-ack counter, so the very next attach would repeat the repair and mint the
+        // acked sequences again. The edit appended after the repair must also still replay.
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "persist-repair-doc"
+        val document = Document(docKey)
+        client.attachDocument(
+            document,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        awaitCondition { store.load(storeKeyFor(docKey))?.snapshot }
+
+        document.updateAsync { root, _ -> root["c0"] = 0 }.await()
+        document.updateAsync { root, _ -> root["c1"] = 1 }.await()
+        awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 2 }
+        }
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+        val header = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size == 2 && it.meta != null }
+        }
+
+        val acked: UInt
+        Document.fromBytes(docKey, header.snapshot).let { probe ->
+            try {
+                assertTrue(
+                    probe.changeID.clientSeq == 0u,
+                    "the snapshot must predate every edit for this to test anything",
+                )
+                probe.restoreMetaFromBytes(header.meta!!)
+                acked = probe.checkPoint.clientSeq
+            } finally {
+                probe.close()
+            }
+        }
+        assertTrue(acked > 0u)
+
+        // Lose the whole log, so the next attach takes the repair branch.
+        val lossyStore = MemoryDocStore()
+        lossyStore.saveSnapshot(storeKeyFor(docKey), header.snapshot)
+        lossyStore.saveMeta(storeKeyFor(docKey), header.meta!!)
+        client.close()
+
+        val client2 = newClient(MockYorkieService(), docStore = lossyStore)
+        client2.activateAsync().await()
+        val restored = Document(docKey)
+        val droppedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            restored.events.filterIsInstance<Document.Event.LocalChangesDropped>().first()
+        }
+        client2.attachDocument(
+            restored,
+            syncMode = Client.SyncMode.Manual,
+            disablePresence = true,
+        ).await()
+        assertEquals(Document.Event.Reason.LogDiscontinuity, droppedDeferred.await().reason)
+
+        // The rebase must have carried the counter into the persisted base, not the snapshot's.
+        val rebased = awaitCondition {
+            lossyStore.load(storeKeyFor(docKey))
+                ?.takeIf { !it.snapshot.contentEquals(header.snapshot) }
+        }
+        Document.fromBytes(docKey, rebased.snapshot).let { probe ->
+            try {
+                assertTrue(probe.changeID.clientSeq >= acked)
+            } finally {
+                probe.close()
+            }
+        }
+
+        // One edit after the repair, appended to the freshly cleared log.
+        restored.updateAsync { root, _ -> root["after"] = 0 }.await()
+        awaitCondition {
+            lossyStore.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+        client2.close()
+
+        // The reload after the repair must be quiet: no second repair, no dropped edit.
+        val (_, dropped) = restoreWithFreshClient(lossyStore, docKey)
+        assertFalse(dropped, "the edit appended after a repair must replay, not be discarded")
     }
 
     @Test
@@ -2177,6 +2379,139 @@ class ClientPersistenceTest {
         client.close()
     }
 
+    // --- persistence pins for an executed change with an empty opInfo ----
+    // (790422ce, #1421): Document.onLocalChange fires from the pending-queue
+    // signal alone (localChanges += change; onLocalChange?.invoke()), never
+    // from whether the change produced a visible OperationInfo -- so every
+    // one of these three still appends a log entry, exactly like any other
+    // local change. A red run is not constructible: onLocalChange already queues
+    // every change this way (confirmed by a probe run ahead of this commit);
+    // these are regression pins, not new production hunks.
+
+    @Test
+    fun `T35 a silent presence clear still appends a log entry`() = runTest {
+        val store = MemoryDocStore()
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val docKey = "presence-clear-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        document.updateAsync { _, presence -> presence.put(mapOf("cursor" to "1")) }.await()
+        val baseline = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+
+        val events = mutableListOf<Document.Event>()
+        val job = launch(UnconfinedTestDispatcher()) { document.events.collect(events::add) }
+        document.updateAsync { _, presence -> presence.clear() }.await()
+        withContext(Dispatchers.Default) { delay(200) }
+        job.cancel()
+
+        val afterClear = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size > baseline.changes.size }
+        }
+        assertEquals(
+            baseline.changes.size + 1,
+            afterClear.changes.size,
+            "the silent clear still appends its own log entry",
+        )
+        assertTrue(
+            events.isEmpty(),
+            "a presence clear with no watching peer never becomes ready to publish " +
+                "(Document.presenceEventReadyToBePublished never matches the actor's own " +
+                "now-absent entry), so no public Document.Event fires for it either",
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `T36 a zero-length text style still appends a log entry`() = runTest {
+        val store = MemoryDocStore()
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val docKey = "zero-length-style-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        document.updateAsync { root, _ -> root.setNewText("txt").edit(0, 0, "hello") }.await()
+        val baseline = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+
+        document.updateAsync { root, _ ->
+            val styled = root.getAs<JsonText>("txt").style(0, 0, mapOf("bold" to "true"))
+            assertTrue(styled, "a zero-length range is not an invalid one -- the style still runs")
+        }.await()
+
+        val afterStyle = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size > baseline.changes.size }
+        }
+        assertEquals(
+            baseline.changes.size + 1,
+            afterStyle.changes.size,
+            "the log still appends this change even though its StyleOpInfo list is empty",
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `T37 a tree undo under a peer's removed ancestor still appends a log entry`() = runTest {
+        val store = MemoryDocStore()
+        val client = newClient(MockYorkieService(), docStore = store)
+        client.activateAsync().await()
+        val docKey = "tree-undo-removed-ancestor-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+        document.updateAsync { root, _ ->
+            root.setNewTree("t", element("root") { element("p") { text { "ab" } } })
+        }.await()
+        val peer = Document("peer-$docKey")
+        oneWayDeliver(document, peer)
+        assertEquals(
+            "<root><p>ab</p></root>",
+            peer.getRoot().getAs<JsonTree>("t").toXml(),
+            "the peer starts from the same tree",
+        )
+
+        // The local undo entry this test exercises: delete just the text,
+        // not its "<p>" parent.
+        document.updateAsync { root, _ -> root.getAs<JsonTree>("t").edit(1, 3) }.await()
+        val baseline = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size >= 2 }
+        }
+        assertEquals(2, baseline.changes.size)
+
+        // The peer concurrently removes the whole paragraph -- the ancestor
+        // of the text node document is about to undo -- and delivers it as
+        // a remote change.
+        peer.updateAsync { root, _ -> root.getAs<JsonTree>("t").editByPath(listOf(0), listOf(1)) }
+            .await()
+        oneWayDeliver(peer, document)
+
+        document.history.undoAsync().await()
+
+        val afterUndo = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.size > baseline.changes.size }
+        }
+        assertEquals(
+            baseline.changes.size + 1,
+            afterUndo.changes.size,
+            "the log still appends this undo even though its published opinfo is empty",
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
     // --- JS-parity actor guard rejects an initial-actor envelope ----
     // RED at a7579fe6: restore either INITIAL_ACTOR_ID disjunct in Document.restoreFrom's
     // guard (step 20) — the envelope below would then be exempted and restored instead of
@@ -2208,6 +2543,546 @@ class ClientPersistenceTest {
         client.deactivateAsync().await()
         client.close()
     }
+
+    // --- #1401 (`bed81143`) a pack dropped in PushOnly/SyncOff still persists the ack ------
+
+    // Port of JS `offline_persist_sync_test.ts`'s
+    // `describe('A pack dropped in PushOnly/SyncOff still persists the ack')` (6 cases).
+    // All six attach directly with RealtimeSyncOff -- not RealtimePushOnly -- because
+    // RealtimePushOnly's `needRealTimeSync()` is `hasLocalChanges()`-driven (true the moment
+    // the local edit below is made), so the client's REAL background sync loop (a real
+    // single-threaded dispatcher ticking on real wall-clock time, independent of this
+    // `runTest`'s virtual clock) can race the test's own explicit `syncAsync` call.
+    // RealtimeSyncOff's `needRealTimeSync()` is unconditionally false (`Attachment.kt`), so
+    // it never auto-syncs and exercises the exact same `dropsRemoteState` branch with zero
+    // race (an earlier throwaway smoke test, `ClientPushOnlySnapshotGuardSmokeTest`, made the same
+    // choice; its one case is superseded by the dropped-snapshot case below and the file has been
+    // deleted).
+    // Red (all six, at `b1fa0d39`): revert the `Client.kt:1063-1076` guard rewrite back to
+    // `if (responsePack.hasChanges && (pushOnly||syncOff)) return@runCatching` else
+    // unconditional `applyChangePack` -- the commit message quotes the actual
+    // failures each case hits.
+
+    @Test
+    fun `writes the header for a dropped pack, and re-snapshots nothing`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po1-dropped-changes-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        val base = awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.pullWithAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertFalse(document.toJson().contains("\"pull"), "the pulled change is dropped")
+        assertFalse(document.hasLocalChanges(), "the push is still acked")
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        assertTrue(
+            stored.snapshot.contentEquals(base.snapshot),
+            "a dropped pack did not move the root, so it must not re-snapshot",
+        )
+        // Not asserted empty: the onLocalChange-triggered append for "mine" is independent
+        // of this sync's ack and may have already landed in the incremental log (Android's
+        // split snapshot/log/meta design has no JS equivalent of "the one envelope" this
+        // case's title refers to) -- what matters is the SNAPSHOT bytes above and that the
+        // acked content below still reconstructs.
+        val restored = reconstruct(docKey, stored)
+        assertEquals(document.toJson(), restored.toJson())
+        assertEquals(0L, document.checkPoint.serverSeq)
+        assertEquals(document.checkPoint.serverSeq, restored.checkPoint.serverSeq)
+        assertEquals(document.checkPoint.clientSeq, restored.checkPoint.clientSeq)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `persists the ack when the dropped pack carried a snapshot`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po2-dropped-snapshot-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        val base = awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.snapshotWithAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertTrue(
+            document.toJson().contains("\"mine\":1"),
+            "the pulled snapshot is dropped, not applied to the root",
+        )
+        assertFalse(document.hasLocalChanges(), "the push is still acked")
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        assertTrue(
+            stored.snapshot.contentEquals(base.snapshot),
+            "a dropped snapshot must not be written to the store",
+        )
+        // Not asserted empty -- see the note in the header-write case above: the incremental log may already carry
+        // "mine" independently of this sync's ack.
+        val restored = reconstruct(docKey, stored)
+        assertEquals(document.toJson(), restored.toJson())
+        assertEquals(document.checkPoint.serverSeq, restored.checkPoint.serverSeq)
+        assertEquals(document.checkPoint.clientSeq, restored.checkPoint.clientSeq)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `repairs a poisoned log on a dropped-pack sync`() = runTest {
+        val store = FlakyAppendStore(failCount = 1)
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po3-dropped-poisoned-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        // Wait for the POISON FLAG (the IO failure callback), not the attempt counter --
+        // same race note as the `U6 ...` test.
+        awaitCondition {
+            client.persistStates[storeKeyFor(docKey)]?.takeIf { it.poisoned }
+        }
+        assertEquals(1, store.appendAttempts)
+
+        service.pullWithAckPushPullKeys += docKey
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertFalse(document.toJson().contains("\"pull"), "the pulled change is dropped")
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf {
+                Document.fromBytes(docKey, it.snapshot).toJson().contains("\"mine\":1")
+            }
+        }
+        assertTrue(
+            stored.changes.isEmpty(),
+            "the repair must fold the unappended change into a snapshot",
+        )
+        assertEquals(null, stored.meta)
+        assertFalse(
+            client.persistStates[storeKeyFor(docKey)]?.poisoned ?: false,
+            "a successful repair clears the poison",
+        )
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `marks the sync Synced -- the heartbeat half of the JS case is N-A on Android`() = runTest {
+        // Android's updateHeartbeatTime() is already scoped to Polling/Realtime
+        // attachments only (Client.kt's two syncInternal call sites), orthogonal to
+        // dropsRemoteState in BOTH the old and the new code -- RealtimePushOnly/SyncOff
+        // never call it regardless of this guard, so JS's "refreshes the heartbeat"
+        // half of this case does not apply on Android (recorded; see the commit body).
+        // The testable half -- the early `return@runCatching` used to also skip the
+        // Synced publish for a dropped CHANGES pack, so this IS the red this guard fixes.
+        val service = MockYorkieService()
+        val client = newClient(service)
+        client.activateAsync().await()
+        val docKey = "po4-dropped-synced-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.pullWithAckPushPullKeys += docKey
+
+        val syncedDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            document.events.filterIsInstance<SyncStatusChanged>().first()
+        }
+        val syncResult = client.syncAsync(document).await()
+
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertIs<SyncStatusChanged.Synced>(syncedDeferred.await())
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `acts on the removal flag of a dropped pack`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po5-dropped-removal-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.removedAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+
+        assertEquals(ResourceStatus.Removed, document.getStatus())
+        assertFalse(client.has(docKey), "a removal reaches the document even on a dropped pack")
+        awaitCondition(
+            timeoutMs = 2_000,
+        ) { if (store.load(storeKeyFor(docKey)) == null) true else null }
+        assertNull(store.load(storeKeyFor(docKey)), "clears the envelope pointing at a dead row")
+
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `adopts the compaction epoch of a dropped pack`() = runTest {
+        val store = MemoryDocStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "po6-dropped-epoch-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.RealtimeSyncOff).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["mine"] = 1 }.await()
+        service.epochSnapshotAckPushPullKeys += docKey
+
+        val syncResult = client.syncAsync(document).await()
+        assertTrue(syncResult.isSuccess, "sync failed: ${syncResult.exceptionOrNull()}")
+        assertEquals(3L, document.epoch, "the epoch is metadata, not remote state")
+        assertTrue(
+            document.toJson().contains("\"mine\":1"),
+            "the dropped snapshot must not replace the root either",
+        )
+
+        val stored = awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        val restored = reconstruct(docKey, stored)
+        assertEquals(3L, restored.epoch, "and it must reach the persisted envelope")
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    // --- #1401: the decide-deferral (Android-only) ----------------------------------
+
+    /**
+     * Delays [delayMs] before FAILING the next [appendChange] call once, like
+     * [FlakyAppendStore] with `failCount = 1` except the failure lands asynchronously after a
+     * real delay instead of synchronously -- the exact shape `persistQueues[key]?.join()`
+     * exists to close the window around.
+     */
+    private class DelayedFailingAppendStore(
+        private val delayMs: Long,
+        private val inner: DocStore = MemoryDocStore(),
+    ) : DocStore {
+        var appendAttempts = 0
+        override suspend fun load(docKey: String): StoredDoc? = inner.load(docKey)
+        override suspend fun saveSnapshot(docKey: String, bytes: ByteArray) =
+            inner.saveSnapshot(docKey, bytes)
+
+        override suspend fun appendChange(docKey: String, change: StoredChange) {
+            appendAttempts++
+            if (appendAttempts == 1) {
+                delay(delayMs)
+                throw java.io.IOException("append failed after a delay (#$appendAttempts)")
+            }
+            inner.appendChange(docKey, change)
+        }
+
+        override suspend fun saveMeta(docKey: String, bytes: ByteArray) =
+            inner.saveMeta(docKey, bytes)
+
+        override suspend fun remove(docKey: String) = inner.remove(docKey)
+    }
+
+    // Red (revert ONLY the `persistQueues[key]?.join()` hunk, keep this test): without the
+    // join, `persistAfterSync`'s pure-ack branch re-samples `persistStates[key]` immediately
+    // after the no-op catch-up `append()` call (the watermark was already bumped
+    // synchronously by the ORIGINAL onLocalChange-triggered append, before its IO write —
+    // this store's artificial delay — even started), so it reads `poisoned=false` and
+    // `ackedPastLog=false` and takes the healthy branch: `saveMetaToStore` writes a header
+    // claiming the edit is acked while the chained append for it is still in flight and
+    // about to fail. The awaitCondition below then times out (no snapshot ever embeds
+    // "mine":1, since the actual write was a meta-only header over the hole) --
+    // `check(...) { "condition not met within ${timeoutMs}ms" }` fails the test. The
+    // commit message quotes the executed red output.
+    @Test
+    fun `a failing in-flight append is not outraced by the ack-only poison sample`() = runTest {
+        val store = DelayedFailingAppendStore(delayMs = 300)
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "d9-inflight-append-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        // The onLocalChange-triggered append for this edit is now chained on
+        // Dispatchers.IO, delaying before it throws -- exactly the window the join closes.
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+
+        val stored = awaitCondition(timeoutMs = 3_000) {
+            store.load(storeKeyFor(docKey))?.takeIf {
+                Document.fromBytes(docKey, it.snapshot).toJson().contains("\"k\":1")
+            }
+        }
+        assertTrue(
+            stored.changes.isEmpty(),
+            "the repair must fold the in-flight change into a fresh snapshot",
+        )
+        assertEquals(null, stored.meta, "never a meta header claiming an ack past the hole")
+        assertEquals(1, store.appendAttempts)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    /**
+     * Hangs the next [appendChange] call on [gate] until the test completes or fails it --
+     * [DelayedFailingAppendStore] times the hang; this lets a test control the exact instant the
+     * write resolves, to prove the deferred decision in `persistAfterSync` (PR #386 review item
+     * 1) does not need a bound any more: nothing waits under the document mutex for it, so it can
+     * simply wait on this gate for however long the test holds it closed.
+     */
+    private class GatedAppendStore(
+        private val inner: DocStore = MemoryDocStore(),
+    ) : DocStore {
+        val gate = CompletableDeferred<Unit>()
+        var appendAttempts = 0
+        override suspend fun load(docKey: String): StoredDoc? = inner.load(docKey)
+        override suspend fun saveSnapshot(docKey: String, bytes: ByteArray) =
+            inner.saveSnapshot(docKey, bytes)
+
+        override suspend fun appendChange(docKey: String, change: StoredChange) {
+            appendAttempts++
+            if (appendAttempts == 1) {
+                gate.await()
+            }
+            inner.appendChange(docKey, change)
+        }
+
+        override suspend fun saveMeta(docKey: String, bytes: ByteArray) =
+            inner.saveMeta(docKey, bytes)
+
+        override suspend fun remove(docKey: String) = inner.remove(docKey)
+    }
+
+    @Test
+    fun `a hung store write does not block sync or stall a second document's sync`() = runTest {
+        val store = GatedAppendStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+
+        val hungKey = "hung-append-doc"
+        val hungDocument = Document(hungKey)
+        client.attachDocument(hungDocument, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(hungKey)) }
+
+        val secondKey = "second-doc-not-stalled"
+        val secondDocument = Document(secondKey)
+        client.attachDocument(secondDocument, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(secondKey)) }
+
+        hungDocument.updateAsync { root, _ -> root["k"] = 1 }.await()
+        // The onLocalChange-triggered append for this edit is now hanging on `store.gate`.
+        service.ackOnlyPushPullKeys += hungKey
+
+        val start = System.currentTimeMillis()
+        // Syncs every attachment in one call, in attach order -- the sync loop's own shape
+        // (`runSyncLoop`'s `for` over `attachments`) -- so `secondDocument` is the proof: the old
+        // bounded join ran under `hungDocument`'s own mutex, but the attachments were still
+        // synced one after another in this same call, so a slow/hung write for the first one
+        // delayed every attachment queued behind it.
+        val result = client.syncAsync().await()
+        val elapsedMs = System.currentTimeMillis() - start
+        assertTrue(result.isSuccess, "sync failed: ${result.exceptionOrNull()}")
+        assertTrue(
+            elapsedMs < 2_000,
+            "sync must return promptly instead of waiting on the hung write (and so must not " +
+                "stall a later attachment behind it): ${elapsedMs}ms",
+        )
+
+        store.gate.complete(Unit)
+        client.detachDocument(hungDocument).await()
+        client.detachDocument(secondDocument).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `the deferred decision repairs with a snapshot once the hung write finally fails`() =
+        runTest {
+            val store = GatedAppendStore()
+            val service = MockYorkieService()
+            val client = newClient(service, docStore = store)
+            client.activateAsync().await()
+            val docKey = "hung-append-fails-doc"
+            val document = Document(docKey)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+            awaitCondition { store.load(storeKeyFor(docKey)) }
+
+            document.updateAsync { root, _ -> root["k"] = 1 }.await()
+            service.ackOnlyPushPullKeys += docKey
+            client.syncAsync(document).await()
+
+            // The deferred decision is still waiting on the hung append; failing it now proves
+            // the decision re-samples `poisoned` AFTER the wait, not from what `append()` left
+            // synchronously behind.
+            store.gate.completeExceptionally(java.io.IOException("append failed"))
+
+            val stored = awaitCondition(timeoutMs = 3_000) {
+                store.load(storeKeyFor(docKey))?.takeIf {
+                    Document.fromBytes(docKey, it.snapshot).toJson().contains("\"k\":1")
+                }
+            }
+            assertTrue(
+                stored.changes.isEmpty(),
+                "the repair must fold the failed change into a fresh snapshot",
+            )
+            assertEquals(null, stored.meta, "never a meta header claiming an ack past the hole")
+
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
+
+    @Test
+    fun `the deferred decision writes meta only once the hung write finally succeeds`() = runTest {
+        val store = GatedAppendStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "hung-append-succeeds-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        val baseSnapshot = awaitCondition { store.load(storeKeyFor(docKey))?.snapshot }
+
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+
+        store.gate.complete(Unit)
+
+        val stored = awaitCondition(timeoutMs = 3_000) {
+            store.load(storeKeyFor(docKey))?.takeIf { it.meta != null }
+        }
+        assertTrue(
+            stored.snapshot.contentEquals(baseSnapshot),
+            "a healthy log takes the cheap header write, not a fresh base",
+        )
+        assertEquals(1, stored.changes.size)
+
+        client.detachDocument(document).await()
+        client.deactivateAsync().await()
+        client.close()
+    }
+
+    @Test
+    fun `a document removed before the deferred decision runs writes nothing`() = runTest {
+        val store = GatedAppendStore()
+        val service = MockYorkieService()
+        val client = newClient(service, docStore = store)
+        client.activateAsync().await()
+        val docKey = "removed-before-decision-doc"
+        val document = Document(docKey)
+        client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+        awaitCondition { store.load(storeKeyFor(docKey)) }
+
+        document.updateAsync { root, _ -> root["k"] = 1 }.await()
+        service.ackOnlyPushPullKeys += docKey
+        client.syncAsync(document).await()
+
+        // The deferred decision is still waiting on the hung append. Mark the document Removed
+        // before releasing it, as a sync's own Removed branch or a concurrent remove/detach
+        // would -- the decision's `document.getStatus() == Removed` guard must skip its write.
+        document.applyStatus(ResourceStatus.Removed)
+        store.gate.complete(Unit)
+
+        awaitCondition {
+            store.load(storeKeyFor(docKey))?.takeIf { it.changes.isNotEmpty() }
+        }
+        // The append itself still lands (it is not what the removed-guard skips); give the
+        // decision a real window to run, if it were going to, before checking it did not.
+        withContext(Dispatchers.Default) { delay(300) }
+        assertEquals(
+            null,
+            store.load(storeKeyFor(docKey))?.meta,
+            "a document removed before the deferred decision ran must not get a meta write",
+        )
+
+        client.close()
+    }
+
+    /**
+     * (JS `4251ab7e`, #1403): a remote change that fails to
+     * apply during a sync must surface as [SyncStatusChanged.SyncFailed] whose
+     * [SyncStatusChanged.SyncFailed.cause] is the [ChangeApplyError] [Document.applyChangePack]
+     * throws (the "SyncFailed case"), not the raw error the operation threw.
+     * `mockkConstructor(SetOperation::class)` forces the throw: no CRDT operation in this
+     * tree naturally throws on a malformed target (a missing parent just reports
+     * `executed = false`, see [SetOperation.execute]'s own `else` branch), so there is no
+     * natural fault to drive this without it.
+     */
+    @Test
+    fun `a remote apply failure during sync publishes SyncFailed with a ChangeApplyError cause`() =
+        runTest {
+            val service = MockYorkieService()
+            val client = newClient(service)
+            client.activateAsync().await()
+            val docKey = "sync-failed-change-apply-error-doc"
+            val document = Document(docKey)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            // The server answers with an ack plus one peer SetOperation -- the mocked
+            // constructor below makes applying it throw.
+            service.pullWithAckPushPullKeys += docKey
+
+            mockkConstructor(SetOperation::class)
+            every {
+                anyConstructed<SetOperation>().execute(any(), any(), any())
+            } throws IllegalStateException("boom")
+
+            val syncEventDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                document.events.filterIsInstance<SyncStatusChanged>().first()
+            }
+
+            val syncResult = client.syncAsync(document).await()
+            assertTrue(syncResult.isFailure)
+
+            val event = syncEventDeferred.await()
+            assertIs<SyncStatusChanged.SyncFailed>(event)
+            val cause = event.cause
+            assertIs<ChangeApplyError>(cause)
+            assertEquals("boom", cause.cause?.message)
+
+            unmockkConstructor(SetOperation::class)
+            client.detachDocument(document).await()
+            client.deactivateAsync().await()
+            client.close()
+        }
 }
 
 /**

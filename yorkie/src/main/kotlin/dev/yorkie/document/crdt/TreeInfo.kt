@@ -154,4 +154,25 @@ internal data class TreeOperationResult(
      * (yorkie-js-sdk#1360).
      */
     val splitSize: Int = 0,
+    /**
+     * The merge-boundary elements this edit removed -- the ones whose
+     * children it moved into the merge target, and so the ones a split
+     * reversing it has to re-create (see `mergeSourceOf` in
+     * `TreeUndoSupport.kt`). A strict subset of [removedNodes], which also
+     * holds whole elements deleted inside the range, their cascade-deleted
+     * descendants and nodes already tombstoned. Style and removeStyle
+     * returns keep the default (they never merge boundaries). Port
+     * yorkie-js-sdk `b173c093` (#1426).
+     */
+    val mergedNodes: List<CrdtTreeNode> = emptyList(),
+    /**
+     * The `[removed element, its replacement]` pairs this edit's own split
+     * step (04) produced -- see `mergeSourceOf` in `TreeUndoSupport.kt`.
+     * Reported so a replica applying the split, its own or a peer's, can
+     * re-point whatever it recorded against the removed one
+     * ([dev.yorkie.document.operation.TreeEditOperation.reconcileNodeID]).
+     * Empty for an edit with no split step. Port yorkie-js-sdk `b173c093`
+     * (#1426).
+     */
+    val splitRecreatedIDs: List<Pair<CrdtTreeNodeID, CrdtTreeNodeID>> = emptyList(),
 )

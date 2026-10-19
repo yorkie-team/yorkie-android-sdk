@@ -217,7 +217,11 @@ class TreeRestoreTest {
 
     // AC11: undo/redo must emit a non-empty opInfos list — an empty one is
     // silently dropped from local history and never propagates remotely
-    // (Document.executeUndoRedo).
+    // (Document.executeUndoRedo). This case's restore revives a single
+    // measurable text piece, so since yorkie-js-sdk `790422ce` (#1421) the
+    // published TreeEditOpInfo carries that piece's real from/to/nodes
+    // instead of the old always-`[0, 0]`, node-less placeholder — still
+    // exactly one entry, now populated.
     @Test
     fun `undo and redo emit non-empty opInfos`() = runTest {
         val document = Document("test-doc")
@@ -499,7 +503,7 @@ class TreeRestoreTest {
             parentID = ghostParentID,
         )
 
-        val (untombstoned, recreated) = tree.restore(listOf(span))
+        val (untombstoned, recreated) = tree.restore(listOf(span), issueTime())
 
         assertTrue(untombstoned.isEmpty())
         assertTrue(recreated.isEmpty())

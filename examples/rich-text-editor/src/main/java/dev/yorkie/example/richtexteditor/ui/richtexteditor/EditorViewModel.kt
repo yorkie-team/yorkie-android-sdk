@@ -17,12 +17,15 @@ import dev.yorkie.core.Client.SyncMode.Realtime
 import dev.yorkie.core.Client.SyncMode.RealtimePushOnly
 import dev.yorkie.document.Document
 import dev.yorkie.document.Document.Event.PresenceChanged
+import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.json.JsonText
 import dev.yorkie.document.operation.OperationInfo
+import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.example.richtexteditor.BuildConfig
 import java.net.URLDecoder
 import kotlin.random.Random
 import kotlin.text.Charsets.UTF_8
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -366,7 +369,7 @@ class EditorViewModel(
 
     fun editContent(changes: TextFieldBuffer.ChangeList, newContent: CharSequence) {
         viewModelScope.launch {
-            document.updateAsync { root, _ ->
+            updateContentThenSync { root, _ ->
                 changes.forEachChange { range, originalRange ->
                     val content = if (range.start == range.end) {
                         ""
@@ -399,8 +402,38 @@ class EditorViewModel(
                         },
                     )
                 }
-            }.await()
+            }
+        }
+    }
+
+    /**
+     * Runs [updater] via [Document.updateAsync] and resyncs the displayed
+     * text from the document on either way a rejected edit can surface.
+     * An updater exception (e.g. an index inside a UTF-16 surrogate pair,
+     * #1447) comes back as `Result.failure`. A root-pass exception
+     * (schema/size validation, `Change.execute`) is rethrown out of the
+     * `Deferred` instead -- `Document.updateAsync` only wraps the
+     * updater's own `runCatching`, not what runs after it on the same
+     * clone (Document.kt `updateAsync`, ~L303-424) -- so checking only
+     * `result.isSuccess` let that case escape `viewModelScope.launch` and
+     * crash the app instead of resyncing, same as the JS SDK's
+     * editor-binding resync (port `6932da6a`). `CancellationException` is
+     * rethrown so `viewModelScope`'s own cancellation is never swallowed.
+     */
+    private suspend fun updateContentThenSync(
+        updater: suspend (root: JsonObject, presence: DocPresence) -> Unit,
+    ) {
+        val succeeded = try {
+            document.updateAsync(updater = updater).await().isSuccess
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+        if (succeeded) {
             syncTextStyle()
+        } else {
+            syncTextSnapShot()
         }
     }
 
@@ -449,7 +482,11 @@ class EditorViewModel(
         val textSelection = textFieldState.selection
         if (textSelection.start < textSelection.end) {
             viewModelScope.launch {
-                document.updateAsync { root, _ ->
+                // Same resync as editContent(): a rejected style call (a
+                // selection that splits a UTF-16 surrogate pair, #1447)
+                // leaves the document unchanged, whether it surfaces as
+                // Result.failure or a rethrown root-pass exception.
+                updateContentThenSync { root, _ ->
                     root.getAs<JsonText>(CONTENT).style(
                         fromIndex = textSelection.start,
                         toIndex = textSelection.end,
@@ -457,8 +494,7 @@ class EditorViewModel(
                             style.key to if (!currentValue) "true" else "null",
                         ),
                     )
-                }.await()
-                syncTextStyle()
+                }
             }
         }
     }

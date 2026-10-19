@@ -68,6 +68,41 @@ class RhtTest {
         assertTrue(target.isEmpty())
     }
 
+    // #1392 (8fb5a71c): the tombstone still STORES the value -- what goes on
+    // the wire is unchanged -- but stops being CHARGED for it, because
+    // RhtNode.dataSize skips a removed node's value. Ported from JS
+    // rht_test.ts "should keep a tombstone storing its value but stop
+    // charging it".
+    @Test
+    fun `keeps a tombstone storing its value but stops charging it`() {
+        val key = "color"
+        val value = "\"red\""
+
+        target.set(key, value, TimeTicket.InitialTimeTicket)
+        val liveSize = target.first().dataSize
+
+        val removal = target.remove(key, TimeTicket.MaxTimeTicket)
+        val tombstone = target.first()
+
+        // What the node stores -- and therefore what the wire carries -- is
+        // unchanged by the removal, so a peer reading our tombstone sees the
+        // same bytes it always did.
+        assertEquals(value, tombstone.value)
+
+        // What it COSTS drops to the key alone, which is what a rebuild of
+        // the same document charges for a removed attribute.
+        val tombstoneSize = tombstone.dataSize
+        assertEquals(liveSize.data - removal.valueDropped.data, tombstoneSize.data)
+        assertEquals(key.length * 2, tombstoneSize.data)
+
+        // A peer that ships the value on a tombstone cannot reintroduce
+        // those bytes either: setInternal keeps what it is given, and the
+        // size still excludes it.
+        val copiedNode = target.deepCopy().first()
+        assertEquals(value, copiedNode.value)
+        assertEquals(tombstoneSize, copiedNode.dataSize)
+    }
+
     @Test
     fun `should handle marshal`() {
         val tests = listOf(

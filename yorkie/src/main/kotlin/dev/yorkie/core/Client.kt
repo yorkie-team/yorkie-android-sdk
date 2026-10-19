@@ -51,7 +51,6 @@ import dev.yorkie.document.Document.Event.StreamConnectionChanged
 import dev.yorkie.document.Document.Event.SyncStatusChanged
 import dev.yorkie.document.RestoreResult
 import dev.yorkie.document.change.Change
-import dev.yorkie.document.change.ChangePack
 import dev.yorkie.document.json.JsonObject
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceInfo
@@ -81,7 +80,9 @@ import dev.yorkie.util.errorMetadataOf
 import dev.yorkie.util.handleConnectException
 import java.io.Closeable
 import java.io.InterruptedIOException
+import java.util.Collections
 import java.util.UUID
+import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -139,6 +140,63 @@ import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
  * overload instead.
  */
 public typealias InitialRoot = Map<String, suspend JsonObject.(key: String) -> Unit>
+
+/**
+ * Percent-encodes the separator and the escape character itself in [part], so a namespace
+ * component can never forge one. Without this, [namespaceOf]'s join is not injective:
+ * `apiKey`/`clientKey` come verbatim from [Client.Options] and `docKey` is caller-supplied, so a
+ * clientKey containing `/` could join to the same namespace as a different
+ * (apiKey, clientKey, docKey) triple — two distinct identities sharing one store namespace and
+ * one session lock. Escaping `%` before `/` keeps the encoding reversible and collision-free.
+ * Ported from JS `client.ts` (`3b9c668c`, #1402).
+ */
+private fun escapeNamespacePart(part: String) = part.replace("%", "%25").replace("/", "%2F")
+
+/**
+ * Builds the `apiKey/clientKey/docKey` identity namespace used for both the `DocStore` key and
+ * the single-active-session lock name (see [Client.storeKey]). Each component is escaped via
+ * [escapeNamespacePart], so the mapping from identity to namespace is one-to-one. Ported from JS
+ * `client.ts` (`3b9c668c`, #1402).
+ */
+private fun namespaceOf(
+    apiKey: String,
+    clientKey: String,
+    docKey: String,
+): String {
+    val safeApiKey = escapeNamespacePart(apiKey)
+    val safeClientKey = escapeNamespacePart(clientKey)
+    val safeDocKey = escapeNamespacePart(docKey)
+    return "$safeApiKey/$safeClientKey/$safeDocKey"
+}
+
+// Backs [generateClientKey]'s "was this key supplied or defaulted?" check. A plain
+// `HashSet` would leak one entry per [Client.Options] ever constructed with a defaulted
+// [Client.Options.key]; `WeakHashMap`-backed membership lets a generated key be reclaimed once
+// nothing else references the `String` anymore (the [Client.Options] instance that minted it, or
+// any copy of its `key`), same lifetime as the string itself. `synchronizedSet` because
+// [Client.Options] instances — hence [generateClientKey] calls — can be constructed from any
+// thread.
+private val generatedClientKeys: MutableSet<String> =
+    Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap()))
+
+/**
+ * Default-value generator for [Client.Options.key]: mints a fresh random key and records it into
+ * [generatedClientKeys], so [Client]'s constructor can later tell a defaulted key apart from one
+ * the caller passed explicitly ([Client.Options] has no public "was key supplied?" bit of its
+ * own, unlike JS's optional `opts.key?: string`). Public signature/`copy`/`equals` of
+ * [Client.Options] are unchanged: this only replaces the default-value *expression*, not the
+ * property's type. A caller who explicitly re-passes a value that happens to already be in the set
+ * (e.g. re-supplying a previously generated key) is indistinguishable from a defaulted key and
+ * warns falsely — accepted: the cost is one extra warning, not a correctness break. CSPRNG:
+ * `UUID.randomUUID()` is RFC 4122 v4 (variant 2) backed by the JDK's `SecureRandom`, so JS's
+ * `3b9c668c` CSPRNG half (replacing a `Math.random()`-seeded `uuid()`) is N/A here — Android's
+ * default was already cryptographically strong (probed at `b1fa0d39`).
+ */
+private fun generateClientKey(): String {
+    val key = UUID.randomUUID().toString()
+    generatedClientKeys.add(key)
+    return key
+}
 
 /**
  * Client that can communicate with the server.
@@ -231,12 +289,39 @@ public class Client(
     // enqueueWrite yet. Entries remove themselves on completion, like persistQueues.
     private val persistTriggers = ConcurrentHashMap<String, Job>()
 
+    init {
+        // A store with no caller-supplied key cannot survive a restart, by construction: the
+        // generated key (see [generateClientKey]) is per-instance, and it scopes both the store
+        // keys ([storeKey]) and the actor the server derives. The next launch addresses a fresh
+        // namespace, so it restores nothing and orphans what the last one wrote — no
+        // actor-mismatch event fires, because the old entries are never reached. Warn where the
+        // two options meet: neither is wrong alone, the loss is silent, and [DocStore] has no
+        // prune to reclaim the orphans. Ported from JS `client.ts`'s constructor warning
+        // (`3b9c668c`/#1402); `Options.key` has no "was it supplied?" bit of its own (a
+        // generator-recorded weak set stands in for JS's `opts.key` optionality), so this reads
+        // [generatedClientKeys] instead of an `opts.key` presence check.
+        if (options.docStore != null && options.key in generatedClientKeys) {
+            logError(
+                "PS",
+                "c:\"${options.key}\" offline persistence needs a stable clientKey: `docStore` " +
+                    "is set but `key` is not, so a random one was generated for this instance. " +
+                    "The next launch addresses a different namespace, silently restoring " +
+                    "nothing and stranding what this one persists. Pass `key` as an opaque " +
+                    "random value your app mints once and persists across launches (not a " +
+                    "user id or a device id).",
+            )
+        }
+    }
+
     /**
-     * Derives the [DocStore] key for [docKey]: `<apiKey>/<clientKey>/<docKey>`. Ported from JS
-     * `client.ts` (`2291bf67`/#1338); `apiKey` may be null on Android (`options.apiKey ?: ""` —
-     * determination, recorded in the build report).
+     * Derives the [DocStore] key for [docKey]: `<apiKey>/<clientKey>/<docKey>`, escaped via
+     * [namespaceOf] so a `/` or `%` inside any of the three parts cannot forge a collision with a
+     * different identity's namespace. The session lock name (`"yorkie-session:${storeKey(...)}"`)
+     * is derived from this same key, so this one change scopes both. Ported from JS `client.ts`
+     * (`2291bf67`/#1338, escaping added in `3b9c668c`/#1402); `apiKey` may be null on Android
+     * (`options.apiKey ?: ""`).
      */
-    private fun storeKey(docKey: String) = "${options.apiKey ?: ""}/${options.key}/$docKey"
+    private fun storeKey(docKey: String) = namespaceOf(options.apiKey ?: "", options.key, docKey)
 
     /**
      * Chains [block] after any already-enqueued write for [key] so concurrent enqueues cannot
@@ -553,10 +638,23 @@ public class Client(
         // Kept because the ordering it asserts is what makes
         // the two-watermark split correct, and a future change
         // that reintroduces trimming would need it again.
+        //
+        // The document's own counter joins the max too (yorkie-js-sdk#1395):
+        // it is the highest clientSeq this client has MINTED, and a minted
+        // sequence is never replayable whether the snapshot carries it or
+        // the log lost it. It normally ties the other two (the counter
+        // equals the last pending entry, or the checkpoint when the queue
+        // is empty), so it only leads for a base THIS branch's own repair
+        // rewrote: the repair below persists the snapshot with the acked
+        // checkpoint carried forward as the counter, deliberately ahead of
+        // the snapshot's own checkpoint. Without it, the first edit
+        // appended after such a repair starts above `watermark + 1` and
+        // the contiguity guard below discards it.
         val carried = document.pendingChangesAfter(0u)
         val snapshotWatermark = maxOf(
             carried.lastOrNull()?.id?.clientSeq ?: 0u,
             document.checkPoint.clientSeq,
+            document.changeID.clientSeq,
         )
 
         // A corrupt or zero-length meta header only loses the header, not the snapshot or the
@@ -653,14 +751,37 @@ public class Client(
                 // restore above: cannot mismatch, so
                 // the RestoreResult is not consulted.
                 document.restoreFromBytes(stored.snapshot)
-                // Re-persists the SAME bytes
-                // fire-and-forget: writing them back
-                // costs no serialization, and
-                // re-serializing here would bake the
-                // rejected header into the new base.
+                // ...except the counter, which is not a
+                // claim about content (yorkie-js-sdk#1395).
+                // The snapshot's own counter can trail the
+                // header's ACKED checkpoint (an edit minted
+                // while a sync was in flight): resuming at
+                // the snapshot's counter mints those
+                // sequences again, the server skips them as
+                // duplicates, and the next ack -- whose
+                // clientSeq covers them -- drops them from
+                // the pending queue as pushed. Carrying the
+                // ACKED CHECKPOINT forward, not the header's
+                // raw counter: the server validates
+                // continuity from the position it holds, so
+                // the next change is that position plus one,
+                // and resuming at the counter could lead
+                // past it and wedge every later push on
+                // ErrInvalidClientSeq.
+                document.advanceClientSeqTo(ackedWatermark)
+                // Re-serializes the repaired document rather
+                // than writing `stored.snapshot` straight
+                // back: restoreFromBytes above already
+                // returned every OTHER field to the
+                // snapshot's own values, so toBytes() here
+                // re-emits that identical envelope with the
+                // advanced counter as the one difference.
+                // Persisting the stale bytes instead would
+                // silently repeat this same repair -- and its
+                // clientSeq reuse -- on the next reload.
                 persistToStore(
                     storeKey(documentKey),
-                    stored.snapshot,
+                    document.toBytes(),
                 )
             } else {
                 document.restoreAppendedChanges(
@@ -672,44 +793,109 @@ public class Client(
     }
 
     /**
-     * The post-sync persist decision, run after [Document.applyChangePack] under the document's
-     * mutex (JS `client.ts`'s sync-site persist). A pull (changes or a snapshot in the response)
-     * rewrites the base, because the append log holds only LOCAL changes — writing meta alone
+     * Chains [decide] onto [key]'s persist queue, exactly the atomic shape [enqueueWrite] uses
+     * for a store write, EXCEPT it runs on [scope]'s own (client) dispatcher instead of
+     * [Dispatchers.IO]: [decide] re-reads [PersistState] and [Document] state that the rest of
+     * this file's persist machinery ([append], [persistAfterSync], [persistBaseOrPoison]) assumes
+     * is confined to the client dispatcher, never [Dispatchers.IO]. The job this installs joins
+     * [ConcurrentHashMap.compute]'s own `previous` parameter -- the value already occupying
+     * [persistQueues]`[key]` at the moment this is called, captured atomically before the new job
+     * starts running -- never the job it is itself installing, so there is no self-join deadlock.
+     *
+     * That job keeps occupying [persistQueues]`[key]` for its entire body, including the suspend
+     * call into [decide]: so a [drainPersist]/[drainAllPersists] call (and so [detachInternal]/
+     * [close]) that lands while [decide] is still running sees an ordinary pending write and waits
+     * for it, the same as any [enqueueWrite] job. Whatever [decide] itself chains -- through
+     * [persistBaseOrPoison] or [saveMetaToStore], both of which call [enqueueWrite] -- replaces
+     * this job as the queue's new tail before this job's own body returns, so a drain that joins
+     * this job and rechecks the map keeps going and joins that write too, with no gap where the
+     * decision is "between" queue entries and invisible to a drain. [NonCancellable] for the same
+     * reason [enqueueWrite]'s own job is: this can be sitting on `previous?.join()` behind an
+     * arbitrarily slow earlier write when [close] cancels [scope], and letting that cancel
+     * [decide] here would silently drop the post-sync persist decision instead of letting it run
+     * to completion independently of the bounded drain -- the same contract [enqueueWrite]'s write
+     * already has.
+     */
+    private fun enqueueDecision(key: String, decide: suspend () -> Unit): Job {
+        val job = checkNotNull(
+            persistQueues.compute(key) { _, previous ->
+                scope.launch {
+                    withContext(NonCancellable) {
+                        previous?.join()
+                        runCatching { decide() }.onFailure {
+                            logError("PS", "persist decision for $key failed", it)
+                        }
+                    }
+                }
+            },
+        )
+        job.invokeOnCompletion { persistQueues.remove(key, job) }
+        return job
+    }
+
+    /**
+     * The post-sync persist decision, run after [Document.applyChangePack]/
+     * [Document.acknowledgePushedChanges] under the document's mutex (JS `client.ts`'s sync-site
+     * persist). [movedRoot] is true only when the response's remote state (changes or a snapshot)
+     * was actually applied to the root this sync -- a dropped push-only/sync-off pack never moves
+     * it, even though it carried changes or a snapshot (#1401, `bed81143`). A moved root rewrites
+     * the base, because the append log holds only LOCAL changes — writing meta alone
      * would advance the persisted `serverSeq` past a root the store never received. A poisoned
      * pure ack repairs the same way: the append's repair-on-next-edit path cannot cover a
-     * client with nothing left to edit. A healthy pure ack writes meta only, leaving the
-     * snapshot and the log untouched.
+     * client with nothing left to edit. A healthy pure ack (including a dropped pack's ack)
+     * writes meta only, leaving the snapshot and the log untouched.
      *
-     * Two Kotlin-forced guards keep meta from ever leading the log. JS persists synchronously inside the event publish,
-     * so by the time its sync site runs every local change is already in the log; Android's
-     * the triggered append is asynchronous. A base write needs neither guard — it embeds the whole pending
-     * queue. Before a meta-only write, first, the catch-up [append] runs — cheap and idempotent
-     * ([DocStore.appendChange] is an upsert, and the watermark skips what is carried) — closing
-     * the window where the triggered append has not run yet for a change still pending. Second, a
-     * change the server acked that the log never received (the triggered append's dispatcher hop
-     * resumed after [Document.applyChangePack] had already dropped it from the pending queue, so
-     * no later append can ever see it) shows as a checkpoint ahead of the watermark; that takes
-     * the snapshot-repair branch, whose base embeds the acked content, instead of a meta-only
-     * write that would claim a position the log cannot back.
+     * The pure-ack branch cannot decide from what [append] leaves synchronously behind: [append]
+     * chains its write via [enqueueWrite] and returns before the write lands (JS persists
+     * synchronously inside the event publish, so by the time its sync site runs every local
+     * change is already in the log; Android's triggered append is asynchronous), so a write that
+     * is about to fail -- and poison the key -- can still be in flight right after [append]
+     * returns. Deciding anyway would read a healthy, un-poisoned state and queue the cheap
+     * meta-only write over the hole that failure is about to leave (JS `decide` deferral,
+     * `client.ts`: `queued.then(decide, decide)`).
+     *
+     * So the decision itself -- re-sampling [PersistState] and choosing the repair or meta-only
+     * branch -- is deferred via [enqueueDecision] to run once the queue [append] just chained onto
+     * has settled, INSTEAD OF being awaited here under [resource]'s mutex: this function used to
+     * block on `persistQueues[key]?.join()`, bounded to 5s so an app-supplied store that never
+     * completes a write could not wedge every sync of this document (and every other attachment
+     * queued behind it in the same sync pass) forever. [enqueueDecision] needs no such bound --
+     * nothing is waiting under a mutex for it any more, so it can simply wait for the queue to
+     * settle for however long that takes; [drainPersist]/[drainAllPersists] still give a caller a
+     * BOUNDED chance to observe it finishing, exactly as they already do for a slow store write.
+     *
+     * Deferred, the decision re-reads everything at the moment it actually runs rather than the
+     * moment [persistAfterSync] returned: [document] may have been removed or detached by then
+     * (checked first, mirroring JS `decide`'s own `doc.getStatus() === Removed` guard -- a
+     * removal learned from this very sync, or a concurrent detach/remove, must not resurrect an
+     * envelope or write stale meta over an entry a removal already cleared), and a LATER sync's
+     * own deferred decision for the same key chains strictly after this one on the same queue (the
+     * mechanism [enqueueDecision] documents), so it only ever re-samples a watermark this decision
+     * already finished advancing -- never races it to write stale meta over a newer base.
      */
     private suspend fun persistAfterSync(
         attachment: Attachment<out Attachable>,
-        responsePack: ChangePack,
+        movedRoot: Boolean,
     ) {
         val document = attachment.resource as? Document ?: return
         val key = storeKey(document.getKey())
         val state = persistStates[key] ?: return
-        if (responsePack.hasChanges || responsePack.hasSnapshot || state.poisoned) {
+        if (movedRoot || state.poisoned) {
             persistBaseOrPoison(key, document)
             return
         }
         append(attachment)
-        val caughtUp = persistStates[key] ?: return
-        val ackedPastLog = document.checkPoint.clientSeq > caughtUp.lastAppendedClientSeq
-        if (caughtUp.poisoned || ackedPastLog) {
-            persistBaseOrPoison(key, document)
-        } else {
-            saveMetaToStore(key, document.metaToBytes())
+        enqueueDecision(key) {
+            if (document.getStatus() == ResourceStatus.Removed) {
+                return@enqueueDecision
+            }
+            val caughtUp = persistStates[key] ?: return@enqueueDecision
+            val ackedPastLog = document.checkPoint.clientSeq > caughtUp.lastAppendedClientSeq
+            if (caughtUp.poisoned || ackedPastLog) {
+                persistBaseOrPoison(key, document)
+            } else {
+                saveMetaToStore(key, document.metaToBytes())
+            }
         }
     }
 
@@ -992,11 +1178,17 @@ public class Client(
                             attachment.updateHeartbeatTime()
                         }
 
+                        // Captured from the mode the REQUEST was sent in -- not the
+                        // attachment's CURRENT mode, read again below after the RPC
+                        // returns. The mode can change while the request is in
+                        // flight (changeSyncMode), and it is the mode the request
+                        // was sent in that decided whether anything was pulled.
+                        val requestPushOnly = syncMode == SyncMode.RealtimePushOnly
                         val request = pushPullChangesRequest {
                             clientId = requireClientId()
                             changePack = resource.createChangePack().toPBChangePack()
                             documentId = attachment.resourceId
-                            pushOnly = syncMode == SyncMode.RealtimePushOnly
+                            pushOnly = requestPushOnly
                             disableGc = attachment.disableGC
                         }
                         val response = service.pushPullChanges(
@@ -1005,26 +1197,51 @@ public class Client(
                         ).getOrThrow()
                         val responsePack = response.changePack.toChangePack()
                         // NOTE(7hong13, chacha912, hackerwins): If syncLoop already executed with
-                        // PushPull, ignore the response when the syncMode is PushOnly.
+                        // PushPull, drop the response's remote state (changes OR a snapshot) when
+                        // the syncMode is PushOnly/SyncOff -- but the pushed changes still need
+                        // their ack (and the pack's epoch/removal flag), or they are re-pushed and
+                        // double-counted by the server's next snapshot. Ports JS SDK `client.ts`
+                        // `dropsRemoteState` (`bed81143`, #1401): the OLD guard tested only
+                        // `hasChanges`, so a snapshot-only pack (the server's answer once another
+                        // client pushed the document past the snapshot threshold) still replaced
+                        // the root here. The tail below (heartbeat, Synced, the removal check)
+                        // always runs now -- unlike the old `return@runCatching`, which also
+                        // skipped the ack for a dropped CHANGES pack.
+                        //
+                        // The reply's CONTENT does not enter the decision either (JS SDK
+                        // `client.ts` `b34118b4`, yorkie-js-sdk#1393): a push-only reply with
+                        // neither changes nor a snapshot still carries the minimum version
+                        // vector, and applying it would run `garbageCollect` with that vector --
+                        // purging tombstones that this document's own unpulled remote changes are
+                        // anchored on. Those changes are delivered on the first full pull after
+                        // the pause resumes and are applied before THAT pull's vector collects
+                        // anything; collecting here instead leaves the document unable to apply
+                        // them ("cannot find node of CrdtTreePos"), stuck on a pack the server
+                        // redelivers forever. So while a request was sent PushOnly, or the
+                        // attachment is CURRENTLY PushOnly/SyncOff, nothing of the reply but the
+                        // push ack is taken, regardless of what the reply carries.
                         val currentSyncMode = attachments[documentKey]?.syncMode
-                        if (responsePack.hasChanges &&
-                            (
-                                currentSyncMode == SyncMode.RealtimePushOnly ||
-                                    currentSyncMode == SyncMode.RealtimeSyncOff
-                                )
-                        ) {
-                            return@runCatching
+                        val hasRemoteState =
+                            responsePack.hasChanges || responsePack.hasSnapshot
+                        val dropsRemoteState = requestPushOnly ||
+                            currentSyncMode == SyncMode.RealtimePushOnly ||
+                            currentSyncMode == SyncMode.RealtimeSyncOff
+                        if (dropsRemoteState) {
+                            resource.acknowledgePushedChanges(responsePack)
+                        } else {
+                            resource.applyChangePack(responsePack)
                         }
-                        resource.applyChangePack(responsePack)
+                        val movedRoot = !dropsRemoteState && hasRemoteState
                         // An ack-only push advances the checkpoint and drops the
                         // pushed changes from localChanges without recording a new
                         // local change, so the Document.onLocalChange hook alone
                         // would leave a stale envelope in the store. Gated on
                         // persistsToStore like the other site.
-                        // persistAfterSync branches on whether the response carried
-                        // remote content.
+                        // persistAfterSync branches on movedRoot -- whether the
+                        // document's root actually moved this sync (a dropped pack's
+                        // ack, like a healthy pure ack, never moves it).
                         if (attachment.persistsToStore) {
-                            persistAfterSync(attachment, responsePack)
+                            persistAfterSync(attachment, movedRoot)
                         }
                         attachment.resource.publish(
                             event = SyncStatusChanged.Synced,
@@ -2922,6 +3139,17 @@ public class Client(
      */
     public enum class SyncMode(val needRealTimeSync: Boolean) {
         Realtime(true),
+
+        /**
+         * `RealtimePushOnly` indicates that only local changes are automatically pushed.
+         *
+         * The reply to a push-only request is taken as a push ack only: its client-seq
+         * acknowledgement and pack metadata, never remote state and never its version
+         * vector. Garbage-collecting with that vector would purge tombstones that the
+         * remote changes this document has not pulled yet may anchor on, leaving them
+         * unapplicable once it resumes pulling (JS SDK `client.ts` `b34118b4`,
+         * yorkie-js-sdk#1393).
+         */
         RealtimePushOnly(true),
         RealtimeSyncOff(false),
 
@@ -2940,10 +3168,38 @@ public class Client(
      */
     public data class Options(
         /**
-         * Client key used to identify the client.
-         * If not set, a random key is generated.
+         * Client key used to identify the client. If not set, a random key is generated —
+         * [generateClientKey], freshly minted per [Client] instance, so it differs on every
+         * launch.
+         *
+         * **Offline persistence requires a stable key**: the server derives the actor stamped
+         * into every change from the project and this key, and it also scopes the [docStore]
+         * keys (`apiKey/clientKey/docKey`, [Client.storeKey]). A new key therefore does not
+         * address the previous launch's entries at all — the restore finds nothing, the
+         * un-pushed edits are lost *silently* (no actor-mismatch diagnostic fires: that guard in
+         * [Document.restoreFromBytes] only fires when the *same* store key is reached under a
+         * different actor, which a fresh key by definition never does), and the previous
+         * namespace is orphaned. [DocStore] exposes no enumeration or prune, so nothing can
+         * reclaim those entries afterwards — a durable backend grows without bound, one dead
+         * namespace per launch.
+         *
+         * An app setting [docStore] must therefore pass a key it persists itself and reuses on
+         * the next launch. Make it an **opaque random value the app mints once** — a
+         * `UUID.randomUUID()` kept in local storage, say — scoped to the signed-in user and
+         * cleared on sign-out. Do **not** derive it from a user id, a device id, an email, or
+         * anything else guessable or shared:
+         * - The key is an identifier, not a credential. It is sent verbatim in the activate
+         *   request and nothing proves the caller owns it, so a guessable key lets another
+         *   client of the same project activate under the same derived actor and attribute
+         *   changes to it.
+         * - A key shared between users of one device gives them one store namespace:
+         *   [attachDocument] loads and rehydrates the persisted bytes locally before the attach
+         *   RPC, so the previous user's document content and un-pushed edits would surface in
+         *   the next user's session ahead of any server authorization.
+         *
+         * Ported from JS `client.ts`'s rewritten `ClientOptions.key` JSDoc (`3b9c668c`/#1402).
          */
-        public val key: String = UUID.randomUUID().toString(),
+        public val key: String = generateClientKey(),
         /**
          * API key of the project used to identify the project.
          */
@@ -3016,7 +3272,19 @@ public class Client(
          * previously [Document.toBytes]-persisted envelope before contacting the server, and the
          * document is persisted again on every local change, local presence change, and
          * successful sync. Unset (the default) disables persistence entirely — no load, no lease,
-         * no writes. Ported from JS `client.ts`'s `store` option (`2291bf67`/#1338).
+         * no writes.
+         *
+         * You **must** also set [key] to an opaque random value the app mints once and reuses
+         * across launches. Both the store keys and the actor the recovery is keyed by are derived
+         * from it, and the default is a fresh random key per [Client], so leaving it unset means
+         * every restart silently loses every un-pushed change and orphans the previous launch's
+         * entries. This cannot be defaulted correctly — only the app knows what identity should
+         * outlive the process — so the constructor warns rather than guessing (`init {}`).
+         * See [key] for why the value must not be a user id, a device id, or anything else
+         * guessable or shared between users of one device.
+         *
+         * Ported from JS `client.ts`'s `store` option (`2291bf67`/#1338); the `key`-pairing
+         * requirement and the constructor warning are from the rewritten JSDoc (`3b9c668c`/#1402).
          */
         public val docStore: DocStore? = null,
         /**

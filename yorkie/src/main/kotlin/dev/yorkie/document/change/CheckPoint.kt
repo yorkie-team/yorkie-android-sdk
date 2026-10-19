@@ -36,6 +36,14 @@ internal data class CheckPoint(
         }
     }
 
+    /**
+     * Returns a string containing the metadata of this checkpoint for debugging.
+     * Ported from JS SDK `checkpoint.ts` `toTestString` (`4251ab7e`, #1403).
+     */
+    internal fun toTestString(): String {
+        return "serverSeq=$serverSeq, clientSeq=$clientSeq"
+    }
+
     companion object {
         val InitialCheckPoint = CheckPoint(0, 0u)
     }

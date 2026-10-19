@@ -133,4 +133,12 @@ internal class ChangeContext(
     fun accGC(diff: DataSize) {
         root.accGC(diff)
     }
+
+    /**
+     * `accMovedElement` books the size a move added to the moved element. See
+     * [CrdtRoot.accMovedElement].
+     */
+    fun accMovedElement(element: CrdtElement, diff: DataSize) {
+        root.accMovedElement(element, diff)
+    }
 }

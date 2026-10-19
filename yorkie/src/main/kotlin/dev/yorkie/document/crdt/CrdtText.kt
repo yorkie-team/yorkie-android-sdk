@@ -1,12 +1,15 @@
 package dev.yorkie.document.crdt
 
 import android.annotation.SuppressLint
+import dev.yorkie.document.json.ensureNoLoneSurrogate
+import dev.yorkie.document.json.ensureUtf16Boundary
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.SplayTreeSet
 import dev.yorkie.util.addDataSizes
+import dev.yorkie.util.subDataSize
 import java.util.TreeMap
 
 /**
@@ -21,9 +24,14 @@ internal data class CrdtText(
 
     override val gcPairs: List<GCPair<*>>
         get() = buildList {
-            // Only reached when a root is built from a snapshot, where
-            // docSize.live counted visible nodes only. Tombstoned nodes were
-            // never part of live, so their pairs carry gcOnlySize.
+            // Reached on every element registration — constructor scan,
+            // snapshot load, a remote/replayed Set/Add/ArraySet payload, and
+            // an undo's deep copy of a removed container (CrdtRoot
+            // .registerInternalGCPairs calls GCCrdtElement.gcPairs for all of
+            // these, not only snapshot load). getDataSize() (live) skips
+            // removed nodes, so a tombstoned node's size was never folded
+            // into live and its pair carries gcOnlySize here instead of a
+            // size swap.
             //
             // node.value.gcPairs (TextValue.getDataSize skips removed
             // attributes) never covers a node's OWN removed attributes
@@ -289,6 +297,10 @@ internal data class CrdtText(
         versionVector: VersionVector? = null,
     ): TextStyleResult {
         var diff = DataSize(data = 0, meta = 0)
+        // #1392: a removeStyle landing on a node that is itself a tombstone
+        // drops its attribute's value out of gc, not live — the text's own
+        // canStyle admits such a node, but it was never counted into live.
+        var gcDiff = DataSize(data = 0, meta = 0)
 
         val (_, toRight, diffTo) = rgaTreeSplit.findNodeWithSplit(range.second, executedAt)
         val (_, fromRight, diffFrom) = rgaTreeSplit.findNodeWithSplit(range.first, executedAt)
@@ -329,7 +341,16 @@ internal data class CrdtText(
                 // The node holding the attribute may itself be a tombstone
                 // (canStyle admits one) — attrGcPair's third question.
                 var wasLive = node.value.getAttrs().has(key)
-                node.value.getAttrs().remove(key, executedAt).forEach { rhtNode ->
+                val (gcNodes, valueDropped) = node.value.getAttrs().remove(key, executedAt)
+                // The tombstone is not charged for its value (#1392); those
+                // bytes leave whichever side was holding them. See
+                // attrGcPair for the same live/gc split.
+                if (nodeIsLive) {
+                    diff = subDataSize(diff, valueDropped)
+                } else {
+                    gcDiff = subDataSize(gcDiff, valueDropped)
+                }
+                gcNodes.forEach { rhtNode ->
                     gcPairs.add(attrGcPair(node.value, rhtNode, wasLive, nodeIsLive))
                     // Only the node replacing the live value takes a size
                     // out of live; a second one in the same call is the
@@ -360,20 +381,31 @@ internal data class CrdtText(
         // pendingGCPairs.
         gcPairs.addAll(rgaTreeSplit.drainAllPendingGcPairs())
 
-        // removeStyle's attribute accounting moves entirely through the
+        // Most of removeStyle's attribute accounting moves through the
         // attrGcPair-registered gcPairs above (CrdtRoot.registerGCPair moves
-        // the bytes live -> gc when they are registered); diff here is only
-        // the two boundary splits, always live-bound.
+        // the TOMBSTONE's own, now key-only, size live -> gc when it is
+        // registered) plus the two boundary splits (live-bound, folded into
+        // `diff` up front). The dropped VALUE bytes are a separate leg
+        // (#1392): a tombstone is never charged for its value, so
+        // registerGCPair's node-dataSize-based move does not reach them —
+        // `diff`/`gcDiff` carry that subtraction out of whichever side
+        // (live for a live node, gc for a node that is itself a tombstone)
+        // was still holding them.
         return TextStyleResult(
             changes,
             gcPairs,
-            DocSize(live = diff, gc = DataSize(0, 0)),
+            DocSize(live = diff, gc = gcDiff),
             prevAttributes,
         )
     }
 
     /**
      * Returns a pair of [RgaTreeSplitPos] of the given integer offsets.
+     * Unchecked: an index inside a UTF-16 surrogate pair resolves to
+     * whichever position [RgaTreeSplit.indexToPos] gives it. Remote
+     * operations, undo/redo and selection conversions all read a position
+     * through this function and must never throw; [createRange] is the
+     * checked counterpart local edits/styles go through instead.
      */
     fun indexRangeToPosRange(fromIndex: Int, toIndex: Int): RgaTreeSplitPosRange {
         val fromPos = rgaTreeSplit.indexToPos(fromIndex)
@@ -382,6 +414,94 @@ internal data class CrdtText(
         } else {
             RgaTreeSplitPosRange(fromPos, rgaTreeSplit.indexToPos(toIndex))
         }
+    }
+
+    /**
+     * Returns the position range of the given index range for a LOCAL edit
+     * or style. Unlike [indexRangeToPosRange], it throws
+     * [dev.yorkie.util.YorkieException] when an index splits a UTF-16
+     * surrogate pair.
+     *
+     * [content] is given for an edit and omitted for a style. It is also
+     * checked for a lone surrogate: storing one already diverges across SDKs
+     * (Go turns it into U+FFFD, this SDK keeps the raw code unit), and the
+     * lone half then pairs with whatever code unit it is stored next to,
+     * turning the index at that seam into one [validateUtf16Boundary] would
+     * refuse for as long as the text lives. A peer running an SDK without
+     * this check can still send such content over the wire — this is a
+     * local-edit contract, not a trust boundary.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447) `CRDTText.createRange`.
+     */
+    fun createRange(
+        fromIndex: Int,
+        toIndex: Int,
+        content: String? = null,
+    ): RgaTreeSplitPosRange {
+        if (!content.isNullOrEmpty()) {
+            ensureNoLoneSurrogate(content)
+        }
+        val range = indexRangeToPosRange(fromIndex, toIndex)
+        validateUtf16Boundary(range.first)
+        if (fromIndex != toIndex) {
+            validateUtf16Boundary(range.second)
+        }
+        return range
+    }
+
+    /**
+     * Throws when [pos] splits a surrogate pair. At either end of the node
+     * it resolves to, this reads the nearest neighbouring node that still
+     * contributes content: a local split can leave one half of a pair in
+     * this node and the other half in the node it was split from, and
+     * [RgaTreeSplit.indexToPos] always resolves a seam to the node on its
+     * LEFT, so `offset == content.length` is the side an ordinary index
+     * normally reaches.
+     *
+     * Ported from yorkie-js-sdk `6932da6a` (#1447)
+     * `CRDTText.validateUTF16Boundary`.
+     */
+    private fun validateUtf16Boundary(pos: RgaTreeSplitPos) {
+        val node = rgaTreeSplit.findNode(pos.id)
+        val offset = pos.relativeOffSet
+        val content = indexedContent(node)
+
+        var before = content.getOrNull(offset - 1)
+        var after = content.getOrNull(offset)
+        if (offset == 0) {
+            before = neighborContent(node) { it.prev }.lastOrNull()
+        }
+        if (offset == content.length) {
+            after = neighborContent(node) { it.next }.firstOrNull()
+        }
+        ensureUtf16Boundary(before, after)
+    }
+
+    /**
+     * Returns the text [node] contributes to the index: empty for the head
+     * sentinel (which carries no real [TextValue] — its [RgaTreeSplitNode.value]
+     * is an unrelated placeholder object no [T] actually owns) and for a
+     * tombstone, whose text the index no longer counts.
+     */
+    private fun indexedContent(node: RgaTreeSplitNode<TextValue>): String {
+        return if (node.isRemoved || node === rgaTreeSplit.head) "" else node.value.content
+    }
+
+    /**
+     * Returns the content of the nearest node on the [step] side that still
+     * contributes text, or an empty string when there is none.
+     */
+    private fun neighborContent(
+        node: RgaTreeSplitNode<TextValue>,
+        step: (RgaTreeSplitNode<TextValue>) -> RgaTreeSplitNode<TextValue>?,
+    ): String {
+        var current = step(node)
+        while (current != null) {
+            val content = indexedContent(current)
+            if (content.isNotEmpty()) return content
+            current = step(current)
+        }
+        return ""
     }
 
     /**

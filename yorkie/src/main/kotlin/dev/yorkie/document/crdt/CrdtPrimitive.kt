@@ -149,21 +149,29 @@ internal data class CrdtPrimitive(
         }
 
         fun fromBytes(type: Type, bytes: ByteString): Any? {
-            fun ByteString.asByteBuffer() = ByteBuffer.wrap(
-                toByteArray(),
+            // A fixed-width reader trusts a peer's payload length. JS reads a
+            // short payload as its zero-padded value instead of throwing (and
+            // zero-pads the remaining width on a longer one, it still reads
+            // only the leading `width` bytes); ported here by copying into a
+            // right-sized zero-filled array before reading (`ByteArray.copyOf`
+            // pads with zero at the end / truncates). Never mutates `bytes`
+            // itself — `toByteArray()` is already a defensive copy (ac60f3d9,
+            // #1422).
+            fun ByteString.fixedWidthBuffer(width: Int) = ByteBuffer.wrap(
+                toByteArray().copyOf(width),
             ).order(
                 ByteOrder.LITTLE_ENDIAN,
             )
 
             return when (type) {
                 Type.Null -> null
-                Type.Boolean -> bytes.first().toInt() == 1
-                Type.Integer -> bytes.asByteBuffer().int
-                Type.Long -> bytes.asByteBuffer().long
-                Type.Double -> bytes.asByteBuffer().double
+                Type.Boolean -> bytes.fixedWidthBuffer(1).get(0).toInt() == 1
+                Type.Integer -> bytes.fixedWidthBuffer(Int.SIZE_BYTES).int
+                Type.Long -> bytes.fixedWidthBuffer(Long.SIZE_BYTES).long
+                Type.Double -> bytes.fixedWidthBuffer(Double.SIZE_BYTES).double
                 Type.String -> bytes.toStringUtf8()
                 Type.Bytes -> bytes
-                Type.Date -> Date(bytes.asByteBuffer().long)
+                Type.Date -> Date(bytes.fixedWidthBuffer(Long.SIZE_BYTES).long)
             }
         }
     }

@@ -94,6 +94,65 @@ class CrdtCounterTest {
         assertArrayEquals(longInBytes, CrdtCounter(333L, InitialTimeTicket).toBytes())
     }
 
+    // Port of yorkie-js-sdk primitive_test.ts / counter_test.ts (ac60f3d9,
+    // #1422): a short counter payload reads as its zero-padded value
+    // instead of throwing. Probe at b1fa0d39 confirmed BufferUnderflowException
+    // on both counter types for a short payload.
+    @Test
+    fun `short Int and Long counter payloads decode zero-padded`() {
+        // byte0=LSB .. zero-padded upper bytes: 1 + 2*256 = 513
+        val shortTwoBytes = byteArrayOf(1, 2)
+        assertEquals(513, shortTwoBytes.asCounterValue(CrdtCounter.CounterType.Int))
+        assertEquals(513, shortTwoBytes.asCounterValue(CrdtCounter.CounterType.IntDedup))
+
+        // 1 + 2*256 + 3*65536 = 197_121
+        val shortThreeBytes = byteArrayOf(1, 2, 3)
+        assertEquals(197_121L, shortThreeBytes.asCounterValue(CrdtCounter.CounterType.Long))
+
+        // 0 bytes zero-pads to 0.
+        val empty = ByteArray(0)
+        assertEquals(0, empty.asCounterValue(CrdtCounter.CounterType.Int))
+        assertEquals(0L, empty.asCounterValue(CrdtCounter.CounterType.Long))
+    }
+
+    @Test
+    fun `over-length Int and Long counter payloads decode from only the leading width bytes`() {
+        val trailingGarbage = byteArrayOf(9, 9, 9, 9)
+
+        val fullInt = ByteBuffer.allocate(Int.SIZE_BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(39)
+            .array()
+        assertEquals(
+            39,
+            (fullInt + trailingGarbage).asCounterValue(CrdtCounter.CounterType.Int),
+        )
+
+        val fullLong = ByteBuffer.allocate(Long.SIZE_BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .putLong(333L)
+            .array()
+        assertEquals(
+            333L,
+            (fullLong + trailingGarbage).asCounterValue(CrdtCounter.CounterType.Long),
+        )
+    }
+
+    // The #1422 "shared-buffer write" headline is about Primitive.fromBytes,
+    // not the counter path, but asCounterValue reads off the SAME `copyOf`
+    // defensive-copy policy; pin that it never mutates the ByteArray handed
+    // to it (unlike a ByteString, a plain ByteArray IS mutable and shared by
+    // reference, so this guarantee is load-bearing here, not just N/A).
+    @Test
+    fun `asCounterValue never mutates its input ByteArray`() {
+        val source = byteArrayOf(1, 2, 3)
+        val before = source.copyOf()
+
+        source.asCounterValue(CrdtCounter.CounterType.Long)
+
+        assertArrayEquals(before, source)
+    }
+
     @Suppress("INTEGER_OVERFLOW")
     @Test
     fun `verify increase allows Int overflow`() {

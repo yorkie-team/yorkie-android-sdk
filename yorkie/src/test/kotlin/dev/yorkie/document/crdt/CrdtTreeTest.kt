@@ -66,17 +66,26 @@ class CrdtTreeTest {
         elem.append(text)
         assertEquals("<p>hello</p>", elem.toXml())
 
+        // Rht.toXml renders the logical (JSON-unwrapped) value, same as JS
+        // `toXML` reads it back through `parseAttrValue`: a JSON-quoted
+        // string stored `"t"` unwraps to the bare `t`, while a non-string
+        // JSON value (an object here) stays exactly as stored (port JS
+        // `document/crdt/tree_test.ts`, `6932da6a`, #1447 -- the test there
+        // moved from the pre-escape `b=""t""` expectation to
+        // `b="t" ... img="{&quot;src&quot;:&quot;yorkie.png&quot;}"`, which
+        // this mirrors).
         val elemWithAttrs = CrdtTreeElement(DIP, "p")
         elemWithAttrs.append(CrdtTreeText(DIP, "hello"))
         elemWithAttrs.setAttributes(mapOf("b" to "\"t\"", "i" to "true"), TimeTicket.MaxTimeTicket)
-        assertEquals("<p b=\"\"t\"\" i=\"true\">hello</p>", elemWithAttrs.toXml())
+        assertEquals("<p b=\"t\" i=\"true\">hello</p>", elemWithAttrs.toXml())
 
         elemWithAttrs.setAttributes(
             mapOf("img" to "{\"src\":\"yorkie.png\"}"),
             TimeTicket.MaxTimeTicket,
         )
         assertEquals(
-            "<p b=\"\"t\"\" i=\"true\" img=\"{\"src\":\"yorkie.png\"}\">hello</p>",
+            "<p b=\"t\" i=\"true\" img=\"{&quot;src&quot;:&quot;yorkie.png&quot;}\">" +
+                "hello</p>",
             elemWithAttrs.toXml(),
         )
     }
@@ -672,39 +681,69 @@ class CrdtTreeTest {
     }
 
     @Test
-    fun `should require a parent when propagating style to a split sibling`() {
-        // given a split tree whose second sibling was physically removed from its parent
+    fun `should drop a split sibling with no parent from the reported changes`() {
+        // given a split tree whose second sibling was physically removed
+        // from its parent (detached -- still registered by id and still
+        // linked via insNextID, but no longer reachable through the tree
+        // structure)
         val tree = createSplitTree()
-        tree.root.removeChild(tree.root.children[1])
+        val detachedSibling = tree.root.children[1]
+        tree.root.removeChild(detachedSibling)
 
-        // when styling the first <p>, unaware of the split,
-        // then the parent invariant of the split sibling is enforced
-        assertFailsWith<IllegalArgumentException> {
-            tree.style(
-                tree.indexRangeToPosRange(0 to 2),
-                mapOf("bold" to "true"),
-                tick(6),
-                VersionVector(mapOf(ACTOR_A to 4L)),
-            )
-        }
+        // when styling the first <p>, unaware of the split: the detached
+        // sibling is still an unknown split sibling styleTargets carries
+        // the style onto, but styleChangeRange (b69169c0, #1404) now
+        // reports no change for a parentless node instead of the
+        // `requireNotNull` throw this test used to pin (JS case
+        // "styleChangeRange emits no change for a parentless node") --
+        // propagation no longer requires every reached node to have a
+        // parent, only every REPORTED one.
+        val result = tree.style(
+            tree.indexRangeToPosRange(0 to 2),
+            mapOf("bold" to "true"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the attribute write still reaches the detached sibling...
+        assertTrue(detachedSibling.getAttrs().has("bold"))
+        // ...but only the live, parented first <p> is in the reported
+        // changes.
+        assertEquals(1, result.changes.size)
+        assertEquals("""<root><p bold="true">a</p></root>""", tree.toXml())
     }
 
     @Test
-    fun `should require a parent when propagating remove-style to a split sibling`() {
-        // given a styled split tree whose second sibling was physically removed from its parent
+    fun `should drop a split sibling with no parent from the reported remove-style changes`() {
+        // given a styled split tree whose second sibling was physically
+        // removed from its parent (detached -- still registered by id and
+        // still linked via insNextID, but no longer reachable through the
+        // tree structure)
         val tree = createSplitTree(attributes = mapOf("bold" to "true"))
-        tree.root.removeChild(tree.root.children[1])
+        val detachedSibling = tree.root.children[1]
+        tree.root.removeChild(detachedSibling)
 
-        // when removing the style from the first <p>, unaware of the split,
-        // then the parent invariant of the split sibling is enforced
-        assertFailsWith<IllegalArgumentException> {
-            tree.removeStyle(
-                tree.indexRangeToPosRange(0 to 2),
-                listOf("bold"),
-                tick(6),
-                VersionVector(mapOf(ACTOR_A to 4L)),
-            )
-        }
+        // when removing the style from the first <p>, unaware of the split:
+        // the detached sibling is still an unknown split sibling styleTargets
+        // carries the remove-style onto, but styleChangeRange (b69169c0,
+        // #1404) now reports no change for a parentless node instead of the
+        // `requireNotNull` throw this test used to pin (JS case "styleChangeRange
+        // emits no change for a parentless node") -- propagation no longer
+        // requires every reached node to have a parent, only every REPORTED
+        // one.
+        val result = tree.removeStyle(
+            tree.indexRangeToPosRange(0 to 2),
+            listOf("bold"),
+            tick(6),
+            VersionVector(mapOf(ACTOR_A to 4L)),
+        )
+
+        // then the attribute removal still reaches the detached sibling...
+        assertFalse(detachedSibling.getAttrs().has("bold"))
+        // ...but only the live, parented first <p> is in the reported
+        // changes.
+        assertEquals(1, result.changes.size)
+        assertEquals("<root><p>a</p></root>", tree.toXml())
     }
 
     @Test

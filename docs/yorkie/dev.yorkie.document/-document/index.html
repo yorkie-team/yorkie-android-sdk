@@ -45,7 +45,7 @@
                     </a>
             </div>
             <div class="library-version">
-0.7.24            </div>
+0.7.25            </div>
         </div>
         <div class="filter-section" id="filter-section">
                 <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
@@ -455,6 +455,36 @@
               <div>
                 <div class="title">
                   <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="has-local-changes.html"><span class="token function">hasLocalChanges</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph"><code class="lang-kotlin">hasLocalChanges</code> returns whether this document has local changes or not.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="150031360%2FFunctions%2F-1590045667" anchor-label="hasMintedOperations" id="150031360%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="has-minted-operations.html"><span>has</span><wbr></wbr><span>Minted</span><wbr></wbr><span><span>Operations</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="150031360%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="has-minted-operations.html"><span class="token function">hasMintedOperations</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph">True once this document has queued a change carrying at least one operation -- local, undo/redo, or replayed from a store. Read by <a href="../../dev.yorkie.core/-client/index.html">dev.yorkie.core.Client</a> to decide whether this document's key takes the per-client pre-attach re-issue claim on attach or on detach. Ports yorkie-js-sdk <code class="lang-kotlin">document.ts</code>'s <code class="lang-kotlin">hasMintedOperations()</code> (<code class="lang-kotlin">ed25355e</code>, #1449, yorkie#2111).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="48024269%2FFunctions%2F-1590045667" anchor-label="isMintable" id="48024269%2FFunctions%2F-1590045667" data-filterable-set=":yorkie:dokkaHtml/release"></a>
+          <div class="table-row" data-filterable-current=":yorkie:dokkaHtml/release" data-filterable-set=":yorkie:dokkaHtml/release">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="is-mintable.html"><span>is</span><wbr></wbr><span><span>Mintable</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="48024269%2FFunctions%2F-1590045667"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="is-mintable.html"><span class="token function">isMintable</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph">True unless a resync has suspended minting on this document (see <span data-unresolved-link="dev.yorkie.document/Document/mintingSuspended/#/PointingToDeclaration/">mintingSuspended</span>) -- i.e. no resync is currently between its discard and its re-anchor. <a href="-document-history/can-undo.html">DocumentHistory.canUndo</a>/<a href="-document-history/can-redo.html">DocumentHistory.canRedo</a> gate on this in addition to their own stack checks, and <a href="update-async.html">updateAsync</a>/undo-redo refuse with <a href="../../dev.yorkie.util/-yorkie-exception/-code/-err-refused/index.html">YorkieException.Code.ErrRefused</a> via <span data-unresolved-link="dev.yorkie.document/Document/ensureMintableAtEntry/#/PointingToDeclaration/">ensureMintableAtEntry</span> while it is false.</p></div></div></div>
                 </div>
               </div>
             </div>

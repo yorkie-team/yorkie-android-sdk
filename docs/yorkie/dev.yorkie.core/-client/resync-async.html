@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>resyncAsync</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            yorkie
+                    </a>
+            </div>
+            <div class="library-version">
+0.7.25            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":yorkie:dokkaHtml/release">androidJvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="yorkie::dev.yorkie.core/Client/resyncAsync/#dev.yorkie.document.Document#kotlin.Boolean#kotlin.collections.Map[kotlin.String,kotlin.String]?/PointingToDeclaration//-1590045667">
+  <div class="breadcrumbs"><a href="../../../index.html">yorkie</a><span class="delimiter">/</span><a href="../index.html">dev.yorkie.core</a><span class="delimiter">/</span><a href="index.html">Client</a><span class="delimiter">/</span><span class="current">resyncAsync</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>resync</span><wbr></wbr><span><span>Async</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":yorkie:dokkaHtml/release"><div class="symbol monospace"><span class="token keyword">fun </span><a href="resync-async.html"><span class="token function">resyncAsync</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">document<span class="token operator">: </span><a href="../../dev.yorkie.document/-document/index.html">Document</a><span class="token punctuation">, </span></span><span class="parameter ">discardLocalChanges<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token punctuation">, </span></span><span class="parameter ">initialPresence<span class="token operator">: </span><a href="../../dev.yorkie.document.presence/-p/index.html">P</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-result/index.html">Result</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../dev.yorkie.document/-document/-event/-dropped-change/index.html">Document.Event.DroppedChange</a><span class="token operator">&gt;</span><span class="token operator">&gt;</span><span class="token operator">&gt;</span></div><p class="paragraph">Recovers <a href="resync-async.html">document</a> in place after the server has refused to accept its local writes (D3; JS SDK <code class="lang-kotlin">client.ts</code> <code class="lang-kotlin">resync</code>, <code class="lang-kotlin">61ca06c9</code>/#1463): discards its un-pushed local changes, detaches without clearing presence, then re-attaches it under the SAME sync mode, <code class="lang-kotlin">disableGC</code>, presence, and schema it had -- the same <a href="../../dev.yorkie.document/-document/index.html">Document</a> instance, never swapped for a new one. Restarts the sync loop if it had stopped.</p><p class="paragraph"><a href="resync-async.html">discardLocalChanges</a> is required <code class="lang-kotlin">true</code> (<code class="lang-kotlin">ErrInvalidArgument</code> otherwise, matching iOS): resyncing without discarding would simply re-send the same refused changes forever.</p><p class="paragraph"><strong>Failure contract</strong> -- not uniform; some paths throw out of the returned <span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span>'s <code class="lang-kotlin">await()</code>, others resolve it with <code class="lang-kotlin">Result.failure</code>:</p><ul><li><p class="paragraph"><code class="lang-kotlin">discardLocalChanges == false</code>, <a href="resync-async.html">document</a> not attached, or a resync/detach already in progress on it -- THROWS before anything is touched.</p></li><li><p class="paragraph">The detach RPC itself fails (refused, or an RPC/client error) -- resolves with <code class="lang-kotlin">Result.failure</code>; the discarded queue is restored and minting re-opened, so <a href="resync-async.html">document</a> ends exactly as it was before this call, still under its ORIGINAL attach (never left Detached).</p></li><li><p class="paragraph">The re-attach after an otherwise-successful detach fails -- THROWS. By this point the queue is already discarded and <a href="../../dev.yorkie.document/-document/-event/-local-changes-dropped/index.html">Document.Event.LocalChangesDropped</a> (reason <a href="../../dev.yorkie.document/-document/-event/-reason/-write-denied/index.html">Document.Event.Reason.WriteDenied</a>) has already been published; <a href="resync-async.html">document</a> is left Detached, neither re-attached nor rolled back, and a caller must attach it again itself.</p></li></ul><p class="paragraph">On success the returned <span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span> resolves with the changes that were discarded, matching the list <a href="../../dev.yorkie.document/-document/-event/-local-changes-dropped/index.html">Document.Event.LocalChangesDropped</a> carries, so a caller can show the user what was lost.</p><p class="paragraph">While a resync is in progress, <a href="resync-async.html">document</a> refuses <code class="lang-kotlin">updateAsync</code>/undo/redo with <a href="../../dev.yorkie.util/-yorkie-exception/-code/-err-refused/index.html">YorkieException.Code.ErrRefused</a> (<a href="../../dev.yorkie.document/-document/is-mintable.html">Document.isMintable</a>/<code class="lang-kotlin">canUndo</code>/<code class="lang-kotlin">canRedo</code> reflect this too), from the moment the queue is discarded until the resync either rolls back or re-anchors -- including a pass already suspended mid-call BEFORE this resync started and resumed only after it finished (a generation check, not just a flag, so straddling the whole call is refused too). Only one resync or detach may run on <a href="resync-async.html">document</a> at a time: an overlapping <a href="resync-async.html">resyncAsync</a> or <a href="detach-document.html">detachDocument</a> call is refused immediately with <code class="lang-kotlin">ErrInvalidArgument</code>, before anything is discarded.</p><p class="paragraph">Cancellation is safe end-to-end. Cancelling the returned <span data-unresolved-link="kotlinx.coroutines/Deferred///PointingToDeclaration/">Deferred</span> before the queue is discarded leaves <a href="resync-async.html">document</a> untouched -- still Attached, queue intact, no resync left marked in progress. Cancelling it at or after that point (including while the detach RPC is in flight) lets the discard/detach/re-attach run to completion uninterrupted rather than abandoning it partway: the cancelled caller's own <code class="lang-kotlin">await()</code> still throws <code class="lang-kotlin">CancellationException</code>, but <a href="resync-async.html">document</a> itself always finishes in one of the states this KDoc describes above, never stuck between them.</p></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

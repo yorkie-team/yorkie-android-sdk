@@ -28,7 +28,7 @@ $dokka.location:dev.yorkie.core/Client.DeactivateOptions/DeactivateOptions/#kotl
 $dokka.location:dev.yorkie.core/Client.DeactivateOptions/keepalive/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-deactivate-options/keepalive.html
 $dokka.location:dev.yorkie.core/Client.DeactivateOptions/synchronous/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-deactivate-options/synchronous.html
 $dokka.location:dev.yorkie.core/Client.Options///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/index.html
-$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#dev.yorkie.core.DocStore?#dev.yorkie.core.SessionLock/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
+$dokka.location:dev.yorkie.core/Client.Options/Options/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]#kotlin.coroutines.SuspendFunction1[kotlin.Boolean,kotlin.String]?#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#kotlin.time.Duration#dev.yorkie.core.DocStore?#dev.yorkie.core.SessionLock#kotlin.time.Duration/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/-options.html
 $dokka.location:dev.yorkie.core/Client.Options/apiKey/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/api-key.html
 $dokka.location:dev.yorkie.core/Client.Options/channelHeartbeatInterval/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/channel-heartbeat-interval.html
 $dokka.location:dev.yorkie.core/Client.Options/docStore/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/doc-store.html
@@ -41,6 +41,7 @@ $dokka.location:dev.yorkie.core/Client.Options/reconnectStreamDelay/#/PointingTo
 $dokka.location:dev.yorkie.core/Client.Options/sessionLock/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/session-lock.html
 $dokka.location:dev.yorkie.core/Client.Options/syncLoopDuration/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/sync-loop-duration.html
 $dokka.location:dev.yorkie.core/Client.Options/watchFallbackDelay/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/watch-fallback-delay.html
+$dokka.location:dev.yorkie.core/Client.Options/watchHeartbeatInterval/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-options/watch-heartbeat-interval.html
 $dokka.location:dev.yorkie.core/Client.Status.Activated///PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/index.html
 $dokka.location:dev.yorkie.core/Client.Status.Activated/actorId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/actor-id.html
 $dokka.location:dev.yorkie.core/Client.Status.Activated/clientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/-status/-activated/client-id.html
@@ -82,6 +83,7 @@ $dokka.location:dev.yorkie.core/Client/removeDocument/#dev.yorkie.document.Docum
 $dokka.location:dev.yorkie.core/Client/requireActorId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-actor-id.html
 $dokka.location:dev.yorkie.core/Client/requireClientId/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/require-client-id.html
 $dokka.location:dev.yorkie.core/Client/restoreRevision/#dev.yorkie.document.Document#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.core/-client/restore-revision.html
+$dokka.location:dev.yorkie.core/Client/resyncAsync/#dev.yorkie.document.Document#kotlin.Boolean#kotlin.collections.Map[kotlin.String,kotlin.String]?/PointingToDeclaration/yorkie/dev.yorkie.core/-client/resync-async.html
 $dokka.location:dev.yorkie.core/Client/service/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/service.html
 $dokka.location:dev.yorkie.core/Client/shouldRefreshToken/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/should-refresh-token.html
 $dokka.location:dev.yorkie.core/Client/status/#/PointingToDeclaration/yorkie/dev.yorkie.core/-client/status.html
@@ -786,6 +788,7 @@ $dokka.location:dev.yorkie.document/Document.Event.Reason.DocumentPurged///Point
 $dokka.location:dev.yorkie.document/Document.Event.Reason.EpochReanchor///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-event/-reason/-epoch-reanchor/index.html
 $dokka.location:dev.yorkie.document/Document.Event.Reason.LogDiscontinuity///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-event/-reason/-log-discontinuity/index.html
 $dokka.location:dev.yorkie.document/Document.Event.Reason.RestoreFailed///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-event/-reason/-restore-failed/index.html
+$dokka.location:dev.yorkie.document/Document.Event.Reason.WriteDenied///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.document/-document/-event/-reason/-write-denied/index.html
 $dokka.location:dev.yorkie.document/Document.Event.Reason///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-reason/index.html
 $dokka.location:dev.yorkie.document/Document.Event.Reason/entries/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-reason/entries.html
 $dokka.location:dev.yorkie.document/Document.Event.Reason/value/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-reason/value.html
@@ -803,6 +806,14 @@ $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged.SyncFailed/
 $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged.SyncFailed/cause/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-sync-status-changed/-sync-failed/cause.html
 $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged.Synced///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-sync-status-changed/-synced/index.html
 $dokka.location:dev.yorkie.document/Document.Event.SyncStatusChanged///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-sync-status-changed/index.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/index.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected/WriteRejected/#dev.yorkie.util.YorkieException.Code#kotlin.String#dev.yorkie.document.Document.Event.AuthError.AuthErrorMethod/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/-write-rejected.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected/code/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/code.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected/equals/#kotlin.Any?/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/equals.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected/hashCode/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/hash-code.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected/method/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/method.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected/reason/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/reason.html
+$dokka.location:dev.yorkie.document/Document.Event.WriteRejected/toString/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/-write-rejected/to-string.html
 $dokka.location:dev.yorkie.document/Document.Event///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-event/index.html
 $dokka.location:dev.yorkie.document/Document.Options///PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/index.html
 $dokka.location:dev.yorkie.document/Document.Options/Options/#kotlin.Boolean#kotlin.Boolean#kotlin.Int/PointingToDeclaration/yorkie/dev.yorkie.document/-document/-options/-options.html
@@ -827,7 +838,9 @@ $dokka.location:dev.yorkie.document/Document/getStatus/#/PointingToDeclaration/
 $dokka.location:dev.yorkie.document/Document/getValueByPath/#kotlin.String/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-value-by-path.html
 $dokka.location:dev.yorkie.document/Document/getVersionVector/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/get-version-vector.html
 $dokka.location:dev.yorkie.document/Document/hasLocalChanges/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/has-local-changes.html
+$dokka.location:dev.yorkie.document/Document/hasMintedOperations/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/has-minted-operations.html
 $dokka.location:dev.yorkie.document/Document/history/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/history.html
+$dokka.location:dev.yorkie.document/Document/isMintable/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/is-mintable.html
 $dokka.location:dev.yorkie.document/Document/metaToBytes/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/meta-to-bytes.html
 $dokka.location:dev.yorkie.document/Document/myPresence/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/my-presence.html
 $dokka.location:dev.yorkie.document/Document/presences/#/PointingToDeclaration/yorkie/dev.yorkie.document/-document/presences.html
@@ -938,6 +951,7 @@ $dokka.location:dev.yorkie.util/IndexTreeNode/hasTextChild/#/PointingToDeclarati
 $dokka.location:dev.yorkie.util/IndexTreeNode/insertAfter/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/insert-after.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/insertAt/#kotlin.Int#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/insert-at.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/insertBefore/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/insert-before.html
+$dokka.location:dev.yorkie.util/IndexTreeNode/isAncestorOf/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-ancestor-of.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isRemoved/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-removed.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isSplitSiblingSkipForBoundaryMigration/#TypeParam(bounds=[dev.yorkie.util.IndexTreeNode[^]])/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-split-sibling-skip-for-boundary-migration.html
 $dokka.location:dev.yorkie.util/IndexTreeNode/isText/#/PointingToDeclaration/yorkie/dev.yorkie.util/-index-tree-node/is-text.html
@@ -990,6 +1004,7 @@ $dokka.location:dev.yorkie.util/TreePos/node/#/PointingToDeclaration/yorkie/dev
 $dokka.location:dev.yorkie.util/TreePos/offset/#/PointingToDeclaration/yorkie/dev.yorkie.util/-tree-pos/offset.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrAlreadyAttached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-already-attached/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrChangeApplyFailed///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-change-apply-failed/index.html
+$dokka.location:dev.yorkie.util/YorkieException.Code.ErrChangeTooLarge///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-change-too-large/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrClientNotActivated///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-client-not-activated/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrClientNotFound///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-client-not-found/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrDocumentNotAttached///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-document-not-attached/index.html
@@ -1003,11 +1018,14 @@ $dokka.location:dev.yorkie.util/YorkieException.Code.ErrInvalidArgument///Pointi
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrInvalidObjectKey///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-invalid-object-key/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrInvalidServerSeq///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-invalid-server-seq/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrPermissionDenied///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-permission-denied/index.html
+$dokka.location:dev.yorkie.util/YorkieException.Code.ErrPresenceBaseUnavailable///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-presence-base-unavailable/index.html
+$dokka.location:dev.yorkie.util/YorkieException.Code.ErrRefused///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-refused/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrSessionNotFound///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-session-not-found/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrTooManyAttachments///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-too-many-attachments/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrTooManySubscribers///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-too-many-subscribers/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrUnauthenticated///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-unauthenticated/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.ErrUnimplemented///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-unimplemented/index.html
+$dokka.location:dev.yorkie.util/YorkieException.Code.ErrWatchStreamIdle///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-err-watch-stream-idle/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.Ok///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-ok/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code.Unsupported///PointingToDeclaration/{"org.jetbrains.dokka.links.EnumEntryDRIExtra":{"key":"org.jetbrains.dokka.links.EnumEntryDRIExtra"}}yorkie/dev.yorkie.util/-yorkie-exception/-code/-unsupported/index.html
 $dokka.location:dev.yorkie.util/YorkieException.Code///PointingToDeclaration/yorkie/dev.yorkie.util/-yorkie-exception/-code/index.html

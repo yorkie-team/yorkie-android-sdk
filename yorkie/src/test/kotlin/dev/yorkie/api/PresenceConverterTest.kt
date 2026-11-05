@@ -96,21 +96,53 @@ class PresenceConverterTest {
         assertEquals(PresenceChange.Patch(mapOf("cursor" to "10"), full = null), decoded)
     }
 
+    // Ported from JS #1502 (`dcb74d27`): a v0.7.24-or-earlier server stores a patch it
+    // cannot fold with an empty change type and serves it back as UNSPECIFIED
+    // (Document.kt presencePatchSent KDoc); DELETE is the server's own tombstone type.
+    // Both decode as an empty Put rather than throwing, as Go's FromPresenceChange
+    // default branch does, so a pack carrying one still applies instead of wedging.
+
     @Test
-    fun `unknown type still throws ErrUnimplemented`() {
+    fun `CHANGE_TYPE_UNSPECIFIED decodes as an empty presence, as Go does`() {
         val pb = presenceChange {
             type = PBPresenceChangeType.CHANGE_TYPE_UNSPECIFIED
         }
 
-        val exception = assertThrows(YorkieException::class.java) { pb.toPresenceChange() }
+        val decoded = pb.toPresenceChange()
 
-        assertEquals(ErrUnimplemented, exception.code)
+        assertEquals(PresenceChange.Put(emptyMap()), decoded)
     }
 
     @Test
-    fun `DELETE still throws ErrUnimplemented`() {
+    fun `CHANGE_TYPE_DELETE decodes as an empty presence, as Go does`() {
         val pb = presenceChange {
             type = PBPresenceChangeType.CHANGE_TYPE_DELETE
+        }
+
+        val decoded = pb.toPresenceChange()
+
+        assertEquals(PresenceChange.Put(emptyMap()), decoded)
+    }
+
+    @Test
+    fun `a PATCH that carries no presence decodes as an empty one`() {
+        val pb = presenceChange {
+            type = PBPresenceChangeType.CHANGE_TYPE_PATCH
+            // `presence` left unset -- the proto3 default is an empty Presence
+            // message, whose dataMap is already an empty map (no code change).
+        }
+
+        val decoded = pb.toPresenceChange()
+
+        assertEquals(PresenceChange.Patch(emptyMap(), full = null), decoded)
+    }
+
+    @Test
+    fun `a presence change outside the enum still throws ErrUnimplemented`() {
+        val pb = presenceChange {
+            // An int the generated enum has no constant for decodes to UNRECOGNIZED --
+            // genuinely outside the wire contract, unlike UNSPECIFIED/DELETE above.
+            typeValue = 42
         }
 
         val exception = assertThrows(YorkieException::class.java) { pb.toPresenceChange() }

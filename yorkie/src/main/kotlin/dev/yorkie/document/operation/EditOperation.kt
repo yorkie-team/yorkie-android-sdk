@@ -232,6 +232,21 @@ internal data class EditOperation(
         val opInfos = mutableListOf<OperationInfo>()
         var totalDiff = DataSize(data = 0, meta = 0)
 
+        // The spans about to be re-tombstoned are what the reverse op will have to
+        // restore, and a replica that purged them rebuilds the nodes from that payload
+        // alone. Re-snapshot them against the live content FIRST -- before the removal
+        // below -- since the span set was captured when the reversed edit ran, so an
+        // attribute applied to the run since (a peer's style, admitted on a tombstone
+        // by canStyle) is missing from it: a purged replica would recreate the run
+        // without it while a replica that un-tombstones keeps it, and the two diverge.
+        // Only when the reverse is kept: a remote change discards it (producesReverseOps
+        // is a subset of != Remote). Ported from JS `06f5587b` #1504.
+        val refreshed = if (source != OpSource.Remote && toRetombstone.isNotEmpty()) {
+            text.rgaTreeSplit.refreshSpans(toRetombstone)
+        } else {
+            null
+        }
+
         // 1. Remove the content the reversed edit inserted (by identity).
         if (toRetombstone.isNotEmpty()) {
             val result = text.retombstone(toRetombstone, executedAt)
@@ -264,13 +279,23 @@ internal data class EditOperation(
         // a level. Same as JS (edit_operation.ts restore branch returns the
         // reverse before document.ts's empty-opInfos early return).
         val reverseOps = if (source.producesReverseOps) {
-            // Keep the same span sets and undo offsets; flip only the mode.
-            // undoFromOffset/undoToOffset need no re-derivation: they are
-            // re-resolved into a position fresh on every execute() call via
-            // indexRangeToPosRange, and History.reconcileTextEdit keeps them
-            // tracking concurrent remote edits while this op sits on a stack.
+            // Keep the same span sets and undo offsets; flip the mode, and substitute
+            // the refreshed spans into whichever side of the kept reverse is the one a
+            // later redo restores FROM (#1504): source.producesReverseOps (Local ||
+            // UndoRedo) is a subset of source != Remote, so `refreshed` is non-null
+            // whenever this branch runs and toRetombstone was non-empty; the `?:`
+            // fallback only covers the toRetombstone-empty/LocalNoHistory edge.
+            // undoFromOffset/undoToOffset need no re-derivation: they are re-resolved
+            // into a position fresh on every execute() call via indexRangeToPosRange,
+            // and History.reconcileTextEdit keeps them tracking concurrent remote edits
+            // while this op sits on a stack.
             val flippedMode = if (isRetombstone) RestoreMode.Restore else RestoreMode.Retombstone
-            listOf(copy(restoreMode = flippedMode))
+            val reverseOp = if (isRetombstone) {
+                copy(restoreMode = flippedMode, restoreSpans = refreshed ?: restoreSpans)
+            } else {
+                copy(restoreMode = flippedMode, retombstoneSpans = refreshed ?: retombstoneSpans)
+            }
+            listOf(reverseOp)
         } else {
             emptyList()
         }

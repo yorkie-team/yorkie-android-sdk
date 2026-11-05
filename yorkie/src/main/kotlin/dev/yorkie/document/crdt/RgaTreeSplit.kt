@@ -417,6 +417,66 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     }
 
     /**
+     * Re-snapshots [spans] against the content they address as it stands now, returning an
+     * equivalent span set (same insertion identities, same overall intervals) whose values
+     * carry the CURRENT attributes. A span is captured when the edit it reverses runs, so
+     * an attribute applied to the run afterward -- a peer's style, which `canStyle` admits
+     * even on a tombstone -- is missing from it; a replica that purged the run would then
+     * recreate it from the stale snapshot while a replica that still holds the tombstone
+     * revives the live attributes, and the two diverge.
+     *
+     * A region covered by a surviving piece (live or tombstoned) is taken from that piece,
+     * so a span crossing several pieces splits into one span per piece. A region with no
+     * surviving piece keeps the original snapshot -- it is all this replica knows about it.
+     * Read-only: it only reads pieces and builds payload [RestoreSpan]s via [CharSequence.subSequence]
+     * (which deep-copies current attributes for [TextValue], the correctness crux) --
+     * no [isolateRange]/[insertAfter] mutation, no attribute-tombstone booking. Ported from
+     * JS `06f5587b` #1504 `RGATreeSplit.refreshSpans`.
+     */
+    fun refreshSpans(spans: List<RestoreSpan<T>>): List<RestoreSpan<T>> {
+        val refreshed = mutableListOf<RestoreSpan<T>>()
+
+        @Suppress("UNCHECKED_CAST")
+        fun fromSnapshot(
+            span: RestoreSpan<T>,
+            start: Int,
+            end: Int,
+        ) {
+            refreshed.add(
+                RestoreSpan(
+                    span.createdAt,
+                    start,
+                    end,
+                    span.value.subSequence(start - span.start, end - span.start) as T,
+                ),
+            )
+        }
+
+        for (span in spans) {
+            val pieces = findPiecesOverlapping(span.createdAt, span.start, span.end)
+            var cursor = span.start
+            for (piece in pieces) {
+                val pieceStart = piece.id.offset
+                val start = maxOf(pieceStart, cursor)
+                val end = minOf(pieceStart + piece.contentLength, span.end)
+                if (end <= start) continue
+                if (start > cursor) {
+                    fromSnapshot(span, cursor, start)
+                }
+                @Suppress("UNCHECKED_CAST")
+                val value = piece.value.subSequence(start - pieceStart, end - pieceStart) as T
+                refreshed.add(RestoreSpan(span.createdAt, start, end, value))
+                cursor = end
+            }
+            if (cursor < span.end) {
+                fromSnapshot(span, cursor, span.end)
+            }
+        }
+
+        return refreshed
+    }
+
+    /**
      * Collects existing nodes (live or tombstoned) belonging to the insertion
      * [createdAt] that overlap the absolute-offset interval [[start], [end]),
      * in ascending offset order. Works by descending floorEntry probes over

@@ -1913,8 +1913,15 @@ public class Client(
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
                 val presence = document.presences.value[publisher] ?: return
                 document.publishEvent(Others.Unwatched(PresenceInfo(publisher, presence)))
+                // NOTE: only the online set is touched here; the presence itself
+                // is kept, for the same reason the watch-init handler above keeps
+                // it. Clearing it would make a later DOCUMENT_WATCHED for this
+                // publisher find no presence in allPresences and publish no
+                // Watched event, leaving a reconnected peer invisible. The
+                // Unwatched event above still fires off presences.value, which is
+                // read before removeOnlineClient takes this publisher offline.
+                // Ported from JS `97f0aa01` #1501.
                 document.removeOnlineClient(publisher)
-                document.clearPresence(publisher)
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {

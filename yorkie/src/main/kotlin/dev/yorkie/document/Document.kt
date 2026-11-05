@@ -317,11 +317,12 @@ public class Document(
     /**
      * Whether the most recently committed local presence change was a
      * [PresenceChange.Patch]. [learnPresenceCapability]'s caller derives
-     * `needsHeal` from this (`!presencePatchable && presencePatchSent`): an
-     * old server does not reject a patch, it stores it as an empty
-     * presence, so once a patch has been recorded, a server that stops
-     * advertising the capability leaves peers holding an empty presence
-     * until a full Put lands.
+     * `needsHeal` from this (`!presencePatchable && presencePatchSent`): a
+     * server at v0.7.24 or earlier does not reject a patch -- it stores it
+     * with an empty change type and serves it back as
+     * `CHANGE_TYPE_UNSPECIFIED`, which every reader that pulls it fails to
+     * decode (`ErrInvalidType`). A later Put does not undo that, so the
+     * server must be upgraded first and must not roll back below v0.7.25.
      */
     private var presencePatchSent = false
 
@@ -462,14 +463,21 @@ public class Document(
     /**
      * State-derived `needsHeal`: true exactly when the server no longer
      * advertises the capability but the last thing this document committed
-     * locally was a Patch an old server would have stored as empty.
+     * locally was a Patch. A server at v0.7.24 or earlier does not reject a
+     * patch -- it stores it with an empty change type and serves it back as
+     * `CHANGE_TYPE_UNSPECIFIED`, which every reader that pulls it fails to
+     * decode (`ErrInvalidType`), stopping its sync loop. The heal only stops
+     * further patches and re-sends a base; it cannot repair a patch already
+     * stored, so the server must be upgraded first and must not roll back
+     * below v0.7.25 once clients of this SDK connect.
      */
     private fun needsPresenceHeal(): Boolean = !presencePatchable && presencePatchSent
 
     /**
      * Re-sends the whole presence as a full Put after [needsPresenceHeal]
      * -- a capability drop may have left the server storing an outstanding
-     * patch as an empty presence. Skipped on a removed document or while
+     * patch, so no further patch follows on top of a base that server never
+     * held. Skipped on a removed document or while
      * minting is suspended ([isMintable], D3): a re-anchor/resync re-sends
      * the presence as a Put of its own, and a removed document has no peers
      * left to tell. A heal failure is logged and swallowed -- it must never
@@ -530,7 +538,7 @@ public class Document(
     /**
      * Whether a [PresenceChange.Patch] is still queued in [localChanges] to be pushed --
      * it reaches the server verbatim, so a server without the capability would store it
-     * as an empty presence and leave a presence to heal. Ported from JS `b50f8900` #1477
+     * as an unspecified change and leave a presence to heal. Ported from JS `b50f8900` #1477
      * `hasPendingPresencePatch`.
      */
     private fun hasPendingPresencePatch(): Boolean =

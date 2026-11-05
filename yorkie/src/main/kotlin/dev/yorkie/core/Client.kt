@@ -1872,14 +1872,16 @@ public class Client(
                     ),
                 )
                 document.setOnlineClients(clientIDs.toSet())
-                // Presences are keyed by the stable actor (JS applyWatchInit compares
-                // against changeID.getActorID()), so the self-guard must use it too.
-                val selfId = requireActorId()
-                for (clientID in document.allPresences.value.keys) {
-                    if (clientID != selfId && clientID !in clientIDs) {
-                        document.clearPresence(clientID)
-                    }
-                }
+                // NOTE: presences are intentionally NOT pruned for clients absent
+                // from clientIDs. document.presences already filters by online
+                // clients (Document.kt), so a stale entry here is never exposed.
+                // Keeping it lets a later DOCUMENT_WATCHED for the same client
+                // find its presence still in allPresences and publish a Watched
+                // event; pruning it here left that client permanently invisible
+                // once its watch stream and this client's watch stream blipped
+                // at the same time. Server-side clear on deactivation
+                // (yorkie#2291) covers peers that never return. Ported from JS
+                // `c41ab014` #1186 `applyWatchInit`.
             }
             return
         }

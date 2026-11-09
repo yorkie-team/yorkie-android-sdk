@@ -17,9 +17,9 @@ import dev.yorkie.helper.maxVectorOf
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.Logger
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
-import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -294,21 +294,15 @@ class TextRestoreConvergenceTest {
         )
     }
 
-    // Spec 011 scenario 2 / B2 (upstream-shared scramble, disclosed not
-    // fixed): build "0123456789", style(6,8), delete [2,4) then [0,2), GC,
-    // then undo BOTH as two SEPARATE undoAsync() calls. Rung (c) anchors a
-    // recreated fragment behind the RIGHTMOST surviving piece of the whole
-    // insertion ("89"), not the nearer one ("45") — JS `rga_tree_split.ts` @
-    // 5d5cac63 and server `rga_tree_split.go` @ v0.7.13 both do the exact
-    // same thing (hand-traced; see the round build report's JS parity probe
-    // and upstream issue draft), so this scramble reproduces identically
-    // from the same input on every SDK — a shared upstream bug, not an
-    // Android divergence. The nearest-successor fix is NOT applied here
-    // (spec 011 binding decision): convergence with JS/server, not a
-    // "better" local placement, is the goal this round. Tracked upstream —
-    // see the build report's "Upstream issue draft" section.
+    // Build "0123456789", style(6,8), delete [2,4) then [0,2), GC, then undo
+    // BOTH as two SEPARATE undoAsync() calls. The old rightmost-survivor
+    // rung (c) anchored a recreated fragment behind the FARTHEST surviving
+    // piece of the whole insertion ("89"), not the nearer one ("45"),
+    // scrambling the restored order. The JS v0.7.26 rung (c) (#1514,
+    // yorkie#2310) anchors before the NEAREST surviving piece at or after
+    // the gap instead, which restores the original left-to-right order here.
     @Test
-    fun `undo-after-GC scrambles content into the exact spec scenario 1 order`() = runTest {
+    fun `undo-after-GC restores content in original order`() = runTest {
         val document = Document("test-doc")
         document.updateAsync { root, _ ->
             root.setNewText("text").edit(0, 0, "0123456789")
@@ -327,25 +321,20 @@ class TextRestoreConvergenceTest {
         document.history.undoAsync().await()
 
         assertEquals(
-            "2345670189",
+            "0123456789",
             document.getRoot().getAs<JsonText>("text").toString(),
-            "JS/server-parity placement scrambles character order after a GC pass" +
-                " (shared upstream bug, tracked upstream — see the build report)",
+            "the nearest-survivor rung (c) restores the original order after a GC pass",
         )
     }
 
-    // AC4 two-client pair: the same scenario-2 sequence runs on replica A,
-    // cross-syncing after each step so B's tree structure (split points from
-    // style(), tombstones from the deletes) matches A's exactly. Both
-    // replicas then purge the SAME tombstones with a vector covering the
-    // editing actor, so B's restore (identity-based, relayed from A's undo
-    // ops) ALSO takes the recreate-from-scratch path and lands on the SAME
-    // rung-(c) anchor as A — convergence on the identical (scrambled) string
-    // AND identical node-identity sequence is the invariant this pins; the
-    // scramble itself is the disclosed upstream bug, not something this test
-    // re-litigates.
+    // Two-client pair: the same sequence runs on replica A, cross-syncing
+    // after each step so B's tree structure (split points from style(),
+    // tombstones from the deletes) matches A's exactly. Both replicas then
+    // purge the SAME tombstones with a vector covering the editing actor, so
+    // B's restore (identity-based, relayed from A's undo ops) ALSO takes the
+    // recreate-from-scratch path and lands on the SAME rung-(c) anchor as A.
     @Test
-    fun `two replicas converge to the identical scrambled order after cross-sync`() = runTest {
+    fun `two replicas converge to the identical restored order after cross-sync`() = runTest {
         val a = Document("test-doc")
         val b = Document("test-doc")
         a.setActor(actor1)
@@ -376,15 +365,14 @@ class TextRestoreConvergenceTest {
 
         a.history.undoAsync().await()
         a.history.undoAsync().await()
-        assertEquals("2345670189", a.getRoot().getAs<JsonText>("text").toString())
+        assertEquals("0123456789", a.getRoot().getAs<JsonText>("text").toString())
 
         crossSync(a, b)
 
         assertEquals(
             a.getRoot().getAs<JsonText>("text").toString(),
             b.getRoot().getAs<JsonText>("text").toString(),
-            "convergence on the identical (scrambled) string is the invariant;" +
-                " order is the disclosed upstream bug",
+            "both replicas converge to the identical restored order",
         )
         assertEquals(
             identitySequence(a.crdtText()),
@@ -393,14 +381,14 @@ class TextRestoreConvergenceTest {
         )
     }
 
-    // Spec 011 scenario 4 (reviewer probe, B2 AC2): insertion "abcde" purges
-    // [0,1)="a", [1,2)="b", [3,4)="d" leaving [2,3)="c" and [4,5)="e" live.
-    // Restoring [0,1) must anchor before the RIGHTMOST survivor ("e"), not
-    // the nearer "c" — exactly the JS/server rung (c) placement
-    // (`rga_tree_split.ts:992-1002`, `rga_tree_split.go:896-914`), confirming
-    // the reverted rung matches both upstream implementations on this probe.
+    // Insertion "abcde" purges [0,1)="a", [1,2)="b", [3,4)="d" leaving
+    // [2,3)="c" and [4,5)="e" live. Restoring [0,1) must anchor before the
+    // NEAREST surviving piece at or after the gap's end ("c"), not the
+    // rightmost one ("e") — the JS v0.7.26 rung (c) (#1514, yorkie#2310):
+    // anchoring before a farther piece would place the gap after the pieces
+    // in between.
     @Test
-    fun `restore anchors before the rightmost survivor not the nearest one`() {
+    fun `restore anchors before the nearest survivor at or after the gap`() {
         val split = RgaTreeSplit<TextValue>()
         val insertTick = TimeTicket(1L, 0u, actor1)
 
@@ -445,10 +433,10 @@ class TextRestoreConvergenceTest {
 
         val liveContent = split.filterNot { it.isRemoved }.map { it.value.content }
         assertEquals(
-            listOf("c", "a", "e"),
+            listOf("a", "c", "e"),
             liveContent,
-            "the recreated \"a\" must anchor before the RIGHTMOST survivor \"e\"," +
-                " not the nearer \"c\"",
+            "the recreated \"a\" must anchor before the NEAREST survivor \"c\"," +
+                " not the farther \"e\"",
         )
     }
 
@@ -615,16 +603,17 @@ class TextRestoreConvergenceTest {
         assertEquals("abZ", split.toString())
     }
 
-    // 2026-09-08 review finding 2 — JS #1328 shape: the recreated fragment's
-    // insertionPrev is the same-insertion piece covering cursor-1, never the
-    // successor's purge-relinked pointer. "bc" and "de" were deleted by
-    // separate edits and both purged, so "f".insertionPrev was relinked to
-    // "a". Restoring only "de" must NOT inherit that non-contiguous "a": a
-    // later edit encoded at (X, 3) would resolve through "a" with offset
-    // 3 > 1 and throw. With no piece covering offset 2, the fragment gets no
-    // insertionPrev, and findFloorNodePreferToLeft resolves to it directly.
+    // JS v0.7.26 (#1514, yorkie#2310) widens the recreated fragment's
+    // insertionPrev/insertionNext lookup to the nearest SURVIVING piece of
+    // the same insertion (`treeByID.floorEntry`/`ceilingEntry`), not one
+    // whose range literally covers the boundary offset. "bc" and "de" were
+    // deleted by separate edits and both purged, so "f".insertionPrev was
+    // relinked to "a". Restoring only "de" now DOES inherit that
+    // non-contiguous "a" as insertionPrev -- the same link JS computes -- and
+    // relies on findFloorNodePreferToLeft/the splitNode bounds check to
+    // reject (rather than mis-split) any later edit that walks through it.
     @Test
-    fun `recreated fragment takes insertionPrev from the piece covering cursor-1 like JS 1328`() {
+    fun `recreated fragment takes insertionPrev from the nearest surviving piece like JS v0726`() {
         val split = RgaTreeSplit<TextValue>()
         val tX = TimeTicket(1L, 0u, actor1)
         split.edit(split.range(0, 0), tX, TextValue("abcdef"), versionVector = null)
@@ -651,26 +640,49 @@ class TextRestoreConvergenceTest {
         )
         assertEquals("adef", split.toString())
         val de = result.recreated.single()
-        assertNull(de.insertionPrev, "no same-insertion piece covers offset 2, so no insertionPrev")
+        assertEquals(
+            "a",
+            de.insertionPrev?.value?.content,
+            "the nearest surviving same-insertion piece at or before cursor-1 is \"a\"",
+        )
         assertSame(de, f.insertionPrev)
 
-        // A later boundary edit at (X, 3) must resolve without an out-of-range split.
-        val boundary = RgaTreeSplitPos(RgaTreeSplitNodeID(tX, 3), 0)
-        split.edit(
-            RgaTreeSplitPosRange(boundary, boundary),
-            TimeTicket(5L, 0u, actor1),
-            TextValue("Q"),
-            versionVector = null,
-        )
-        assertEquals("adeQf", split.toString())
+        // The non-contiguous link is not just unused bookkeeping: findNodeWithSplit walks
+        // THROUGH it (not around it) for a position pre-dating this replica's purge -- a
+        // peer that had not yet purged "bc"/"de" would still encode a positional edit by
+        // the ORIGINAL node's own (tX, offset) pair. Offsets 2 and 3 fall inside/at the
+        // purged "bc" gap and resolve (via insertionPrev) to "a" (length 1), which
+        // RgaTreeSplit's splitNode bounds check then rejects rather than mis-splitting.
+        // JS v0.7.26 throws at the identical two offsets ("offset should be between 0 and
+        // the length of the node") -- this is parity, an inherited upstream residual, not
+        // a port defect. Pins the regression assertion `recreated fragment ...` dropped
+        // without a replacement.
+        listOf(2, 3).forEach { offset ->
+            assertFailsWith<IllegalArgumentException>(
+                "offset $offset must reject rather than mis-split through the purged gap",
+            ) {
+                split.edit(
+                    RgaTreeSplitPosRange(
+                        RgaTreeSplitPos(RgaTreeSplitNodeID(tX, offset), 0),
+                        RgaTreeSplitPos(RgaTreeSplitNodeID(tX, offset), 0),
+                    ),
+                    TimeTicket(5L, 0u, actor1),
+                    TextValue("Q"),
+                    versionVector = null,
+                )
+            }
+        }
+        assertEquals("adef", split.toString(), "a rejected edit must not mutate the split")
     }
 
     /**
-     * The pinned spec-010 scenario-1 scramble (`"2345670189"`, see
-     * `undo-after-GC scrambles content into the exact spec scenario 1 order`):
-     * rung (c) places the recreated `"01"` behind the RIGHTMOST survivor, so
-     * `"234567".insertionPrev` points at a node that sits LATER in document
-     * order. Reused by the 2026-09-10 review R1 cases below.
+     * The scenario-1 undo-after-GC restore (see
+     * `undo-after-GC restores content in original order`), now resolving to
+     * the correct `"0123456789"` under the JS v0.7.26 nearest-survivor rung
+     * (c) (#1514, yorkie#2310). Reused by the 2026-09-10 review R1 cases
+     * below, which exercise deepCopy's two-pass insertion-link resolution
+     * independent of whether this particular repro still produces a
+     * forward-pointing link.
      */
     private suspend fun buildScenarioOneScramble(): Document {
         val document = Document("test-doc")
@@ -685,60 +697,61 @@ class TextRestoreConvergenceTest {
         document.garbageCollect(maxVectorOf(listOf(document.changeID.actor)))
         document.history.undoAsync().await()
         document.history.undoAsync().await()
-        assertEquals("2345670189", document.getRoot().getAs<JsonText>("text").toString())
+        assertEquals("0123456789", document.getRoot().getAs<JsonText>("text").toString())
         return document
     }
 
     // 2026-09-10 review R1 (thread 3975567720): deepCopy resolved each
     // insertion link while walking in document order, so a link whose target
-    // is physically later (exactly what the JS-#1328 relink produces after a
-    // rung-(c) placement) hit `requireNotNull(findFloorNode)` and threw. The
-    // links themselves are right — the piece covering cursor-1 ends at
-    // cursor, the piece covering gapEnd starts at gapEnd — so the copy must
-    // reproduce them, not drop them: copy every node first, link second.
+    // is physically later (what a rung-(c) placement can produce when a
+    // recreated fragment's nearest neighbour sits behind other content)
+    // would hit `requireNotNull(findFloorNode)` and throw. The links
+    // themselves are right — the piece covering cursor-1 ends at cursor, the
+    // piece covering gapEnd starts at gapEnd — so the copy must reproduce
+    // them, not drop them: copy every node first, link second.
     @Test
-    fun `deepCopy preserves insertion links that point forward after a rung-c scramble`() =
-        runTest {
-            val split = buildScenarioOneScramble().crdtText().rgaTreeSplit
+    fun `deepCopy preserves insertion links after an undo-after-GC restore`() = runTest {
+        val split = buildScenarioOneScramble().crdtText().rgaTreeSplit
 
-            val clone = split.deepCopy()
+        val clone = split.deepCopy()
 
-            assertEquals("2345670189", clone.toString())
-            val originals = split.toList()
-            val copies = clone.toList()
-            assertEquals(originals.map { it.id }, copies.map { it.id })
-            originals.zip(copies).forEach { (original, copy) ->
-                assertEquals(
-                    original.insertionPrev?.id,
-                    copy.insertionPrev?.id,
-                    "insertionPrev of ${original.id}",
-                )
-                assertEquals(
-                    original.insertionNext?.id,
-                    copy.insertionNext?.id,
-                    "insertionNext of ${original.id}",
-                )
-            }
+        assertEquals("0123456789", clone.toString())
+        val originals = split.toList()
+        val copies = clone.toList()
+        assertEquals(originals.map { it.id }, copies.map { it.id })
+        originals.zip(copies).forEach { (original, copy) ->
+            assertEquals(
+                original.insertionPrev?.id,
+                copy.insertionPrev?.id,
+                "insertionPrev of ${original.id}",
+            )
+            assertEquals(
+                original.insertionNext?.id,
+                copy.insertionNext?.id,
+                "insertionNext of ${original.id}",
+            )
         }
+    }
 
     // Same defect at Document level: Document.ensureClone() throws BEFORE
     // assigning `clone`, so once any updater/schema/size failure nulls the
-    // cache after a scramble, every later getRoot()/updateAsync failed for
-    // the rest of the document's life.
+    // cache, every later getRoot()/updateAsync failed for the rest of the
+    // document's life.
     @Test
-    fun `document keeps working after a clone rebuild following a rung-c scramble`() = runTest {
-        val document = buildScenarioOneScramble()
+    fun `document keeps working after a clone rebuild following an undo-after-GC restore`() =
+        runTest {
+            val document = buildScenarioOneScramble()
 
-        val failed = document.updateAsync { _, _ -> error("updater failure nulls the clone") }
-            .await()
-        assertTrue(failed.isFailure)
+            val failed = document.updateAsync { _, _ -> error("updater failure nulls the clone") }
+                .await()
+            assertTrue(failed.isFailure)
 
-        assertEquals("2345670189", document.getRoot().getAs<JsonText>("text").toString())
-        document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 0, "X") }
-            .await()
-            .getOrThrow()
-        assertEquals("X2345670189", document.getRoot().getAs<JsonText>("text").toString())
-    }
+            assertEquals("0123456789", document.getRoot().getAs<JsonText>("text").toString())
+            document.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(0, 0, "X") }
+                .await()
+                .getOrThrow()
+            assertEquals("X0123456789", document.getRoot().getAs<JsonText>("text").toString())
+        }
 
     // 2026-09-10 review R5 (thread 3975567761): a zero-width span made
     // retombstone tombstone the whole remainder of the live piece covering
@@ -762,54 +775,64 @@ class TextRestoreConvergenceTest {
     }
 
     /**
-     * Text twin of `TreeRestoreConvergenceTest`'s "a no-effect tree restore
-     * undo enqueues no local change but keeps its redo": undoing a
-     * local insert whose node a concurrent remote delete already removed
-     * must take the idempotent-skip retombstone path (`opInfos` empty), so
-     * it must NOT enqueue a phantom local change -- `executed` (whether the
-     * restore/retombstone actually changed anything) is the gate, not a
-     * stale "did this produce an OpInfo" check.
+     * Ported from JS SDK #1514/yorkie#2310: undoing a local insert whose node
+     * a concurrent remote delete already removed takes the idempotent-skip
+     * retombstone path (`opInfos` empty), but a restore/retombstone op that
+     * reached execution ALWAYS counts as executed now, matching JS's
+     * `operations.length` gate (which never read `opInfos` at all) -- so this
+     * undo still enqueues and sends its local change, even though nothing is
+     * visibly different. This case changes nothing in the ledger either (the
+     * piece's removal was already known to this replica); JS reports a
+     * result for every restore op that ran regardless.
      */
     @Test
-    fun `a no-effect text restore undo enqueues no local change but keeps its redo`() = runTest {
-        val d1 = Document("test-doc")
-        val d2 = Document("test-doc")
-        d1.setActor(actor1)
-        d2.setActor(actor2)
-        // skipHistory: the connected twin builds the text via initialRoot,
-        // which leaves no undo entry either.
-        d1.updateAsync(skipHistory = true) { root, _ -> root.setNewText("text").edit(0, 0, "x") }
-            .await()
-        crossSync(d1, d2)
+    fun `a no-effect text restore undo still enqueues its local change and keeps its redo`() =
+        runTest {
+            val d1 = Document("test-doc")
+            val d2 = Document("test-doc")
+            d1.setActor(actor1)
+            d2.setActor(actor2)
+            // skipHistory: the connected twin builds the text via initialRoot,
+            // which leaves no undo entry either.
+            d1.updateAsync(
+                skipHistory = true,
+            ) { root, _ -> root.setNewText("text").edit(0, 0, "x") }
+                .await()
+            crossSync(d1, d2)
 
-        d1.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(1, 1, "y") }.await()
-        crossSync(d1, d2)
-        d2.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(1, 2, "") }.await()
-        crossSync(d1, d2)
-        assertEquals("x", d1.getRoot().getAs<JsonText>("text").toString())
-        assertFalse(d1.hasLocalChanges())
-        assertTrue(d1.history.canUndo())
+            d1.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(1, 1, "y") }.await()
+            crossSync(d1, d2)
+            d2.updateAsync { root, _ -> root.getAs<JsonText>("text").edit(1, 2, "") }.await()
+            crossSync(d1, d2)
+            assertEquals("x", d1.getRoot().getAs<JsonText>("text").toString())
+            assertFalse(d1.hasLocalChanges())
+            assertTrue(d1.history.canUndo())
 
-        assertTrue(d1.history.undoAsync().await().isSuccess)
-        assertEquals("x", d1.getRoot().getAs<JsonText>("text").toString())
-        assertFalse(
-            d1.hasLocalChanges(),
-            "a no-effect restore must not enqueue a phantom local change",
-        )
-        assertFalse(d1.history.canUndo())
-        assertTrue(
-            d1.history.canRedo(),
-            "the redo counterpart is pushed unconditionally (Tree twin / JS parity)",
-        )
+            assertTrue(d1.history.undoAsync().await().isSuccess)
+            assertEquals("x", d1.getRoot().getAs<JsonText>("text").toString())
+            assertTrue(
+                d1.hasLocalChanges(),
+                "a restore op that ran always counts as executed and is sent, " +
+                    "even with no visible effect",
+            )
+            assertFalse(d1.history.canUndo())
+            assertTrue(
+                d1.history.canRedo(),
+                "the redo counterpart is pushed unconditionally (Tree twin / JS parity)",
+            )
 
-        // Redo revives "y" by identity and both replicas converge.
-        assertTrue(d1.history.redoAsync().await().isSuccess)
-        assertEquals("xy", d1.getRoot().getAs<JsonText>("text").toString())
-        crossSync(d1, d2)
-        assertEquals(
-            d1.getRoot().getAs<JsonText>("text").toString(),
-            d2.getRoot().getAs<JsonText>("text").toString(),
-        )
-        assertEquals(identitySequence(d1.crdtText()), identitySequence(d2.crdtText()))
-    }
+            // The redo counterpart's `recorded` span set is empty (the undo
+            // retombstoned nothing, since "y" was already gone), and JS reuses
+            // `recorded` whenever it is present -- even empty -- rather than the
+            // original span, so the redo is ALSO a true no-op: it does not
+            // resurrect "y". Both replicas stay converged on "x".
+            assertTrue(d1.history.redoAsync().await().isSuccess)
+            assertEquals("x", d1.getRoot().getAs<JsonText>("text").toString())
+            crossSync(d1, d2)
+            assertEquals(
+                d1.getRoot().getAs<JsonText>("text").toString(),
+                d2.getRoot().getAs<JsonText>("text").toString(),
+            )
+            assertEquals(identitySequence(d1.crdtText()), identitySequence(d2.crdtText()))
+        }
 }

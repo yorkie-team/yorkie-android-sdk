@@ -659,6 +659,43 @@ class SetActorReissueTest {
             assertTrue(document.pendingChanges().all { it.id.actor == ACTOR_A })
         }
 
+    // Probed directly against yorkie-js-sdk v0.7.26's
+    // own explicit-key (non-reissue) `setActor` path -- a plain rename only
+    // renames `localChanges`' own `ChangeID`/operations (JS `document.ts`
+    // `setActor`'s own doc comment: "the root and the tickets inside the
+    // operations keep the actor they were minted under"; Android's
+    // `Document.setActor` mirrors it line for line). A pre-attach delete's
+    // tombstone on the CRDT node is therefore left under the OLD actor, but
+    // `RgaTreeSplit.restore()`'s undo-side lookup keys the cancel to the
+    // UNDO's OWN (current) actor -- `target.uncancelledRemovalBy(executedAt
+    // .actorID)` here, identically `target.uncancelledRemovalBy(executedAt
+    // .getActorID())` in JS `rga_tree_split.ts` (v0.7.26, same call site,
+    // same comment: "An undo reverses its own actor's change"). After a
+    // plain rename the undo's actor no longer matches the deletion's, so
+    // neither SDK's lookup finds anything to cancel and the deleted span
+    // stays tombstoned forever -- confirmed by running this exact sequence
+    // against the JS v0.7.26 `Document` directly (`doc.setActor(actorA)`,
+    // no `reissue` option, then `doc.history.undo()`): JS reproduces the
+    // identical "ab"/"ef" split with "cd" never restored. This is accepted
+    // JS parity, not an Android-only defect -- pinned so a future change to
+    // either `uncancelledRemovalBy` or the rename path does not silently
+    // start (or stop) reviving this content without comment.
+    @Test
+    fun `a plain rename leaves a pre-attach delete un-undoable (JS v0_7_26 parity)`() = runTest {
+        val document = Document("")
+        document.updateAsync { root, _ -> root.setNewText("text").edit(0, 0, "abcdef") }
+            .await()
+        document.updateAsync { root, _ -> (root["text"] as JsonText).edit(2, 4, "") }.await()
+
+        document.setActor(ACTOR_A, reissue = false)
+        assertTrue(document.history.canUndo())
+        document.history.undoAsync().await()
+
+        // "cd" never comes back: the undo's own actor (ACTOR_A) never recorded
+        // this deletion, so `uncancelledRemovalBy` finds nothing to cancel.
+        assertEquals("""{"text":[{"val":"ab"},{"val":"ef"}]}""", document.toJson())
+    }
+
     // LOW-3 fold-in (cross-judge CJ-7): the presence VALUE is re-keyed to the
     // new actor and gone under the old one after a reissue.
     @Test

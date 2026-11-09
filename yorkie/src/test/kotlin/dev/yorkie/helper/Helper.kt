@@ -303,6 +303,105 @@ suspend fun crossSyncOverWire(d1: Document, d2: Document) {
 }
 
 /**
+ * A small seeded PRNG (mulberry32) so a seed replays the same history.
+ * Ported from `test/helper/adv_sync.ts` (yorkie-js-sdk #1514, yorkie#2310).
+ * Kotlin `Int` arithmetic wraps mod 2^32 on overflow the same way JS's
+ * `Math.imul`/`>>> 0` do, so the bit-level steps translate directly.
+ */
+fun mulberry32(seed: Int): () -> Double {
+    var state = seed
+    return {
+        state += 0x6d2b79f5
+        var t = state
+        t = (t xor (t ushr 15)) * (t or 1)
+        t = t xor (t + ((t xor (t ushr 7)) * (t or 61)))
+        ((t xor (t ushr 14)).toLong() and 0xFFFFFFFFL).toDouble() / 4294967296.0
+    }
+}
+
+/**
+ * Go's `time.MinVersionVector`: element-wise min across [vectors], 0 for an
+ * actor any vector does not carry.
+ */
+fun minVersionVector(vectors: List<VersionVector>): VersionVector {
+    val actors = vectors.flatMap { it.vectorMap.keys }.toSet()
+    val out = actors.associateWith { actor -> vectors.minOf { it.get(actor) ?: 0L } }
+    return VersionVector(out)
+}
+
+/** A replica attached to an [AdvServer]. */
+class AdvClient(val document: Document, val id: String) {
+    internal var cursor = 0
+}
+
+/** Returns [n] replicas of one document under the actors `1..n`. */
+fun newAdvClients(n: Int): List<AdvClient> {
+    return (1..n).map { i ->
+        val id = i.toString().padStart(24, '0')
+        AdvClient(Document("adv-doc"), id).also { it.document.setActor(id) }
+    }
+}
+
+/**
+ * Models the server's push-pull: one ordered change log, one stored version
+ * vector row per client (the vector its push carried), and minVV =
+ * element-wise min over the stored rows. A client only ever sees minVV as the
+ * version vector of a pull response, and [Document.applyChangePack] is what
+ * runs GC with it, so GC can never run at a moment the protocol would not
+ * produce. Ported from `test/helper/adv_sync.ts` (yorkie-js-sdk #1514,
+ * yorkie#2310).
+ */
+class AdvServer {
+    val log = mutableListOf<Change>()
+    private val rows = mutableMapOf<String, VersionVector>()
+
+    /**
+     * One PushPull round trip: push local changes, store the request's
+     * vector, pull everything the server holds that this client has not
+     * seen (by actor, not by log position -- a concurrent push from another
+     * client between this client's own push and pull must still be
+     * excluded only by identity), and hand the response (changes + minVV
+     * when [gc]) to [Document.applyChangePack], which applies then collects.
+     */
+    suspend fun sync(client: AdvClient, gc: Boolean) {
+        val pack = client.document.createChangePack()
+        log.addAll(pack.changes)
+        rows[client.id] = pack.versionVector.deepCopy()
+
+        val pulled = log.drop(client.cursor).filter { it.id.actor != client.id }
+        client.cursor = log.size
+
+        val vv = if (gc) minVersionVector(rows.values.toList()) else VersionVector()
+        client.document.applyChangePack(
+            ChangePack(
+                client.document.getKey(),
+                CheckPoint(0, pack.checkPoint.clientSeq),
+                pulled,
+                null,
+                false,
+                vv,
+            ),
+        )
+    }
+
+    /**
+     * Passes every change in [log] through the protobuf operation codec in
+     * place -- the only way a unit test exercises the
+     * `removal_events`/restore-span encode/decode path for a change already
+     * sitting in an [AdvServer] log. Only the operations round-trip (same as
+     * [crossSync]'s `overWire`): a [Change]'s own [dev.yorkie.document.change.ChangeID]
+     * is never re-encoded here, so no `android.util.Base64` bridge is needed.
+     */
+    fun wire() {
+        for (i in log.indices) {
+            log[i] = log[i].copy(
+                operations = log[i].operations.map { it.toPBOperation() }.toOperations(),
+            )
+        }
+    }
+}
+
+/**
  * Records every debug message passed to [Logger], for asserting that a
  * specific `logDebug` call site fired (AC13). Admits DEBUG unconditionally.
  * [Logger]'s backing instance is a process-wide singleton — install via

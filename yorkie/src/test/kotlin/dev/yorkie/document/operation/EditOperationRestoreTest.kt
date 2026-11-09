@@ -121,11 +121,16 @@ class EditOperationRestoreTest {
     // requested state (here d2 deleted the same "45" before d1's redo) the
     // retombstone is a no-op, no reverse was pushed, and the popped redo
     // entry vanished — the NEXT undo then popped the original insert and
-    // wiped the text. JS pushes the reverse unconditionally
-    // (edit_operation.ts restore branch; document.ts pushes before its
-    // empty-opInfos return), so the next undo revives "45" instead.
+    // wiped the text. A reverse is now pushed unconditionally whenever a
+    // restore op executes (#1514/yorkie#2310): the stack entry is never
+    // lost, so the next undo does not fall through to the original insert.
+    // Under the removal ledger the pushed reverse is itself a true no-op
+    // here (`recorded` is empty -- the retombstone genuinely recorded
+    // nothing, since d1 already knew d2's independent deletion), so the next
+    // undo leaves "45" deleted rather than reviving it: d2's deletion, which
+    // d1 has already seen, is the one the ledger now defers to.
     @Test
-    fun `a no-effect redo still pushes its undo counterpart like JS`() = runTest {
+    fun `a no-effect redo still pushes its undo counterpart`() = runTest {
         val d1 = Document("test-doc")
         val d2 = Document("test-doc")
         d1.setActor(actor1)
@@ -148,11 +153,12 @@ class EditOperationRestoreTest {
         assertFalse(d1.history.canRedo())
         assertTrue(d1.history.canUndo())
 
-        // JS parity: the reverse (a restore of "45") is on the undo stack, so
-        // undoing revives "45" — even though d2 deleted it — rather than
-        // popping the original insert and emptying the document.
+        // The pushed reverse is a true no-op (recorded nothing), so undoing
+        // it leaves "45" deleted — not popping the original insert and
+        // emptying the document, and not reviving "45" either, since d1
+        // already knew d2's independent deletion when the redo ran.
         d1.history.undoAsync().await()
-        assertEquals("0123456789", d1.text().toString())
+        assertEquals("01236789", d1.text().toString())
 
         crossSync(d1, d2)
         assertEquals(d1.text().toString(), d2.text().toString())

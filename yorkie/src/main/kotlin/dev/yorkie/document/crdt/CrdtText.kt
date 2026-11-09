@@ -149,16 +149,24 @@ internal data class CrdtText(
     fun retombstone(
         spans: List<RestoreSpan<TextValue>>,
         executedAt: TimeTicket,
+        versionVector: VersionVector? = null,
     ): TextRetombstoneResult {
-        val result = rgaTreeSplit.retombstone(spans, executedAt)
+        val result = rgaTreeSplit.retombstone(spans, executedAt, versionVector)
         return TextRetombstoneResult(
             // isolateRange splits the live piece being re-tombstoned, so
             // drain its copied attribute tombstones too.
             result.gcPairs + rgaTreeSplit.drainPendingAttributeGcPairs(),
             toTextChanges(result.changes),
             result.dataSize,
+            result.recorded,
         )
     }
+
+    /** Whether any node's removal ledger holds a cancel (see [RgaTreeSplit.hasCancelledRemovals]). */
+    fun hasCancelledRemovals(): Boolean = rgaTreeSplit.hasCancelledRemovals()
+
+    /** Drops stable removal/cancel pairs from every node's ledger (see [RgaTreeSplit.pruneLedgers]). */
+    fun pruneLedgers(vector: VersionVector): Int = rgaTreeSplit.pruneLedgers(vector)
 
     /**
      * Wraps raw [RgaTreeSplit.ContentChange]s into [TextChange]s, mirroring

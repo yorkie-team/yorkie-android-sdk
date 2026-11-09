@@ -12,8 +12,11 @@ import dev.yorkie.document.time.ticketKnown
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.Logger.Companion.logDebug
 import dev.yorkie.util.SplayTreeSet
+import dev.yorkie.util.YorkieException
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.subDataSize
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.TreeMap
 
 internal typealias RgaTreeSplitPosRange = Pair<RgaTreeSplitPos, RgaTreeSplitPos>
@@ -57,8 +60,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
     /**
      * Buffers GC pairs for nodes created already-tombstoned by splitting a
      * removed node. Such pieces inherit `removedAt` without ever passing
-     * through [RgaTreeSplitNode.remove], so they would otherwise never be
-     * registered for GC. Callers that split nodes ([edit], [CrdtText.style],
+     * through [RgaTreeSplitNode.recordRemoval], so they would otherwise never
+     * be registered for GC. Callers that split nodes ([edit], [CrdtText.style],
      * [CrdtText.removeStyle], [restore], [retombstone]) drain this buffer via
      * [drainPendingGcPairs] into their returned GC pairs.
      */
@@ -107,6 +110,48 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      */
     fun drainAllPendingGcPairs(): List<GCPair<*>> {
         return drainPendingGcPairs() + drainPendingAttributeGcPairs()
+    }
+
+    /**
+     * The nodes whose ledger holds a cancel, the only ones [pruneLedgers] can
+     * drop anything from. `null` until first needed -- a tree decoded from a
+     * snapshot or deep-copied fills it with one scan ([scanCancelled]).
+     */
+    private var cancelled: MutableSet<RgaTreeSplitNode<T>>? = null
+
+    private fun scanCancelled(): MutableSet<RgaTreeSplitNode<T>> {
+        val set: MutableSet<RgaTreeSplitNode<T>> = Collections.newSetFromMap(IdentityHashMap())
+        var node: RgaTreeSplitNode<T>? = head
+        while (node != null) {
+            if (node.hasCancels()) set.add(node)
+            node = node.next
+        }
+        cancelled = set
+        return set
+    }
+
+    /** Records that [node]'s ledger has a cancel. */
+    private fun trackCancelled(node: RgaTreeSplitNode<T>) {
+        (cancelled ?: scanCancelled()).add(node)
+    }
+
+    /** Whether any node's ledger holds a cancel. */
+    fun hasCancelledRemovals(): Boolean = (cancelled ?: scanCancelled()).isNotEmpty()
+
+    /**
+     * Drops, from every tracked node's ledger, the removals whose cancels
+     * [vector] covers (see [RgaTreeSplitNode.pruneStable]). Returns how many
+     * nodes still hold a cancel.
+     */
+    fun pruneLedgers(vector: VersionVector): Int {
+        val set = cancelled ?: scanCancelled()
+        val iterator = set.iterator()
+        while (iterator.hasNext()) {
+            val node = iterator.next()
+            node.pruneStable(vector)
+            if (!node.hasCancels()) iterator.remove()
+        }
+        return set.size
     }
 
     /**
@@ -267,10 +312,22 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     val overlapEnd = minOf(pieceEnd, span.end)
                     if (piece.isRemoved) {
                         val (target, _) = isolateRange(piece, cursor, overlapEnd)
-                        target.setRemovedAt(null)
-                        // Repair splay weights on the path to root (length 0 -> len).
-                        treeByIndex.splay(target)
-                        untombstoned.add(target)
+                        // An undo reverses its own actor's change, so the
+                        // removal it cancels is the one uncancelled removal
+                        // by that actor: one actor cannot remove a piece
+                        // already removed in its view. No other removal
+                        // holds it if there is none.
+                        var live = false
+                        val deletion = target.uncancelledRemovalBy(executedAt.actorID)
+                        if (deletion != null) {
+                            live = target.cancelRemoval(deletion, executedAt)
+                            trackCancelled(target)
+                        }
+                        if (live) {
+                            // Repair splay weights on the path to root (length 0 -> len).
+                            treeByIndex.splay(target)
+                            untombstoned.add(target)
+                        }
                         chainAnchor = target
                     } else {
                         chainAnchor = piece
@@ -290,6 +347,18 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     ) as T
                     val newNode =
                         RgaTreeSplitNode(RgaTreeSplitNodeID(span.createdAt, cursor), value)
+                    // The purged removal was known to every replica before
+                    // the purge, so every change that can arrive later knows
+                    // it. A stand-in removal by the same actor at lamport 0,
+                    // which every such change's vector covers, keeps that
+                    // answer for isRemovedInView, with this cancel. The pair
+                    // is dropped once the cancel is known everywhere
+                    // (pruneStable); until then snapshots carry it, as Go
+                    // records the same.
+                    val stable = TimeTicket(0L, 0u, executedAt.actorID)
+                    newNode.recordRemoval(stable)
+                    newNode.cancelRemoval(stable, executedAt)
+                    trackCancelled(newNode)
                     liveDiff = addDataSizes(liveDiff, newNode.dataSize)
                     val (prev, anchorDiff) =
                         findRestoreAnchor(
@@ -324,14 +393,26 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                     // findFloorNodePreferToLeft/posToIndex key on "the
                     // same-insertion piece ending at my start", not on document
                     // order — and deepCopy resolves links in a second pass.
-                    val insertionSuccessor = findPieceCovering(span.createdAt, gapEnd)
-                    val insertionPredecessor = if (cursor > 0) {
-                        findPieceCovering(span.createdAt, cursor - 1)
-                    } else {
-                        null
+                    //
+                    // JS v0.7.26 widens both lookups to the nearest SURVIVING
+                    // piece of this insertion, not one whose range literally
+                    // covers the boundary offset: `treeByID.floorEntry`
+                    // (insPrev) / `ceilingEntry` (insNext), checked only for
+                    // `hasSameCreatedAt`. A `findPieceCovering`-style
+                    // range check would miss a predecessor/successor whose
+                    // immediate neighbour was itself purged away.
+                    if (cursor > 0) {
+                        val prevKey = RgaTreeSplitNodeID(span.createdAt, cursor - 1)
+                        val insPrevEntry = treeByID.floorEntry(prevKey)
+                        if (insPrevEntry != null && insPrevEntry.key.hasSameCreatedAt(prevKey)) {
+                            newNode.setInsertionPrev(insPrevEntry.value)
+                        }
                     }
-                    newNode.setInsertionPrev(insertionPredecessor)
-                    insertionSuccessor?.setInsertionPrev(newNode)
+                    val nextKey = RgaTreeSplitNodeID(span.createdAt, gapEnd)
+                    val insNextEntry = treeByID.ceilingEntry(nextKey)
+                    if (insNextEntry != null && insNextEntry.key.hasSameCreatedAt(nextKey)) {
+                        insNextEntry.value.setInsertionPrev(newNode)
+                    }
                     recreated.add(newNode)
                     chainAnchor = newNode
                     cursor = gapEnd
@@ -357,30 +438,71 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
 
     /**
      * Re-deletes the characters described by [spans] (redo of an identity-
-     * preserving undo). Only live pieces are affected; already removed or
-     * purged regions are skipped (idempotent).
+     * preserving undo). Only pieces live in the redo's view are affected: a
+     * piece removed in that view, or purged, is skipped (idempotent), and a
+     * piece removed here by a deletion the redo never saw records the redo
+     * without being re-tombstoned ([versionVector] carries that view; `null`
+     * or empty means local, matching [deleteNodes]).
      *
-     * Returns GC pairs for the newly tombstoned nodes, the removed regions as
-     * deletions, and the metadata-size overhead from splitting the (live)
-     * pieces to isolate the target range. The caller must accumulate
-     * [RgaTreeSplitRetombstoneResult.dataSize] before registering
-     * [RgaTreeSplitRetombstoneResult.gcPairs], mirroring how a normal edit's
-     * boundary splits are accounted before its resulting tombstones are
-     * registered. Indices are captured before each removal, so applying the
-     * changes in emission order stays consistent.
+     * Returns GC pairs for the newly tombstoned nodes and the born-dead
+     * remainders the splits left behind, the removed regions as deletions,
+     * the metadata-size overhead from splitting the (live) pieces to isolate
+     * the target range, and [RgaTreeSplitRetombstoneResult.recorded] — the
+     * pieces the removal was actually recorded on, which the reverse has to
+     * name. The caller must accumulate [RgaTreeSplitRetombstoneResult.dataSize]
+     * before registering [RgaTreeSplitRetombstoneResult.gcPairs], mirroring
+     * how a normal edit's boundary splits are accounted before its resulting
+     * tombstones are registered. Indices are captured before each removal, so
+     * applying the changes in emission order stays consistent.
      */
     fun retombstone(
         spans: List<RestoreSpan<T>>,
         executedAt: TimeTicket,
+        versionVector: VersionVector? = null,
     ): RgaTreeSplitRetombstoneResult<T> {
         val gcPairs = mutableListOf<GCPair<RgaTreeSplitNode<T>>>()
         val changes = mutableListOf<ContentChange>()
         var diff = DataSize(data = 0, meta = 0)
+        val hasView = versionVector != null && versionVector.size() != 0
+        val recorded = mutableListOf<RestoreSpan<T>>()
+
+        fun record(span: RestoreSpan<T>, target: RgaTreeSplitNode<T>) {
+            val start = target.id.offset
+            val end = start + target.contentLength
+
+            @Suppress("UNCHECKED_CAST")
+            val value = span.value.subSequence(start - span.start, end - span.start) as T
+            recorded.add(RestoreSpan(span.createdAt, start, end, value))
+        }
 
         for (span in spans) {
             val pieces = findPiecesOverlapping(span.createdAt, span.start, span.end)
             for (piece in pieces) {
-                if (piece.isRemoved) continue
+                if (piece.isRemoved) {
+                    // A piece live in the redo's view but removed here by a
+                    // deletion the redo never saw still records the redo's
+                    // deletion, so a later undo of that other deletion keeps
+                    // it removed.
+                    if (hasView && !piece.isRemovedInView(requireNotNull(versionVector))) {
+                        val pieceStart = piece.id.offset
+                        val pieceEnd = pieceStart + piece.contentLength
+                        val (target, _) = isolateRange(
+                            piece,
+                            maxOf(pieceStart, span.start),
+                            minOf(pieceEnd, span.end),
+                        )
+                        target.recordRemoval(executedAt)
+                        record(span, target)
+                    }
+                    continue
+                }
+                // A piece live here but removed in the redo's view (by a
+                // deletion whose undo the redo never saw) is left alone, as
+                // the redoing replica left it: like a deletion, a redo
+                // removes only what was live in its view.
+                if (hasView && piece.isRemovedInView(requireNotNull(versionVector))) {
+                    continue
+                }
 
                 val pieceStart = piece.id.offset
                 val pieceEnd = pieceStart + piece.contentLength
@@ -394,7 +516,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                 diff = addDataSizes(diff, splitDiff)
                 // Capture the visible range while `target` is still live.
                 val (from, to) = findIndexesFromRange(target.createPosRange())
-                target.remove(executedAt)
+                target.recordRemoval(executedAt)
+                record(span, target)
                 treeByIndex.splay(target)
                 gcPairs.add(GCPair(this, target))
                 // Emit unconditionally, symmetric with restore()'s equivalent
@@ -405,15 +528,13 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             }
         }
 
-        // `piece` is always live here, so splitNode's node-level born-dead
-        // buffer never fires — drain anyway to stay consistent with every
-        // other caller of isolateRange/splitNode. A live piece CAN carry
-        // already-removed attributes, though: splitNode separately buffers
-        // their split-copied tombstones (pendingAttributeGcPairs); the
-        // caller (CrdtText.retombstone) drains that one.
+        // Isolating a range inside an already-tombstoned piece buffers
+        // born-dead remainders, and a split books the attribute tombstones it
+        // copies. Hand them to the caller with the rest: unregistered, they
+        // would never be purged and their size would stay uncharged.
         gcPairs.addAll(drainPendingGcPairs())
 
-        return RgaTreeSplitRetombstoneResult(gcPairs, changes, diff)
+        return RgaTreeSplitRetombstoneResult(gcPairs, changes, diff, recorded)
     }
 
     /**
@@ -534,39 +655,24 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      * [[gapStart], [gapEnd]) of insertion [createdAt] AFTER.
      *
      * Resolution ladder — exactly the JS SDK `rga_tree_split.ts`'s
-     * `findRestoreAnchor` and server `rga_tree_split.go`'s
-     * `findRestoreAnchor` ladder (both @ v0.7.13/5d5cac63), all rules key on
-     * op-carried data + ID lookups only:
+     * `findRestoreAnchor` ladder as of v0.7.26 (#1514, yorkie#2310), all
+     * rules key on op-carried data + ID lookups only:
      *  (a) a piece covering [gapEnd] exists -> directly before it
      *      (originally-adjacent successor; exact original slot)
      *  (b) nearest surviving piece of the same insertion left of [gapStart]
      *      -> directly after it
-     *  (c) the RIGHTMOST surviving piece of the whole insertion, gated to be
-     *      right of the gap (`offset >= gapEnd`) -> directly before it. This
-     *      picks the farthest-away survivor, not the nearest one — when a
-     *      nearer same-insertion piece also survives between the gap and
-     *      that rightmost piece, the recreated fragment lands behind the far
-     *      one anyway. Both JS and the server share this exact placement
-     *      (confirmed against `rga_tree_split.ts:992-1002` and
-     *      `rga_tree_split.go:896-914`), so it reproduces a known shared
-     *      upstream scramble for a purge pattern with more than one
-     *      surviving fragment (spec 011 scenario 2 /
-     *      `undo-after-GC scrambles content into the exact spec scenario 1
-     *      order`) — tracked upstream, not an Android divergence; see the
-     *      round build report's "Upstream issue draft". A prior revision of
-     *      this rung used a nearest-successor `ceilingEntry` search instead,
-     *      which fixed the scramble locally but disagreed with both upstream
-     *      implementations on identical replayed input — reverted so a
-     *      relayed restore op resolves to the same text everywhere (spec 011
-     *      B2, binding this round).
+     *  (c) nearest surviving piece of the same insertion at or after
+     *      [gapEnd] -> directly before it. Anchoring before a FARTHER piece
+     *      would place the gap after the pieces in between, and a deletion
+     *      that later spans from the gap to one of them would run from its
+     *      start to the end of the text.
      *  (d) [chainAnchor]: the previously placed fragment of this same
      *      restore call (document order) -> after it, so a purge that left
      *      NO surviving same-insertion piece (char-by-char typing makes
      *      every character its own insertion) is rebuilt left-to-right
      *      instead of each fragment prepending at the same fallback anchor
      *      and reversing the run. Ported from JS `270ffc66` (v0.7.14,
-     *      wafflebase#629) — it lands strictly BELOW rung (c), so the
-     *      rung-(c) upstream scramble above is unaffected by it.
+     *      wafflebase#629).
      *  (e) [fallbackAnchor], remapped through [refinePos] and then resolved
      *      via [findNodeWithSplit] inside a catch-all — exactly JS's
      *      `refinePos` + `findNodeWithSplit` + `catch {}`. The remap is
@@ -607,13 +713,17 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
             }
         }
 
-        val rightmostKey = RgaTreeSplitNodeID(createdAt, Int.MAX_VALUE)
-        val rightmost = treeByID.floorEntry(rightmostKey)
-        if (rightmost != null &&
-            rightmost.key.hasSameCreatedAt(rightmostKey) &&
-            rightmost.value.id.offset >= gapEnd
-        ) {
-            return requireNotNull(rightmost.value.prev) to zeroDiff
+        // (c) JS v0.7.26 (#1514, yorkie#2310): the NEAREST surviving piece of
+        // the insertion at or after gapEnd, not the rightmost one — anchoring
+        // before a later piece would place the gap after the pieces in
+        // between, and a deletion that later spans from the gap to one of
+        // them would run from its start to the end of the text. Replaces the
+        // older rightmost-survivor rung, which disagreed with this JS/Go
+        // v0.7.26 ladder on identical replayed input.
+        val afterKey = RgaTreeSplitNodeID(createdAt, gapEnd)
+        val after = treeByID.ceilingEntry(afterKey)
+        if (after != null && after.key.hasSameCreatedAt(afterKey)) {
+            return requireNotNull(after.value.prev) to zeroDiff
         }
 
         // (d) No surviving piece of this insertion anchors the fragment.
@@ -768,6 +878,9 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         val prevSize = node.dataSize
 
         val splitNode = node.split(offset)
+        if (splitNode.hasCancels()) {
+            trackCancelled(splitNode)
+        }
         treeByIndex.updateWeight(splitNode)
         insertAfter(node, splitNode)
         node.insertionNext?.setInsertionPrev(splitNode)
@@ -784,8 +897,8 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
         pendingAttributeGcPairs.addAll(splitNode.value.gcPairs)
 
         // A piece split off an already-tombstoned node inherits removedAt
-        // without going through remove(), so no GC pair is created for it in
-        // the normal deletion path. Buffer one here so it can be purged;
+        // without going through recordRemoval(), so no GC pair is created
+        // for it in the normal deletion path. Buffer one here so it can be purged;
         // otherwise it stays in the list forever. The piece was never live,
         // so the net-new size created by the split goes straight to
         // docSize.gc when the pair is registered; report a zero diff to the
@@ -873,9 +986,25 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                 }
             }
 
-            if (node.canRemove(editedAt, creationKnown, tombstoneKnown)) {
+            // Once a tombstone can be cancelled by an undo, "the deleter knew
+            // the node" is not enough -- the node has to have been LIVE in
+            // the deleter's view. A node the deleter saw removed and an undo
+            // revived here has to survive the deletion on every replica.
+            val liveInView = if (isLocal) {
+                !node.isRemoved
+            } else {
+                creationKnown && !node.isRemovedInView(requireNotNull(vector))
+            }
+            if (liveInView && node.canRemove(editedAt, creationKnown, tombstoneKnown)) {
                 nodesToRemove.add(node)
             } else {
+                // A node this deletion saw live but someone else removed
+                // concurrently records the deletion all the same. Otherwise
+                // an undo of the other deletion revives it on replicas that
+                // applied the two in one order and not in the other.
+                if (!isLocal && liveInView && node.isRemoved) {
+                    node.recordRemoval(editedAt)
+                }
                 nodesToKeep.add(node)
             }
         }
@@ -895,7 +1024,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
                 alreadyRemovedIDs.add(node.id)
             }
             removedNodes[node.id] = node
-            node.remove(removedAt = editedAt)
+            node.recordRemoval(editedAt)
         }
 
         // 04. Clear the index tree of the given deletion boundaries.
@@ -1008,6 +1137,7 @@ internal class RgaTreeSplit<T : RgaTreeSplitValue<T>> :
      * Physically deletes the given node from this [RgaTreeSplit].
      */
     override fun delete(node: RgaTreeSplitNode<T>) {
+        cancelled?.remove(node)
         treeByIndex.delete(node)
         treeByID.remove(node.id)
 
@@ -1149,6 +1279,28 @@ internal interface RgaTreeSplitValue<T : RgaTreeSplitValue<T>> : CharSequence {
         get() = emptyList()
 }
 
+/**
+ * One deletion in a [RgaTreeSplitNode]'s removal ledger, and the undo that
+ * cancelled it.
+ */
+internal data class LedgerCancel(val deletion: TimeTicket, val cancelledAt: TimeTicket)
+
+/**
+ * The reading of a node's removal ledger, kept because a ledger grows a pair
+ * per delete-and-undo cycle and rebuilding it on every walk would make
+ * churning one quadratic. [entries] preserves insertion order; [byKey] and
+ * [live] are derived views over it. Every write of the ledger either drops
+ * this cache or rebuilds it.
+ */
+private class LedgerIndex {
+    class Entry(val removal: TimeTicket, var cancelledAt: TimeTicket? = null)
+
+    val entries = mutableListOf<Entry>()
+    val byKey = mutableMapOf<TimeTicket, Entry>()
+    val live = mutableListOf<TimeTicket>()
+    val cancelled = mutableMapOf<TimeTicket, TimeTicket>()
+}
+
 internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     val id: RgaTreeSplitNodeID,
     private var _value: T,
@@ -1162,6 +1314,18 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
         private set
     var insertionNext: RgaTreeSplitNode<T>? = null
         private set
+
+    // The removal ledger beyond `_removedAt`: `dels` are the deletions that
+    // removed this node while it was live in the deleter's view; `cancels`
+    // are the deletions an undo cancelled. `_removedAt` is the latest
+    // uncancelled deletion. `!ledgered` means the ledger is just
+    // `_removedAt` -- every node starts and stays this way until a second
+    // removal or a cancel needs the full ledger (ported from JS SDK
+    // `rga_tree_split.ts`, yorkie-js-sdk #1514, yorkie#2310).
+    private var ledgered: Boolean = false
+    private var dels: MutableList<TimeTicket>? = null
+    private var cancels: MutableList<LedgerCancel>? = null
+    private var ledgerIndexCache: LedgerIndex? = null
 
     val createdAt: TimeTicket
         get() = id.createdAt
@@ -1225,7 +1389,262 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
      * Creates a new split node of the given [offset].
      */
     fun split(offset: Int): RgaTreeSplitNode<T> {
-        return RgaTreeSplitNode(id.split(offset), splitValue(offset), _removedAt)
+        return RgaTreeSplitNode(id.split(offset), splitValue(offset), _removedAt).also {
+            it.copyLedger(this)
+        }
+    }
+
+    /**
+     * Copies the removal ledger of [other] onto this node, used by [split]
+     * and [deepCopy]. [other]'s own [dels]/[cancels] lists are copied, not
+     * shared -- `data class`'s generated `copy()` only reconstructs the
+     * constructor parameters ([id], [_value], [_removedAt]); these body
+     * fields need an explicit copy or a split/clone silently starts
+     * unledgered.
+     */
+    private fun copyLedger(other: RgaTreeSplitNode<T>) {
+        ledgered = other.ledgered
+        dels = other.dels?.toMutableList()
+        cancels = other.cancels?.toMutableList()
+        ledgerIndexCache = null
+    }
+
+    /** Whether the ledger holds at least one cancel -- the only thing [pruneStable] can drop. */
+    fun hasCancels(): Boolean = !cancels.isNullOrEmpty()
+
+    /**
+     * The deletions in the ledger, without building one: an unledgered node
+     * was removed by [_removedAt] alone, if at all.
+     */
+    private fun removals(): List<TimeTicket> {
+        return if (ledgered) dels.orEmpty() else listOfNotNull(_removedAt)
+    }
+
+    /** Ensures the ledger exists, seeding it from [_removedAt] on first use. */
+    private fun ledger(): MutableList<TimeTicket> {
+        if (!ledgered) {
+            ledgered = true
+            dels = _removedAt?.let { mutableListOf(it) } ?: mutableListOf()
+            ledgerIndexCache = null
+        }
+        return requireNotNull(dels)
+    }
+
+    private fun ledgerIndex(): LedgerIndex {
+        ledgerIndexCache?.let { return it }
+        val index = LedgerIndex()
+        cancels?.forEach { index.cancelled[it.deletion] = it.cancelledAt }
+        for (d in removals()) {
+            if (index.byKey.containsKey(d)) continue
+            val entry = LedgerIndex.Entry(d, index.cancelled[d])
+            index.entries.add(entry)
+            index.byKey[d] = entry
+            if (entry.cancelledAt == null) index.live.add(d)
+        }
+        ledgerIndexCache = index
+        return index
+    }
+
+    private fun recompute() {
+        var latest: TimeTicket? = null
+        for (d in ledgerIndex().live) {
+            if (latest == null || d > latest) latest = d
+        }
+        _removedAt = latest
+    }
+
+    /**
+     * Adds a deletion to the ledger. A node's first removal is just
+     * [_removedAt]; the ledger is built only when a second removal or a
+     * cancel needs it. An actor removes a piece only while it is live in its
+     * view, so it never holds two uncancelled removals; a change whose
+     * vector leaves out its own earlier removal is not honest, and recording
+     * it would break the pairing [getRemovalEvents] relies on and grow the
+     * ledger.
+     */
+    fun recordRemoval(removedAt: TimeTicket) {
+        if (!ledgered && _removedAt == null) {
+            _removedAt = removedAt
+            ledgerIndexCache = null
+            return
+        }
+        ledger()
+        val mine = uncancelledRemovalBy(removedAt.actorID)
+        if (mine != null && mine != removedAt) {
+            return
+        }
+        val index = ledgerIndex()
+        if (mine == null && !index.byKey.containsKey(removedAt)) {
+            requireNotNull(dels).add(removedAt)
+            val entry = LedgerIndex.Entry(removedAt)
+            index.entries.add(entry)
+            index.byKey[removedAt] = entry
+            index.live.add(removedAt)
+        }
+        recompute()
+    }
+
+    /**
+     * Cancels one deletion (an undo of it). Returns whether the node is live
+     * afterwards.
+     */
+    fun cancelRemoval(deletion: TimeTicket, at: TimeTicket): Boolean {
+        ledger()
+        val cancelList = cancels ?: mutableListOf<LedgerCancel>().also { cancels = it }
+        val index = ledgerIndex()
+        if (!index.cancelled.containsKey(deletion)) {
+            cancelList.add(LedgerCancel(deletion, at))
+            index.cancelled[deletion] = at
+            index.byKey[deletion]?.let { entry ->
+                entry.cancelledAt = at
+                val liveIndex = index.live.indexOf(deletion)
+                if (liveIndex != -1) index.live.removeAt(liveIndex)
+            }
+        }
+        recompute()
+        return _removedAt == null
+    }
+
+    /**
+     * Drops each removal whose cancel is known to every replica, with that
+     * cancel. A change that arrives later knows both, so the pair never
+     * decides [isRemovedInView] again, and dropping it keeps an undo-heavy
+     * text from carrying every removal it ever had. What is left once
+     * nothing more can be dropped is the default ledger ([_removedAt] alone).
+     */
+    fun pruneStable(vector: VersionVector) {
+        val keptCancels = mutableListOf<LedgerCancel>()
+        val dropped = mutableSetOf<TimeTicket>()
+        cancels?.forEach { c ->
+            if (!vector.afterOrEqual(c.cancelledAt)) {
+                keptCancels.add(c)
+            } else {
+                dropped.add(c.deletion)
+            }
+        }
+        var keptDels = dels
+        if (dropped.isNotEmpty() && keptDels != null) {
+            keptDels = keptDels.filterNot { it in dropped }.toMutableList()
+        }
+        dels = keptDels
+        cancels = keptCancels
+        ledgerIndexCache = null
+        val currentRemovedAt = _removedAt
+        val collapsesToPlain = keptDels.isNullOrEmpty() ||
+            (keptDels.size == 1 && currentRemovedAt != null && keptDels[0] == currentRemovedAt)
+        if (keptCancels.isEmpty() && collapsesToPlain) {
+            ledgered = false
+            dels = null
+            cancels = null
+        }
+    }
+
+    /** The removal by [actor] no undo cancelled, if any. */
+    fun uncancelledRemovalBy(actor: String): TimeTicket? {
+        return ledgerIndex().live.firstOrNull { it.actorID == actor }
+    }
+
+    /**
+     * Tells whether GC must keep this tombstone under [vector]: a node
+     * removed by two or more deletions no undo cancelled stays (an undo of
+     * one of them must find it still held by the others), and a node whose
+     * ledger is not yet stable stays too (every deletion and cancel in it
+     * must be known to all replicas, so a restore recreating this node after
+     * a purge answers [isRemovedInView] as the full ledger would).
+     */
+    override fun heldFromPurge(vector: VersionVector): Boolean {
+        if (!ledgered) return false
+        val liveCount = ledgerIndex().live.size
+        cancels?.forEach { c ->
+            if (!vector.afterOrEqual(c.cancelledAt)) return true
+        }
+        return liveCount >= 2
+    }
+
+    /**
+     * Tells whether the node was removed in the view of [vector]: a deletion
+     * it knew that no undo it knew cancelled.
+     */
+    fun isRemovedInView(vector: VersionVector): Boolean {
+        for (entry in ledgerIndex().entries) {
+            if (!ticketKnown(vector, entry.removal)) continue
+            val cancelledAt = entry.cancelledAt
+            if (cancelledAt != null && ticketKnown(vector, cancelledAt)) continue
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Returns the ledger as one list: every removal and every cancel's
+     * ticket except [_removedAt], in ticket order. Empty when [_removedAt]
+     * says it all. An actor's events alternate in ticket order -- it removes
+     * a piece only while the piece is live in its view, and its undo
+     * cancels its one uncancelled removal -- so [setRemovalEvents] can tell
+     * them apart by place.
+     */
+    fun getRemovalEvents(): List<TimeTicket> {
+        if (!ledgered) return emptyList()
+        val events = mutableListOf<TimeTicket>()
+        dels?.forEach { d -> if (_removedAt == null || d != _removedAt) events.add(d) }
+        cancels?.forEach { c -> events.add(c.cancelledAt) }
+        return events.sorted()
+    }
+
+    /**
+     * Rebuilds the ledger from [_removedAt] and the events [getRemovalEvents]
+     * returned: per actor, in ticket order, a removal then the cancel of it.
+     * Throws on a repeated ticket, which would pair a cancel with a removal
+     * that is not older, and when the result does not reproduce
+     * [_removedAt] -- and leaves the node as it was in either case.
+     */
+    fun setRemovalEvents(events: List<TimeTicket>) {
+        if (events.isEmpty()) return
+        val removedAtBefore = _removedAt
+        val all = events.toMutableList()
+        removedAtBefore?.let { all.add(it) }
+        all.sort()
+        for (i in 1 until all.size) {
+            if (all[i] == all[i - 1]) {
+                throw YorkieException(
+                    YorkieException.Code.ErrInvalidArgument,
+                    "removal events repeat a ticket",
+                )
+            }
+        }
+
+        val newDels = mutableListOf<TimeTicket>()
+        val newCancels = mutableListOf<LedgerCancel>()
+        val open = mutableMapOf<String, TimeTicket>()
+        for (t in all) {
+            val opened = open[t.actorID]
+            if (opened != null) {
+                newCancels.add(LedgerCancel(opened, t))
+                open.remove(t.actorID)
+                continue
+            }
+            newDels.add(t)
+            open[t.actorID] = t
+        }
+
+        ledgered = true
+        dels = newDels
+        cancels = newCancels
+        ledgerIndexCache = null
+        recompute()
+
+        val reproduces = removedAtBefore == _removedAt
+        if (!reproduces) {
+            _removedAt = removedAtBefore
+            ledgered = false
+            dels = null
+            cancels = null
+            ledgerIndexCache = null
+            throw YorkieException(
+                YorkieException.Code.ErrInvalidArgument,
+                "removal events do not reproduce removed_at",
+            )
+        }
     }
 
     // Take the right part first (subSequence deep-copies attributes), then
@@ -1291,22 +1710,17 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     fun canStyle(versionVector: VersionVector?): Boolean = ticketKnown(versionVector, createdAt)
 
     /**
-     * Sets the remove time of this node.
+     * Sets the remove time of this node. Drops the ledger: a direct LWW
+     * overwrite of [_removedAt] (not a ledgered [recordRemoval]) means this
+     * node is no longer tracked by the identity-preserving undo path, so any
+     * prior ledger no longer describes it.
      */
     fun setRemovedAt(removedAt: TimeTicket?) {
         _removedAt = removedAt
-    }
-
-    /**
-     * Removes the node with the given removedAt timestamp.
-     *
-     * Precondition: `canRemove` was checked before calling this method.
-     * This sets or overwrites removedAt if the new timestamp is newer.
-     */
-    fun remove(removedAt: TimeTicket) {
-        if (_removedAt == null || removedAt > _removedAt) {
-            _removedAt = removedAt
-        }
+        ledgered = false
+        dels = null
+        cancels = null
+        ledgerIndexCache = null
     }
 
     fun createPosRange(): RgaTreeSplitPosRange {
@@ -1314,7 +1728,7 @@ internal data class RgaTreeSplitNode<T : RgaTreeSplitValue<T>>(
     }
 
     fun deepCopy(): RgaTreeSplitNode<T> {
-        return copy(_value = _value.deepCopy())
+        return copy(_value = _value.deepCopy()).also { it.copyLedger(this) }
     }
 
     override fun hashCode(): Int {

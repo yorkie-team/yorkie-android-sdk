@@ -177,7 +177,7 @@ class CrdtTextTest {
         val value = TextValue("cd").apply { setAttribute("bold", "true", tick(1)) }
         val node = RgaTreeSplitNode(RgaTreeSplitNodeID(tick(0), 0), value)
         split.insertAfter(split.head, node)
-        node.remove(tick(2))
+        node.recordRemoval(tick(2))
 
         val text = CrdtText(split, tick(3))
 

@@ -1464,9 +1464,13 @@ public class Document(
         // not: JS skips Set/Remove there under OpSource.UndoRedo, Android
         // still executes, sends the change and emits LocalChange
         // (replicas converge either way). The gate matches JS
-        // document.ts's `!operations.length`; a no-op restore or
-        // retombstone counts as not executed here, where JS always
-        // reports a result for it.
+        // document.ts's `!operations.length`. A restore/retombstone op
+        // always counts as executed here, matching JS, even when its own
+        // opInfos come back empty: an undo that only cancels a removal
+        // (another deletion still holds the piece) or a redo that only
+        // records a removal changes the removal ledger though nothing is
+        // visibly different, and that change still has to reach every peer
+        // or their ledgers diverge (EditOperation.executeRestore, #1514).
         if (!change.hasPresenceChange && undoRedoResult.executedOperations.isEmpty()) {
             return Result.success(Unit)
         }

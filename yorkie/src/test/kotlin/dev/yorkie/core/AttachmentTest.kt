@@ -304,6 +304,91 @@ class AttachmentTest {
         assertFalse(target.watchFallbackEngaged)
     }
 
+    // ========== holdSyncFor's auth-hold gate ==========
+
+    @Test
+    fun `holdSyncFor - needSync is false one tick before the hold elapses`() {
+        now = 1_000L
+        val target = attachment(syncMode = Client.SyncMode.Polling)
+        target.holdSyncFor(500L) // holds until now=1_500
+
+        now = 1_499L
+        assertFalse(
+            target.needSync(heartbeatInterval = 5_000L, documentPollInterval = 1L),
+            "the poll interval alone would already fire -- the hold must still suppress it",
+        )
+    }
+
+    @Test
+    fun `holdSyncFor - boundary, needSync resumes exactly AT the hold's own deadline`() {
+        now = 1_000L
+        val target = attachment(syncMode = Client.SyncMode.Polling)
+        target.holdSyncFor(500L) // holds until now=1_500
+
+        now = 1_500L // == authHoldUntil, not past it
+        assertTrue(
+            target.needSync(heartbeatInterval = 5_000L, documentPollInterval = 1L),
+            "needSync's `nowProvider() < authHoldUntil` reads false at the boundary itself " +
+                "-- the hold must already have resumed, not need one more tick past it",
+        )
+    }
+
+    @Test
+    fun `holdSyncFor - holds a Polling document even though its own poll interval elapsed`() {
+        now = 1_000L
+        val target = attachment(syncMode = Client.SyncMode.Polling)
+        target.updateHeartbeatTime()
+        target.holdSyncFor(10_000L)
+
+        now = 2_000L // 1_000ms since updateHeartbeatTime -- Polling's own gate alone would fire
+        assertFalse(target.needSync(heartbeatInterval = 5_000L, documentPollInterval = 1_000L))
+    }
+
+    @Test
+    fun `holdSyncFor - holds a Realtime document even with a change event pending`() {
+        now = 1_000L
+        val target = attachment(syncMode = Client.SyncMode.Realtime)
+        target.changeEventReceived = true
+        target.holdSyncFor(10_000L)
+
+        now = 1_001L
+        assertFalse(
+            target.needSync(heartbeatInterval = 5_000L, documentPollInterval = 500L),
+            "needRealTimeSync() alone would fire on the pending change event -- the hold, " +
+                "checked before the Document/Channel branch, must still suppress it",
+        )
+    }
+
+    @Test
+    fun `holdSyncFor - holds a Channel even though its heartbeat interval elapsed`() {
+        now = 1_000L
+        val target = Attachment(
+            resource = dev.yorkie.presence.Channel("attachment-test-channel"),
+            syncMode = Client.SyncMode.Realtime,
+            nowProvider = { now },
+        )
+        target.holdSyncFor(50_000L) // holds until now=51_000
+
+        now = 20_000L // 19_000ms since construction -- past the 1_000ms heartbeat interval below
+        assertFalse(target.needSync(heartbeatInterval = 1_000L, documentPollInterval = 500L))
+    }
+
+    @Test
+    fun `holdSyncFor - clearing does not resurrect a write-rejected park`() {
+        now = 1_000L
+        val target = attachment(syncMode = Client.SyncMode.Polling)
+        target.updateHeartbeatTime()
+        target.markWriteRejected()
+        target.holdSyncFor(500L) // holds until now=1_500, independent of the park below
+
+        now = 1_500L // the hold has elapsed...
+        assertFalse(
+            target.needSync(heartbeatInterval = 5_000L, documentPollInterval = 1L),
+            "...but the write-rejected park is a SEPARATE, permanent gate the hold's own " +
+                "expiry must not clear",
+        )
+    }
+
     private companion object {
         const val TEST_DOCUMENT_KEY = "attachment-test-doc"
     }

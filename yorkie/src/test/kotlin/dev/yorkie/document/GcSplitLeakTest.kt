@@ -189,13 +189,22 @@ class GcSplitLeakTest {
         return d1 to d2
     }
 
+    /**
+     * The removal ledger (spec: yorkie-js-sdk #1514/yorkie#2310) holds a text
+     * piece from GC while it carries two or more never-cancelled (uncancelled)
+     * concurrent deletions: an undo of one of them must still find it held by
+     * the other. "cd" below is deleted by BOTH replicas concurrently (the
+     * split that previously left it orphaned now leaves it LEDGERED, not
+     * purged), so it stays registered forever -- garbage 1, not 0.
+     */
     @Test
     fun `purges pieces split off a tombstoned text node`() = runTest {
         val (d1, d2) = buildTextReplicas()
 
         // d1 tombstones the whole node; d2 concurrently deletes a middle
         // slice. When d2's delete arrives at d1, it splits d1's tombstone
-        // into three pieces; the piece after the deleted range is born dead.
+        // into three pieces; the "cd" piece is deleted by BOTH replicas
+        // (two uncancelled removals) and is held from purge by the ledger.
         d1.updateAsync { root, _ -> root.getAs<JsonText>("k").edit(0, 6, "") }.await()
         d2.updateAsync { root, _ -> root.getAs<JsonText>("k").edit(2, 4, "") }.await()
         crossSync(d1, d2)
@@ -211,13 +220,18 @@ class GcSplitLeakTest {
             purged2,
             "asymmetric purge for identical state: d1=$purged1 d2=$purged2",
         )
-        assertEquals(0, countTextTombstones(d1))
-        assertEquals(0, countTextTombstones(d2))
-        assertEquals(0, d1.garbageLength)
-        assertEquals(0, d2.garbageLength)
+        assertEquals(1, countTextTombstones(d1), "cd is held by two uncancelled deletions")
+        assertEquals(1, countTextTombstones(d2), "cd is held by two uncancelled deletions")
+        assertEquals(1, d1.garbageLength)
+        assertEquals(1, d2.garbageLength)
 
         assertEquals(d2.getDocSize(), d1.getDocSize())
-        assertEquals(DataSize(0, 0), d1.getDocSize().gc)
+        // gc now holds exactly the held "cd" tombstone's own data size --
+        // derived from a from-scratch rebuild (the running ledger's own
+        // accounting, confirmed equal) rather than a hard-coded literal.
+        val rebuiltGc = CrdtRoot(d1.getRootObject().deepCopy()).docSize.gc
+        assertEquals(rebuiltGc, d1.getDocSize().gc)
+        assertNotEquals(DataSize(0, 0), d1.getDocSize().gc)
     }
 
     @Test
@@ -227,7 +241,9 @@ class GcSplitLeakTest {
         // Bump d1's lamport so its whole-range delete is newer than d2's
         // slice delete. When d1's delete arrives at d2, canRemove() allows
         // the LWW overwrite of d2's own tombstone; re-pushing a GC pair for
-        // that node used to toggle-unregister it.
+        // that node used to toggle-unregister it. Under the removal ledger,
+        // "cd" ends up with two uncancelled removals (d2's original plus
+        // d1's LWW-newer one) and is held from purge rather than purged.
         d1.updateAsync { root, _ -> root.getAs<JsonText>("k").edit(6, 6, "!") }.await()
         d1.updateAsync { root, _ -> root.getAs<JsonText>("k").edit(0, 7, "") }.await()
         d2.updateAsync { root, _ -> root.getAs<JsonText>("k").edit(2, 4, "") }.await()
@@ -244,10 +260,10 @@ class GcSplitLeakTest {
             purged2,
             "asymmetric purge for identical state: d1=$purged1 d2=$purged2",
         )
-        assertEquals(0, countTextTombstones(d1))
-        assertEquals(0, countTextTombstones(d2))
-        assertEquals(0, d1.garbageLength)
-        assertEquals(0, d2.garbageLength)
+        assertEquals(1, countTextTombstones(d1), "cd is held by two uncancelled deletions")
+        assertEquals(1, countTextTombstones(d2), "cd is held by two uncancelled deletions")
+        assertEquals(1, d1.garbageLength)
+        assertEquals(1, d2.garbageLength)
     }
 
     @Test

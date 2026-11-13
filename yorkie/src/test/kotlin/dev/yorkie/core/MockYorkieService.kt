@@ -265,6 +265,30 @@ class MockYorkieService(
     val permissionDeniedPushPullKeys = mutableSetOf<String>()
 
     /**
+     * Document keys whose [pushPullChanges] fails with [YorkieException.Code.ErrUnauthenticated]
+     * -- a live set, same shape as [permissionDeniedPushPullKeys]: the test removes a
+     * key once it wants the next push-pull to succeed again (the token having been refreshed).
+     */
+    val unauthenticatedPushPullKeys = mutableSetOf<String>()
+
+    /**
+     * Channel keys whose [refreshChannel] fails with [YorkieException.Code.ErrUnauthenticated],
+     * same shape as [unauthenticatedPushPullKeys].
+     */
+    val unauthenticatedRefreshChannelKeys = mutableSetOf<String>()
+
+    /**
+     * Document keys whose [pushPullChanges] fails with [YorkieException.Code.ErrUnauthenticated]
+     * exactly ONCE, then succeeds -- models a single lost sync (restoring
+     * `changeEventReceived` on a failed sync).
+     */
+    // Same thread-safety rationale as [pushPullChangesCallCounts] above -- a test
+    // registers (and the loop's own dispatcher thread removes) a key in this set, on
+    // different dispatchers; a plain mutableSetOf is not safe for that.
+    val unauthenticatedPushPullOnceKeys: MutableSet<String> =
+        java.util.Collections.synchronizedSet(mutableSetOf())
+
+    /**
      * Document keys whose [pushPullChanges] fails with the given [YorkieException.Code]
      * (either [YorkieException.Code.ErrDocumentSizeExceedsLimit] or
      * [YorkieException.Code.ErrChangeTooLarge], #1462) at [Code.RESOURCE_EXHAUSTED] -- a live
@@ -595,6 +619,21 @@ class MockYorkieService(
             }
             return ResponseMessage.Failure(
                 cause = connectException,
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in unauthenticatedPushPullKeys) {
+            return ResponseMessage.Failure(
+                cause = unauthenticatedConnectException(),
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
+        }
+        if (request.changePack.documentKey in unauthenticatedPushPullOnceKeys) {
+            unauthenticatedPushPullOnceKeys.remove(request.changePack.documentKey)
+            return ResponseMessage.Failure(
+                cause = unauthenticatedConnectException(),
                 headers = emptyMap(),
                 trailers = emptyMap(),
             )
@@ -995,12 +1034,27 @@ class MockYorkieService(
         )
     }
 
+    /**
+     * Number of [refreshChannel] calls seen per channel key -- the channel twin of
+     * [pushPullChangesCallCounts], needed to assert that a 401'd channel is held while an
+     * unrelated channel keeps refreshing at its usual cadence.
+     */
+    val refreshChannelCallCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
     override suspend fun refreshChannel(
         request: RefreshChannelRequest,
         headers: Headers,
     ): ResponseMessage<RefreshChannelResponse> {
+        refreshChannelCallCounts.merge(request.channelKey, 1, Int::plus)
         if (refreshChannelDelayMs > 0L) {
             delay(refreshChannelDelayMs)
+        }
+        if (request.channelKey in unauthenticatedRefreshChannelKeys) {
+            return ResponseMessage.Failure(
+                cause = unauthenticatedConnectException(),
+                headers = emptyMap(),
+                trailers = emptyMap(),
+            )
         }
         if (refreshChannelFails) {
             return ResponseMessage.Failure(
@@ -1211,5 +1265,39 @@ class MockYorkieService(
             AUTH_ERROR_DOCUMENT_KEY to Code.UNAUTHENTICATED,
             EPOCH_MISMATCH_DOCUMENT_KEY to Code.FAILED_PRECONDITION,
         )
+    }
+}
+
+/**
+ * Builds an [ErrUnauthenticated]-shaped [ConnectException] -- shared by
+ * [MockYorkieService]'s own 401 branches and any test that needs to script a 401 response
+ * (e.g. via `coEvery { spiedService.someCall(...) } returns ...`) without duplicating the
+ * mockk boilerplate.
+ */
+internal fun unauthenticatedConnectException(): ConnectException {
+    val errorInfo = ErrorInfo.newBuilder()
+        .putMetadata("code", ErrUnauthenticated.codeString)
+        .build()
+    return mockk<ConnectException>(relaxed = true) {
+        every { code } returns Code.UNAUTHENTICATED
+        every { unpackedDetails(ErrorInfo::class) } returns listOf(errorInfo)
+    }
+}
+
+/**
+ * Builds an [dev.yorkie.util.YorkieException.Code.ErrClientNotFound]-shaped
+ * [ConnectException] -- the server-evicted-client case `handleConnectException`
+ * deactivates for unconditionally (loop or one-shot), unlike [ErrUnauthenticated]. [Code.NOT_FOUND]
+ * (not [Code.UNKNOWN]/[Code.CANCELED]/[Code.RESOURCE_EXHAUSTED]/[Code.UNAVAILABLE]) so this
+ * actually reaches `handleConnectException`'s Yorkie-code branch instead of its generic
+ * retryable-code early return.
+ */
+internal fun clientNotFoundConnectException(): ConnectException {
+    val errorInfo = ErrorInfo.newBuilder()
+        .putMetadata("code", dev.yorkie.util.YorkieException.Code.ErrClientNotFound.codeString)
+        .build()
+    return mockk<ConnectException>(relaxed = true) {
+        every { code } returns Code.NOT_FOUND
+        every { unpackedDetails(ErrorInfo::class) } returns listOf(errorInfo)
     }
 }

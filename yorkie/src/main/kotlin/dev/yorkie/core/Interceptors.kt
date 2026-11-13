@@ -35,8 +35,21 @@ internal val UserAgentInterceptor = object : Interceptor {
     }
 }
 
+/**
+ * Internal per-request marker read by [authInterceptor] to decide whether a
+ * request is a LOOP call (sync-loop push-pull/channel refresh, Watch, a broadcast retry) or a
+ * ONE-SHOT call (every other RPC, plus a broadcast's first try) -- see
+ * [AuthTokenRefresher.token]. Carried as an ordinary header, not a `Client`-level or
+ * `ThreadLocal` flag: the interceptor runs on connect's own IO dispatcher, not the client's
+ * single-thread dispatcher, so a shared flag would race across the suspension points between
+ * a loop tick deciding to sync and its RPC actually firing. Always stripped below -- never
+ * reaches the wire.
+ */
+internal const val LOOP_RETRY_HEADER = "x-yorkie-internal-loop-retry"
+
 internal fun Client.Options.authInterceptor(
     shouldRefreshTokenProvider: () -> Boolean,
+    authTokenRefresher: AuthTokenRefresher,
     refreshTokenCallback: (() -> Unit)? = null,
 ): Interceptor? {
     if (apiKey == null && fetchAuthToken == null) {
@@ -65,13 +78,18 @@ internal fun Client.Options.authInterceptor(
                     put("x-api-key", listOf(apiKey))
                 }
                 fetchAuthToken?.let { tokenFetcher ->
-                    val token = runBlocking {
-                        tokenFetcher.invoke(shouldRefreshTokenProvider())
+                    val isLoopRequest = LOOP_RETRY_HEADER in request.headers
+                    val token = authTokenRefresher.token(isLoopRequest) {
+                        runBlocking { tokenFetcher.invoke(shouldRefreshTokenProvider()) }
+                            .also { refreshTokenCallback?.invoke() }
                     }
-                    refreshTokenCallback?.invoke()
-                    put("authorization", listOf(token))
+                    // A loop request inside the backoff window with no token cached yet
+                    // (the injector has never once succeeded) sends no auth header at all,
+                    // rather than the literal string "null" -- the server then answers its
+                    // own 401, which the loop's existing ErrUnauthenticated handling covers.
+                    token?.let { put("authorization", listOf(it)) }
                 }
-                putAll(request.headers)
+                putAll(request.headers - LOOP_RETRY_HEADER)
             }
         }
     }

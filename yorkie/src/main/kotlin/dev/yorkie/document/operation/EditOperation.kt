@@ -62,9 +62,18 @@ internal data class EditOperation(
     val isUndoOp: Boolean
         get() = undoFromOffset != NOT_AN_UNDO_OP
 
-    /** Returns true when this is an identity-preserving restore/retombstone operation. */
+    /**
+     * Returns true when this is an identity-preserving restore/retombstone
+     * operation. Keyed on [restoreMode], not span nullity -- ported from JS
+     * SDK `edit_operation.ts` #1514/yorkie#2310: a reverse whose span
+     * sets both came out empty is still an identity op and must run as the
+     * no-op it is -- falling through to the positional path would read its
+     * positions as an ordinary edit range. The converter only sets
+     * [restoreMode] when at least one span set is non-empty, so an ordinary
+     * edit's [restoreMode] stays null.
+     */
     val isRestoreOp: Boolean
-        get() = restoreSpans != null || retombstoneSpans != null
+        get() = restoreMode != null
 
     /**
      * Returns the created time of the effected element.
@@ -79,6 +88,28 @@ internal data class EditOperation(
     ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtText) {
+            // An undo edit that inserts nothing changes nothing wherever it
+            // sits, but its position can name an offset the text no longer
+            // has: a stacked entry is reconciled against remote POSITIONAL
+            // edits, not against remote undos/redos, which change the text
+            // by identity. Run it as the no-op it is, moved to head so the
+            // copy sent to other replicas resolves on every one of them --
+            // BEFORE the unclamped indexRangeToPosRange below, which would
+            // otherwise throw on a stale offset. Ported from JS SDK
+            // `edit_operation.ts` #1514/yorkie#2310.
+            if (isUndoOp && !isRestoreOp && content.isEmpty()) {
+                fromPos = HEAD_POS
+                toPos = HEAD_POS
+                return ExecutionResult(
+                    opInfos = emptyList(),
+                    reverseOps = if (source.producesReverseOps) {
+                        listOf(emptyReverse())
+                    } else {
+                        emptyList()
+                    },
+                )
+            }
+
             // For undo ops, compute the current positions from the stored integer offsets
             // so that reconcile adjustments are honoured.  For all other operations
             // (including deserialized undo ops whose offsets have been lost) use the
@@ -125,7 +156,7 @@ internal data class EditOperation(
             }
 
             if (isRestoreOp) {
-                return executeRestore(root, parentObject, source, actualFrom)
+                return executeRestore(root, parentObject, source, actualFrom, versionVector)
             }
 
             val result = try {
@@ -214,6 +245,7 @@ internal data class EditOperation(
         text: CrdtText,
         source: OpSource,
         fallbackAnchor: RgaTreeSplitPos,
+        versionVector: VersionVector?,
     ): ExecutionResult {
         val isRetombstone = restoreMode == RestoreMode.Retombstone
         val toRestore = (if (isRetombstone) retombstoneSpans else restoreSpans).orEmpty()
@@ -232,9 +264,30 @@ internal data class EditOperation(
         val opInfos = mutableListOf<OperationInfo>()
         var totalDiff = DataSize(data = 0, meta = 0)
 
-        // 1. Remove the content the reversed edit inserted (by identity).
+        // The spans about to be re-tombstoned are what the reverse op will have to
+        // restore, and a replica that purged them rebuilds the nodes from that payload
+        // alone. Re-snapshot them against the live content FIRST -- before the removal
+        // below -- since the span set was captured when the reversed edit ran, so an
+        // attribute applied to the run since (a peer's style, admitted on a tombstone
+        // by canStyle) is missing from it: a purged replica would recreate the run
+        // without it while a replica that un-tombstones keeps it, and the two diverge.
+        // Only when the reverse is kept: a remote change discards it (producesReverseOps
+        // is a subset of != Remote). Ported from JS `06f5587b` #1504.
+        val refreshed = if (source != OpSource.Remote && toRetombstone.isNotEmpty()) {
+            text.rgaTreeSplit.refreshSpans(toRetombstone)
+        } else {
+            null
+        }
+
+        // 1. Remove the content the reversed edit inserted (by identity). The
+        // reverse names only the pieces the removal was actually recorded
+        // on: naming it on a piece someone else removed would cancel a
+        // removal that piece never had, and a replica that purged the piece
+        // could not tell (ported from JS SDK #1514/yorkie#2310).
+        var recorded: List<RestoreSpan<TextValue>>? = null
         if (toRetombstone.isNotEmpty()) {
-            val result = text.retombstone(toRetombstone, executedAt)
+            val result = text.retombstone(refreshed ?: toRetombstone, executedAt, versionVector)
+            recorded = result.recorded
             totalDiff = addDataSizes(totalDiff, result.dataSize)
             result.gcPairs.forEach(root::registerGCPair)
             opInfos += result.textChanges.toOpInfos()
@@ -243,6 +296,9 @@ internal data class EditOperation(
         // 2. Revive the content the reversed edit removed (by identity).
         if (toRestore.isNotEmpty()) {
             val result = text.restore(toRestore, executedAt, fallbackAnchor)
+            if (text.hasCancelledRemovals()) {
+                root.registerLedgerHolder(text)
+            }
             result.pendingGcPairs.forEach(root::registerGCPair)
             result.untombstoned.forEach { node ->
                 root.unregisterGCPair(GCPair(text.rgaTreeSplit, node))
@@ -264,26 +320,88 @@ internal data class EditOperation(
         // a level. Same as JS (edit_operation.ts restore branch returns the
         // reverse before document.ts's empty-opInfos early return).
         val reverseOps = if (source.producesReverseOps) {
-            // Keep the same span sets and undo offsets; flip only the mode.
-            // undoFromOffset/undoToOffset need no re-derivation: they are
-            // re-resolved into a position fresh on every execute() call via
-            // indexRangeToPosRange, and History.reconcileTextEdit keeps them
-            // tracking concurrent remote edits while this op sits on a stack.
+            // Keep the same span sets and undo offsets; flip the mode, and substitute
+            // the pieces the removal was actually recorded on (`recorded`) into
+            // whichever side of the kept reverse is the one a later redo restores FROM
+            // (#1514): source.producesReverseOps (Local || UndoRedo) is a subset of
+            // source != Remote, so `recorded` is non-null whenever this branch runs and
+            // toRetombstone was non-empty; the `?:` fallback only covers the
+            // toRetombstone-empty/LocalNoHistory edge.
             val flippedMode = if (isRetombstone) RestoreMode.Restore else RestoreMode.Retombstone
-            listOf(copy(restoreMode = flippedMode))
+            val reverseOp = if (isRetombstone) {
+                identityReverse(recorded ?: restoreSpans, flippedMode, retombstoneSpans)
+            } else {
+                identityReverse(restoreSpans, flippedMode, recorded ?: retombstoneSpans)
+            }
+            listOf(reverseOp)
         } else {
             emptyList()
         }
 
-        // executed mirrors opInfos' own idempotent-skip distinction: nothing
-        // changed means no peer needs to know, so this must still count as
-        // not-executed for Document's executedOperations gate -- the
-        // reverse/redo push above is independent of this and stays
-        // unconditional either way.
+        // Ported from JS SDK #1514/yorkie#2310: a restore/retombstone op
+        // that reached execution always counts as executed, even with empty
+        // opInfos. An undo that only cancels a removal (another deletion
+        // still holds the piece) or a redo that only records a removal
+        // changes the ledger though nothing is visibly different, and that
+        // change still has to reach every peer or their ledgers diverge --
+        // the "propagates an undo that leaves the text as it was" case. JS
+        // always reports a result for a restore op that ran; the outer
+        // `executed = false` (parent object not a CrdtText) is the only gate
+        // left for a truly-absent target.
         return ExecutionResult(
             opInfos = opInfos,
             reverseOps = reverseOps,
-            executed = opInfos.isNotEmpty(),
+            executed = true,
+        )
+    }
+
+    /**
+     * Builds the reverse of an identity-preserving restore/retombstone, or --
+     * when both span sets come out empty -- the ordinary no-op edit reverse
+     * degrades to ([emptyReverse]). A reverse with no spans has nothing to
+     * revive and nothing to re-remove, but it still has to exist: dropping it
+     * would leave the undo stack one entry short of the redo stack, so a
+     * later redo would replay the wrong entry. It cannot be kept in identity
+     * form either -- the converter writes a restore mode only with spans
+     * present, so it would go out as a positional edit of its stale range.
+     */
+    private fun identityReverse(
+        restoreSpans: List<RestoreSpan<TextValue>>?,
+        restoreMode: RestoreMode,
+        retombstoneSpans: List<RestoreSpan<TextValue>>?,
+    ): EditOperation {
+        if (restoreSpans.isNullOrEmpty() && retombstoneSpans.isNullOrEmpty()) {
+            return emptyReverse()
+        }
+        return EditOperation(
+            fromPos = fromPos,
+            toPos = toPos,
+            content = "",
+            parentCreatedAt = parentCreatedAt,
+            executedAt = executedAt,
+            attributes = emptyMap(),
+            undoFromOffset = undoFromOffset,
+            undoToOffset = undoToOffset,
+            restoreSpans = restoreSpans,
+            restoreMode = restoreMode,
+            retombstoneSpans = retombstoneSpans,
+        )
+    }
+
+    /**
+     * The reverse of an edit that changes nothing: an empty undo edit at this
+     * op's text's head.
+     */
+    private fun emptyReverse(): EditOperation {
+        return EditOperation(
+            fromPos = HEAD_POS,
+            toPos = HEAD_POS,
+            content = "",
+            parentCreatedAt = parentCreatedAt,
+            executedAt = executedAt,
+            attributes = emptyMap(),
+            undoFromOffset = 0,
+            undoToOffset = 0,
         )
     }
 
@@ -452,5 +570,14 @@ internal data class EditOperation(
     companion object {
         private const val TAG = "EditOperation"
         internal const val NOT_AN_UNDO_OP = -1
+
+        /**
+         * The position at this text's head, offset 0 -- every [RgaTreeSplit]
+         * seeds its sentinel head node under
+         * [TimeTicket.InitialTimeTicket] at offset 0, so this is the same
+         * anchor for every [CrdtText] without needing one in scope.
+         */
+        private val HEAD_POS =
+            RgaTreeSplitPos(RgaTreeSplitNodeID(TimeTicket.InitialTimeTicket, 0), 0)
     }
 }

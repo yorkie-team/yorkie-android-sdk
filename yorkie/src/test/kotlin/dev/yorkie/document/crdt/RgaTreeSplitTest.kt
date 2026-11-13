@@ -125,4 +125,72 @@ class RgaTreeSplitTest {
         )
         assertEquals(before, target.toString(), "a rejected split must leave the tree untouched")
     }
+
+    // #1504 (06f5587b) case iv: a single span split across a live piece, a
+    // PURGED gap (no surviving piece at all) and a TOMBSTONED-but-not-purged piece. The
+    // purged gap must fall back to the original snapshot (all this replica still knows
+    // about it); the surviving tombstone must be read from its CURRENT value, picking up
+    // an attribute applied to it after the snapshot was taken -- the correctness crux
+    // #1504 fixes (a peer's style, which canStyle admits even on a tombstone).
+    @Test
+    fun `refreshSpans splits a span across a live piece, a purged gap and a tombstoned piece`() {
+        val actor = "000000000000000000000001"
+        fun tick(lamport: Long) = TimeTicket(lamport, 0u, actor)
+        val ins = tick(1)
+
+        target.edit(
+            RgaTreeSplitPosRange(target.indexToPos(0), target.indexToPos(0)),
+            ins,
+            TextValue("0123456789"),
+            versionVector = null,
+        )
+
+        // Tombstone [4,6) ("45"), then physically purge it -- a true gap.
+        target.edit(
+            RgaTreeSplitPosRange(target.indexToPos(4), target.indexToPos(6)),
+            tick(2),
+            null,
+            versionVector = null,
+        )
+        target.delete(target.treeByID.getValue(RgaTreeSplitNodeID(ins, 4)))
+
+        // Tombstone [6,8) ("67") WITHOUT purging, then style it directly -- as if a peer
+        // styled the tombstoned run after this replica's own snapshot was taken.
+        target.edit(
+            RgaTreeSplitPosRange(target.indexToPos(4), target.indexToPos(6)),
+            tick(3),
+            null,
+            versionVector = null,
+        )
+        val survivingTombstone = target.treeByID.getValue(RgaTreeSplitNodeID(ins, 6))
+        survivingTombstone.value.setAttribute("b", "late", tick(4))
+
+        val snapshot = RestoreSpan(ins, 0, 10, TextValue("0123456789"))
+        val refreshed = target.refreshSpans(listOf(snapshot))
+
+        assertEquals(listOf(0 to 4, 4 to 6, 6 to 8, 8 to 10), refreshed.map { it.start to it.end })
+        assertEquals(
+            "0123",
+            refreshed[0].value.content,
+            "a live piece is read from its current value",
+        )
+        assertEquals("45", refreshed[1].value.content, "a purged gap falls back to the snapshot")
+        assertEquals(
+            emptyMap(),
+            refreshed[1].value.attributes,
+            "the snapshot fallback gains no attributes",
+        )
+        assertEquals(
+            "67",
+            refreshed[2].value.content,
+            "a surviving tombstone is read from its current value",
+        )
+        assertEquals(
+            mapOf("b" to "late"),
+            refreshed[2].value.attributes,
+            "an attribute applied to the tombstone after the snapshot must be picked up",
+        )
+        assertEquals("89", refreshed[3].value.content)
+        assertEquals(emptyMap(), refreshed[3].value.attributes)
+    }
 }

@@ -610,6 +610,13 @@ internal fun RgaTreeSplit<TextValue>.toPBTextNodes(): List<PBTextNode> {
                     isRemoved = it.isRemoved
                 }
             }
+            // A node fully described by removedAt (no ledger) returns an
+            // empty list here, so nothing is written -- byte-identical to a
+            // v0.7.25 encode. Ported from JS SDK `converter.ts` #1514/yorkie#2310.
+            val events = node.getRemovalEvents()
+            if (events.isNotEmpty()) {
+                removalEvents.addAll(events.map { it.toPBTimeTicket() })
+            }
         }
     }
 }
@@ -658,6 +665,28 @@ internal fun PBTextNode.toRgaTreeSplitNode(): RgaTreeSplitNode<TextValue> {
     }
     return RgaTreeSplitNode(id.toRgaTreeSplitNodeID(), textValue).apply {
         setRemovedAt(this@toRgaTreeSplitNode.removedAtOrNull?.toTimeTicket())
+        // Absent/empty -> no ledger, exactly the v0.7.25 meaning (removedAt
+        // alone). A ledger that repeats a ticket or does not reproduce
+        // removedAt is logged and dropped, never thrown: a snapshot or a
+        // remote element payload has no handler here, and throwing would
+        // wedge the document over one peer's malformed ledger. Ported from
+        // JS SDK #1514/yorkie#2310.
+        if (removalEventsList.isNotEmpty()) {
+            try {
+                setRemovalEvents(removalEventsList.map { it.toTimeTicket() })
+            } catch (e: Exception) {
+                // Widened from YorkieException: `setRemovalEvents` itself only throws that,
+                // but `removalEventsList.map { it.toTimeTicket() }` is unvalidated
+                // server/peer bytes too (`bytesToHex` of arbitrary content, so it will not
+                // itself throw today, but nothing guarantees that stays true) -- a
+                // malformed ledger must never throw out of decode, not just on the one path
+                // that happens to throw a typed exception right now.
+                logError(
+                    "ElementConverter",
+                    "discarding malformed removal ledger for text node $id: ${e.message}",
+                )
+            }
+        }
     }
 }
 

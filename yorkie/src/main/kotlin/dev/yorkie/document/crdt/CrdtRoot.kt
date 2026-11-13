@@ -8,6 +8,7 @@ import dev.yorkie.util.DocSize
 import dev.yorkie.util.Logger.Companion.logError
 import dev.yorkie.util.addDataSizes
 import dev.yorkie.util.subDataSize
+import java.util.Collections
 import java.util.IdentityHashMap
 
 /**
@@ -81,6 +82,41 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      * element's. [MapMaker.weakKeys] compares keys by identity.
      */
     private val sizeInGC: MutableMap<CrdtElement, DataSize> = MapMaker().weakKeys().makeMap()
+
+    /**
+     * The [CrdtText]s whose removal ledgers hold a cancel that [garbageCollect]
+     * may be able to prune once every replica knows it (see
+     * [RgaTreeSplit.pruneLedgers]). Registered by [registerInternalGCPairs]
+     * (every registration route: constructor scan, snapshot load, a decoded
+     * remote payload, an undo's own clone) and by [EditOperation] right after
+     * a restore that leaves a cancel behind.
+     */
+    private val ledgerHolders: MutableSet<CrdtText> = Collections.newSetFromMap(IdentityHashMap())
+
+    /**
+     * Registers [holder] as a [CrdtText] whose removal ledgers [pruneLedgers]
+     * should prune. [CrdtText] is a data class, so this set is keyed by
+     * IDENTITY, not structural equality: the live root and an undo's clone
+     * each register their own holder instance.
+     */
+    fun registerLedgerHolder(holder: CrdtText) {
+        ledgerHolders.add(holder)
+    }
+
+    /**
+     * Prunes every registered [ledgerHolders] entry and drops the ones with
+     * nothing left to prune. A holder that is itself removed is dropped too
+     * -- an undo that brings it back registers its own copy again.
+     */
+    private fun pruneLedgers(vector: VersionVector) {
+        val iterator = ledgerHolders.iterator()
+        while (iterator.hasNext()) {
+            val holder = iterator.next()
+            if (holder.removedAt != null || holder.pruneLedgers(vector) == 0) {
+                iterator.remove()
+            }
+        }
+    }
 
     /**
      * `docSize` is a structure that represents the size of the document.
@@ -235,6 +271,9 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
         fun register(elem: CrdtElement) {
             if (elem is GCCrdtElement) {
                 elem.gcPairs.forEach(::registerGCPair)
+            }
+            if (elem is CrdtText && elem.hasCancelledRemovals()) {
+                registerLedgerHolder(elem)
             }
             // Register dead position nodes in a CrdtArray so they are collected once all
             // peers have applied the winning move. Dead nodes have no element, so
@@ -572,6 +611,9 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
      */
     fun garbageCollect(minSyncedVersionVector: VersionVector): Int {
         var count = 0
+        // Pruning first can release a tombstone whose last pending cancel the
+        // vector now covers.
+        pruneLedgers(minSyncedVersionVector)
         while (true) {
             val (purged, deferred) = collect(minSyncedVersionVector)
             count += purged
@@ -630,6 +672,13 @@ internal class CrdtRoot(val rootObject: CrdtObject) {
                 continue
             }
             if (!minSyncedVersionVector.afterOrEqual(removedAt)) {
+                continue
+            }
+
+            // A Text node whose removal ledger still matters stays; see
+            // GCChild.heldFromPurge. Not counted as deferred: nothing else
+            // becomes collectable by waiting on it.
+            if (pair.child.heldFromPurge(minSyncedVersionVector)) {
                 continue
             }
 

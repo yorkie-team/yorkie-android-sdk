@@ -155,7 +155,8 @@ internal data class TextRestoreResult(
 )
 
 /**
- * Result of [CrdtText.retombstone].
+ * Result of [CrdtText.retombstone]. [recorded] names the pieces the removal
+ * was actually recorded on -- see [RgaTreeSplitRetombstoneResult.recorded].
  */
 internal data class TextRetombstoneResult(
     // GCPair<*>: mixes re-tombstoned pieces (GCPair<RgaTreeSplitNode<TextValue>>)
@@ -163,6 +164,7 @@ internal data class TextRetombstoneResult(
     val gcPairs: List<GCPair<*>>,
     val textChanges: List<TextChange>,
     val dataSize: DataSize,
+    val recorded: List<RestoreSpan<TextValue>> = emptyList(),
 )
 
 internal data class TextStyleResult(

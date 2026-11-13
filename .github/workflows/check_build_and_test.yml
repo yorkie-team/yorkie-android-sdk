@@ -50,7 +50,7 @@ jobs:
           cache: 'gradle'
 
       - name: Free Disk Space (Ubuntu)
-        uses: AdityaGarg8/remove-unwanted-software@v5
+        uses: AdityaGarg8/remove-unwanted-software@v5.1
         with:
           remove-dotnet: true
           remove-haskell: true

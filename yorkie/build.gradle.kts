@@ -44,6 +44,19 @@ android {
             )
         }
     }
+
+    // A `-D` on the `./gradlew` command line only reaches THIS (the Gradle daemon's own)
+    // JVM; `TextUndoFuzzTest`'s `System.getProperty` calls run in the forked unit-test JVM,
+    // which never sees it unless something re-sets it there -- forward the two fuzz
+    // properties explicitly, only when actually passed (so the test's own
+    // `?: "10"`/`!= null` defaults are untouched when neither flag is given).
+    testOptions {
+        unitTests.all { test ->
+            listOf("TEXT_UNDO_FUZZ_SEEDS", "TEXT_UNDO_FUZZ_FULL").forEach { key ->
+                System.getProperty(key)?.let { test.systemProperty(key, it) }
+            }
+        }
+    }
 }
 
 dependencies {

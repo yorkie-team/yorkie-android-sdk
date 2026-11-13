@@ -1011,6 +1011,26 @@ public class Client(
 
     var shouldRefreshToken: Boolean = false
 
+    // Ports JS `0306c4b5`/#1513's token cache + backoff gate: owns the state the
+    // `authInterceptor` below consults on every request. Declared BEFORE `service` so its
+    // construction below can capture it.
+    @VisibleForTesting
+    internal val authTokenRefresher = AuthTokenRefresher()
+
+    /**
+     * Per-request marker for a LOOP call site (sync loop, Watch, a broadcast retry) -- see
+     * [LOOP_RETRY_HEADER]. A no-op merge when [Options.fetchAuthToken] is unset: there is no
+     * injector/backoff state for the marker to gate, and omitting it then also means a
+     * client configured with neither an API key nor a token fetcher (so [authInterceptor]
+     * is never wired at all) never puts an internal header on the wire.
+     */
+    private val loopRetryHeader: Map<String, List<String>>
+        get() = if (options.fetchAuthToken != null) {
+            mapOf(LOOP_RETRY_HEADER to listOf("1"))
+        } else {
+            emptyMap()
+        }
+
     @VisibleForTesting
     suspend fun authToken(shouldRefresh: Boolean): String? {
         return options.fetchAuthToken?.invoke(shouldRefresh)
@@ -1029,6 +1049,7 @@ public class Client(
                     add { UserAgentInterceptor }
                     options.authInterceptor(
                         { shouldRefreshToken },
+                        authTokenRefresher,
                         { shouldRefreshToken = false },
                     )?.let { interceptor ->
                         add { interceptor }
@@ -1066,7 +1087,11 @@ public class Client(
                     }
                     deactivateInternal()
                 }
-                return@async Result.failure(it)
+                // activate is a one-shot call site -- a rejecting injector throws
+                // from the interceptor, wrapped by connect-kotlin into
+                // ConnectException(UNKNOWN, exception = AuthTokenInjectorException(...));
+                // surface the injector's own error instead of that wrapper.
+                return@async Result.failure(it.unwrapInjectorError())
             }
             // The stable actor is derived from the project and client key on the server;
             // a pre-0.7.20 server never sets actor_id, so the session client id is the
@@ -1083,6 +1108,9 @@ public class Client(
             }
             _status.emit(Status.Activated(sessionClientId, actorId = actor))
             deactivating = false
+            // JS case 12: a successful activation resets the backoff and makes any
+            // still-in-flight refresh call from before this activation stale.
+            authTokenRefresher.onActivated()
             runSyncLoop()
             SUCCESS
         }
@@ -1162,16 +1190,30 @@ public class Client(
                         continue
                     }
 
-                    // Reset changeEventReceived for Document resources
+                    // Reset changeEventReceived for Document resources -- saved first so a
+                    // FAILED sync below can restore it (every failed sync, not only a 401:
+                    // the event that just arrived must not be forgotten).
+                    val previousChangeEventReceived = attachment.changeEventReceived
                     if (attachment.changeEventReceived != null) {
                         attachment.changeEventReceived = false
                     }
 
-                    val (attachment, result) = syncInternal(attachment, attachment.syncMode)
+                    val (attachment, result) =
+                        syncInternal(attachment, attachment.syncMode, inRetryLoop = true)
                     // Suppress sync errors from in-flight RPCs once deactivation started.
                     if (deactivating) {
                         conditions[ClientCondition.SYNC_LOOP] = false
                         return@launch
+                    }
+                    // The pull this sync owed a remote change never happened, so put the
+                    // flag back -- but ONLY when it was true: JS restores
+                    // `changeEventReceived` just the same way (`if (changeEventReceived)
+                    // { attachment.changeEventReceived = true; }`, `client.ts`'s sync loop).
+                    // Writing back a saved `false` would stomp a `true` the Watch stream
+                    // set WHILE this RPC was in flight -- the exact race this must not
+                    // lose.
+                    if (result.isFailure && previousChangeEventReceived == true) {
+                        attachment.changeEventReceived = true
                     }
                     val connectException = result.exceptionOrNull() as? ConnectException
                     val isRetryAble = handleConnectException(
@@ -1184,6 +1226,24 @@ public class Client(
                                 method = PushPull,
                             )
                         }
+                    }
+                    // A loop 401 HOLDS this attachment (Document or Channel) between
+                    // RETRY_SYNC_LOOP_DELAY_MS and `AuthTokenRefresher.LoopRetryMaxWaitMs`
+                    // instead of re-sending every `syncLoopDuration` tick with the same
+                    // stale/absent token -- other attachments are untouched, they keep
+                    // ticking normally (the hold lives on the Attachment, not the Client).
+                    // The RETRY_SYNC_LOOP_DELAY_MS floor matters even when the refresher's
+                    // own backoff (`retryAt`) is unset -- no `fetchAuthToken` configured at
+                    // all -- or just reset by an injector success while the server keeps
+                    // answering 401: `loopRetryDelayMs` floors on the base delay passed in,
+                    // so a bare `0L` base collapsed the hold to zero in both cases and the
+                    // loop re-sent on every `syncLoopDuration` tick.
+                    if (connectException != null &&
+                        errorCodeOf(connectException) == ErrUnauthenticated.codeString
+                    ) {
+                        attachment.holdSyncFor(
+                            authTokenRefresher.loopRetryDelayMs(RETRY_SYNC_LOOP_DELAY_MS, true),
+                        )
                     }
                     // D2: `handleConnectException` does not recognize ErrPermissionDenied
                     // (it is not retryable, but it also does not run the error callback
@@ -1280,7 +1340,8 @@ public class Client(
                     ErrDocumentNotAttached,
                     "$key is not attached",
                 )
-                val syncResult = syncInternal(attachment, SyncMode.Realtime)
+                val syncResult =
+                    syncInternal(attachment, SyncMode.Realtime, inRetryLoop = false)
                 if (syncResult.result.isFailure) {
                     val exception = syncResult.result.exceptionOrNull()
                     if (exception != null) {
@@ -1290,7 +1351,8 @@ public class Client(
             } else {
                 attachments.forEach { (_, attachment) ->
                     if (attachment.syncMode != null && attachment.resource is Document) {
-                        val syncResult = syncInternal(attachment, attachment.syncMode)
+                        val syncResult =
+                            syncInternal(attachment, attachment.syncMode, inRetryLoop = false)
                         if (syncResult.result.isFailure) {
                             val exception = syncResult.result.exceptionOrNull()
                             if (exception != null) {
@@ -1300,7 +1362,9 @@ public class Client(
                     }
                 }
             }
-            failure?.let { Result.failure(it) } ?: SUCCESS
+            // syncAsync is a one-shot call site -- surface the injector's own error
+            // (JS case 10), not connect-kotlin's ConnectException(UNKNOWN) wrapper.
+            failure?.let { Result.failure(it.unwrapInjectorError()) } ?: SUCCESS
         }
     }
 
@@ -1338,6 +1402,7 @@ public class Client(
     private suspend fun syncInternal(
         attachment: Attachment<out Attachable>,
         syncMode: SyncMode?,
+        inRetryLoop: Boolean,
     ): SyncResult {
         val resource = attachment.resource
         return SyncResult(
@@ -1406,7 +1471,12 @@ public class Client(
                                     pushOnly = requestPushOnly
                                     disableGc = attachment.disableGC
                                 },
-                                documentKey.attachmentBasedRequestHeader,
+                                // Marks this a LOOP request when called from the sync loop,
+                                // so the interceptor reuses the cached token instead of
+                                // calling the injector during a backoff window.
+                                documentKey.attachmentBasedRequestHeader.let {
+                                    if (inRetryLoop) it + loopRetryHeader else it
+                                },
                             )
                         }.getOrThrow()
                         val responsePack = response.changePack.toChangePack()
@@ -1540,7 +1610,9 @@ public class Client(
                         }
                         val response = service.refreshChannel(
                             request,
-                            resource.getKey().attachmentBasedRequestHeader,
+                            resource.getKey().attachmentBasedRequestHeader.let {
+                                if (inRetryLoop) it + loopRetryHeader else it
+                            },
                         ).getOrElse {
                             if (!isFirstCall && it is ConnectException &&
                                 errorCodeOf(it) == ErrSessionNotFound.codeString
@@ -1669,10 +1741,29 @@ public class Client(
 
                 (it as? ConnectException)?.let { exception ->
                     handleConnectException(exception) { it ->
+                        // This `onFailure` is reached from both the sync LOOP and a
+                        // one-shot `syncAsync`. `handleConnectException` only runs this
+                        // callback for ErrUnauthenticated, ErrClientNotActivated, and
+                        // ErrClientNotFound (ConnectRpcErrorUtil.kt), so the `when` below
+                        // covers exactly those three.
                         if (errorCodeOf(it) == ErrUnauthenticated.codeString) {
                             shouldRefreshToken = true
+                            // JS never deactivates from the loop on a 401 (the loop holds
+                            // the attachment instead, see `runSyncLoop`'s `holdSyncFor`
+                            // above it), so only a ONE-SHOT 401 still tears the client
+                            // down here.
+                            if (!inRetryLoop) {
+                                deactivateInternal()
+                            }
+                        } else {
+                            // ErrClientNotActivated/ErrClientNotFound: JS's
+                            // `handleConnectError` deactivates unconditionally for these,
+                            // loop or one-shot alike (`client.ts`'s own
+                            // `handleConnectError` never reads `inRetryLoop` for this
+                            // branch) -- a server-evicted client must not stay Activated
+                            // and keep re-failing every loop tick.
+                            deactivateInternal()
                         }
-                        deactivateInternal()
                     }
                 }
             },
@@ -1717,7 +1808,11 @@ public class Client(
                 latestStream.safeClose()
 
                 val stream = withTimeoutOrNull(streamTimeout) {
-                    service.watch(documentKey.attachmentBasedRequestHeader).also {
+                    // Watch is always a LOOP call site (#1513) -- a connect error here
+                    // must swallow and reconnect, never throw a raw injector error.
+                    service.watch(
+                        documentKey.attachmentBasedRequestHeader + loopRetryHeader,
+                    ).also {
                         latestStream = it
                     }
                 } ?: continue
@@ -1872,14 +1967,16 @@ public class Client(
                     ),
                 )
                 document.setOnlineClients(clientIDs.toSet())
-                // Presences are keyed by the stable actor (JS applyWatchInit compares
-                // against changeID.getActorID()), so the self-guard must use it too.
-                val selfId = requireActorId()
-                for (clientID in document.allPresences.value.keys) {
-                    if (clientID != selfId && clientID !in clientIDs) {
-                        document.clearPresence(clientID)
-                    }
-                }
+                // NOTE: presences are intentionally NOT pruned for clients absent
+                // from clientIDs. document.presences already filters by online
+                // clients (Document.kt), so a stale entry here is never exposed.
+                // Keeping it lets a later DOCUMENT_WATCHED for the same client
+                // find its presence still in allPresences and publish a Watched
+                // event; pruning it here left that client permanently invisible
+                // once its watch stream and this client's watch stream blipped
+                // at the same time. Server-side clear on deactivation
+                // (yorkie#2291) covers peers that never return. Ported from JS
+                // `c41ab014` #1186 `applyWatchInit`.
             }
             return
         }
@@ -1911,8 +2008,15 @@ public class Client(
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_UNWATCHED -> {
                 val presence = document.presences.value[publisher] ?: return
                 document.publishEvent(Others.Unwatched(PresenceInfo(publisher, presence)))
+                // NOTE: only the online set is touched here; the presence itself
+                // is kept, for the same reason the watch-init handler above keeps
+                // it. Clearing it would make a later DOCUMENT_WATCHED for this
+                // publisher find no presence in allPresences and publish no
+                // Watched event, leaving a reconnected peer invisible. The
+                // Unwatched event above still fires off presences.value, which is
+                // read before removeOnlineClient takes this publisher offline.
+                // Ported from JS `97f0aa01` #1501.
                 document.removeOnlineClient(publisher)
-                document.clearPresence(publisher)
             }
 
             DocEventType.DOC_EVENT_TYPE_DOCUMENT_CHANGED -> {
@@ -1968,14 +2072,29 @@ public class Client(
             return true
         }
 
-        if (handleDocumentAuthenticationError(
-                exception = cause,
-                document = document,
-                method = AuthError.AuthErrorMethod.Watch,
-            ) && !cancelled
-        ) {
+        // Watch is always a loop call site (#1513) -- a 401 here must keep reconnecting
+        // (with the shared backoff's floor), not stop the watch loop the way a genuine
+        // non-retryable error does. `handleDocumentAuthenticationError`'s own return value
+        // stays false for ErrUnauthenticated (shared with the one-shot sites' non-retry
+        // contract, `handleConnectException` never flips that), so the reconnect decision
+        // is widened here with its own direct 401 check instead.
+        val is401 = (cause as? ConnectException)?.let {
+            errorCodeOf(it) == ErrUnauthenticated.codeString
+        } == true
+        val handledAsAuthError = handleDocumentAuthenticationError(
+            exception = cause,
+            document = document,
+            method = AuthError.AuthErrorMethod.Watch,
+        )
+
+        if ((handledAsAuthError || is401) && !cancelled) {
             coroutineContext.ensureActive()
-            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+            delay(
+                authTokenRefresher.loopRetryDelayMs(
+                    options.reconnectStreamDelay.inWholeMilliseconds,
+                    is401,
+                ),
+            )
             return true
         } else {
             conditions[ClientCondition.WATCH_LOOP] = false
@@ -2008,7 +2127,10 @@ public class Client(
                 latestStream.safeClose()
 
                 val stream = withTimeoutOrNull(streamTimeout) {
-                    service.watch(channelKey.attachmentBasedRequestHeader).also {
+                    // Watch is always a LOOP call site -- see the document watch job.
+                    service.watch(
+                        channelKey.attachmentBasedRequestHeader + loopRetryHeader,
+                    ).also {
                         latestStream = it
                     }
                 } ?: continue
@@ -2180,6 +2302,12 @@ public class Client(
             return true
         }
 
+        // Same widening as the document watch handler above -- a 401 keeps reconnecting
+        // even though `handleConnectException` itself never calls this retryable for
+        // ErrUnauthenticated.
+        val is401 = (cause as? ConnectException)?.let {
+            errorCodeOf(it) == ErrUnauthenticated.codeString
+        } == true
         val handleAuthenticationError =
             handleConnectException(cause as? ConnectException) { connectException ->
                 if (errorCodeOf(connectException) == ErrUnauthenticated.codeString) {
@@ -2187,9 +2315,14 @@ public class Client(
                 }
             }
 
-        if (handleAuthenticationError && !cancelled) {
+        if ((handleAuthenticationError || is401) && !cancelled) {
             coroutineContext.ensureActive()
-            delay(options.reconnectStreamDelay.inWholeMilliseconds)
+            delay(
+                authTokenRefresher.loopRetryDelayMs(
+                    options.reconnectStreamDelay.inWholeMilliseconds,
+                    is401,
+                ),
+            )
             return true
         } else {
             conditions[ClientCondition.WATCH_LOOP] = false
@@ -2753,7 +2886,9 @@ public class Client(
                                 deactivateInternal()
                             }
                         }
-                        return@async Result.failure(e)
+                        // attach is a one-shot call site -- surface the injector's own
+                        // error, not connect-kotlin's wrapper.
+                        return@async Result.failure(e.unwrapInjectorError())
                     } finally {
                         // Pre-registration failure (including a cancellation rethrown by
                         // ensureActive above): no Attachment exists to own the lease, so
@@ -2865,7 +3000,8 @@ public class Client(
                         }
                         deactivateInternal()
                     }
-                    return@suspend Result.failure(it)
+                    // detach is a one-shot call site.
+                    return@suspend Result.failure(it.unwrapInjectorError())
                 }
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
@@ -3238,7 +3374,8 @@ public class Client(
                     }
                     deactivateInternal()
                 }
-                return@async Result.failure(it)
+                // peekChannel is a one-shot call site.
+                return@async Result.failure(it.unwrapInjectorError())
             }
 
             Result.success(response.sessionCount)
@@ -3367,14 +3504,60 @@ public class Client(
                 deactivateInternal()
                 SUCCESS
             } catch (e: ConnectException) {
-                deactivating = false
-                handleConnectException(e) { exception ->
-                    if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
-                        shouldRefreshToken = true
-                    }
+                // The DeactivateClient request's OWN auth-header injector rejecting is
+                // wrapped by connect-kotlin as ConnectException(UNKNOWN,
+                // AuthTokenInjectorException(...)) -- see AuthTokenInjectorException's own
+                // doc -- which carries no Yorkie error code, so `errorCodeOf(e)` below is
+                // empty and this would otherwise fall into the `else` branch's generic
+                // UNKNOWN-is-retryable path, which never calls `deactivateInternal()`: the
+                // client would stay Activated forever with the sync loop and watch streams
+                // already cancelled above and nothing left running. Unwrap first and, when
+                // found, deactivate locally and surface the injector's own error -- the same
+                // "stop locally" contract the 401-probe branch below already honours for a
+                // refresh that rejects.
+                val injectorError = (e.cause as? AuthTokenInjectorException)?.cause
+                if (injectorError != null) {
                     deactivateInternal()
+                    Result.failure(injectorError)
+                } else {
+                    val fetchAuthToken = options.fetchAuthToken
+                    if (errorCodeOf(e) == ErrUnauthenticated.codeString && fetchAuthToken != null) {
+                        // Port JS's deactivate contract: try the injector once more, as a
+                        // ONE-SHOT refresh (always calls it, even mid-backoff), before
+                        // deciding whether the client can stay active. This does not retry
+                        // the deactivate RPC itself, only probes whether the token CAN be
+                        // refreshed -- a success resets the shared backoff and caches the
+                        // token for the next LOOP request (a one-shot call always
+                        // re-invokes the injector itself, win or lose, so this does not mean
+                        // a later one-shot call would reuse it). `task` is already a suspend
+                        // context running on the client's single-thread dispatcher, so this
+                        // calls the injector directly via `tokenSuspend` instead of blocking
+                        // that dispatcher with `runBlocking` the way the interceptor (which
+                        // runs on connect's own IO thread) does. `deactivating` stays true
+                        // for the probe's duration, as in JS (`client.ts`'s `deactivate`
+                        // resets it only once the probe settles) -- the `else` branch below
+                        // resets it immediately instead, since it never probes anything.
+                        try {
+                            authTokenRefresher.tokenSuspend(isLoopRequest = false) {
+                                fetchAuthToken.invoke(true)
+                            }
+                            deactivating = false
+                            Result.failure(e)
+                        } catch (refreshError: AuthTokenInjectorException) {
+                            deactivateInternal()
+                            Result.failure(refreshError.unwrapInjectorError())
+                        }
+                    } else {
+                        deactivating = false
+                        handleConnectException(e) { exception ->
+                            if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
+                                shouldRefreshToken = true
+                            }
+                            deactivateInternal()
+                        }
+                        Result.failure(e)
+                    }
                 }
-                Result.failure(e)
             }
         }
 
@@ -3431,7 +3614,8 @@ public class Client(
                     )
                 }.getOrElse {
                     ensureActive()
-                    return@async Result.failure(it)
+                    // removeDocument is a one-shot call site.
+                    return@async Result.failure(it.unwrapInjectorError())
                 }
                 val pack = response.changePack.toChangePack()
                 document.applyChangePack(pack)
@@ -3652,17 +3836,33 @@ public class Client(
 
             while (retryCount <= maxRetries) {
                 try {
+                    // The first try (retryCount == 0) is a ONE-SHOT call site -- it calls
+                    // the injector even mid-backoff; every retry after it is a LOOP call,
+                    // marked so the interceptor reuses the cached token.
+                    val headers = key.attachmentBasedRequestHeader.let {
+                        if (retryCount > 0) it + loopRetryHeader else it
+                    }
                     service.broadcast(
                         request,
-                        key.attachmentBasedRequestHeader,
+                        headers,
                     ).getOrElse {
                         throw it
                     }
                     return SUCCESS
                 } catch (err: Exception) {
+                    val unwrapped = err.unwrapInjectorError()
+                    if (unwrapped !== err) {
+                        // The first try's injector rejection fails the broadcast
+                        // immediately, unretried -- JS `0306c4b5` case 14: a one-shot
+                        // refresh failure throws directly, it does not enter the retry
+                        // loop at all.
+                        throw unwrapped
+                    }
+                    var is401 = false
                     if (err is ConnectException &&
                         errorCodeOf(err) == ErrUnauthenticated.codeString
                     ) {
+                        is401 = true
                         shouldRefreshToken = true
                         if (attachment.resource is Document) {
                             attachment.resource.publish(
@@ -3682,7 +3882,10 @@ public class Client(
                         throw err
                     }
 
-                    val retryInterval = exponentialBackoff(retryCount - 1)
+                    val retryInterval = authTokenRefresher.loopRetryDelayMs(
+                        exponentialBackoff(retryCount - 1),
+                        is401,
+                    )
                     logError(
                         "BROADCAST",
                         "Retry attempt $retryCount/$maxRetries " +
@@ -3916,9 +4119,26 @@ public class Client(
          */
         public val metadata: Map<String, String> = emptyMap(),
         /**
-         * `fetchAuthToken` provides a token for the auth webhook.
-         * When the webhook response status code is 401, this function is called to refresh the token.
-         * The `reason` parameter is the reason from the webhook response.
+         * `fetchAuthToken` provides a token for the auth webhook. Called with `shouldRefresh
+         * = true` after the server answers a request with `ErrUnauthenticated`, asking for a
+         * fresh token rather than a cached one; `false` otherwise.
+         *
+         * If this throws, [Client] ports yorkie-js-sdk's `0306c4b5` (#1513) contract onto its
+         * own per-request interceptor model instead of calling this on every request
+         * un-gated:
+         * - a LOOP call (the sync loop, a document/channel Watch stream, a `broadcast`
+         *   retry) does NOT call this again until the backoff below elapses; it resends with
+         *   whichever token this last returned successfully (none, if it never has), and the
+         *   affected attachment is held from its next sync-loop tick for up to 5 seconds
+         *   past that point rather than retried on every tick;
+         * - a ONE-SHOT call ([activateAsync], [deactivateAsync], [attachDocument],
+         *   [detachDocument], [removeDocument], [syncAsync], [peekChannel], a `broadcast`'s
+         *   first try) calls this on every attempt, even mid-backoff, and on a rejection
+         *   fails with the exception THIS function threw (not a transport wrapper around it).
+         * - the backoff after a rejection starts at 1 second and doubles per consecutive
+         *   failure (1s, 2s, 4s, ... ) up to a 30-second cap, with +/-20% jitter applied each
+         *   time; it resets to 1 second on the next successful call and whenever this
+         *   [Client] (re)activates.
          */
         public val fetchAuthToken: (suspend (shouldRefresh: Boolean) -> String)? = null,
         /**
@@ -4068,6 +4288,13 @@ public class Client(
     }
 
     companion object {
+        // JS v0.7.26's `retrySyncLoopDelay` default (`client.ts` ~L587, read via
+        // `loopRetryDelay(err, this.retrySyncLoopDelay)` at ~L3446) -- the floor every
+        // loop-401 hold must wait at least this long, so an unset or just-reset refresh
+        // backoff does not collapse the hold to zero. Kept private/hardcoded, not exposed
+        // as a public `Client.Options` field.
+        private const val RETRY_SYNC_LOOP_DELAY_MS = 1_000L
+
         private const val BROADCAST_MAX_BACK_OFF = 20_000L
         private const val BROADCAST_INITIAL_RETRY_INTERVAL = 1_000
 

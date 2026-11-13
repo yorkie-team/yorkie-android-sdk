@@ -237,6 +237,40 @@ older peers of every SDK keep pulling as before. The peer rows only describe the
   client activated under a generated (not explicitly configured) key. No server
   minimum.
 
+#### Keeping text undo converging through garbage collection with a removal ledger (0.7.26)
+
+From 0.7.26 every text piece carries a small removal ledger alongside its last-writer-wins
+tombstone: every deletion that removed it while live in the deleter's view, and every undo
+that cancelled one. An undo now cancels only its own actor's deletion — a concurrent peer's
+deletion of the same text survives it — and garbage collection holds a piece from purging
+while any deletion on it could still be undone, so an undo after garbage collection
+recreates the piece instead of leaving replicas disagreeing. **Upgrade the server first, and
+never roll it back** once these clients have connected: an older server drops the ledger on
+re-encode, and a client that reads the dropped ledger falls back to the plain tombstone,
+silently losing the information an undo meeting a concurrent deletion needs.
+
+| Participant | Minimum version |
+|-------------|-----------------|
+| Yorkie server (to write and keep the ledger; never roll back below 0.7.26) | 0.7.26 |
+| yorkie-android-sdk peers | this release |
+| yorkie-js-sdk peers | 0.7.26 |
+| yorkie-ios-sdk peers | 0.7.26 |
+
+Peers on 0.7.25 or earlier, and any SDK without the ledger, can still disagree when an undo
+meets a concurrent deletion of the same text — the same divergence this release fixes among
+peers that have it. A piece held by the ledger (two never-undone concurrent deletions, or a
+cancel not yet known to every replica) counts toward the document size for as long as it is
+held, even though it is no longer visible — so `Document.garbageLength` and
+`Document.garbageCollect()`'s returned count both stay higher than before while any piece is
+held, dropping back once every replica has seen the matching cancel. An undo or redo that
+only cancels/replays a ledger entry (nothing else changed, e.g. undoing into a piece a
+concurrent deletion still holds) is still pushed to the server as an ordinary change, the
+same as any other local edit — it is not a local-only bookkeeping update. A reissue that
+targets a pre-attach, pre-GC-restore stand-in removal (lamport 0, minted by the undoing
+actor) cannot re-key it onto the new actor — `PBTimeTicket.reissue` skips lamport 0 — so the
+ledger no longer pairs by actor and the converter drops it, leaving that piece live on the
+reissued copy; accepted as the same limitation JS and iOS have.
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) for details on submitting patches and the contribution workflow.

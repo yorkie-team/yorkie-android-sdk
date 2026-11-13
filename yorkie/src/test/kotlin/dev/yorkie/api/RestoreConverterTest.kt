@@ -140,6 +140,14 @@ class RestoreConverterTest {
 
         val got = requireNotNull(restored.restoreSpans).single()
         assertEquals("true", got.value.attributes["bold"])
+        // Ported from JS #1504 (`06f5587b`): the wire carries span attributes as a bare
+        // map, so the decoder stamps each one with the OPERATION's own executedAt --
+        // never the sender's original (seed) ticket -- as the server's Text.Restore does
+        // when it recreates a node from a span. Ported from JS `restore_converter_test.ts`
+        // "keeps span attributes, stamped with executedAt".
+        got.value.attributesWithTimeTicket.forEach { node ->
+            assertEquals(executedAt, node.executedAt, "an attribute must decode with executedAt")
+        }
     }
 
     @Test

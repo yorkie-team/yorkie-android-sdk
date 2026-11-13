@@ -54,6 +54,14 @@ internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
         // decoded off the wire.
         PBPresenceChangeType.CHANGE_TYPE_PATCH ->
             PresenceChange.Patch(presence.toPresence(), full = null)
+        // A stored presence with no change type (a v0.7.24-or-earlier server's shape
+        // for a patch it could not fold, Document.kt presencePatchSent KDoc) and an
+        // explicit DELETE both decode as an empty Put, as Go's FromPresenceChange
+        // default branch does -- never thrown, so the rest of the pack still applies.
+        // Ported from JS `dcb74d27` #1502.
+        PBPresenceChangeType.CHANGE_TYPE_UNSPECIFIED,
+        PBPresenceChangeType.CHANGE_TYPE_DELETE,
+        -> PresenceChange.Put(emptyMap())
         else -> throw YorkieException(ErrUnimplemented, "Unimplemented type: $type")
     }
 }

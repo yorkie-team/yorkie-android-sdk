@@ -335,6 +335,17 @@ private fun PBTextNode.reissue(fromBytes: ByteString, toBytes: ByteString): PBTe
             attributes.clear()
             attributes.putAll(rewritten)
         }
+        // Ported from JS/iOS SDK #1514/yorkie#2310: PBTimeTicket.reissue
+        // skips a lamport-0 ticket, so a pre-attach restore-after-GC's
+        // stand-in removal stays on the old actor while its cancel moves to
+        // the new one -- the decoded ledger no longer pairs and is dropped
+        // with a warning by ElementConverter's decode, which leaves the node
+        // live. Accepted, as JS/iOS.
+        if (removalEvents.isNotEmpty()) {
+            val rewritten = removalEvents.map { it.reissue(fromBytes, toBytes) }
+            removalEvents.clear()
+            removalEvents.addAll(rewritten)
+        }
     }
 }
 

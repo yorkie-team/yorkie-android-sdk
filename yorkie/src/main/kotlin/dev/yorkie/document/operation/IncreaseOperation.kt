@@ -8,6 +8,8 @@ import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.Logger.Companion.logError
+import dev.yorkie.util.YorkieException
+import dev.yorkie.util.YorkieException.Code.ErrInvalidArgument
 
 /**
  * [IncreaseOperation] represents an operation that increments a numeric value to [CrdtCounter].
@@ -39,13 +41,29 @@ internal data class IncreaseOperation(
     ): ExecutionResult {
         val parentObject = root.findByCreatedAt(parentCreatedAt)
         return if (parentObject is CrdtCounter) {
-            val copiedValue = value.deepCopy() as CrdtPrimitive
             if (parentObject.isDedup()) {
+                // A stored dedup increase this SDK cannot apply -- no actor, a delta the
+                // counter refuses (not a unit increment), or (the cast below) a value that
+                // is not a primitive at all -- wedges the pack if it throws, since the
+                // checkpoint never advances past a change that throws. Skip it on the pull
+                // path, as Go's skipUnlessLocal does: local/undo/redo still report with the
+                // counter's own error so the caller learns its edit was rejected. Ported
+                // from JS `dcb74d27` #1502 (increase_operation.ts).
                 if (actor.isEmpty()) {
-                    logError(TAG, "dedup counter requires actor")
-                    return ExecutionResult(opInfos = emptyList(), executed = false)
+                    if (source == OpSource.Remote) {
+                        return ExecutionResult(opInfos = emptyList(), executed = false)
+                    }
+                    throw YorkieException(ErrInvalidArgument, "dedup counter requires actor")
                 }
-                parentObject.increaseDedup(copiedValue, actor)
+                try {
+                    val casted = value.deepCopy() as CrdtPrimitive
+                    parentObject.increaseDedup(casted, actor)
+                } catch (cause: Throwable) {
+                    if (source == OpSource.Remote) {
+                        return ExecutionResult(opInfos = emptyList(), executed = false)
+                    }
+                    throw cause
+                }
                 val newValue = parentObject.value
                 ExecutionResult(
                     opInfos = listOf(
@@ -58,6 +76,7 @@ internal data class IncreaseOperation(
                     reverseOps = emptyList(),
                 )
             } else {
+                val copiedValue = value.deepCopy() as CrdtPrimitive
                 parentObject.increase(copiedValue)
                 val increasedValue = if (copiedValue.type == Type.Integer) {
                     copiedValue.value as Int

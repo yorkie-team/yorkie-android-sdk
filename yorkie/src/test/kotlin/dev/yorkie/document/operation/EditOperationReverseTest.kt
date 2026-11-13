@@ -183,13 +183,15 @@ class EditOperationReverseTest {
         // unrelated to the real reconciled range) plus undoFromOffset/undoToOffset [1,3) —
         // simulating a reverse op whose offsets were shifted by reconcileOperation after
         // construction. execute() must derive the actual range from the offsets and write
-        // it back into fromPos/toPos so the wire-serialized range matches (F10).
+        // it back into fromPos/toPos so the wire-serialized range matches (F10). Non-empty
+        // content keeps this off the empty-content no-op branch (see the dedicated test
+        // below), which short-circuits before this reconciliation ever runs.
         val expectedRange = text.indexRangeToPosRange(1, 3)
         val staleNodeId = RgaTreeSplitNodeID(makeTicket(99), 0)
         val op = EditOperation(
             fromPos = RgaTreeSplitPos(staleNodeId, 0),
             toPos = RgaTreeSplitPos(staleNodeId, 0),
-            content = "",
+            content = "Z",
             parentCreatedAt = textTicket,
             executedAt = makeTicket(4),
             attributes = emptyMap(),
@@ -203,6 +205,78 @@ class EditOperationReverseTest {
         // then
         assertEquals(expectedRange.first, op.fromPos)
         assertEquals(expectedRange.second, op.toPos)
+    }
+
+    // Ported from JS SDK #1514/yorkie#2310: an undo op with empty content
+    // never legitimately deletes on Android, so it runs as a no-op moved to
+    // text head BEFORE undoFromOffset/undoToOffset are resolved -- a stale
+    // offset here would otherwise hit indexRangeToPosRange unclamped and throw.
+    @Test
+    fun `empty-content undo op runs as a head-anchored no-op before offset resolution`() {
+        val (text, root) = buildTextRoot()
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
+
+        val staleNodeId = RgaTreeSplitNodeID(makeTicket(99), 0)
+        val op = EditOperation(
+            fromPos = RgaTreeSplitPos(staleNodeId, 0),
+            toPos = RgaTreeSplitPos(staleNodeId, 0),
+            content = "",
+            parentCreatedAt = textTicket,
+            executedAt = makeTicket(4),
+            attributes = emptyMap(),
+            // A stale offset well past "Hello"'s length: the unclamped
+            // positional path would throw resolving this; the no-op branch
+            // must never reach it.
+            undoFromOffset = 50,
+            undoToOffset = 60,
+        )
+
+        val result = op.execute(root, OpSource.UndoRedo, null)
+
+        assertTrue(result.opInfos.isEmpty())
+        assertEquals("Hello", text.toString())
+        assertEquals(1, result.reverseOps.size)
+        val reverse = result.reverseOps[0] as EditOperation
+        assertEquals("", reverse.content)
+        assertTrue(reverse.isUndoOp)
+        assertFalse(reverse.isRestoreOp)
+    }
+
+    // isRestoreOp (EditOperation.kt) keys on restoreMode, not on whether
+    // restoreSpans/retombstoneSpans happen to be non-null. A hand-built op
+    // with restoreMode set but BOTH span lists null is the minimal shape that
+    // only reaches the restore path under the restoreMode keying -- keyed on
+    // span nullity instead, it would wrongly take the empty-content undo
+    // no-op branch above, which anchors fromPos/toPos at the text head
+    // instead of resolving them from undoFromOffset/undoToOffset.
+    @Test
+    fun `isRestoreOp keys on restoreMode, not span nullity`() {
+        val (text, root) = buildTextRoot()
+        text.edit(text.indexRangeToPosRange(0, 0), "Hello", makeTicket(3))
+
+        val staleNodeId = RgaTreeSplitNodeID(makeTicket(99), 0)
+        val op = EditOperation(
+            fromPos = RgaTreeSplitPos(staleNodeId, 0),
+            toPos = RgaTreeSplitPos(staleNodeId, 0),
+            content = "",
+            parentCreatedAt = textTicket,
+            executedAt = makeTicket(4),
+            attributes = emptyMap(),
+            undoFromOffset = 1,
+            undoToOffset = 1,
+            restoreMode = RestoreMode.Restore,
+            restoreSpans = null,
+            retombstoneSpans = null,
+        )
+
+        op.execute(root, OpSource.UndoRedo, null)
+
+        // The no-op branch would have reset both to the text head; reaching
+        // here instead means isRestoreOp routed this op through the restore
+        // path, which resolves fromPos/toPos from the undo offset (index 1).
+        val expectedPos = text.indexRangeToPosRange(1, 1).first
+        assertEquals(expectedPos, op.fromPos)
+        assertEquals(expectedPos, op.toPos)
     }
 
     @Test

@@ -27,10 +27,14 @@ internal data class RgaTreeSplitRestoreResult<T : RgaTreeSplitValue<T>>(
 )
 
 /**
- * Result of [RgaTreeSplit.retombstone].
+ * Result of [RgaTreeSplit.retombstone]. [recorded] names the pieces the
+ * removal was actually recorded on (a subset of the input spans: a piece
+ * already removed in the redo's view, or purged, records nothing and is
+ * absent here) -- the reverse of this op names only these.
  */
 internal data class RgaTreeSplitRetombstoneResult<T : RgaTreeSplitValue<T>>(
     val gcPairs: List<GCPair<RgaTreeSplitNode<T>>>,
     val changes: List<RgaTreeSplit.ContentChange>,
     val dataSize: DataSize,
+    val recorded: List<RestoreSpan<T>> = emptyList(),
 )

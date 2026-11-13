@@ -113,6 +113,21 @@ internal class Attachment<R : Attachable>(
      */
     private var writeRejected: Boolean = false
 
+    /**
+     * Wall-clock time (per [nowProvider]) until which the sync loop must not push-pull this
+     * attachment, set by [holdSyncFor] after a loop push-pull/refresh answered
+     * [dev.yorkie.util.YorkieException.Code.ErrUnauthenticated] -- unlike
+     * [writeRejected]/[pushDenied]'s PERMANENT park, this is time-bounded: [needSync] resumes
+     * on its own once the hold elapses, with no explicit un-park needed. Confined to the
+     * sync loop's own dispatcher; no `@Volatile` needed.
+     */
+    private var authHoldUntil: Long = 0L
+
+    /** Holds this attachment's next sync-loop push-pull/refresh for [durationMs] from now. */
+    fun holdSyncFor(durationMs: Long) {
+        authHoldUntil = nowProvider() + durationMs
+    }
+
     fun markWriteRejected() {
         writeRejected = true
     }
@@ -256,6 +271,12 @@ internal class Attachment<R : Attachable>(
      * This includes both document sync and presence heartbeat.
      */
     fun needSync(heartbeatInterval: Long, documentPollInterval: Long): Boolean {
+        // A loop 401 holds BOTH Document and Channel attachments the same way -- checked
+        // before either branch below, so a channel's heartbeat and a document's
+        // poll/realtime checks are equally gated, not just the Document one.
+        if (nowProvider() < authHoldUntil) {
+            return false
+        }
         // For Document: check if realtime sync is needed
         if (resource is Document) {
             // A document parked by a write-rejection (#1462) is skipped BEFORE either

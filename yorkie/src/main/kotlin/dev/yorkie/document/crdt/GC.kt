@@ -1,6 +1,7 @@
 package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
+import dev.yorkie.document.time.VersionVector
 import dev.yorkie.util.DataSize
 import dev.yorkie.util.DocSize
 import dev.yorkie.util.addDataSizes
@@ -80,6 +81,17 @@ internal interface GCParent<T : GCChild> {
 internal sealed interface GCChild {
     val removedAt: TimeTicket?
     val dataSize: DataSize
+
+    /**
+     * Tells whether GC must keep this tombstone under [vector], the versions
+     * every replica has seen, beyond what [removedAt] alone says. Only
+     * [RgaTreeSplitNode] overrides this (a text piece's removal ledger can
+     * hold more than one uncancelled deletion, or a cancel not yet known
+     * everywhere); every other [GCChild] has no ledger and is never held
+     * back here. Mirrors JS `GCChild.heldFromPurge?` (yorkie-js-sdk #1514,
+     * yorkie#2310).
+     */
+    fun heldFromPurge(vector: VersionVector): Boolean = false
 }
 
 internal sealed interface GCCrdtElement {

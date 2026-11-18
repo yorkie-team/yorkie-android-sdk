@@ -125,6 +125,8 @@ public class JsonTree internal constructor(
      *
      * @throws YorkieException with ErrInvalidArgument if [path] resolves to
      *   an index inside a UTF-16 surrogate pair.
+     * @throws IllegalArgumentException if [path] names no node or character
+     *   (for example one past the parent's last child, or a negative element).
      */
     public fun styleByPath(path: List<Int>, attributes: Map<String, String>) {
         require(path.isNotEmpty()) {

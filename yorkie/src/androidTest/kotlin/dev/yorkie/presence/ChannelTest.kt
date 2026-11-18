@@ -602,4 +602,36 @@ class ChannelTest {
             c1.close()
         }
     }
+
+    // ports JS SDK `87a3802f9` (#1522) `channel_test.ts`: a channel-only client that
+    // completed a deactivate starts a fresh activation on the next channel attach.
+    @Test
+    fun test_restarts_channel_only_activation_after_a_completed_deactivate() {
+        runBlocking {
+            val c1 = createClient()
+
+            val channelKey = "channel-restart-${UUID.randomUUID()}".toDocKey()
+            val first = Channel(channelKey)
+            c1.attachChannel(first).await()
+            first.awaitAttached()
+            c1.deactivateAsync().await()
+            assertFalse(c1.isActive)
+            assertEquals(ResourceStatus.Detached, first.getStatus())
+
+            val second = Channel(channelKey)
+            c1.attachChannel(second).await()
+            // The first session's server-side entry lives on until its TTL, so the session
+            // COUNT is not asserted; only the channel's own state is (as in JS).
+            second.awaitAttached()
+            assertTrue(c1.isActive)
+            assertFalse(second.getSessionId().isNullOrEmpty())
+            assertEquals(c1.requireClientId(), second.getActorID())
+            assertTrue(c1.syncAsync(second).await().isSuccess)
+            assertTrue(second.isAttached())
+
+            c1.detachChannel(second).await()
+            c1.deactivateAsync().await()
+            c1.close()
+        }
+    }
 }

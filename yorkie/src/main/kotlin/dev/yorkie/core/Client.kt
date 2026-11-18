@@ -234,6 +234,15 @@ public class Client(
 
     private val attachments = ConcurrentHashMap<String, Attachment<out Attachable>>()
 
+    // Every attachment this client registered and has not torn down yet, with the key it
+    // was registered under. `attachments` keeps at most one attachment per key, so an
+    // attach that takes a key another attachment already holds writes over the old one
+    // (an in-flight `attachDocument` and a same-key `attachChannel` can do this: the
+    // channel attach checks the key before it waits on the per-key mutex). Teardown still
+    // has to reach the evicted one. Entries are added where `attachments` is written and
+    // removed by `detachInternal`. [Attachment] has identity equality.
+    private val liveAttachments = ConcurrentHashMap<Attachment<out Attachable>, String>()
+
     // attachingDocs holds keys with an in-flight attach. attachments is only
     // populated after the attach round-trip resolves, so this set is needed
     // to reject a concurrent duplicate attach of the same key. Touched only
@@ -2794,7 +2803,7 @@ public class Client(
                         // detachInternal is the only remaining release site.
                         attachment.sessionLockHandle = sessionLockHandle
                         attachment.persistsToStore = options.docStore != null && persistsToStore
-                        attachments[documentKey] = attachment
+                        registerAttachment(documentKey, attachment)
                         registered = true
 
                         // (7b) Attach-base write:
@@ -3293,14 +3302,17 @@ public class Client(
             }
 
             channel.mutex.withLock {
-                attachments[channelKey] = Attachment(
-                    resource = channel,
-                    resourceId = "",
-                    syncMode = if (isRealtime != false) {
-                        SyncMode.Realtime
-                    } else {
-                        SyncMode.Manual
-                    },
+                registerAttachment(
+                    channelKey,
+                    Attachment(
+                        resource = channel,
+                        resourceId = "",
+                        syncMode = if (isRealtime != false) {
+                            SyncMode.Realtime
+                        } else {
+                            SyncMode.Manual
+                        },
+                    ),
                 )
             }
             // Lazy activation entry point: the loop's first tick performs the
@@ -3319,7 +3331,10 @@ public class Client(
     public fun detachChannel(channel: Channel): Deferred<OperationResult> {
         return scope.async {
             val channelKey = channel.getKey()
-            val attachment = attachments[channelKey]
+            // The key alone is not enough: another Channel of the same key (attached
+            // again after this one was detached), or a Document, may hold it now, and
+            // detaching through a stale object must not take that one down.
+            val attachment = attachments[channelKey]?.takeIf { it.resource === channel }
                 ?: throw YorkieException(
                     ErrDocumentNotAttached,
                     "$channelKey is not attached",
@@ -3337,7 +3352,7 @@ public class Client(
                 channel.setSessionId(null)
                 channel.applyStatus(ResourceStatus.Detached)
                 channel.close()
-                detachInternal(channelKey)
+                detachInternal(channelKey, attachment)
             }
 
             SUCCESS
@@ -3395,8 +3410,24 @@ public class Client(
     )
     public fun detachPresence(presence: Presence) = detachChannel(presence)
 
-    private suspend fun detachInternal(key: String, drain: Boolean = true) {
-        val attachment = attachments[key] ?: return
+    /**
+     * Tears down [target], or the attachment [key] holds when [target] is `null`.
+     *
+     * The state kept by key belongs to whichever attachment the key holds. When a
+     * caller tears down an attachment the key no longer holds (a same-key resource was
+     * attached since), only that attachment's own resources go; the key's entry stays
+     * with the newer one.
+     */
+    @VisibleForTesting
+    internal suspend fun detachInternal(
+        key: String,
+        target: Attachment<out Attachable>? = null,
+        drain: Boolean = true,
+    ) {
+        // NOTE: If no attachment is found, the resource has already been detached by
+        // another routine.
+        val attachment = target ?: attachments[key] ?: return
+        val ownsKey = attachments[key] === attachment
         // Claim BEFORE the first suspension below (drainPersist): a document
         // that minted operations while attached takes the claim under the
         // CLIENT's actor (JS `this.actorID ?? this.id`) -- `applyStatus`
@@ -3452,11 +3483,25 @@ public class Client(
         // running stays chained so a re-attach's first write waits behind it.
         attachment.sessionLockHandle?.release()
         attachment.sessionLockHandle = null
-        if (attachment.persistsToStore) {
-            persistStates.remove(storeKey(key))
+        if (ownsKey) {
+            if (attachment.persistsToStore) {
+                persistStates.remove(storeKey(key))
+            }
+            attachments.remove(key, attachment)
+            mutexForAttachments.remove(key)
         }
-        attachments.remove(key)
-        mutexForAttachments.remove(key)
+        // Unconditional: this attachment is torn down whether or not the key still points
+        // at it, so teardown must stop seeing it either way.
+        liveAttachments.remove(attachment)
+    }
+
+    /**
+     * Records [attachment] as the one [key] holds, and as live until [detachInternal]
+     * tears it down.
+     */
+    private fun registerAttachment(key: String, attachment: Attachment<out Attachable>) {
+        attachments[key] = attachment
+        liveAttachments[attachment] = key
     }
 
     /**
@@ -3577,9 +3622,15 @@ public class Client(
         // per-document 5s drain N times over (spec 029) — a client deactivating with
         // several store-backed documents used to block for up to N*5s serially.
         withTimeoutOrNull(5_000) { drainAllPersists() }
-        attachments.values.forEach {
-            detachInternal(it.resource.getKey(), drain = false)
-            it.resource.applyStatus(ResourceStatus.Detached)
+        // Walk every live attachment, not just the ones `attachments` still names: an
+        // attachment a same-key attach evicted from the map is unreachable by key. The map
+        // is folded in too so teardown stays complete even if an attachment ever reaches
+        // it without being registered as live.
+        val pending = LinkedHashMap<Attachment<out Attachable>, String>(liveAttachments)
+        attachments.forEach { (key, attachment) -> pending.putIfAbsent(attachment, key) }
+        pending.forEach { (attachment, key) ->
+            detachInternal(key, attachment, drain = false)
+            attachment.resource.applyStatus(ResourceStatus.Detached)
         }
 
         _status.emit(Status.Deactivated)

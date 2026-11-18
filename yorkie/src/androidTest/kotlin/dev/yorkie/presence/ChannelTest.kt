@@ -5,8 +5,10 @@ import dev.yorkie.core.GENERAL_TIMEOUT
 import dev.yorkie.core.ResourceStatus
 import dev.yorkie.core.createClient
 import dev.yorkie.core.toDocKey
+import dev.yorkie.util.YorkieException
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -32,6 +34,14 @@ class ChannelTest {
     private suspend fun Channel.awaitSessionCount(count: Long, timeoutMs: Long = GENERAL_TIMEOUT) {
         withTimeout(timeoutMs) {
             while (getSessionCount() != count) {
+                delay(50)
+            }
+        }
+    }
+
+    private suspend fun Channel.awaitAttached(timeoutMs: Long = GENERAL_TIMEOUT) {
+        withTimeout(timeoutMs) {
+            while (!isAttached()) {
                 delay(50)
             }
         }
@@ -550,6 +560,46 @@ class ChannelTest {
             c2.deactivateAsync().await()
             c1.close()
             c2.close()
+        }
+    }
+
+    // ports JS SDK `ba56ec053` (#1527) `channel_test.ts`: detaching through a Channel that
+    // no longer holds the key must not take the key's current channel down.
+    @Test
+    fun test_refuses_to_detach_through_a_stale_channel_of_the_key() {
+        runBlocking {
+            val c1 = createClient()
+            c1.activateAsync().await()
+
+            val channelKey = "channel-stale-${UUID.randomUUID()}".toDocKey()
+            val stale = Channel(channelKey)
+            val current = Channel(channelKey)
+
+            c1.attachChannel(stale).await()
+            stale.awaitAttached()
+            c1.detachChannel(stale).await()
+
+            // Detach is local-only: the stale session lives on server-side until its TTL, so
+            // the session COUNT cannot be asserted here. Wait on the channel's own state, as
+            // the JS test does.
+            c1.attachChannel(current).await()
+            current.awaitAttached()
+
+            val exception = assertFailsWith<YorkieException> {
+                c1.detachChannel(stale).await()
+            }
+            assertEquals(YorkieException.Code.ErrDocumentNotAttached, exception.code)
+
+            assertTrue(c1.has(channelKey))
+            assertEquals(ResourceStatus.Attached, current.getStatus())
+            // Still synced: a refresh round succeeds and the channel stays attached.
+            assertTrue(c1.syncAsync(current).await().isSuccess)
+            assertTrue(current.isAttached())
+
+            c1.detachChannel(current).await()
+            assertFalse(c1.has(channelKey))
+            c1.deactivateAsync().await()
+            c1.close()
         }
     }
 }

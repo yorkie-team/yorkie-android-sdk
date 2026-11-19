@@ -108,12 +108,27 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.yorkie.api.v1.ChannelEvent.Type as PbChannelEventType
 
+/** A test hook answering an RPC; a null result falls through to the mock's own behaviour. */
+private typealias Hook<Req, Res> = suspend (Req) -> ResponseMessage<Res>?
+
 class MockYorkieService(
     val customError: MutableMap<String, Code> = defaultError,
 ) : YorkieServiceClientInterface {
 
     var refreshChannelSessionCount = 0L
     var peekChannelSessionCount = 0L
+
+    /**
+     * Test hooks: when set, a hook runs first and a non-null result is returned as the
+     * RPC's response, so a test can hold a request in flight and answer it later (for
+     * example with [clientNotFoundConnectException]) to exercise late responses.
+     */
+    var attachDocumentHook: Hook<AttachDocumentRequest, AttachDocumentResponse>? = null
+    var detachDocumentHook: Hook<DetachDocumentRequest, DetachDocumentResponse>? = null
+    var removeDocumentHook: Hook<RemoveDocumentRequest, RemoveDocumentResponse>? = null
+    var pushPullHook: Hook<PushPullChangesRequest, PushPullChangesResponse>? = null
+    var refreshChannelHook: Hook<RefreshChannelRequest, RefreshChannelResponse>? = null
+    var deactivateClientHook: Hook<DeactivateClientRequest, DeactivateClientResponse>? = null
 
     /** Fails the next non-first-call refresh with ErrSessionNotFound once. */
     var refreshChannelSessionNotFoundOnce = false
@@ -377,6 +392,7 @@ class MockYorkieService(
         request: DeactivateClientRequest,
         headers: Headers,
     ): ResponseMessage<DeactivateClientResponse> {
+        deactivateClientHook?.invoke(request)?.let { return it }
         return ResponseMessage.Success(deactivateClientResponse { }, emptyMap(), emptyMap())
     }
 
@@ -384,6 +400,7 @@ class MockYorkieService(
         request: AttachDocumentRequest,
         headers: Headers,
     ): ResponseMessage<AttachDocumentResponse> {
+        attachDocumentHook?.invoke(request)?.let { return it }
         if (request.changePack.documentKey == ATTACH_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
                 ConnectException(customError[ATTACH_ERROR_DOCUMENT_KEY]!!),
@@ -537,6 +554,7 @@ class MockYorkieService(
         request: DetachDocumentRequest,
         headers: Headers,
     ): ResponseMessage<DetachDocumentResponse> {
+        detachDocumentHook?.invoke(request)?.let { return it }
         if (request.changePack.documentKey == DETACH_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
                 ConnectException(customError[DETACH_ERROR_DOCUMENT_KEY]!!),
@@ -596,6 +614,7 @@ class MockYorkieService(
         request: PushPullChangesRequest,
         headers: Headers,
     ): ResponseMessage<PushPullChangesResponse> {
+        pushPullHook?.invoke(request)?.let { return it }
         pushPullChangesCallCounts.merge(request.changePack.documentKey, 1, Int::plus)
         if (request.changePack.documentKey == WATCH_SYNC_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
@@ -1045,6 +1064,7 @@ class MockYorkieService(
         request: RefreshChannelRequest,
         headers: Headers,
     ): ResponseMessage<RefreshChannelResponse> {
+        refreshChannelHook?.invoke(request)?.let { return it }
         refreshChannelCallCounts.merge(request.channelKey, 1, Int::plus)
         if (refreshChannelDelayMs > 0L) {
             delay(refreshChannelDelayMs)
@@ -1132,6 +1152,7 @@ class MockYorkieService(
         request: RemoveDocumentRequest,
         headers: Headers,
     ): ResponseMessage<RemoveDocumentResponse> {
+        removeDocumentHook?.invoke(request)?.let { return it }
         if (request.documentId == REMOVE_ERROR_DOCUMENT_KEY) {
             return ResponseMessage.Failure(
                 ConnectException(customError[REMOVE_ERROR_DOCUMENT_KEY]!!),
@@ -1298,6 +1319,17 @@ internal fun clientNotFoundConnectException(): ConnectException {
         .build()
     return mockk<ConnectException>(relaxed = true) {
         every { code } returns Code.NOT_FOUND
+        every { unpackedDetails(ErrorInfo::class) } returns listOf(errorInfo)
+    }
+}
+
+/** Builds an [dev.yorkie.util.YorkieException.Code.ErrEpochMismatch]-shaped [ConnectException]. */
+internal fun epochMismatchConnectException(): ConnectException {
+    val errorInfo = ErrorInfo.newBuilder()
+        .putMetadata("code", dev.yorkie.util.YorkieException.Code.ErrEpochMismatch.codeString)
+        .build()
+    return mockk<ConnectException>(relaxed = true) {
+        every { code } returns Code.FAILED_PRECONDITION
         every { unpackedDetails(ErrorInfo::class) } returns listOf(errorInfo)
     }
 }

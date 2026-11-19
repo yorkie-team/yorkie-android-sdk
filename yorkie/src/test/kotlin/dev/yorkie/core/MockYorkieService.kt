@@ -128,6 +128,7 @@ class MockYorkieService(
     var removeDocumentHook: Hook<RemoveDocumentRequest, RemoveDocumentResponse>? = null
     var pushPullHook: Hook<PushPullChangesRequest, PushPullChangesResponse>? = null
     var refreshChannelHook: Hook<RefreshChannelRequest, RefreshChannelResponse>? = null
+    var deactivateClientHook: Hook<DeactivateClientRequest, DeactivateClientResponse>? = null
 
     /** Fails the next non-first-call refresh with ErrSessionNotFound once. */
     var refreshChannelSessionNotFoundOnce = false
@@ -391,6 +392,7 @@ class MockYorkieService(
         request: DeactivateClientRequest,
         headers: Headers,
     ): ResponseMessage<DeactivateClientResponse> {
+        deactivateClientHook?.invoke(request)?.let { return it }
         return ResponseMessage.Success(deactivateClientResponse { }, emptyMap(), emptyMap())
     }
 
@@ -1317,6 +1319,17 @@ internal fun clientNotFoundConnectException(): ConnectException {
         .build()
     return mockk<ConnectException>(relaxed = true) {
         every { code } returns Code.NOT_FOUND
+        every { unpackedDetails(ErrorInfo::class) } returns listOf(errorInfo)
+    }
+}
+
+/** Builds an [dev.yorkie.util.YorkieException.Code.ErrEpochMismatch]-shaped [ConnectException]. */
+internal fun epochMismatchConnectException(): ConnectException {
+    val errorInfo = ErrorInfo.newBuilder()
+        .putMetadata("code", dev.yorkie.util.YorkieException.Code.ErrEpochMismatch.codeString)
+        .build()
+    return mockk<ConnectException>(relaxed = true) {
+        every { code } returns Code.FAILED_PRECONDITION
         every { unpackedDetails(ErrorInfo::class) } returns listOf(errorInfo)
     }
 }

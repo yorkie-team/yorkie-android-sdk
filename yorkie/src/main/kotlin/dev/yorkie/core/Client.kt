@@ -1724,9 +1724,23 @@ public class Client(
                         }
                     }
                 }
-            }.onFailure {
+            }.let { result ->
+                if (result.isSuccess) {
+                    return@let result
+                }
                 coroutineContext.ensureActive()
-
+                // A teardown removed this document's attachment while the request was in
+                // flight (and the key may belong to a re-attach by now): the failure is not
+                // the live attachment's. Publish nothing -- an old EpochMismatch would tell
+                // the app to re-attach a healthy document -- and resolve as a success, as JS
+                // (`if (!ownsAttachment()) return doc`, #1522) and iOS do.
+                if (resource is Document &&
+                    (!ownsSession() || attachments[resource.getKey()] !== attachment)
+                ) {
+                    return@let SUCCESS
+                }
+                result
+            }.onFailure {
                 // Suppressed during detach/deactivate teardown so callers do not
                 // see a spurious error flash on the way out.
                 if (resource is Channel && !attachment.detaching &&
@@ -3050,6 +3064,13 @@ public class Client(
 
         val task = suspend suspend@{
             document.mutex.withLock {
+                // Waiting for this mutex can span a teardown, and teardown drops the key's
+                // mutex, so a re-attach may already hold a fresh one: never send under (or
+                // clear presence on) a session or attachment this detach did not start from.
+                // JS checks the same right after `waitForSyncComplete()` (#1522).
+                if (!ownsSession() || attachments[documentKey] !== attachment) {
+                    return@suspend SUCCESS
+                }
                 // D3: skip the presence clear outright when asked to, or when a
                 // concurrent resync has already suspended minting on this document
                 // (`!document.isMintable()` -- a detach whose presence clear would
@@ -3406,9 +3427,10 @@ public class Client(
                 // tick, so the channel would never refresh. Mirrors JS `87a3802f9` (#1522),
                 // `if (!isActive() && (id !== undefined || deactivating))` in `attach`'s task;
                 // Android keeps no stored id once Deactivated, so `deactivating` is the only
-                // leftover. `!isActive` means the earlier deactivate finished (it emits
-                // Deactivated last), so a deactivate still in flight -- keepalive or not -- is
-                // never un-marked here.
+                // leftover. `!isActive` does not prove the earlier deactivate's RPC finished
+                // (an owned late error can tear the session down first), but that RPC's
+                // completion only tears down the session it captured, so a session started
+                // from here is never ended by it.
                 if (!isActive && deactivating) {
                     deactivating = false
                     conditions[ClientCondition.SYNC_LOOP] = false
@@ -3644,6 +3666,10 @@ public class Client(
         // already-queued sync-loop iteration on the same dispatcher observes it and
         // stops before sending another RPC.
         deactivating = true
+        // The session this deactivate was asked for. An owned late error can tear that
+        // session down while the DeactivateClient RPC is pending, and a new one can start
+        // before it returns; its completion must not end the new session (iOS #281).
+        val ownsSession = captureSession()
 
         val task = suspend {
             activationJob.cancelChildren()
@@ -3658,7 +3684,7 @@ public class Client(
                     headers = projectBasedRequestHeader,
                 ).getOrThrow()
 
-                deactivateInternal()
+                deactivateInternalIfOwned(ownsSession)
                 SUCCESS
             } catch (e: ConnectException) {
                 // The DeactivateClient request's OWN auth-header injector rejecting is
@@ -3674,7 +3700,7 @@ public class Client(
                 // refresh that rejects.
                 val injectorError = (e.cause as? AuthTokenInjectorException)?.cause
                 if (injectorError != null) {
-                    deactivateInternal()
+                    deactivateInternalIfOwned(ownsSession)
                     Result.failure(injectorError)
                 } else {
                     val fetchAuthToken = options.fetchAuthToken
@@ -3701,7 +3727,7 @@ public class Client(
                             deactivating = false
                             Result.failure(e)
                         } catch (refreshError: AuthTokenInjectorException) {
-                            deactivateInternal()
+                            deactivateInternalIfOwned(ownsSession)
                             Result.failure(refreshError.unwrapInjectorError())
                         }
                     } else {
@@ -3710,7 +3736,7 @@ public class Client(
                             if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
                                 shouldRefreshToken = true
                             }
-                            deactivateInternal()
+                            deactivateInternalIfOwned(ownsSession)
                         }
                         Result.failure(e)
                     }
@@ -3800,14 +3826,21 @@ public class Client(
                 YorkieException(ErrClientNotActivated, "client is not active"),
             )
             val ownsSession = captureSession()
+            val documentKey = document.getKey()
+            // Captured before the lock, as JS does: the attachment this remove was asked for.
+            val attachment = attachments[documentKey]
+                ?: throw YorkieException(
+                    ErrDocumentNotAttached,
+                    "document($documentKey) is not attached",
+                )
 
             document.mutex.withLock {
-                val documentKey = document.getKey()
-                val attachment = attachments[documentKey]
-                    ?: throw YorkieException(
-                        ErrDocumentNotAttached,
-                        "document($documentKey) is not attached",
-                    )
+                // The wait can span a teardown (which drops the key's mutex) and a re-attach:
+                // never send RemoveDocument for a session or attachment this remove did not
+                // start from.
+                if (!ownsSession() || attachments[documentKey] !== attachment) {
+                    return@async SUCCESS
+                }
 
                 val response = sendWithPresenceBaseRetry(
                     document,

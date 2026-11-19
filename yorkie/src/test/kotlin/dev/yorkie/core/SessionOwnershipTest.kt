@@ -142,7 +142,9 @@ class SessionOwnershipTest {
             assertTrue(client.isActive)
 
             release.complete(Unit)
-            assertTrue(sync.await().isFailure)
+            // As JS and iOS: the failure is not the live attachment's, so it resolves as a
+            // success and publishes nothing.
+            assertTrue(sync.await().isSuccess)
 
             assertTrue(client.isActive, "the late ErrClientNotFound belongs to the old session")
         }
@@ -186,6 +188,47 @@ class SessionOwnershipTest {
                 synced.none { it is SyncStatusChanged.Synced },
                 "a response of a torn-down attachment is dropped",
             )
+            collect.cancel()
+        }
+    }
+
+    @Test
+    fun `late sync failure publishes nothing on a re-attached document`() = runTest {
+        runBlocking {
+            client.activateAsync().await()
+            val document = Document(NORMAL_DOCUMENT_KEY)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            service.pushPullHook = {
+                entered.complete(Unit)
+                release.await()
+                failure(epochMismatchConnectException())
+            }
+            val sync = client.syncAsync(document)
+            entered.await()
+
+            client.deactivateAsync().await()
+            service.pushPullHook = null
+            client.activateAsync().await()
+            // Teardown dropped the key's mutex, so this re-attach does not wait for the sync.
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            val events = mutableListOf<Document.Event>()
+            val collect = launch(start = CoroutineStart.UNDISPATCHED) {
+                document.events.collect { events.add(it) }
+            }
+            release.complete(Unit)
+            assertTrue(sync.await().isSuccess, "a stale failure resolves as a success")
+
+            assertTrue(
+                events.none {
+                    it is SyncStatusChanged.SyncFailed || it is Document.Event.EpochMismatch
+                },
+                "no SyncFailed or EpochMismatch for the re-attached document",
+            )
+            assertEquals(ResourceStatus.Attached, document.getStatus())
             collect.cancel()
         }
     }
@@ -383,11 +426,16 @@ class SessionOwnershipTest {
                 assertEquals(ResourceStatus.Detached, document.getStatus())
                 assertFalse(client.has(NORMAL_DOCUMENT_KEY))
 
+                // Teardown dropped the key's mutex, so a re-attach completes while the old
+                // detach is still parked in the hook.
+                client.activateAsync().await()
+                client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
                 release.complete(Unit)
                 assertTrue(detach.await().isSuccess)
 
-                assertEquals(ResourceStatus.Detached, document.getStatus())
-                assertFalse(client.has(NORMAL_DOCUMENT_KEY))
+                assertTrue(client.has(NORMAL_DOCUMENT_KEY), "the replacement stays registered")
+                assertEquals(ResourceStatus.Attached, document.getStatus())
             }
         }
 
@@ -416,6 +464,120 @@ class SessionOwnershipTest {
             assertTrue(detach.await().isFailure)
 
             assertTrue(client.isActive)
+        }
+    }
+
+    @Test
+    fun `a detach queued across a teardown and re-attach sends nothing`() = runTest {
+        runBlocking {
+            client.activateAsync().await()
+            val document = Document(NORMAL_DOCUMENT_KEY)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            var detachRpcs = 0
+            service.detachDocumentHook = {
+                detachRpcs++
+                null
+            }
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            service.pushPullHook = {
+                entered.complete(Unit)
+                release.await()
+                null
+            }
+            // The sync holds the per-key mutex; the detach waits behind it.
+            val sync = client.syncAsync(document)
+            entered.await()
+            val detach = client.detachDocument(document)
+
+            client.deactivateAsync().await()
+            service.pushPullHook = null
+            client.activateAsync().await()
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            release.complete(Unit)
+            sync.await()
+            assertTrue(detach.await().isSuccess)
+
+            assertEquals(0, detachRpcs, "no DetachDocument under the new session")
+            assertTrue(client.has(NORMAL_DOCUMENT_KEY))
+            assertEquals(ResourceStatus.Attached, document.getStatus())
+        }
+    }
+
+    @Test
+    fun `a remove queued across a teardown and re-attach sends nothing`() = runTest {
+        runBlocking {
+            client.activateAsync().await()
+            val document = Document(NORMAL_DOCUMENT_KEY)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            var removeRpcs = 0
+            service.removeDocumentHook = {
+                removeRpcs++
+                null
+            }
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            service.pushPullHook = {
+                entered.complete(Unit)
+                release.await()
+                null
+            }
+            val sync = client.syncAsync(document)
+            entered.await()
+            val remove = client.removeDocument(document)
+
+            client.deactivateAsync().await()
+            service.pushPullHook = null
+            client.activateAsync().await()
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            release.complete(Unit)
+            sync.await()
+            assertTrue(remove.await().isSuccess)
+
+            assertEquals(0, removeRpcs, "no RemoveDocument under the new session")
+            assertTrue(client.has(NORMAL_DOCUMENT_KEY))
+            assertEquals(ResourceStatus.Attached, document.getStatus())
+        }
+    }
+
+    // -- deactivate lifecycle -------------------------------------------------------------
+
+    @Test
+    fun `a late deactivate completion must not end a newer session`() = runTest {
+        runBlocking {
+            client.activateAsync().await()
+            val document = Document(NORMAL_DOCUMENT_KEY)
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            val deactivateEntered = CompletableDeferred<Unit>()
+            val deactivateRelease = CompletableDeferred<Unit>()
+            service.deactivateClientHook = {
+                deactivateEntered.complete(Unit)
+                deactivateRelease.await()
+                null
+            }
+            val deactivate = client.deactivateAsync()
+            deactivateEntered.await() // DeactivateClient(X) is in flight
+
+            // A one-shot sync of X is evicted and tears X down while that RPC is pending.
+            service.pushPullHook = { failure(clientNotFoundConnectException()) }
+            client.syncAsync(document).await()
+            assertFalse(client.isActive)
+            service.pushPullHook = null
+
+            client.activateAsync().await() // session Y
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
+
+            deactivateRelease.complete(Unit)
+            assertTrue(deactivate.await().isSuccess)
+
+            assertTrue(client.isActive, "X's deactivate completion leaves Y alone")
+            assertTrue(client.has(NORMAL_DOCUMENT_KEY))
+            assertEquals(ResourceStatus.Attached, document.getStatus())
         }
     }
 

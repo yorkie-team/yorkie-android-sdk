@@ -207,6 +207,26 @@ class IndexTreeTest {
     }
 
     @Test
+    fun `should throw IllegalArgumentException for a negative path element`() {
+        val tree = createIndexTree(
+            createElementNode(
+                "r",
+                createElementNode("p", createTextNode("ab")),
+                createElementNode("p"),
+            ),
+        )
+
+        for (path in listOf(listOf(-1), listOf(0, -1), listOf(-1, 0), listOf(1, -1))) {
+            assertThrows(IllegalArgumentException::class.java) {
+                tree.pathToTreePos(path)
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                tree.pathToIndex(path)
+            }
+        }
+    }
+
+    @Test
     fun `can find path from given treePos`() {
         //       0  1  2    3 4 5 6 7     8   9 10 11 12 13  14 15  16
         // <root><tc><p><tn> A B C D </tn><tn> E  F G  H </tn></p></tc></root>

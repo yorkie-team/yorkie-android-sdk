@@ -3190,9 +3190,35 @@ internal data class CrdtTree(
      * the caller -- the caller named a node by path, so resolving that
      * derived index through [findPosUnchecked] keeps a pair happening to
      * start right after it from refusing a request that is valid as given.
+     *
+     * The path has to name an existing node or character, because the derived range
+     * is one index wide around it. [IndexTree.pathToTreePos] is laxer: it accepts the
+     * offset one past the parent's content, which is where an insertion goes. For an
+     * element parent that offset is the parent's closing tag, and for a text-only
+     * parent it is the end of the last character, which resolves to the same closing
+     * tag; either way the derived range would cover the parent and style it instead
+     * of failing.
+     *
+     * @throws IllegalArgumentException if [path] names no node or character.
      */
     fun pathToPosRange(path: List<Int>): TreePosRange {
-        val fromIndex = pathToIndex(path)
+        val treePos = indexTree.pathToTreePos(path)
+        val node = treePos.node
+        val offset = treePos.offset
+        // A path into a text-only parent names a character offset rather than a node,
+        // so it is bounded by the text node's own length. The offset at the end of one
+        // text node still names the first character of the next one, so it is only out
+        // of range once there is no following sibling. A negative offset is already
+        // rejected by `pathToTreePos`, which every path-taking entry point shares, so
+        // only the upper bound is left here.
+        val pastTheEnd = if (node.isText) {
+            offset >= node.visibleSize && node.nextSibling == null
+        } else {
+            offset >= node.children.size
+        }
+        require(!pastTheEnd) { "unacceptable path" }
+
+        val fromIndex = indexTree.indexOf(treePos)
         return findPos(fromIndex) to findPosUnchecked(fromIndex + 1)
     }
 

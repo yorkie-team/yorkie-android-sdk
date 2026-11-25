@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Yorkie Channel</string>
+    <string name="rooms_title">Yorkie Channel Rooms</string>
+    <string name="rooms_subtitle">Real-time user channel tracking across multiple rooms</string>
+    <string name="join_room">Join Room →</string>
+    <string name="back_to_rooms">← Back to Rooms</string>
+    <string name="user_online">User Online</string>
+    <string name="users_online">Users Online</string>
+    <string name="someone_joined">👋 Someone Joined!</string>
+    <string name="someone_left">👋 Someone Left!</string>
+</resources>

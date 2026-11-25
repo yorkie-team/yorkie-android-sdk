@@ -459,11 +459,16 @@ class SessionOwnershipTest {
             client.deactivateAsync().await()
             service.detachDocumentHook = null
             client.activateAsync().await()
+            client.attachDocument(document, syncMode = Client.SyncMode.Manual).await()
 
             release.complete(Unit)
-            assertTrue(detach.await().isFailure)
+            // The teardown already detached it, so the late failure resolves as a success, as
+            // JS and iOS do.
+            assertTrue(detach.await().isSuccess)
 
             assertTrue(client.isActive)
+            assertTrue(client.has(NORMAL_DOCUMENT_KEY), "the replacement stays registered")
+            assertEquals(ResourceStatus.Attached, document.getStatus())
         }
     }
 

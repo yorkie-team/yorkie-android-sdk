@@ -3104,6 +3104,12 @@ public class Client(
                         documentKey.attachmentBasedRequestHeader,
                     )
                 }.getOrElse {
+                    // A teardown that ran while the request was in flight already detached
+                    // this document: its late failure resolves as a success and touches
+                    // nothing, as the sync path does and JS and iOS do (#1522).
+                    if (!ownsSession() || attachments[documentKey] !== attachment) {
+                        return@suspend SUCCESS
+                    }
                     handleConnectException(it) { exception ->
                         if (errorCodeOf(exception) == ErrUnauthenticated.codeString) {
                             shouldRefreshToken = true

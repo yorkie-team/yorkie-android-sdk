@@ -238,34 +238,11 @@ class ReissueClaimTest {
     // `detachInternal` call AFTER a concurrent `deactivateAsync()` has already flipped
     // status away from Activated -- `markReissueClaim(actorId ?: requireClientId(), key)`
     // used to throw `ErrClientNotActivated` there, uncaught, on a cleanup path that must
-    // not fail. `detachInternal` is private, so this reflects into it directly (same
-    // technique as `ClientTest.forceStatus`) rather than racing the public API, whose own
-    // EARLIER `requireClientId()` call (building the detach RPC request) would otherwise
-    // fail first and mask whether this fix's line was ever reached.
-    @Suppress("UNCHECKED_CAST")
-    private suspend fun Client.callDetachInternal(key: String) {
-        val method = Client::class.java.getDeclaredMethod(
-            "detachInternal",
-            String::class.java,
-            Boolean::class.javaPrimitiveType,
-            kotlin.coroutines.Continuation::class.java,
-        )
-        method.isAccessible = true
-        kotlin.coroutines.suspendCoroutine<Unit> { cont ->
-            val continuation = object : kotlin.coroutines.Continuation<Any?> {
-                override val context = cont.context
-                override fun resumeWith(result: Result<Any?>) {
-                    cont.resumeWith(result.map { })
-                }
-            }
-            val invokeResult = method.invoke(this, key, true, continuation)
-            // COROUTINE_SUSPENDED sentinel means the suspend fun itself will resume
-            // `continuation` later; any other return means it completed synchronously.
-            if (invokeResult !== kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED) {
-                cont.resumeWith(Result.success(Unit))
-            }
-        }
-    }
+    // not fail. `detachInternal` is `internal @VisibleForTesting` so this calls it directly
+    // rather than racing the public API, whose own EARLIER `requireClientId()` call
+    // (building the detach RPC request) would otherwise fail first and mask whether this
+    // fix's line was ever reached.
+    private suspend fun Client.callDetachInternal(key: String) = detachInternal(key)
 
     @Test
     fun `keepalive detach does not throw when it resumes after a concurrent deactivate`() =

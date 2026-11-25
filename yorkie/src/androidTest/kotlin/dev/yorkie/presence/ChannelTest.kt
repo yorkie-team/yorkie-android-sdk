@@ -5,8 +5,10 @@ import dev.yorkie.core.GENERAL_TIMEOUT
 import dev.yorkie.core.ResourceStatus
 import dev.yorkie.core.createClient
 import dev.yorkie.core.toDocKey
+import dev.yorkie.util.YorkieException
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -32,6 +34,14 @@ class ChannelTest {
     private suspend fun Channel.awaitSessionCount(count: Long, timeoutMs: Long = GENERAL_TIMEOUT) {
         withTimeout(timeoutMs) {
             while (getSessionCount() != count) {
+                delay(50)
+            }
+        }
+    }
+
+    private suspend fun Channel.awaitAttached(timeoutMs: Long = GENERAL_TIMEOUT) {
+        withTimeout(timeoutMs) {
+            while (!isAttached()) {
                 delay(50)
             }
         }
@@ -550,6 +560,78 @@ class ChannelTest {
             c2.deactivateAsync().await()
             c1.close()
             c2.close()
+        }
+    }
+
+    // ports JS SDK `ba56ec053` (#1527) `channel_test.ts`: detaching through a Channel that
+    // no longer holds the key must not take the key's current channel down.
+    @Test
+    fun test_refuses_to_detach_through_a_stale_channel_of_the_key() {
+        runBlocking {
+            val c1 = createClient()
+            c1.activateAsync().await()
+
+            val channelKey = "channel-stale-${UUID.randomUUID()}".toDocKey()
+            val stale = Channel(channelKey)
+            val current = Channel(channelKey)
+
+            c1.attachChannel(stale).await()
+            stale.awaitAttached()
+            c1.detachChannel(stale).await()
+
+            // Detach is local-only: the stale session lives on server-side until its TTL, so
+            // the session COUNT cannot be asserted here. Wait on the channel's own state, as
+            // the JS test does.
+            c1.attachChannel(current).await()
+            current.awaitAttached()
+
+            val exception = assertFailsWith<YorkieException> {
+                c1.detachChannel(stale).await()
+            }
+            assertEquals(YorkieException.Code.ErrDocumentNotAttached, exception.code)
+
+            assertTrue(c1.has(channelKey))
+            assertEquals(ResourceStatus.Attached, current.getStatus())
+            // Still synced: a refresh round succeeds and the channel stays attached.
+            assertTrue(c1.syncAsync(current).await().isSuccess)
+            assertTrue(current.isAttached())
+
+            c1.detachChannel(current).await()
+            assertFalse(c1.has(channelKey))
+            c1.deactivateAsync().await()
+            c1.close()
+        }
+    }
+
+    // ports JS SDK `87a3802f9` (#1522) `channel_test.ts`: a channel-only client that
+    // completed a deactivate starts a fresh activation on the next channel attach.
+    @Test
+    fun test_restarts_channel_only_activation_after_a_completed_deactivate() {
+        runBlocking {
+            val c1 = createClient()
+
+            val channelKey = "channel-restart-${UUID.randomUUID()}".toDocKey()
+            val first = Channel(channelKey)
+            c1.attachChannel(first).await()
+            first.awaitAttached()
+            c1.deactivateAsync().await()
+            assertFalse(c1.isActive)
+            assertEquals(ResourceStatus.Detached, first.getStatus())
+
+            val second = Channel(channelKey)
+            c1.attachChannel(second).await()
+            // The first session's server-side entry lives on until its TTL, so the session
+            // COUNT is not asserted; only the channel's own state is (as in JS).
+            second.awaitAttached()
+            assertTrue(c1.isActive)
+            assertFalse(second.getSessionId().isNullOrEmpty())
+            assertEquals(c1.requireClientId(), second.getActorID())
+            assertTrue(c1.syncAsync(second).await().isSuccess)
+            assertTrue(second.isAttached())
+
+            c1.detachChannel(second).await()
+            c1.deactivateAsync().await()
+            c1.close()
         }
     }
 }

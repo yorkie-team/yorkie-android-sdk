@@ -294,6 +294,14 @@ internal class IndexTree<T : IndexTreeNode<T>>(val root: T) {
             throw IllegalArgumentException("unacceptable path")
         }
 
+        // Only the upper bound is checked below: a child index past the end stops at
+        // the missing child, and `findTextPos` compares against the content length.
+        // A negative element passes both tests, so reject it here and keep every
+        // caller of the resolver on the same contract.
+        if (path.any { it < 0 }) {
+            throw IllegalArgumentException("unacceptable path")
+        }
+
         var node = root
         for (index in 0 until path.size - 1) {
             val pathElement = path[index]

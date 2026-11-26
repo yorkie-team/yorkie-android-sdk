@@ -8,10 +8,8 @@ import dev.yorkie.document.yson.YsonValue.YsonObject
 import dev.yorkie.document.yson.YsonValue.YsonString
 import dev.yorkie.document.yson.YsonValue.YsonText
 import dev.yorkie.document.yson.YsonValue.YsonTree
-import dev.yorkie.util.YorkieException
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertThrows
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,8 +30,8 @@ import org.junit.Test
  * pins the contract so a future marker-based rewrite or parser refactor cannot regress it
  * silently.
  *
- * Android differs from JS on purpose in cases 5, 10, 11, 12 and 13 (representation or Android
- * specific behaviour, not parity bugs); each of those tests says so.
+ * Android differs from JS on purpose in cases 5 (representation) and 12 (no prototype semantics
+ * on the JVM, sanity only); each of those tests says so.
  */
 class YsonParserReservedKeyTest {
 
@@ -200,10 +198,7 @@ class YsonParserReservedKeyTest {
 
     @Test
     fun `parse should keep a reserved key nested in a tree attribute value`() {
-        // given a non-string tree attribute value holding a reserved key. Android difference:
-        // `parseTreeNode` flattens non-string attribute values with `toString()`. This pins the
-        // current flattening, not parity with JS, and is brittle to renaming or changing the
-        // `toString()` of YsonArray / YsonObject.
+        // given a non-string tree attribute value holding a reserved key (JS case 10)
         val yson = """
             {"t":Tree({"type":"doc","attrs":{"k":[{"__yson_type":"b"}]},"children":[]})}
         """.trimIndent()
@@ -211,23 +206,26 @@ class YsonParserReservedKeyTest {
         // when
         val root = parseTreeRoot(yson)
 
-        // then
-        val flattened = YsonArray(listOf(obj("__yson_type" to YsonString("b")))).toString()
-        assertEquals(mapOf("k" to flattened), root.attrs)
+        // then the lossless value keeps the typed array; the legacy string view is empty
+        val expected = obj("k" to YsonArray(listOf(obj("__yson_type" to YsonString("b")))))
+        assertEquals(expected, root.rawAttrs)
+        assertEquals(emptyMap<String, String>(), root.attrs)
     }
 
     @Test
-    fun `parse should reject array-valued text attributes`() {
-        // given array-valued text attrs. Android difference: JS accepts and keeps the array;
-        // Android rejects non-object attrs. Pinned as existing behaviour.
+    fun `parse should keep array-valued text attributes`() {
+        // given array-valued text attrs (JS case 11): JS keeps the array
         val yson = """{"t":Text([{"val":"a","attrs":[{"__yson_type":"b"}]}])}"""
 
         // when
-        val error = assertThrows(YorkieException::class.java) { parse(yson) }
+        val nodes = parseTextNodes(yson)
 
         // then
-        assertEquals(YorkieException.Code.ErrInvalidArgument, error.code)
-        assertTrue(error.message.orEmpty().contains("invalid text node format"))
+        assertEquals(
+            YsonArray(listOf(obj("__yson_type" to YsonString("b")))),
+            nodes.single().rawAttrs,
+        )
+        assertNull(nodes.single().attrs)
     }
 
     // --- __proto__ (sanity only) ---
@@ -255,8 +253,11 @@ class YsonParserReservedKeyTest {
         // when
         val root = parseTreeRoot(yson)
 
-        // then the key is present; its value is the flattened non-string attribute
-        assertTrue(root.attrs.orEmpty().containsKey("__proto__"))
-        assertNotNull(root.attrs?.get("__proto__"))
+        // then the key is kept as an ordinary attribute with its typed value (JS case 13)
+        assertEquals(
+            obj("__proto__" to obj("polluted" to YsonBoolean(true))),
+            root.rawAttrs,
+        )
+        assertEquals(emptyMap<String, String>(), root.attrs)
     }
 }

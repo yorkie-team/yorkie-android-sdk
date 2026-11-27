@@ -213,6 +213,69 @@ class DocPresenceTest {
         }
     }
 
+    // RTCOLLABPLATFORM-805: the presence JSON wire contract (yorkie#2386, server 0.7.29). The
+    // SDK JSON-encodes on write and decodes JSON strings on read, so what a client sets is what
+    // its peers read, whatever the text is. Expected green against 0.7.29 (CI only).
+    @Test
+    fun test_presence_text_values_round_trip_between_clients() {
+        val values = mapOf(
+            "bare" to "moved",
+            "empty" to "",
+            "quoted" to "\"x\"",
+            "padded" to " \"x\" ",
+            "tabbed" to "\t\"x\"\n",
+            "digits" to "\"123\"",
+            "escapes" to "a\"b\\c\u0001",
+            "unicode" to "\u00e9\ud55c\uD83D\uDE00\u2028",
+            "long" to "y".repeat(3 * 1024),
+        )
+        withTwoClientsAndDocuments(
+            syncMode = Manual,
+            presences = values to mapOf("name" to "peer"),
+        ) { c1, c2, d1, d2, _ ->
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            assertEquals(values, d1.allPresences.value[c1.requireActorId()])
+            assertEquals(values, d2.allPresences.value[c1.requireActorId()])
+        }
+    }
+
+    @Test
+    fun test_presence_object_values_pass_through_unchanged() {
+        val cursor = gson.toJson(Cursor(3, 4))
+        val values = mapOf("cursor" to cursor, "count" to "42", "flag" to "true")
+        withTwoClientsAndDocuments(
+            syncMode = Manual,
+            presences = values to mapOf("name" to "peer"),
+        ) { c1, c2, d1, d2, _ ->
+            c1.syncAsync().await()
+            c2.syncAsync().await()
+
+            assertEquals(values, d2.allPresences.value[c1.requireActorId()])
+        }
+    }
+
+    @Test
+    fun test_presence_text_updates_propagate_both_ways() {
+        withTwoClientsAndDocuments(
+            syncMode = Manual,
+            presences = mapOf("name" to "a1") to mapOf("name" to "b1"),
+        ) { c1, c2, d1, d2, _ ->
+            d2.updateAsync { _, presence ->
+                presence.put(mapOf("name" to "\"b2\"", "note" to "1,1"))
+            }.await()
+            c2.syncAsync().await()
+            c1.syncAsync().await()
+
+            assertEquals(
+                mapOf("name" to "\"b2\"", "note" to "1,1"),
+                d1.allPresences.value[c2.requireActorId()],
+            )
+            assertEquals(mapOf("name" to "a1"), d2.allPresences.value[c1.requireActorId()])
+        }
+    }
+
     @Test
     fun test_partial_presence_update() {
         val previousCursor = gson.toJson(Cursor(0, 0))

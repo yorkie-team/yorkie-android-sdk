@@ -170,51 +170,65 @@ class PresencePatchTest {
         assertIs<PresenceChange.Put>(pendingPresenceTypes(target).single())
     }
 
-    // --- CJ-MED-2 (round 4, cross-judge round 3): raw-byte 4 KiB rule ------
+    // --- CJ-MED-2 (round 4) rebased on RTCOLLABPLATFORM-805: 4 KiB rule on the ENCODED form ---
 
     @Test
-    fun `4 KiB rule counts RAW value bytes, not the quoted-escaped form, at the exact boundary`() =
-        runTest {
-            // "seed" (4) + "s" (1) + 64 overhead = 69 fixed bytes ahead of the key under test.
-            val seedBytes = 69
+    fun `4 KiB rule counts the JSON-encoded value bytes at the exact boundary`() = runTest {
+        // "seed" (4) + encoded "s" = `"s"` (3) + 64 overhead = 71 fixed bytes ahead of the key
+        // under test. The value goes on the wire JSON-encoded (PresenceConverter.toPBPresence ->
+        // PresenceValue.encodeForWire) and the server sizes what it stores, so the encoded
+        // bytes are counted, as JS does with `JSON.stringify`.
+        val seedBytes = 71
+        // A bare-text value of n chars is n + 2 bytes encoded; "data" is 4 bytes + 64 overhead.
+        val n = 4096 - seedBytes - "data".toByteArray(Charsets.UTF_8).size - 64 - 2
 
-            // At K=3959 quote characters, the RAW total is exactly 4096 ("data"=4 bytes +
-            // K + 64): still cacheable, so this commits as a Patch. The quoted/escaped
-            // formula the pre-fix code used (each `"` doubled to `\"`, plus 2 bytes for the
-            // wrapping quotes) would put this value at 139 + 2*3959 = 8057 bytes -- Put,
-            // under the wrong premise that the wire value is JSON-quoted (it is the raw
-            // string, PresenceConverter's `toPBPresence` is a bare `data.putAll`).
-            val atLimit = Document("cj-med-2-at-limit")
-            atLimit.updateAsync { _, p -> p.put(mapOf("seed" to "s")) }.await()
-            ack(atLimit, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
-            val k = 4096 - seedBytes - "data".toByteArray(Charsets.UTF_8).size - 64
-            atLimit.updateAsync { _, p -> p.put(mapOf("data" to "\"".repeat(k))) }.await()
-            assertIs<PresenceChange.Patch>(
-                atLimit.createChangePack().changes.single().presenceChange,
-            )
-            atLimit.close()
+        val atLimit = Document("cj-med-2-at-limit")
+        atLimit.updateAsync { _, p -> p.put(mapOf("seed" to "s")) }.await()
+        ack(atLimit, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
+        atLimit.updateAsync { _, p -> p.put(mapOf("data" to "x".repeat(n))) }.await()
+        assertIs<PresenceChange.Patch>(atLimit.createChangePack().changes.single().presenceChange)
+        atLimit.close()
 
-            // One byte over the same RAW boundary flips to a Put.
-            val overLimit = Document("cj-med-2-over-limit")
-            overLimit.updateAsync { _, p -> p.put(mapOf("seed" to "s")) }.await()
-            ack(overLimit, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
-            overLimit.updateAsync { _, p -> p.put(mapOf("data" to "\"".repeat(k + 1))) }.await()
-            assertIs<PresenceChange.Put>(
-                overLimit.createChangePack().changes.single().presenceChange,
-            )
-            overLimit.close()
-        }
+        // One byte over the same boundary flips to a Put (the RAW size, n + 1 + ..., would
+        // still have fit: it is the two quotes of the encoding that tip it).
+        val overLimit = Document("cj-med-2-over-limit")
+        overLimit.updateAsync { _, p -> p.put(mapOf("seed" to "s")) }.await()
+        ack(overLimit, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
+        overLimit.updateAsync { _, p -> p.put(mapOf("data" to "x".repeat(n + 1))) }.await()
+        assertIs<PresenceChange.Put>(overLimit.createChangePack().changes.single().presenceChange)
+        overLimit.close()
+    }
+
+    @Test
+    fun `4 KiB rule counts escapes of the encoded form`() = runTest {
+        // each `"` is `\"` on the wire: k quotes encode to 2k + 2 bytes
+        val seedBytes = 71
+        val k = (4096 - seedBytes - 4 - 64 - 2) / 2
+        val under = Document("cj-med-2-escape-under")
+        under.updateAsync { _, p -> p.put(mapOf("seed" to "s")) }.await()
+        ack(under, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
+        under.updateAsync { _, p -> p.put(mapOf("data" to "\"".repeat(k))) }.await()
+        assertIs<PresenceChange.Patch>(under.createChangePack().changes.single().presenceChange)
+        under.close()
+
+        val over = Document("cj-med-2-escape-over")
+        over.updateAsync { _, p -> p.put(mapOf("seed" to "s")) }.await()
+        ack(over, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
+        over.updateAsync { _, p -> p.put(mapOf("data" to "\"".repeat(k + 1))) }.await()
+        assertIs<PresenceChange.Put>(over.createChangePack().changes.single().presenceChange)
+        over.close()
+    }
 
     @Test
     fun `4 KiB rule flips at the key-count boundary the server's own formula implies`() = runTest {
-        // "base" (4) + "x" (1) + 64 overhead = 69 fixed bytes; each additional key is
-        // 4 ASCII bytes + an empty value + 64 overhead = 68 bytes. 69 + 68*59 = 4081
-        // (<=4096, Patch); 69 + 68*60 = 4149 (>4096, Put).
+        // "base" (4) + encoded "x" (3) + 64 overhead = 71 fixed bytes; each additional key is
+        // 4 ASCII bytes + an encoded empty value `""` (2) + 64 overhead = 70 bytes.
+        // 71 + 70*57 = 4061 (<=4096, Patch); 71 + 70*58 = 4131 (>4096, Put).
         val under = Document("cj-med-2-keycount-under")
         under.updateAsync { _, p -> p.put(mapOf("base" to "x")) }.await()
         ack(under, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
         under.updateAsync { _, p ->
-            repeat(59) { i -> p.put(mapOf("k%03d".format(i) to "")) }
+            repeat(57) { i -> p.put(mapOf("k%03d".format(i) to "")) }
         }.await()
         assertIs<PresenceChange.Patch>(under.createChangePack().changes.single().presenceChange)
         under.close()
@@ -223,7 +237,7 @@ class PresencePatchTest {
         over.updateAsync { _, p -> p.put(mapOf("base" to "x")) }.await()
         ack(over, listOf(ChangePack.PRESENCE_PATCH_CAPABILITY))
         over.updateAsync { _, p ->
-            repeat(60) { i -> p.put(mapOf("k%03d".format(i) to "")) }
+            repeat(58) { i -> p.put(mapOf("k%03d".format(i) to "")) }
         }.await()
         assertIs<PresenceChange.Put>(over.createChangePack().changes.single().presenceChange)
         over.close()

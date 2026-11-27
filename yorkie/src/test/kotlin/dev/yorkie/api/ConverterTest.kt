@@ -746,4 +746,32 @@ class ConverterTest {
             meta = 0,
         )
     }
+
+    @Test
+    fun `a Double increase delta round-trips the wire and applies truncated`() {
+        // given an increase whose delta is a Double, as a JS client sends a fractional one
+        val actor = "0000000000000000000000aa"
+        val counterCreatedAt = TimeTicket(1, 0u, actor)
+        val operation = IncreaseOperation(
+            value = CrdtPrimitive(1.9, TimeTicket(2, 0u, actor)),
+            parentCreatedAt = counterCreatedAt,
+            executedAt = TimeTicket(2, 1u, actor),
+        )
+
+        // when it is encoded, serialized and decoded again
+        val pb = operation.toPBOperation()
+        val decoded = listOf(PBOperation.parseFrom(pb.toByteArray())).toOperations().single()
+
+        // then the wire carries VALUE_TYPE_DOUBLE and the decoded op is equal
+        assertEquals(PBValueType.VALUE_TYPE_DOUBLE, pb.increase.value.type)
+        assertEquals(operation, decoded)
+
+        // and executing it on a counter applies the truncated delta
+        val obj = CrdtObject(InitialTimeTicket, memberNodes = ElementRht())
+        val root = CrdtRoot(obj)
+        SetOperation("c", CrdtCounter(0, counterCreatedAt), obj.createdAt, counterCreatedAt)
+            .execute(root, OpSource.Remote, null)
+        decoded.execute(root, OpSource.Remote, null)
+        assertEquals(1, (root.findByCreatedAt(counterCreatedAt) as CrdtCounter).value)
+    }
 }

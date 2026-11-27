@@ -49,6 +49,7 @@ import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.presence.PresenceInfo
+import dev.yorkie.document.presence.PresenceValue
 import dev.yorkie.document.presence.Presences
 import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
@@ -350,20 +351,23 @@ public class Document(
      * the server's own accounting (Go `presenceSize`, `server/packs/presence_patch.go`,
      * `MaxPresenceBaseSize` = 4 KiB, `PresenceEntryOverhead` = 64 bytes per entry): the
      * UTF-8 bytes of each key, plus the UTF-8 bytes of its value exactly as it goes on the
-     * wire (CJ-MED-2, round 4 fix -- `PresenceConverter.toPBPresence` is a bare
-     * `data.putAll`, never JSON-quoted; the quoting happens only in the JS SDK's own
-     * converter, which has no Android counterpart), plus the fixed per-entry overhead,
+     * wire (CJ-MED-2, round 4 fix; since RTCOLLABPLATFORM-805 that is the JSON-encoded form,
+     * `PresenceConverter.toPBPresence` -> [PresenceValue.encodeForWire]), plus the fixed
+     * per-entry overhead,
      * summed across every entry -- not just the touched ones, since the FULL presence is
      * what the server would hold as the next base. Stops counting the moment the running
      * sum passes the limit, so an oversized presence does not pay for encoding every
-     * value. Ported from JS `b50f8900` #1477 `isCacheablePresence` (JS itself quotes via
-     * `JSON.stringify`, matching ITS OWN wire format; Android's wire format never does).
+     * value. Ported from JS `b50f8900` #1477 `isCacheablePresence` (JS sizes the
+     * `JSON.stringify` form; Android now sizes the same encoded wire form,
+     * [PresenceValue.encodeForWire], since it JSON-encodes presence values on write).
      */
     private fun isCacheablePresence(presence: Map<String, String>): Boolean {
         var size = 0
         for ((key, value) in presence) {
+            // The encoded form is what goes on the wire and what the server accounts, so it is
+            // computed once per value here (JS sizes `JSON.stringify(value)` the same way).
             size += key.toByteArray(Charsets.UTF_8).size +
-                value.toByteArray(Charsets.UTF_8).size +
+                PresenceValue.encodeForWire(value).toByteArray(Charsets.UTF_8).size +
                 PRESENCE_ENTRY_OVERHEAD
             if (size > MAX_PRESENCE_BASE_SIZE) {
                 return false
@@ -1614,9 +1618,12 @@ public class Document(
      * 1. Update the checkpoint.
      * 2. Do Garbage collection.
      *
-     * The checkpoint only advances past this point, so a pack whose apply throws is
-     * redelivered by the server on every subsequent pull until the cause is fixed; one
-     * metadata-only line (document key + the pre-forward [checkPoint] + the failing
+     * The pack's own checkpoint only lands past this point, but each remote change already
+     * applied to the root advances the checkpoint's serverSeq as it goes
+     * ([applyChangesInternal]; JS, iOS and Go forward it only after the whole pack), so a
+     * pack whose apply throws is redelivered by the server on every subsequent pull
+     * from the failing change, not from its start, until the cause is fixed; one
+     * metadata-only line (document key + the checkpoint at the failure + the failing
      * exception's class name ONLY, never its message -- a cause's own message can
      * carry content, e.g. a collection's "requested value: ..." text; the full message
      * -- including the cause's -- is still reachable via a thrown [ChangeApplyError]'s
@@ -1665,7 +1672,8 @@ public class Document(
             logError(
                 "Document.applyChangePack",
                 "\"$key\" cannot apply the pack at checkpoint ${checkPoint.toTestString()}; " +
-                    "the server will redeliver it until this is resolved: " +
+                    "the server will redeliver it, from the failing change, " +
+                    "until this is resolved: " +
                     (err.cause ?: err)::class.simpleName +
                     changeApplyDetails,
             )
@@ -1887,6 +1895,36 @@ public class Document(
                 val opInfos = remoteResult.opInfos
                 val newPresences = remoteResult.newPresences
 
+                // Root has just taken this change: record it where a later failure
+                // cannot lose it, with no suspension point in between. The checkpoint
+                // follows root change by change (a pull's pack checkpoint only lands
+                // after the whole pack), so a pack held on a later change is
+                // redelivered from the failing change, not from the start, and the
+                // applied prefix is never applied twice. `serverSeq == 0` means the
+                // change carries none (never moves the checkpoint). The clocks are
+                // synced here too, so the checkpoint and the version vector agree
+                // about what root holds. Deliberate difference from JS, iOS and Go,
+                // which forward the checkpoint only after the whole pack.
+                //
+                // Trade-off: if the caller is cancelled after this point and before
+                // the event emission and `emitPresences` below, that change's event is
+                // lost, and `_presences` can miss its presence update (previously the
+                // redelivery of the whole pack restored both). `eventStream` has 4096
+                // buffered slots and a cancellation here means the scope is being torn
+                // down, so this is accepted. The order (forward before reconcile and
+                // emit) cannot be pinned by a unit test: it only differs when reconcile
+                // or emit throws or is cancelled mid-change.
+                if (source == OpSource.Remote && change.id.serverSeq > 0) {
+                    checkPoint = checkPoint.forward(
+                        CheckPoint(change.id.serverSeq, checkPoint.clientSeq),
+                    )
+                }
+                changeID = if (disableGC) {
+                    changeID.syncLamport(change.id)
+                } else {
+                    changeID.syncClocks(change.id)
+                }
+
                 // Reconcile text and tree undo/redo stack entries against remote edits.
                 // Only reconcile against changes from other clients.
                 if (change.id.actor != changeID.actor) {
@@ -1915,11 +1953,6 @@ public class Document(
                 }
                 newPresences?.let {
                     emitPresences(it, presenceEvent)
-                }
-                changeID = if (disableGC) {
-                    changeID.syncLamport(change.id)
-                } else {
-                    changeID.syncClocks(change.id)
                 }
             } catch (e: CancellationException) {
                 // eventStream.emit/emitPresences above suspend; a cancellation here is

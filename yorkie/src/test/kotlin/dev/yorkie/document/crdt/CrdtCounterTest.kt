@@ -38,7 +38,6 @@ class CrdtCounterTest {
         val bool = CrdtPrimitive(true, InitialTimeTicket)
         val bytes = CrdtPrimitive(ByteArray(1), InitialTimeTicket)
         val date = CrdtPrimitive(Date(), InitialTimeTicket)
-        val double = CrdtPrimitive(1.0, InitialTimeTicket)
 
         assertThrows(IllegalArgumentException::class.java) {
             int.increase(str)
@@ -51,9 +50,6 @@ class CrdtCounterTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             int.increase(date)
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            int.increase(double)
         }
         assertEquals(10, int.value)
     }
@@ -303,5 +299,105 @@ class CrdtCounterTest {
 
         // then
         assertEquals(source.value, restored.value)
+    }
+
+    private fun d(value: Double) = CrdtPrimitive(value, InitialTimeTicket)
+
+    // Port of Go `Counter.Increase` and JS `counter.ts` (v0.7.29): a Double delta is
+    // truncated toward zero, added in float64 for an Int counter, then wrapped.
+    @Test
+    fun `verify Int counter applies a Double delta truncated toward zero`() {
+        assertEquals(1, CrdtCounter(0, InitialTimeTicket).apply { increase(d(1.9)) }.value)
+        assertEquals(-1, CrdtCounter(0, InitialTimeTicket).apply { increase(d(-1.9)) }.value)
+        assertEquals(0, CrdtCounter(0, InitialTimeTicket).apply { increase(d(0.5)) }.value)
+        assertEquals(3, CrdtCounter(5, InitialTimeTicket).apply { increase(d(-2.5)) }.value)
+        assertEquals(-3, CrdtCounter(-5, InitialTimeTicket).apply { increase(d(2.5)) }.value)
+    }
+
+    @Test
+    fun `verify Int counter wraps a Double delta past the Int range`() {
+        assertEquals(
+            Int.MIN_VALUE,
+            CrdtCounter(Int.MAX_VALUE, InitialTimeTicket).apply { increase(d(1.0)) }.value,
+        )
+        assertEquals(
+            Int.MIN_VALUE,
+            CrdtCounter(0, InitialTimeTicket).apply { increase(d(2147483648.0)) }.value,
+        )
+        assertEquals(
+            -1981284352,
+            CrdtCounter(10, InitialTimeTicket).apply { increase(d(1e19)) }.value,
+        )
+        // 10 + 2^60 rounds the 10 away in float64 (Go and JS agree on 0).
+        assertEquals(
+            0,
+            CrdtCounter(10, InitialTimeTicket).apply { increase(d(1.152921504606847E18)) }.value,
+        )
+    }
+
+    @Test
+    fun `verify Long counter applies a Double delta truncated and wrapped`() {
+        assertEquals(1L, CrdtCounter(0L, InitialTimeTicket).apply { increase(d(1.9)) }.value)
+        assertEquals(3L, CrdtCounter(5L, InitialTimeTicket).apply { increase(d(-2.5)) }.value)
+        assertEquals(
+            Long.MIN_VALUE,
+            CrdtCounter(Long.MAX_VALUE, InitialTimeTicket).apply { increase(d(1.0)) }.value,
+        )
+        assertEquals(
+            -8446744073709551616L,
+            CrdtCounter(0L, InitialTimeTicket).apply { increase(d(1e19)) }.value,
+        )
+        assertEquals(
+            Long.MIN_VALUE,
+            CrdtCounter(0L, InitialTimeTicket).apply { increase(d(9.223372036854775807E18)) }.value,
+        )
+    }
+
+    @Test
+    fun `verify NaN and infinite Double deltas leave a counter unchanged`() {
+        for (delta in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+            assertEquals(7, CrdtCounter(7, InitialTimeTicket).apply { increase(d(delta)) }.value)
+            assertEquals(7L, CrdtCounter(7L, InitialTimeTicket).apply { increase(d(delta)) }.value)
+        }
+    }
+
+    @Test
+    fun `verify dedup increase still rejects a Double delta`() {
+        val dedup = CrdtCounter.createDedup(InitialTimeTicket)
+        assertThrows(IllegalArgumentException::class.java) { dedup.increaseDedup(d(1.0), "a") }
+        assertEquals(0, dedup.value)
+    }
+
+    @Test
+    fun `verify Double delta boundaries wrap like Go and JS`() {
+        val two63 = Math.scalb(1.0, 63)
+        val two64 = Math.scalb(1.0, 64)
+
+        // Negative out-of-range: the low 64 bits of -1e19 are +8446744073709551616.
+        assertEquals(
+            8446744073709551616L,
+            CrdtCounter(0L, InitialTimeTicket).apply { increase(d(-1e19)) }.value,
+        )
+        assertEquals(
+            1981284352,
+            CrdtCounter(0, InitialTimeTicket).apply { increase(d(-1e19)) }.value,
+        )
+        // +-2^64 and a huge finite value wrap to 0.
+        for (delta in listOf(two64, -two64, 1e308)) {
+            assertEquals(0L, CrdtCounter(0L, InitialTimeTicket).apply { increase(d(delta)) }.value)
+            assertEquals(0, CrdtCounter(0, InitialTimeTicket).apply { increase(d(delta)) }.value)
+        }
+        // -2^63 is in range; one step past it (spacing is 2048 there) wraps to the top.
+        assertEquals(
+            Long.MIN_VALUE,
+            CrdtCounter(0L, InitialTimeTicket).apply { increase(d(-two63)) }.value,
+        )
+        assertEquals(
+            9223372036854773760L,
+            CrdtCounter(0L, InitialTimeTicket).apply { increase(d(-two63 - 2048.0)) }.value,
+        )
+        // Negative zero changes nothing.
+        assertEquals(5, CrdtCounter(5, InitialTimeTicket).apply { increase(d(-0.0)) }.value)
+        assertEquals(5L, CrdtCounter(5L, InitialTimeTicket).apply { increase(d(-0.0)) }.value)
     }
 }

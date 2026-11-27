@@ -2,10 +2,15 @@ package dev.yorkie.document.crdt
 
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.util.DataSize
+import java.math.BigDecimal
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.truncate
 
 internal typealias CounterValue = Number
+
+// 2^63 as a Double; the literal below rounds to exactly this value.
+private const val TWO_POW_63 = 9.223372036854775808E18
 
 /**
  * [CrdtCounter] is a CRDT implementation of a counter. It is used to represent a number
@@ -75,18 +80,50 @@ internal data class CrdtCounter(
         return true
     }
 
+    /**
+     * Adds the numeric [primitive] to this counter, wrapping on overflow like Go and JS.
+     *
+     * A [Double] delta is truncated toward zero and applied, as Go `Counter.Increase` and
+     * JS `counter.ts` (v0.7.29) do, so a replica applying a JS client's fractional delta
+     * converges with it. A NaN or an infinity has no integer value: it is a no-op, as in
+     * Go, because this also runs for remote changes and an error would wedge the pull.
+     */
     fun increase(primitive: CrdtPrimitive) {
         require(!isDedup()) {
             "dedup counter requires actor, use increaseDedup()"
         }
         val primitiveValue = primitive.value
-        require(primitive.isNumericType && primitiveValue is Number && primitiveValue !is Double) {
+        require(primitive.isNumericType && primitiveValue is Number) {
             "Unsupported type of value: ${primitive.type}"
+        }
+        if (primitiveValue is Double) {
+            if (!primitiveValue.isFinite()) return
+            value = when (type) {
+                // Added in float64 before wrapping, exactly as Go and JS do.
+                CounterType.Int ->
+                    wrapToLong(value.toInt().toDouble() + truncate(primitiveValue)).toInt()
+                CounterType.Long -> value.toLong() + wrapToLong(truncate(primitiveValue))
+                CounterType.IntDedup -> error("unreachable")
+            }
+            return
         }
         value = when (type) {
             CounterType.Int -> value.toInt() + primitiveValue.toInt()
             CounterType.Long -> value.toLong() + primitiveValue.toLong()
             CounterType.IntDedup -> error("unreachable")
+        }
+    }
+
+    /**
+     * Returns the low 64 bits (two's complement) of the exact integer [integral]. Kotlin's
+     * `Double.toLong()` saturates out of range, which would make replicas disagree with Go
+     * and JS (`BigInt.asIntN(64, ...)`).
+     */
+    private fun wrapToLong(integral: Double): Long {
+        return if (integral >= -TWO_POW_63 && integral < TWO_POW_63) {
+            integral.toLong()
+        } else {
+            BigDecimal(integral).toBigInteger().toLong()
         }
     }
 

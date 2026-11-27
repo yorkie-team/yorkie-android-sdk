@@ -4,6 +4,7 @@ import dev.yorkie.api.v1.presence
 import dev.yorkie.api.v1.presenceChange
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
+import dev.yorkie.document.presence.PresenceValue
 import dev.yorkie.util.YorkieException
 import dev.yorkie.util.YorkieException.Code.ErrUnimplemented
 
@@ -36,13 +37,27 @@ internal fun PresenceChange.toPBPresenceChange(): PBPresenceChange {
     }
 }
 
+/**
+ * Encodes each value to the form the wire carries, the JSON encoding of the value
+ * ([PresenceValue.encodeForWire]); the server (0.7.29+) would otherwise rewrite any
+ * non-JSON value, and JS peers could not read it.
+ */
 internal fun P.toPBPresence(): PBPresence {
     return presence {
-        data.putAll(this@toPBPresence)
+        for ((key, value) in this@toPBPresence) {
+            data[key] = PresenceValue.encodeForWire(value)
+        }
     }
 }
 
-internal fun PBPresence.toPresence(): P = dataMap
+/**
+ * Decodes each wire value to the text the app set ([PresenceValue.decodeFromWire]): a JSON
+ * string literal reads as its content, anything else (objects, numbers, a value an older
+ * SDK wrote raw) reads as the text on the wire.
+ */
+internal fun PBPresence.toPresence(): P = dataMap.mapValues {
+    PresenceValue.decodeFromWire(it.value)
+}
 
 internal fun PBPresenceChange.toPresenceChange(): PresenceChange {
     return when (type) {

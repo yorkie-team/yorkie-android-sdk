@@ -49,6 +49,7 @@ import dev.yorkie.document.presence.DocPresence
 import dev.yorkie.document.presence.P
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.presence.PresenceInfo
+import dev.yorkie.document.presence.PresenceValue
 import dev.yorkie.document.presence.Presences
 import dev.yorkie.document.presence.Presences.Companion.UninitializedPresences
 import dev.yorkie.document.presence.Presences.Companion.asPresences
@@ -350,20 +351,23 @@ public class Document(
      * the server's own accounting (Go `presenceSize`, `server/packs/presence_patch.go`,
      * `MaxPresenceBaseSize` = 4 KiB, `PresenceEntryOverhead` = 64 bytes per entry): the
      * UTF-8 bytes of each key, plus the UTF-8 bytes of its value exactly as it goes on the
-     * wire (CJ-MED-2, round 4 fix -- `PresenceConverter.toPBPresence` is a bare
-     * `data.putAll`, never JSON-quoted; the quoting happens only in the JS SDK's own
-     * converter, which has no Android counterpart), plus the fixed per-entry overhead,
+     * wire (CJ-MED-2, round 4 fix; since RTCOLLABPLATFORM-805 that is the JSON-encoded form,
+     * `PresenceConverter.toPBPresence` -> [PresenceValue.encodeForWire]), plus the fixed
+     * per-entry overhead,
      * summed across every entry -- not just the touched ones, since the FULL presence is
      * what the server would hold as the next base. Stops counting the moment the running
      * sum passes the limit, so an oversized presence does not pay for encoding every
-     * value. Ported from JS `b50f8900` #1477 `isCacheablePresence` (JS itself quotes via
-     * `JSON.stringify`, matching ITS OWN wire format; Android's wire format never does).
+     * value. Ported from JS `b50f8900` #1477 `isCacheablePresence` (JS sizes the
+     * `JSON.stringify` form; Android now sizes the same encoded wire form,
+     * [PresenceValue.encodeForWire], since it JSON-encodes presence values on write).
      */
     private fun isCacheablePresence(presence: Map<String, String>): Boolean {
         var size = 0
         for ((key, value) in presence) {
+            // The encoded form is what goes on the wire and what the server accounts, so it is
+            // computed once per value here (JS sizes `JSON.stringify(value)` the same way).
             size += key.toByteArray(Charsets.UTF_8).size +
-                value.toByteArray(Charsets.UTF_8).size +
+                PresenceValue.encodeForWire(value).toByteArray(Charsets.UTF_8).size +
                 PRESENCE_ENTRY_OVERHEAD
             if (size > MAX_PRESENCE_BASE_SIZE) {
                 return false

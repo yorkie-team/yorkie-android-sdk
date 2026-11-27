@@ -1,5 +1,6 @@
 package dev.yorkie.api
 
+import dev.yorkie.api.v1.change
 import dev.yorkie.api.v1.presenceChange
 import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.util.YorkieException
@@ -148,5 +149,140 @@ class PresenceConverterTest {
         val exception = assertThrows(YorkieException::class.java) { pb.toPresenceChange() }
 
         assertEquals(ErrUnimplemented, exception.code)
+    }
+
+    // --- RTCOLLABPLATFORM-805: the presence value wire contract (yorkie#2386) -------------
+
+    private fun rawPresence(vararg entries: Pair<String, String>) =
+        dev.yorkie.api.v1.presence { entries.forEach { (k, v) -> data[k] = v } }
+
+    @Test
+    fun `PresenceConverter encodes values on write and decodes them on read`() {
+        val change = PresenceChange.Put(
+            mapOf("name" to "a", "cursor" to "{\"x\":0,\"y\":0}", "n" to "1", "q" to "\"x\""),
+        )
+
+        val pb = change.toPBPresenceChange()
+        val bytes = pb.toByteArray()
+
+        // wire: bare text and a string literal are JSON strings, typed JSON is untouched
+        assertEquals(
+            mapOf(
+                "name" to "\"a\"",
+                "cursor" to "{\"x\":0,\"y\":0}",
+                "n" to "1",
+                "q" to "\"\\\"x\\\"\"",
+            ),
+            PBPresenceChange.parseFrom(bytes).presence.dataMap,
+        )
+        // read: exactly what was set
+        assertEquals(change, PBPresenceChange.parseFrom(bytes).toPresenceChange())
+
+        val patch = PresenceChange.Patch(mapOf("cursor" to "1,1"), full = null)
+        val patchPb = PBPresenceChange.parseFrom(patch.toPBPresenceChange().toByteArray())
+        assertEquals(mapOf("cursor" to "\"1,1\""), patchPb.presence.dataMap)
+        assertEquals(patch, patchPb.toPresenceChange())
+    }
+
+    @Test
+    fun `PresenceConverter reads a raw value and its server-repaired form the same way`() {
+        for (type in listOf(
+            PBPresenceChangeType.CHANGE_TYPE_PUT,
+            PBPresenceChangeType.CHANGE_TYPE_PATCH,
+        )) {
+            val raw =
+                presenceChange {
+                    this.type = type
+                    presence = rawPresence("cursor" to "moved")
+                }
+            val repaired = presenceChange {
+                this.type = type
+                presence = rawPresence("cursor" to "\"moved\"")
+            }
+            val rawChange = raw.toPresenceChange()
+            assertEquals(repaired.toPresenceChange(), rawChange)
+            val decoded = when (rawChange) {
+                is PresenceChange.Put -> rawChange.presence
+                is PresenceChange.Patch -> rawChange.presence
+                else -> error("unexpected $rawChange")
+            }
+            assertEquals(mapOf("cursor" to "moved"), decoded)
+        }
+    }
+
+    @Test
+    fun `a legacy raw pending change decodes leniently and is re-encoded on push`() {
+        // an older SDK persisted this pending change with the value raw on the wire
+        val legacy = change {
+            presenceChange = presenceChange {
+                type = PBPresenceChangeType.CHANGE_TYPE_PUT
+                presence = rawPresence("name" to "b1", "cursor" to "{\"x\":0}", "q" to "\"x\"")
+            }
+        }
+
+        val change = legacy.toChange()
+
+        // lenient read: raw text is text; an old raw value that was itself a string literal
+        // reads as its content (the one documented legacy edge)
+        assertEquals(
+            PresenceChange.Put(mapOf("name" to "b1", "cursor" to "{\"x\":0}", "q" to "x")),
+            change.presenceChange,
+        )
+        // pushed again, it is encoded as the wire contract requires
+        assertEquals(
+            mapOf("name" to "\"b1\"", "cursor" to "{\"x\":0}", "q" to "\"x\""),
+            change.toPBChange().presenceChange.presence.dataMap,
+        )
+    }
+
+    @Test
+    fun `a legacy raw snapshot presence decodes leniently and is re-encoded`() {
+        val actor = "0000000000000000000000aa"
+        val emptyRoot = dev.yorkie.document.crdt.CrdtObject(
+            dev.yorkie.document.time.TimeTicket.InitialTimeTicket,
+            memberNodes = dev.yorkie.document.crdt.ElementRht(),
+        )
+        val bytes = dev.yorkie.api.v1.Snapshot.parseFrom(snapshotToBytes(emptyRoot, emptyMap()))
+            .toBuilder()
+            .putPresences(actor, rawPresence("name" to "b1", "cursor" to "1,1"))
+            .build()
+            .toByteString()
+
+        val (_, presences) = bytes.toSnapshot()
+
+        assertEquals(mapOf(actor to mapOf("name" to "b1", "cursor" to "1,1")), presences)
+        val reencoded = dev.yorkie.api.v1.Snapshot.parseFrom(
+            snapshotToBytes(
+                dev.yorkie.document.crdt.CrdtObject(
+                    dev.yorkie.document.time.TimeTicket.InitialTimeTicket,
+                    memberNodes = dev.yorkie.document.crdt.ElementRht(),
+                ),
+                presences,
+            ),
+        )
+        assertEquals(
+            mapOf("name" to "\"b1\"", "cursor" to "\"1,1\""),
+            reencoded.presencesMap.getValue(actor).dataMap,
+        )
+    }
+
+    @Test
+    fun `text that is itself non-string JSON goes on the wire as that JSON type`() {
+        // "123" is a JSON number, so a JS or iOS peer reads a number (unchanged from before);
+        // to send the string 123 an app passes the JSON string literal "\"123\"".
+        val pb = PresenceChange.Put(
+            mapOf("n" to "123", "b" to "true", "z" to "null", "a" to "[1]", "s" to "\"123\""),
+        ).toPBPresenceChange()
+
+        assertEquals(
+            mapOf(
+                "n" to "123",
+                "b" to "true",
+                "z" to "null",
+                "a" to "[1]",
+                "s" to "\"\\\"123\\\"\"",
+            ),
+            pb.presence.dataMap,
+        )
     }
 }

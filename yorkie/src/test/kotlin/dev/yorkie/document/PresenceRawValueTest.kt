@@ -1,8 +1,10 @@
 package dev.yorkie.document
 
 import dev.yorkie.api.PBPresenceChange
+import dev.yorkie.api.PBPresenceChangeType
 import dev.yorkie.api.toPBPresenceChange
 import dev.yorkie.api.toPresenceChange
+import dev.yorkie.api.v1.presenceChange
 import dev.yorkie.document.change.Change
 import dev.yorkie.document.change.ChangeID
 import dev.yorkie.document.change.ChangePack
@@ -14,57 +16,59 @@ import dev.yorkie.document.presence.PresenceChange
 import dev.yorkie.document.time.TimeTicket
 import dev.yorkie.document.time.VersionVector
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
  * Pins "Presence values that are not JSON" of yorkie-js-sdk v0.7.29 (js#1559, server
- * yorkie#2386) as a regression contract, not a source port: JS used to `JSON.parse` every
- * presence value and threw out of the pull on a non-JSON one. Android never decodes
- * presence (`PBPresence.toPresence()` hands the protobuf string map through verbatim and
- * `P` is `Map<String, String>`), so there is nothing to fix; these tests pin that a
- * non-JSON value travels as its raw text and cannot break a pull.
- *
- * One difference from JS is intentional: JS normalises a raw `moved` and the server's
- * repaired `"moved"` to the same value; Android keeps both strings as they are and leaves
- * decoding to the application.
+ * yorkie#2386). Since RTCOLLABPLATFORM-805 Android honours the presence wire contract like
+ * Go and JS: a value is JSON-encoded on write and decoded on read
+ * ([dev.yorkie.document.presence.PresenceValue]), so a non-JSON value on the wire is read as
+ * its raw text, the server repair `"moved"` reads the same as a raw `moved`, and neither can
+ * break a pull. The converter-level cases are in [dev.yorkie.api.PresenceConverterTest].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PresenceRawValueTest {
 
     private val remoteActor = "0000000000000000000000bb"
 
-    private fun roundTrip(change: PresenceChange): PresenceChange {
-        val bytes = change.toPBPresenceChange().toByteArray()
-        return PBPresenceChange.parseFrom(bytes).toPresenceChange()
-    }
-
     @Test
     fun `decodes a non-JSON value to its raw text`() {
-        // given a presence whose values are a JSON string and a bare word
-        val change = PresenceChange.Put(mapOf("name" to "\"a\"", "cursor" to "moved"))
+        // given a wire presence with a JSON string and a bare word (JS test 1 input)
+        val pb = presenceChange {
+            type = PBPresenceChangeType.CHANGE_TYPE_PUT
+            presence = dev.yorkie.api.v1.presence {
+                data["name"] = "\"a\""
+                data["cursor"] = "moved"
+            }
+        }
 
-        // when it crosses the wire
-        val decoded = roundTrip(change)
+        // when it crosses the wire and is decoded
+        val decoded = PBPresenceChange.parseFrom(pb.toByteArray()).toPresenceChange()
 
-        // then both values come back verbatim; the JSON one keeps its quotes
-        assertEquals(PresenceChange.Put(mapOf("name" to "\"a\"", "cursor" to "moved")), decoded)
-        val patch = roundTrip(PresenceChange.Patch(mapOf("cursor" to "moved"), full = null))
+        // then the JSON string reads as its content and the bare word as its raw text
+        assertEquals(PresenceChange.Put(mapOf("name" to "a", "cursor" to "moved")), decoded)
+        val patch = PBPresenceChange.parseFrom(
+            PresenceChange.Patch(mapOf("cursor" to "moved"), full = null)
+                .toPBPresenceChange().toByteArray(),
+        ).toPresenceChange()
         assertEquals(PresenceChange.Patch(mapOf("cursor" to "moved"), full = null), patch)
     }
 
     @Test
-    fun `keeps the value the server repair writes distinct from the raw one`() {
-        val raw = (roundTrip(PresenceChange.Put(mapOf("cursor" to "moved"))) as PresenceChange.Put)
-        val repaired = (
-            roundTrip(PresenceChange.Put(mapOf("cursor" to "\"moved\""))) as PresenceChange.Put
-            )
+    fun `reads the value the server repair writes the same way`() {
+        val raw = presenceChange {
+            type = PBPresenceChangeType.CHANGE_TYPE_PUT
+            presence = dev.yorkie.api.v1.presence { data["cursor"] = "moved" }
+        }
+        val repaired = presenceChange {
+            type = PBPresenceChangeType.CHANGE_TYPE_PUT
+            presence = dev.yorkie.api.v1.presence { data["cursor"] = "\"moved\"" }
+        }
 
-        assertEquals("moved", raw.presence["cursor"])
-        assertEquals("\"moved\"", repaired.presence["cursor"])
-        assertNotEquals(raw.presence["cursor"], repaired.presence["cursor"])
+        assertEquals(PresenceChange.Put(mapOf("cursor" to "moved")), raw.toPresenceChange())
+        assertEquals(raw.toPresenceChange(), repaired.toPresenceChange())
     }
 
     @Test
@@ -80,9 +84,15 @@ class PresenceRawValueTest {
                     executedAt = TimeTicket(1, 1u, remoteActor),
                 ),
             ),
-            presenceChange = roundTrip(
-                PresenceChange.Put(mapOf("name" to "\"a\"", "cursor" to "moved")),
-            ),
+            presenceChange = PBPresenceChange.parseFrom(
+                presenceChange {
+                    type = PBPresenceChangeType.CHANGE_TYPE_PUT
+                    presence = dev.yorkie.api.v1.presence {
+                        data["name"] = "\"a\""
+                        data["cursor"] = "moved"
+                    }
+                }.toByteArray(),
+            ).toPresenceChange(),
         )
 
         target.applyChangePack(
@@ -98,7 +108,7 @@ class PresenceRawValueTest {
 
         assertEquals("v", target.getRoot().getAs<JsonPrimitive>("k").value)
         assertEquals(
-            mapOf("name" to "\"a\"", "cursor" to "moved"),
+            mapOf("name" to "a", "cursor" to "moved"),
             target.allPresences.value[remoteActor],
         )
         assertEquals(1L, target.checkPoint.serverSeq)

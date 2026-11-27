@@ -11,6 +11,16 @@ public class DocPresence internal constructor(
 ) {
     private val presence = initialPresence.toMutableMap()
 
+    /**
+     * Sets the given presence [data] values (text). Values are JSON-encoded on the wire and
+     * read back as the same text: valid JSON objects, arrays, numbers, booleans and `null` are
+     * sent as is, any other text is sent as the JSON string it stands for.
+     *
+     * Note that text which is itself valid JSON and not a string literal (`"123"`, `"true"`,
+     * `"null"`, `"[1]"`) therefore goes on the wire as that JSON type: JS and iOS peers read a
+     * number, boolean, null or array, not a string (unchanged from before). To send it as a
+     * string, pass a JSON string literal, for example `"\"123\""`.
+     */
     public fun put(data: Map<String, String>) {
         presence.putAll(data)
         // Always records a provisional full Put -- NEVER decides Put vs Patch here.

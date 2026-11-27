@@ -27,6 +27,7 @@ import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -160,6 +161,9 @@ class WatchPresenceRetentionTest {
             val service = MockYorkieService()
             // idle = clamp(300, 1000..) = 1000ms, same shape as WatchIdleTest.
             service.documentWatchHeartbeatIntervalMsOverride = 100
+            // `Document.events` is a SharedFlow with no replay: the mock's frames must not
+            // go out before the collector below is subscribed, or they are lost.
+            val collectorReady = CompletableDeferred<Unit>()
             var connectionsSeen = 0
             service.documentWatchFramePusher = { channel: SendChannel<WatchResponse> ->
                 connectionsSeen++
@@ -169,6 +173,7 @@ class WatchPresenceRetentionTest {
                 } else {
                     // Connection 2 (the reconnect): actorB's own watch stream also
                     // reconnects, as a DOCUMENT_WATCHED.
+                    collectorReady.await()
                     delay(50)
                     channel.trySend(watchedEvent(actorB))
                 }
@@ -188,7 +193,7 @@ class WatchPresenceRetentionTest {
 
             val watchedSignal = CompletableDeferred<Unit>()
             val collectJob = launch(UnconfinedTestDispatcher()) {
-                document.events.collect { event ->
+                document.events.onSubscription { collectorReady.complete(Unit) }.collect { event ->
                     if (event is Others.Watched) watchedSignal.complete(Unit)
                 }
             }
@@ -214,7 +219,11 @@ class WatchPresenceRetentionTest {
     fun `retains a peer across an unwatch slash watch cycle`() = runTest {
         runBlocking {
             val service = MockYorkieService()
+            // `Document.events` has no replay: hold the frames until the collector below is
+            // subscribed, however long the setup takes under suite load.
+            val collectorReady = CompletableDeferred<Unit>()
             service.documentWatchFramePusher = { channel: SendChannel<WatchResponse> ->
+                collectorReady.await()
                 delay(100)
                 channel.trySend(unwatchedEvent(actorB))
                 delay(100)
@@ -229,7 +238,7 @@ class WatchPresenceRetentionTest {
             val unwatchedSignal = CompletableDeferred<Unit>()
             val watchedSignal = CompletableDeferred<Unit>()
             val collectJob = launch(UnconfinedTestDispatcher()) {
-                document.events.collect { event ->
+                document.events.onSubscription { collectorReady.complete(Unit) }.collect { event ->
                     when (event) {
                         is Others.Unwatched -> unwatchedSignal.complete(Unit)
                         is Others.Watched -> watchedSignal.complete(Unit)
@@ -264,7 +273,11 @@ class WatchPresenceRetentionTest {
     fun `unwatch of a publisher with no held presence is a no-op`() = runTest {
         runBlocking {
             val service = MockYorkieService()
+            // Gated on the collector so the quiet-period assertion cannot pass vacuously by
+            // the Unwatched frame being emitted before anyone is subscribed.
+            val collectorReady = CompletableDeferred<Unit>()
             service.documentWatchFramePusher = { channel: SendChannel<WatchResponse> ->
+                collectorReady.await()
                 delay(50)
                 channel.trySend(unwatchedEvent(actorB))
             }
@@ -277,7 +290,8 @@ class WatchPresenceRetentionTest {
 
             val events = mutableListOf<Document.Event>()
             val collectJob = launch(UnconfinedTestDispatcher()) {
-                document.events.collect(events::add)
+                document.events.onSubscription { collectorReady.complete(Unit) }
+                    .collect(events::add)
             }
 
             delay(500) // quiet-period: nothing must fire for an un-held publisher.

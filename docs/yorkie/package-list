@@ -643,13 +643,15 @@ $dokka.location:dev.yorkie.document.yson//parseAs/#kotlin.String/PointingToDecla
 $dokka.location:dev.yorkie.document.yson//textToString/#dev.yorkie.document.yson.YsonValue.YsonText/PointingToDeclaration/yorkie/dev.yorkie.document.yson/text-to-string.html
 $dokka.location:dev.yorkie.document.yson//treeToXML/#dev.yorkie.document.yson.YsonValue.YsonTree/PointingToDeclaration/yorkie/dev.yorkie.document.yson/tree-to-x-m-l.html
 $dokka.location:dev.yorkie.document.yson/YsonTextNode///PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-text-node/index.html
-$dokka.location:dev.yorkie.document.yson/YsonTextNode/YsonTextNode/#kotlin.String#kotlin.collections.Map[kotlin.String,dev.yorkie.document.yson.YsonValue]?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-text-node/-yson-text-node.html
+$dokka.location:dev.yorkie.document.yson/YsonTextNode/YsonTextNode/#kotlin.String#kotlin.collections.Map[kotlin.String,dev.yorkie.document.yson.YsonValue]?#dev.yorkie.document.yson.YsonValue?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-text-node/-yson-text-node.html
 $dokka.location:dev.yorkie.document.yson/YsonTextNode/attrs/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-text-node/attrs.html
+$dokka.location:dev.yorkie.document.yson/YsonTextNode/rawAttrs/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-text-node/raw-attrs.html
 $dokka.location:dev.yorkie.document.yson/YsonTextNode/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-text-node/value.html
 $dokka.location:dev.yorkie.document.yson/YsonTreeNode///PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/index.html
-$dokka.location:dev.yorkie.document.yson/YsonTreeNode/YsonTreeNode/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]?#kotlin.collections.List[dev.yorkie.document.yson.YsonTreeNode]?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/-yson-tree-node.html
+$dokka.location:dev.yorkie.document.yson/YsonTreeNode/YsonTreeNode/#kotlin.String#kotlin.String?#kotlin.collections.Map[kotlin.String,kotlin.String]?#kotlin.collections.List[dev.yorkie.document.yson.YsonTreeNode]?#dev.yorkie.document.yson.YsonValue?/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/-yson-tree-node.html
 $dokka.location:dev.yorkie.document.yson/YsonTreeNode/attrs/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/attrs.html
 $dokka.location:dev.yorkie.document.yson/YsonTreeNode/children/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/children.html
+$dokka.location:dev.yorkie.document.yson/YsonTreeNode/rawAttrs/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/raw-attrs.html
 $dokka.location:dev.yorkie.document.yson/YsonTreeNode/type/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/type.html
 $dokka.location:dev.yorkie.document.yson/YsonTreeNode/value/#/PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-tree-node/value.html
 $dokka.location:dev.yorkie.document.yson/YsonValue.YsonArray///PointingToDeclaration/yorkie/dev.yorkie.document.yson/-yson-value/-yson-array/index.html

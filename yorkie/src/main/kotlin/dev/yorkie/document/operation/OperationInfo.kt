@@ -61,6 +61,14 @@ public sealed class OperationInfo {
         override var path: String = INITIAL_PATH,
     ) : OperationInfo(), ArrayOperationInfo, ObjectOperationInfo
 
+    /**
+     * Reports an increase of a counter by [value].
+     *
+     * [value] is a [Number] but not always an [Int] or a [Long]: a remote Double delta
+     * (for example a JS client's fractional `counter.increase(1.5)`) surfaces here as the
+     * raw [Double], while the counter itself applies it truncated toward zero. Do not
+     * cast [value] to [Int] or [Long]; use [Number.toInt] / [Number.toLong] if needed.
+     */
     public data class IncreaseOpInfo(val value: Number, override var path: String = INITIAL_PATH) :
         OperationInfo(), CounterOperationInfo
 

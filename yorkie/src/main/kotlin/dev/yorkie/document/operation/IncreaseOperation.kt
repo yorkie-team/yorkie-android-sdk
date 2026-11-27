@@ -78,17 +78,29 @@ internal data class IncreaseOperation(
             } else {
                 val copiedValue = value.deepCopy() as CrdtPrimitive
                 parentObject.increase(copiedValue)
-                val increasedValue = if (copiedValue.type == Type.Integer) {
-                    copiedValue.value as Int
-                } else {
-                    copiedValue.value as Long
+                val delta = copiedValue.value as Number
+                if (delta is Double && !delta.isFinite()) {
+                    // A NaN or an infinity is a no-op in the counter (as in Go): nothing
+                    // changed, so report nothing and keep no reverse.
+                    return ExecutionResult(opInfos = emptyList(), executed = false)
                 }
+                // JS emits the raw delta; a Double stays a Double.
+                val increasedValue: Number = delta
 
                 val reverseOps = if (source.producesReverseOps) {
-                    val negatedValue = if (copiedValue.type == Type.Integer) {
-                        CrdtPrimitive(-(copiedValue.value as Int), copiedValue.createdAt)
-                    } else {
-                        CrdtPrimitive(-(copiedValue.value as Long), copiedValue.createdAt)
+                    // A Double is negated as a Double, like JS `toReverseOperation`. Go
+                    // derives the reverse from the actual change for a Double on an Int
+                    // counter (`reverseFromChange`); they differ only for huge deltas.
+                    val negatedValue = when (copiedValue.type) {
+                        Type.Integer -> CrdtPrimitive(
+                            -(copiedValue.value as Int),
+                            copiedValue.createdAt,
+                        )
+                        Type.Double -> CrdtPrimitive(
+                            -(copiedValue.value as Double),
+                            copiedValue.createdAt,
+                        )
+                        else -> CrdtPrimitive(-(copiedValue.value as Long), copiedValue.createdAt)
                     }
                     listOf(
                         IncreaseOperation(

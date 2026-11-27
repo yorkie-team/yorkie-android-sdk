@@ -13,6 +13,7 @@ import dev.yorkie.document.crdt.CrdtObject
 import dev.yorkie.document.crdt.CrdtPrimitive
 import dev.yorkie.document.crdt.CrdtRoot
 import dev.yorkie.document.crdt.ElementRht
+import dev.yorkie.document.json.JsonCounter
 import dev.yorkie.document.json.JsonDedupCounter
 import dev.yorkie.document.json.JsonPrimitive
 import dev.yorkie.document.operation.IncreaseOperation
@@ -253,4 +254,54 @@ class RemoteSkipTest {
                 assertEquals(emptyMap<String, String>(), target.allPresences.value[remoteActor])
             }
         }
+
+    // ---- plain counter (js#1525 / Go skipUnlessLocal) ----
+
+    private suspend fun targetWithPlainCounter(): Pair<Document, TimeTicket> {
+        val target = Document("d")
+        lateinit var counterCreatedAt: TimeTicket
+        target.updateAsync { root, _ ->
+            counterCreatedAt = root.setNewCounter("c", 0).target.createdAt
+            root["k"] = "v"
+        }.await()
+        return target to counterCreatedAt
+    }
+
+    private fun plainIncreaseChange(
+        counterCreatedAt: TimeTicket,
+        value: CrdtElement,
+        lamport: Long,
+    ) = increaseChange(counterCreatedAt, value, dedupActor = "", lamport = lamport)
+
+    private fun setKChange(lamport: Long) = Change(
+        ChangeID(lamport.toUInt(), lamport, remoteWriter, VersionVector()),
+        listOf(
+            SetOperation(
+                key = "k",
+                value = CrdtPrimitive("later", TimeTicket(lamport, 0u, remoteWriter)),
+                parentCreatedAt = TimeTicket.InitialTimeTicket,
+                executedAt = TimeTicket(lamport, 1u, remoteWriter),
+            ),
+        ),
+    )
+
+    private suspend fun plainValue(target: Document) =
+        target.getRoot().getAs<JsonCounter>("c").value
+
+    @Test
+    fun `applies a remote plain increase that carries a Double delta`() = runTest {
+        val (target, counterCreatedAt) = targetWithPlainCounter()
+        val delta = CrdtPrimitive(1.9, TimeTicket(1, 0u, remoteWriter))
+
+        applyRemote(
+            target,
+            plainIncreaseChange(counterCreatedAt, delta, lamport = 1),
+            setKChange(lamport = 2),
+            serverSeq = 2,
+        )
+
+        assertEquals(1, plainValue(target))
+        assertEquals("later", target.getRoot().getAs<JsonPrimitive>("k").value)
+        assertEquals(2L, target.checkPoint.serverSeq)
+    }
 }

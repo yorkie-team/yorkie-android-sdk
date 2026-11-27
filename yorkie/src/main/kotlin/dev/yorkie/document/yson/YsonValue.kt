@@ -110,12 +110,19 @@ public sealed interface YsonValue {
 /**
  * [YsonTextNode] represents a single character in a Text CRDT, optionally carrying inline attributes.
  *
+ * [rawAttrs] is the lossless attributes value as parsed (a [YsonValue.YsonObject] or a
+ * [YsonValue.YsonArray]; null when absent or of any other shape, as in yorkie-js-sdk). [attrs] is
+ * the legacy view of it: the entries of the object case, null for an array. `copy(attrs = ...)`
+ * does NOT update [rawAttrs]; use `copy(rawAttrs = ...)` to change the lossless value.
+ *
  * @param value Character value held by this node.
  * @param attrs Optional attribute map (for example formatting flags).
+ * @param rawAttrs Lossless attributes value; defaults to [attrs] wrapped as an object.
  */
-public data class YsonTextNode(
+public data class YsonTextNode @JvmOverloads constructor(
     public val value: String,
     public val attrs: Map<String, YsonValue>? = null,
+    public val rawAttrs: YsonValue? = attrs?.let { YsonValue.YsonObject(it) },
 )
 
 /**
@@ -123,16 +130,27 @@ public data class YsonTextNode(
  *
  * A text node carries [value]. An element node carries [attrs] and/or [children].
  *
+ * [rawAttrs] is the lossless attributes value as parsed (a [YsonValue.YsonObject] with values of
+ * any type, or a [YsonValue.YsonArray]; null when absent or of any other shape, as in
+ * yorkie-js-sdk). [attrs] is the legacy view of it: only the string-valued entries of the object
+ * case, null for an array. `copy(attrs = ...)` does NOT update [rawAttrs]; use
+ * `copy(rawAttrs = ...)`. [treeToXML] reads [attrs], so it skips non-string attributes (JS would
+ * throw on them, or render index keys for an array).
+ *
  * @param type Node type (for example `text`, `p`, `div`).
  * @param value Text content for text nodes.
- * @param attrs Element attributes.
+ * @param attrs Element attributes (string values only).
  * @param children Child element list.
+ * @param rawAttrs Lossless attributes value; defaults to [attrs] wrapped as an object of strings.
  */
-public data class YsonTreeNode(
+public data class YsonTreeNode @JvmOverloads constructor(
     public val type: String,
     public val value: String? = null,
     public val attrs: Map<String, String>? = null,
     public val children: List<YsonTreeNode>? = null,
+    public val rawAttrs: YsonValue? = attrs?.let { map ->
+        YsonValue.YsonObject(map.mapValues { YsonValue.YsonString(it.value) })
+    },
 )
 
 /**

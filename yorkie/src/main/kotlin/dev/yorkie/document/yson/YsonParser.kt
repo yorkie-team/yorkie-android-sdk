@@ -71,6 +71,9 @@ public fun textToString(text: YsonValue.YsonText): String =
 
 /**
  * [treeToXML] returns an XML string representation of a [YsonValue.YsonTree].
+ *
+ * Only string-valued attributes ([YsonTreeNode.attrs]) are rendered; non-string and array
+ * attributes are skipped (read [YsonTreeNode.rawAttrs] for them).
  */
 public fun treeToXML(tree: YsonValue.YsonTree): String = treeNodeToXml(tree.root)
 
@@ -422,16 +425,9 @@ internal class YsonParser(private val input: String) {
                 "invalid text node format",
             )
         }
-        val attrs = value.entries["attrs"]
-        val attrMap: Map<String, YsonValue>? = when (attrs) {
-            null -> null
-            is YsonValue.YsonObject -> attrs.entries
-            else -> throw YorkieException(
-                YorkieException.Code.ErrInvalidArgument,
-                "invalid text node format",
-            )
-        }
-        return YsonTextNode(rawVal.value, attrMap)
+        val rawAttrs = rawAttrsOf(value.entries["attrs"])
+        val attrMap = (rawAttrs as? YsonValue.YsonObject)?.entries
+        return YsonTextNode(rawVal.value, attrMap, rawAttrs)
     }
 
     private fun parseTreeNode(value: YsonValue): YsonTreeNode {
@@ -454,17 +450,12 @@ internal class YsonParser(private val input: String) {
             return YsonTreeNode(type = type, value = nodeValueRaw.value)
         }
 
-        val attrs = value.entries["attrs"]
-        val attrMap: Map<String, String>? = when (attrs) {
-            null -> null
-            is YsonValue.YsonObject -> attrs.entries.mapValues { (_, attrVal) ->
-                when (attrVal) {
-                    is YsonValue.YsonString -> attrVal.value
-                    else -> attrVal.toString()
-                }
+        val rawAttrs = rawAttrsOf(value.entries["attrs"])
+        val attrMap: Map<String, String>? = (rawAttrs as? YsonValue.YsonObject)?.entries
+            ?.mapNotNull { (key, attrVal) ->
+                (attrVal as? YsonValue.YsonString)?.let { key to it.value }
             }
-            else -> null
-        }
+            ?.toMap(linkedMapOf())
 
         val children = value.entries["children"]
         val childList: List<YsonTreeNode>? = when (children) {
@@ -473,7 +464,16 @@ internal class YsonParser(private val input: String) {
             else -> null
         }
 
-        return YsonTreeNode(type = type, attrs = attrMap, children = childList)
+        return YsonTreeNode(type = type, attrs = attrMap, children = childList, rawAttrs = rawAttrs)
+    }
+
+    /**
+     * Mirrors yorkie-js-sdk `if (node.attrs && typeof node.attrs === 'object')`: an object or an
+     * array is kept as is; absent, null, string, number and boolean attrs are dropped.
+     */
+    private fun rawAttrsOf(attrs: YsonValue?): YsonValue? = when (attrs) {
+        is YsonValue.YsonObject, is YsonValue.YsonArray -> attrs
+        else -> null
     }
 
     private fun parseSignedInteger(): String {

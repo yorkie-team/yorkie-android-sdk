@@ -73,44 +73,45 @@ class PresenceRawValueTest {
 
     @Test
     fun `applies a pulled pack that carries one`() = runTest {
-        val target = Document("d")
-        val change = Change(
-            ChangeID(1u, 1, remoteActor, VersionVector()),
-            listOf(
-                SetOperation(
-                    key = "k",
-                    value = CrdtPrimitive("v", TimeTicket(1, 0u, remoteActor)),
-                    parentCreatedAt = TimeTicket.InitialTimeTicket,
-                    executedAt = TimeTicket(1, 1u, remoteActor),
+        Document("d").use { target ->
+            val change = Change(
+                ChangeID(1u, 1, remoteActor, VersionVector()),
+                listOf(
+                    SetOperation(
+                        key = "k",
+                        value = CrdtPrimitive("v", TimeTicket(1, 0u, remoteActor)),
+                        parentCreatedAt = TimeTicket.InitialTimeTicket,
+                        executedAt = TimeTicket(1, 1u, remoteActor),
+                    ),
                 ),
-            ),
-            presenceChange = PBPresenceChange.parseFrom(
-                presenceChange {
-                    type = PBPresenceChangeType.CHANGE_TYPE_PUT
-                    presence = dev.yorkie.api.v1.presence {
-                        data["name"] = "\"a\""
-                        data["cursor"] = "moved"
-                    }
-                }.toByteArray(),
-            ).toPresenceChange(),
-        )
+                presenceChange = PBPresenceChange.parseFrom(
+                    presenceChange {
+                        type = PBPresenceChangeType.CHANGE_TYPE_PUT
+                        presence = dev.yorkie.api.v1.presence {
+                            data["name"] = "\"a\""
+                            data["cursor"] = "moved"
+                        }
+                    }.toByteArray(),
+                ).toPresenceChange(),
+            )
 
-        target.applyChangePack(
-            ChangePack(
-                target.getKey(),
-                CheckPoint(1, 0u),
-                listOf(change),
-                null,
-                false,
-                VersionVector(),
-            ),
-        )
+            target.applyChangePack(
+                ChangePack(
+                    target.getKey(),
+                    CheckPoint(1, 0u),
+                    listOf(change),
+                    null,
+                    false,
+                    VersionVector(),
+                ),
+            )
 
-        assertEquals("v", target.getRoot().getAs<JsonPrimitive>("k").value)
-        assertEquals(
-            mapOf("name" to "a", "cursor" to "moved"),
-            target.allPresences.value[remoteActor],
-        )
-        assertEquals(1L, target.checkPoint.serverSeq)
+            assertEquals("v", target.getRoot().getAs<JsonPrimitive>("k").value)
+            assertEquals(
+                mapOf("name" to "a", "cursor" to "moved"),
+                target.allPresences.value[remoteActor],
+            )
+            assertEquals(1L, target.checkPoint.serverSeq)
+        }
     }
 }

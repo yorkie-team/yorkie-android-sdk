@@ -60,8 +60,15 @@ class RemoteSkipTest {
         Logger.init(recordingLogger)
     }
 
+    // Documents the helpers below create; closed after each test.
+    private val documents = mutableListOf<Document>()
+
+    private fun newDocument(key: String = "d") = Document(key).also { documents.add(it) }
+
     @After
     fun tearDown() {
+        documents.forEach { it.close() }
+        documents.clear()
         // Logger is a process-wide singleton: leave a fresh, non-capturing instance behind.
         Logger.init(RecordingLogger())
     }
@@ -69,7 +76,7 @@ class RemoteSkipTest {
     private val skipLog = "[Increase] skipped a remote increase that cannot apply"
 
     private suspend fun targetWithCounter(): Pair<Document, TimeTicket> {
-        val target = Document("d")
+        val target = newDocument()
         lateinit var counterCreatedAt: TimeTicket
         target.updateAsync { root, _ ->
             counterCreatedAt = root.setNewDedupCounter("uv").target.createdAt
@@ -255,7 +262,7 @@ class RemoteSkipTest {
                 // Go's Change.Execute stores the decoded empty presence for the actor, and
                 // the change's own operation still applies -- it must never throw and wedge
                 // the rest of the pack.
-                val target = Document("d")
+                val target = newDocument()
                 val remoteActor = "0000000000000000000000bb"
                 val change = Change(
                     ChangeID(1u, 1, remoteActor, VersionVector()),
@@ -280,7 +287,7 @@ class RemoteSkipTest {
     // ---- plain counter (js#1525 / Go skipUnlessLocal) ----
 
     private suspend fun targetWithPlainCounter(): Pair<Document, TimeTicket> {
-        val target = Document("d")
+        val target = newDocument()
         lateinit var counterCreatedAt: TimeTicket
         target.updateAsync { root, _ ->
             counterCreatedAt = root.setNewCounter("c", 0).target.createdAt
